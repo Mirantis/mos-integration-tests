@@ -37,12 +37,18 @@ class HeatIntegrationTests(unittest.TestCase):
                                           project_name=OS_PROJECT_NAME)
         services = keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
-                                                                     endpoint_type='internalURL')
+                                         endpoint_type='internalURL')
 
         self.heat = heat_client(endpoint=heat_endpoint,
-                                        token=keystone.auth_token)
+                                token=keystone.auth_token)
 
     def test_543328_HeatResourceTypeList(self):
+        """ This test case checks list of available Heat resources.
+            Steps:
+             1. Get list of Heat resources.
+             2. Check count of resources.
+             3. Check that list of resources contains required resources.
+        """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
         self.assertEqual(len(resource_types), 96)
