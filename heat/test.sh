@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 CONTR_ID=$(fuel node | grep controller | head -1 | awk '{print$1}')
 scp test_heat.sh node-$CONTR_ID:~/
 
