@@ -14,6 +14,7 @@
 
 import os
 import unittest
+import time
 
 from keystoneclient.v2_0 import client as keystone_client
 from heatclient.v1.client import Client as heat_client
@@ -60,3 +61,40 @@ class HeatIntegrationTests(unittest.TestCase):
         for resource in required_resources:
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
+
+    def test_543337_HeatStackUpdate(self):
+        """ This test case checks stack-update action.
+            Steps:
+            1. Create stack using template file empty_heat_templ.yaml
+            2. Update stack parameter
+        """
+        # TODO Alexandra Allakhverdieva: Check about possibility to use common functions
+        # Stack creation
+        stack_name = 'empty'
+        with open(r'./Templates/empty_heat_template.yaml', 'r') as template_file:
+            template_content = template_file.read()
+        d_initial = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string'}}
+        self.heat.stacks.create(**d_initial)
+        stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
+        self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
+
+        # Stack update
+        stack_id = stack_dict[stack_name]
+        d_updated = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string2'}}
+        self.heat.stacks.update(stack_id, **d_updated)
+        timeout = time.time() + 10
+
+        while True:
+            stack_dict_upd = {s.stack_name: s.id for s in self.heat.stacks.list()
+                              if s.stack_status == 'UPDATE_COMPLETE'}
+            if stack_name in stack_dict_upd.keys():
+                break
+            elif time.time() > timeout:
+                raise AssertionError("Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
+            else:
+                time.sleep(1)
+
+        # Clean-up
+        self.heat.stacks.delete(stack_id)
+
+
