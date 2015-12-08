@@ -60,3 +60,31 @@ class HeatIntegrationTests(unittest.TestCase):
         for resource in required_resources:
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
+
+    def test_543329_HeatResourceTypeShow(self):
+        """ This test case checks representation of all Heat resources.
+            Steps:
+             1. Get list of Heat resources.
+             2. Check that all types of resources have correct representation.
+        """
+        resource_types = [r.resource_type for r in
+                          self.heat.resource_types.list()]
+
+        for resource in resource_types:
+            resource_schema = self.heat.resource_types.get(resource)
+            self.assertIsInstance(resource_schema, dict,
+                                  "Schema of resource {0} is incorrect!".format(resource))
+
+    def test_543330_HeatResourceTypeTemplate(self):
+        """ This test case checks representation of templates for all Heat resources.
+            Steps:
+             1. Get list of Heat resources.
+             2. Check that templates for all resources have correct representation.
+        """
+        resource_types = [r.resource_type for r in
+                          self.heat.resource_types.list()]
+
+        for resource in resource_types:
+            resource_template_schema = self.heat.resource_types.generate_template(resource)
+            self.assertIsInstance(resource_template_schema, dict,
+                                  "Schema of resource template {0} is incorrect!".format(resource))
