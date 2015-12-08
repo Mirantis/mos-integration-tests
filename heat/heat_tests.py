@@ -14,6 +14,8 @@
 
 import os
 import unittest
+import urllib2
+import time
 
 from keystoneclient.v2_0 import client as keystone_client
 from heatclient.v1.client import Client as heat_client
@@ -60,3 +62,103 @@ class HeatIntegrationTests(unittest.TestCase):
         for resource in required_resources:
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
+
+    def test_543347_HeatCreateStack(self):
+        """ This test performs creation of a new stack with a help of Heat. And then delete it.
+            Steps:
+            1. Read template from URL
+            2. Create new stack.
+                + Check that stack became from 'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+            3. Delete created stack
+                + Check that stack became from 'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+
+        https://mirantis.testrail.com/index.php?/cases/view/543347
+        [Alexander Koryagin]
+        """
+
+        # Variables
+        # TODO :akoryagin: Shall we pass URL in this way?
+        template_url = 'https://raw.githubusercontent.com/openstack/rally/master/samples/tasks/scenarios/heat/' \
+                       'templates/resource_group.yaml.template'
+        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])  # Like: 'Test_1449484927'
+        timeout_value = 10  # Timeout in minutes to wait for stack status change
+
+        def get_template_from_url(url):
+            """ Read template from url from internet
+                    :param url: URL of a template file in internet
+                    :return: Content of a template file
+            """
+            try:
+                response = urllib2.urlopen(url)
+            except urllib2.HTTPError, e:
+                raise Exception('Can not get template from URL. HTTPError = {0}.\n\tURL = "{1}"'.format(str(e.code), url))
+            except urllib2.URLError, e:
+                raise Exception('Can not get template from URL. URLError = {0}.\n\tURL = "{1}"'.format(str(e.reason), url))
+            except Exception:
+                raise Exception('Can not get template from URL:\n\t{0}'.format(url))
+            # If all ok:
+            template_content = response.read()
+            return template_content
+
+        def create_stack(heatclient, stack_name, template):
+            """ Create a stack from template and check STATUS == CREATE_COMPLETE
+                    :param heatclient: Heat API client connection point
+                    :param stack_name: Name of a new stack
+                    :param template:   Content of a template name
+                    :return uid: UID of stack
+            """
+            stack = heatclient.stacks.create(
+                stack_name=stack_name,
+                template=template,
+                parameters={})
+            uid = stack['stack']['id']
+
+            stack = heatclient.stacks.get(stack_id=uid).to_dict()
+            timeout = time.time() + 60 * timeout_value  # default: 10 minutes of timeout to change stack status
+            while stack['stack_status'] == 'CREATE_IN_PROGRESS':
+                stack = heatclient.stacks.get(stack_id=uid).to_dict()
+                if time.time() > timeout:
+                    break
+                else:
+                    time.sleep(5)
+
+            # Check that final status of a newly created stack is 'CREATE_COMPLETE'
+            self.assertEqual(
+                (stack['stack_status']), 'CREATE_COMPLETE',
+                msg='Stack failed to create: {}'.format(stack)
+            )
+            return uid
+
+        def delete_stack(heatclient, uid):
+            """ Delete stack and check STATUS == DELETE_COMPLETE
+                    :param heatclient: Heat API client connection point
+                    :param uid:        UID of stack
+            """
+            stack = heatclient.stacks.delete(uid)
+
+            stack = heatclient.stacks.get(stack_id=uid).to_dict()
+            timeout = time.time() + 60 * timeout_value  # default: 10 minutes of timeout to change stack status
+            while stack['stack_status'] == 'DELETE_IN_PROGRESS':
+                stack = heatclient.stacks.get(stack_id=uid).to_dict()
+                if time.time() > timeout:
+                    break
+                else:
+                    time.sleep(5)
+
+            # Check that final status of a newly deleted stack is 'DELETE_COMPLETE'
+            self.assertEqual(
+                (stack['stack_status']), 'DELETE_COMPLETE',
+                msg='Stack fall to unknown status: {}'.format(stack)
+            )
+
+        # - 1 -
+        # Get Heat stack-create template from URL
+        template_content = get_template_from_url(template_url)
+
+        # - 2 -
+        # Create new stack
+        uid_of_new_stack = create_stack(self.heat, new_stack_name, template_content)
+
+        # - 3 -
+        # Delete created stack
+        delete_stack(self.heat, uid_of_new_stack)
