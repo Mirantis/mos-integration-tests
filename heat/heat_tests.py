@@ -75,8 +75,17 @@ class HeatIntegrationTests(unittest.TestCase):
             template_content = template_file.read()
         d_initial = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string'}}
         self.heat.stacks.create(**d_initial)
-        stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
-        self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
+        timeout = time.time() + 10
+        # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
+        # self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
+        while True:
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
+            if stack_name in stack_dict.keys():
+                break
+            elif time.time() > timeout:
+                raise AssertionError("Unable to find stack 'empty' in 'CREATE_COMPLETE' state")
+            else:
+                time.sleep(1)
 
         # Stack update
         stack_id = stack_dict[stack_name]
@@ -96,8 +105,6 @@ class HeatIntegrationTests(unittest.TestCase):
 
         # Clean-up
         self.heat.stacks.delete(stack_id)
-
-
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
