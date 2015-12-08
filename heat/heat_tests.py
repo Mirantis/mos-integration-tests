@@ -78,6 +78,7 @@ class HeatIntegrationTests(unittest.TestCase):
         timeout = time.time() + 10
         # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
         # self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
+        # Quick fix. Need to avoid duplicated code 
         while True:
             stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
             if stack_name in stack_dict.keys():
