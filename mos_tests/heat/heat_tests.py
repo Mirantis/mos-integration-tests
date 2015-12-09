@@ -64,23 +64,28 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
 
-
     def test_543347_HeatCreateStack(self):
-        """ This test performs creation of a new stack with a help of Heat. And then delete it.
+        """ This test performs creation of a new stack with
+            a help of Heat. And then delete it.
             Steps:
             1. Read template from URL
             2. Create new stack.
-                + Check that stack became from 'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+                + Check that stack became from
+                  'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
             3. Delete created stack
-                + Check that stack became from 'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+                + Check that stack became from
+                  'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
         https://mirantis.testrail.com/index.php?/cases/view/543347
         [Alexander Koryagin]
         """
-        # Variables
-        # Be sure that this template file will be put on controller during test preparation
-        file_name = './mos_tests/heat/templates/stack_create_template.yaml' # File with template for stack creation
-        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])   # Like: 'Test_1449484927'
+        # Be sure that this template file will be put on
+        # controller during test preparation
+
+        # File with template for stack creation
+        file_name = './mos_tests/heat/templates/stack_create_template.yaml'
+        # Like: 'Test_1449484927'
+        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
 
         # - 1 -
         # Read Heat stack-create template from file
@@ -88,11 +93,14 @@ class HeatIntegrationTests(unittest.TestCase):
             with open(file_name, 'r') as template:
                 template_content = template.read()
         except IOError:
-            raise Exception("ERROR: can not find template-file [{0}] on controller or read data".format(file_name))
+            raise Exception("ERROR: can not find template-file [{0}]"
+                            "on controller or read data".format(file_name))
 
         # - 2 -
         # Create new stack
-        uid_of_new_stack = common_functions.create_stack(self.heat, new_stack_name, template_content)
+        uid_of_new_stack = common_functions.create_stack(self.heat,
+                                                         new_stack_name,
+                                                         template_content)
 
         # - 3 -
         # Delete created stack
@@ -104,39 +112,52 @@ class HeatIntegrationTests(unittest.TestCase):
             1. Create stack using template file empty_heat_templ.yaml
             2. Update stack parameter
         """
-        # TODO Alexandra Allakhverdieva: Check about possibility to use common functions
+        # TODO Alexandra Allakhverdieva: Check about possibility to
+        # use common functions
         # Stack creation
         stack_name = 'empty'
-        with open(r'./mos_tests/heat/templates/empty_heat_template.yaml', 'r') as template_file:
+        file_name = r'./mos_tests/heat/templates/empty_heat_template.yaml'
+
+        with open(file_name, 'r') as template_file:
             template_content = template_file.read()
-        d_initial = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string'}}
+
+        d_initial = {'stack_name': stack_name, 'template': template_content,
+                     'parameters': {'param': 'string'}}
         self.heat.stacks.create(**d_initial)
         timeout = time.time() + 10
-        # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
-        # self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
-        # Quick fix. Need to avoid duplicated code 
+
+        # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
+        #               if s.stack_status == 'CREATE_COMPLETE'}
+        # self.assertIn(stack_name, stack_dict.keys(),
+        #                "Unable to find stack in 'CREATE_COMPLETE' state")
+        # Quick fix. Need to avoid duplicated code
         while True:
-            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
+                          if s.stack_status == 'CREATE_COMPLETE'}
             if stack_name in stack_dict.keys():
                 break
             elif time.time() > timeout:
-                raise AssertionError("Unable to find stack 'empty' in 'CREATE_COMPLETE' state")
+                raise AssertionError("Unable to find stack 'empty' in "
+                                     "'CREATE_COMPLETE' state")
             else:
                 time.sleep(1)
 
         # Stack update
         stack_id = stack_dict[stack_name]
-        d_updated = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string2'}}
+        d_updated = {'stack_name': stack_name, 'template': template_content,
+                     'parameters': {'param': 'string2'}}
         self.heat.stacks.update(stack_id, **d_updated)
         timeout = time.time() + 10
 
         while True:
-            stack_dict_upd = {s.stack_name: s.id for s in self.heat.stacks.list()
+            stack_dict_upd = {s.stack_name: s.id for s in
+                              self.heat.stacks.list()
                               if s.stack_status == 'UPDATE_COMPLETE'}
             if stack_name in stack_dict_upd.keys():
                 break
             elif time.time() > timeout:
-                raise AssertionError("Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
+                raise AssertionError("Unable to find stack 'empty' in "
+                                     "'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
 
@@ -154,22 +175,24 @@ class HeatIntegrationTests(unittest.TestCase):
 
         for resource in resource_types:
             resource_schema = self.heat.resource_types.get(resource)
-            self.assertIsInstance(resource_schema, dict,
-                                  "Schema of resource {0} is incorrect!".format(resource))
+            msg = "Schema of resource {0} is incorrect!"
+            self.assertIsInstance(resource_schema, dict, msg.format(resource))
 
     def test_543330_HeatResourceTypeTemplate(self):
-        """ This test case checks representation of templates for all Heat resources.
+        """ This test case checks representation of templates for all Heat
+            resources.
             Steps:
              1. Get list of Heat resources.
-             2. Check that templates for all resources have correct representation.
+             2. Check that templates for all resources have correct
+                representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
 
         for resource in resource_types:
-            resource_template_schema = self.heat.resource_types.generate_template(resource)
-            self.assertIsInstance(resource_template_schema, dict,
-                                  "Schema of resource template {0} is incorrect!".format(resource))
+            schema = self.heat.resource_types.generate_template(resource)
+            msg = "Schema of resource template {0} is incorrect!"
+            self.assertIsInstance(schema, dict, msg.format(resource))
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
@@ -183,12 +206,16 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        with open('./mos_tests/heat/templates/empty_heat_templ.yaml', 'r') as f:
+        file_name = './mos_tests/heat/templates/empty_heat_templ.yaml'
+        with open(file_name, 'r') as f:
             template = f.read()
         stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'}, 'timeout_mins': 60}
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': 60}
         self.heat.stacks.create(**stack_data)
-        self.assertTrue(common_functions.check_stack_status(stack_name, self.heat, 'CREATE_COMPLETE'))
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE'))
         common_functions.clean_stack(stack_name, self.heat)
-        self.assertNotIn(stack_name, [s.stack_name for s in self.heat.stacks.list()])
-
+        stacks = [s.stack_name for s in self.heat.stacks.list()]
+        self.assertNotIn(stack_name, stacks)
