@@ -65,6 +65,39 @@ class HeatIntegrationTests(unittest.TestCase):
                           "Resource {0} not found!".format(resource))
 
 
+    def test_543347_HeatCreateStack(self):
+        """ This test performs creation of a new stack with a help of Heat. And then delete it.
+            Steps:
+            1. Read template from URL
+            2. Create new stack.
+                + Check that stack became from 'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+            3. Delete created stack
+                + Check that stack became from 'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+
+        https://mirantis.testrail.com/index.php?/cases/view/543347
+        [Alexander Koryagin]
+        """
+        # Variables
+        # Be sure that this template file will be put on controller during test preparation
+        file_name = './Templates/stack_create_template.yaml'          # File with template for stack creation
+        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])   # Like: 'Test_1449484927'
+
+        # - 1 -
+        # Read Heat stack-create template from file
+        try:
+            with open(file_name, 'r') as template:
+                template_content = template.read()
+        except IOError:
+            raise Exception("ERROR: can not find template-file [{0}] on controller or read data".format(file_name))
+
+        # - 2 -
+        # Create new stack
+        uid_of_new_stack = common_functions.create_stack(self.heat, new_stack_name, template_content)
+
+        # - 3 -
+        # Delete created stack
+        common_functions.delete_stack(self.heat, uid_of_new_stack)
+
     def test_543337_HeatStackUpdate(self):
         """ This test case checks stack-update action.
             Steps:
@@ -137,6 +170,7 @@ class HeatIntegrationTests(unittest.TestCase):
             resource_template_schema = self.heat.resource_types.generate_template(resource)
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
+
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
