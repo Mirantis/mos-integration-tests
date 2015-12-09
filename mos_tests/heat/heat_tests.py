@@ -239,9 +239,9 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertNotIn(stack_name, stacks)
 
     def test_543333_HeatStackCreateWithTemplate(self):
-        """ This test case checks deletion of stack.
+        """ This test case checks creation of stack.
             Steps:
-             1. Create stack using template file empty_heat_template.yaml.
+             1. Create stack using template file empty_heat_templ.yaml.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
         """
