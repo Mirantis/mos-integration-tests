@@ -104,32 +104,13 @@ class HeatIntegrationTests(unittest.TestCase):
             1. Create stack using template file empty_heat_templ.yaml
             2. Update stack parameter
         """
-        # TODO Alexandra Allakhverdieva: Check about possibility to use common functions
-        # Stack creation
-        stack_name = 'empty'
-        with open(r'./Templates/empty_heat_template.yaml', 'r') as template_file:
+        stack_name = 'empty_543337'
+        with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
             template_content = template_file.read()
-        d_initial = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string'}}
-        self.heat.stacks.create(**d_initial)
-        timeout = time.time() + 10
-        # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
-        # self.assertIn(stack_name, stack_dict.keys(), "Unable to find stack in 'CREATE_COMPLETE' state")
-        # Quick fix. Need to avoid duplicated code 
-        while True:
-            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
-            if stack_name in stack_dict.keys():
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Unable to find stack 'empty' in 'CREATE_COMPLETE' state")
-            else:
-                time.sleep(1)
-
-        # Stack update
-        stack_id = stack_dict[stack_name]
+        stack_id = common_functions.create_stack(self.heat, stack_name, template_content, {'param': 'string'})
         d_updated = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string2'}}
         self.heat.stacks.update(stack_id, **d_updated)
         timeout = time.time() + 10
-
         while True:
             stack_dict_upd = {s.stack_name: s.id for s in self.heat.stacks.list()
                               if s.stack_status == 'UPDATE_COMPLETE'}
@@ -139,9 +120,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 raise AssertionError("Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
-
-        # Clean-up
-        self.heat.stacks.delete(stack_id)
+        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
@@ -171,7 +150,6 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
 
-
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
             Steps:
@@ -193,7 +171,6 @@ class HeatIntegrationTests(unittest.TestCase):
         common_functions.clean_stack(stack_name, self.heat)
         self.assertNotIn(stack_name, [s.stack_name for s in self.heat.stacks.list()])
 
-
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
             Steps:
@@ -202,24 +179,11 @@ class HeatIntegrationTests(unittest.TestCase):
              3. Launch heat stack-list and check that stack is in 'CHECK_COMPLETE' status
         """
         stack_name = 'stack_to_check_543339'
-        with open(r'./Templates/empty_heat_template.yaml', 'r') as template_file:
+        with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
             template_content = template_file.read()
-        t_params = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'just text'}}
-        self.heat.stacks.create(**t_params)
-        timeout = time.time() + 10
-
-        while True:
-            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
-            if stack_name in stack_dict.keys():
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Unable to create stack {0}".format(stack_name))
-            else:
-                time.sleep(1)
-
-        stack_id = stack_dict[stack_name]
+        stack_id = common_functions.create_stack(self.heat, stack_name, template_content, {'param': 'just text'})
         self.heat.actions.check(stack_id)
-
+        timeout = time.time() + 10
         while True:
             stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CHECK_COMPLETE'}
             if stack_name in stack_dict.keys():
@@ -228,5 +192,8 @@ class HeatIntegrationTests(unittest.TestCase):
                 raise AssertionError("Stack {0} is not in CHECK_COMPLETE state".format(stack_name))
             else:
                 time.sleep(1)
+        self.assertIn(stack_name, stack_dict, "Stack {0} is not in CHECK_COMPLETE state".format(stack_name))
+        common_functions.delete_stack(self.heat, stack_id)
 
-        self.heat.stacks.delete(stack_id)
+
+
