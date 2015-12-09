@@ -237,3 +237,24 @@ class HeatIntegrationTests(unittest.TestCase):
         common_functions.clean_stack(stack_name, self.heat)
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
+
+    def test_543333_HeatStackCreateWithTemplate(self):
+        """ This test case checks deletion of stack.
+            Steps:
+             1. Create stack using template file empty_heat_template.yaml.
+             2. Check that the stack is in the list of stacks
+             3. Check that stack status is 'CREATE_COMPLETE'
+        """
+        stack_name = 'empty__543333'
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+
+        with open('Templates/empty_heat_templ.yaml', 'r') as f:
+            template = f.read()
+        stack_data = {'stack_name': stack_name, 'template': template,
+                      'parameters': {'param': 'some_param_string'}, 'timeout_mins': 20}
+        output = self.heat.stacks.create(**stack_data)
+        self.assertIn(output['stack']['id'], [s.id for s in self.heat.stacks.list()])
+        self.assertTrue(common_functions.check_stack_status(stack_name, self.heat, 'CREATE_COMPLETE'))
+
+
