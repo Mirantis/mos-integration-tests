@@ -29,9 +29,9 @@ def get_var_as_bool(name, default):
     value = os.environ.get(name, '')
     return _boolean_states.get(value.lower(), default)
 
+SSL_CERTS_DIR = os.environ.get('SSL_CERTS_DIR', os.getcwd())
 PATH_TO_CERT = os.environ.get('PATH_TO_CERT', os.path.join(
     SSL_CERTS_DIR, 'ca.crt'))
-SSL_CERTS_DIR = os.environ.get('SSL_CERTS_DIR', os.getcwd())
 if not os.path.exists(SSL_CERTS_DIR):
     os.makedirs(SSL_CERTS_DIR)
 DISABLE_SSL = get_var_as_bool('DISABLE_SSL', False)
