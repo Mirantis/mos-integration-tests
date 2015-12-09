@@ -19,7 +19,7 @@ import time
 from keystoneclient.v2_0 import client as keystone_client
 from heatclient.v1.client import Client as heat_client
 
-import Functions.common as common_functions
+import functions.common as common_functions
 
 
 class HeatIntegrationTests(unittest.TestCase):
