@@ -134,3 +134,40 @@ class HeatIntegrationTests(unittest.TestCase):
             resource_template_schema = self.heat.resource_types.generate_template(resource)
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
+
+    def test_543339_CheckStackResourcesStatuses(self):
+        """ This test case checks that stack resources are in expected states
+            Steps:
+             1. Create new stack
+             2. Launch heat action-check stack_name
+             3. Launch heat stack-list and check that stack is in 'CHECK_COMPLETE' status
+        """
+        stack_name = 'stack_to_check_543339'
+        with open(r'./Templates/empty_heat_template.yaml', 'r') as template_file:
+            template_content = template_file.read()
+        t_params = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'just text'}}
+        self.heat.stacks.create(**t_params)
+        timeout = time.time() + 10
+
+        while True:
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CREATE_COMPLETE'}
+            if stack_name in stack_dict.keys():
+                break
+            elif time.time() > timeout:
+                raise AssertionError("Unable to create stack {0}".format(stack_name))
+            else:
+                time.sleep(1)
+
+        stack_id = stack_dict[stack_name]
+        self.heat.actions.check(stack_id)
+
+        while True:
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CHECK_COMPLETE'}
+            if stack_name in stack_dict.keys():
+                break
+            elif time.time() > timeout:
+                raise AssertionError("Stack {0} is not in CHECK_COMPLETE state".format(stack_name))
+            else:
+                time.sleep(1)
+
+        self.heat.stacks.delete(stack_id)
