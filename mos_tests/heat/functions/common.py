@@ -27,7 +27,7 @@ def check_stack_status(stack_name, heat, status):
             return True
         return False
 
-        
+
 def create_stack(heatclient, stack_name, template, parameters={}):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
             :param parameters: parameters from template
