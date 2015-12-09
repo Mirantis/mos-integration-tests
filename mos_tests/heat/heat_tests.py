@@ -203,7 +203,7 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        with open('Templates/empty_heat_templ.yaml', 'r') as f:
+        with open('templates/empty_heat_templ.yaml', 'r') as f:
             template = f.read()
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': 'some_param_string'}, 'timeout_mins': 20}
