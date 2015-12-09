@@ -19,6 +19,8 @@ import time
 from keystoneclient.v2_0 import client as keystone_client
 from heatclient.v1.client import Client as heat_client
 
+import Functions.common as common_functions
+
 
 class HeatIntegrationTests(unittest.TestCase):
     """ Basic automated tests for OpenStack Heat verification. """
@@ -61,6 +63,7 @@ class HeatIntegrationTests(unittest.TestCase):
         for resource in required_resources:
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
+
 
     def test_543337_HeatStackUpdate(self):
         """ This test case checks stack-update action.
@@ -134,6 +137,28 @@ class HeatIntegrationTests(unittest.TestCase):
             resource_template_schema = self.heat.resource_types.generate_template(resource)
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
+
+    def test_543335_HeatStackDelete(self):
+        """ This test case checks deletion of stack.
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml.
+             2. Check that the stack is in the list of stacks
+             3. Delete the stack.
+             4. Check that the stack is absent in the list of stacks
+        """
+        stack_name = 'empty_stack'
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+
+        with open('Templates/empty_heat_templ.yaml', 'r') as f:
+            template = f.read()
+        stack_data = {'stack_name': stack_name, 'template': template,
+                      'parameters': {'param': 'some_param_string'}, 'timeout_mins': 60}
+        self.heat.stacks.create(**stack_data)
+        self.assertTrue(common_functions.check_stack_status(stack_name, self.heat, 'CREATE_COMPLETE'))
+        common_functions.clean_stack(stack_name, self.heat)
+        self.assertNotIn(stack_name, [s.stack_name for s in self.heat.stacks.list()])
+
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
