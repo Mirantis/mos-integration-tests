@@ -14,9 +14,6 @@ Contents:
    mos_tests/heat
    mos_tests/murano
    mos_tests/neutron
-   mos_shell_tests/heat
-   mos_shell_tests/murano
-   mos_shell_tests/neutron
 
 
 

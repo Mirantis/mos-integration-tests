@@ -45,6 +45,24 @@ class HeatIntegrationTests(unittest.TestCase):
         self.heat = heat_client(endpoint=heat_endpoint,
                                 token=keystone.auth_token)
 
+        self.templates_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'templates')
+
+    def read_template(self, template_name):
+        """Read template file and return it content.
+
+        :param template_name: name of template,
+            for ex.: empty_heat_template.yaml
+        :return: template file content
+        """
+        template_path = os.path.join(self.templates_dir, template_name)
+        try:
+            with open(template_path) as template:
+                return template.read()
+        except IOError as e:
+            raise IOError('Can\'t read template: {}'.format(e))
+
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
             Steps:
