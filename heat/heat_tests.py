@@ -171,7 +171,6 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
 
-
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
             Steps:
@@ -194,9 +193,9 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertNotIn(stack_name, [s.stack_name for s in self.heat.stacks.list()])
 
     def test_543333_HeatStackCreateWithTemplate(self):
-        """ This test case checks deletion of stack.
+        """ This test case checks creation of stack.
             Steps:
-             1. Create stack using template file empty_heat_template.yaml.
+             1. Create stack using template file empty_heat_templ.yaml.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
         """
