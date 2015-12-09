@@ -107,17 +107,22 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty_543337'
         with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
             template_content = template_file.read()
-        stack_id = common_functions.create_stack(self.heat, stack_name, template_content, {'param': 'string'})
-        d_updated = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string2'}}
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'string'})
+        d_updated = {'stack_name': stack_name, 'template': template_content,
+                     'parameters': {'param': 'string2'}}
         self.heat.stacks.update(stack_id, **d_updated)
         timeout = time.time() + 10
         while True:
-            stack_dict_upd = {s.stack_name: s.id for s in self.heat.stacks.list()
+            stack_dict_upd = {s.stack_name: s.id for s in
+                              self.heat.stacks.list()
                               if s.stack_status == 'UPDATE_COMPLETE'}
             if stack_name in stack_dict_upd.keys():
                 break
             elif time.time() > timeout:
-                raise AssertionError("Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
+                raise AssertionError(
+                    "Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
         common_functions.delete_stack(self.heat, stack_id)
@@ -176,24 +181,28 @@ class HeatIntegrationTests(unittest.TestCase):
             Steps:
              1. Create new stack
              2. Launch heat action-check stack_name
-             3. Launch heat stack-list and check that stack is in 'CHECK_COMPLETE' status
+             3. Launch heat stack-list and check 'CHECK_COMPLETE' status
         """
         stack_name = 'stack_to_check_543339'
         with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
             template_content = template_file.read()
-        stack_id = common_functions.create_stack(self.heat, stack_name, template_content, {'param': 'just text'})
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'just text'})
         self.heat.actions.check(stack_id)
         timeout = time.time() + 10
         while True:
-            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list() if s.stack_status == 'CHECK_COMPLETE'}
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
+                          if s.stack_status == 'CHECK_COMPLETE'}
             if stack_name in stack_dict.keys():
                 break
             elif time.time() > timeout:
-                raise AssertionError("Stack {0} is not in CHECK_COMPLETE state".format(stack_name))
+                raise AssertionError(
+                    "Stack {0} is not in CHECK_COMPLETE state".format(
+                        stack_name))
             else:
                 time.sleep(1)
-        self.assertIn(stack_name, stack_dict, "Stack {0} is not in CHECK_COMPLETE state".format(stack_name))
+        self.assertIn(stack_name, stack_dict,
+                      "Stack {0} is not in CHECK_COMPLETE state".format(
+                          stack_name))
         common_functions.delete_stack(self.heat, stack_id)
-
-
-
