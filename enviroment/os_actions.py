@@ -30,7 +30,7 @@ from novaclient.exceptions import ClientException as NovaClientException
 from novaclient.v1_1 import Client as novaclient
 
 
-class OSInterface(object):
+class OpenStackActions(object):
     """Provides connection to the deployed OS cluster."""
 
     def __init__(self, controller_ip, user, password, tenant):
