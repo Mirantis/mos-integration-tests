@@ -13,13 +13,13 @@
 #    under the License.
 
 import os
-import unittest
 import time
+import unittest
 
-from keystoneclient.v2_0 import client as keystone_client
 from heatclient.v1.client import Client as heat_client
+from keystoneclient.v2_0 import client as keystone_client
 
-import Functions.common as common_functions
+from mos_tests.heat.functions import common as common_functions
 
 
 class HeatIntegrationTests(unittest.TestCase):
@@ -45,6 +45,24 @@ class HeatIntegrationTests(unittest.TestCase):
         self.heat = heat_client(endpoint=heat_endpoint,
                                 token=keystone.auth_token)
 
+        self.templates_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'templates')
+
+    def read_template(self, template_name):
+        """Read template file and return it content.
+
+        :param template_name: name of template,
+            for ex.: empty_heat_template.yaml
+        :return: template file content
+        """
+        template_path = os.path.join(self.templates_dir, template_name)
+        try:
+            with open(template_path) as template:
+                return template.read()
+        except IOError as e:
+            raise IOError('Can\'t read template: {}'.format(e))
+
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
             Steps:
@@ -64,23 +82,28 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
 
-
     def test_543347_HeatCreateStack(self):
-        """ This test performs creation of a new stack with a help of Heat. And then delete it.
+        """ This test performs creation of a new stack with
+            a help of Heat. And then delete it.
             Steps:
             1. Read template from URL
             2. Create new stack.
-                + Check that stack became from 'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+                + Check that stack became from
+                  'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
             3. Delete created stack
-                + Check that stack became from 'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+                + Check that stack became from
+                  'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
         https://mirantis.testrail.com/index.php?/cases/view/543347
         [Alexander Koryagin]
         """
-        # Variables
-        # Be sure that this template file will be put on controller during test preparation
-        file_name = './Templates/stack_create_template.yaml'          # File with template for stack creation
-        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])   # Like: 'Test_1449484927'
+        # Be sure that this template file will be put on
+        # controller during test preparation
+
+        # File with template for stack creation
+        file_name = './mos_tests/heat/templates/stack_create_template.yaml'
+        # Like: 'Test_1449484927'
+        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
 
         # - 1 -
         # Read Heat stack-create template from file
@@ -88,11 +111,14 @@ class HeatIntegrationTests(unittest.TestCase):
             with open(file_name, 'r') as template:
                 template_content = template.read()
         except IOError:
-            raise Exception("ERROR: can not find template-file [{0}] on controller or read data".format(file_name))
+            raise Exception("ERROR: can not find template-file [{0}]"
+                            "on controller or read data".format(file_name))
 
         # - 2 -
         # Create new stack
-        uid_of_new_stack = common_functions.create_stack(self.heat, new_stack_name, template_content)
+        uid_of_new_stack = common_functions.create_stack(self.heat,
+                                                         new_stack_name,
+                                                         template_content)
 
         # - 3 -
         # Delete created stack
@@ -121,8 +147,8 @@ class HeatIntegrationTests(unittest.TestCase):
             if stack_name in stack_dict_upd.keys():
                 break
             elif time.time() > timeout:
-                raise AssertionError(
-                    "Unable to find stack 'empty' in 'UPDATE_COMPLETE' state")
+                raise AssertionError("Unable to find stack 'empty' in "
+                                     "'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
         common_functions.delete_stack(self.heat, stack_id)
@@ -138,22 +164,24 @@ class HeatIntegrationTests(unittest.TestCase):
 
         for resource in resource_types:
             resource_schema = self.heat.resource_types.get(resource)
-            self.assertIsInstance(resource_schema, dict,
-                                  "Schema of resource {0} is incorrect!".format(resource))
+            msg = "Schema of resource {0} is incorrect!"
+            self.assertIsInstance(resource_schema, dict, msg.format(resource))
 
     def test_543330_HeatResourceTypeTemplate(self):
-        """ This test case checks representation of templates for all Heat resources.
+        """ This test case checks representation of templates for all Heat
+            resources.
             Steps:
              1. Get list of Heat resources.
-             2. Check that templates for all resources have correct representation.
+             2. Check that templates for all resources have correct
+                representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
 
         for resource in resource_types:
-            resource_template_schema = self.heat.resource_types.generate_template(resource)
-            self.assertIsInstance(resource_template_schema, dict,
-                                  "Schema of resource template {0} is incorrect!".format(resource))
+            schema = self.heat.resource_types.generate_template(resource)
+            msg = "Schema of resource template {0} is incorrect!"
+            self.assertIsInstance(schema, dict, msg.format(resource))
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
@@ -167,14 +195,19 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        with open('Templates/empty_heat_templ.yaml', 'r') as f:
+        file_name = './mos_tests/heat/templates/empty_heat_templ.yaml'
+        with open(file_name, 'r') as f:
             template = f.read()
         stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'}, 'timeout_mins': 60}
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': 60}
         self.heat.stacks.create(**stack_data)
-        self.assertTrue(common_functions.check_stack_status(stack_name, self.heat, 'CREATE_COMPLETE'))
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE'))
         common_functions.clean_stack(stack_name, self.heat)
-        self.assertNotIn(stack_name, [s.stack_name for s in self.heat.stacks.list()])
+        stacks = [s.stack_name for s in self.heat.stacks.list()]
+        self.assertNotIn(stack_name, stacks)
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states

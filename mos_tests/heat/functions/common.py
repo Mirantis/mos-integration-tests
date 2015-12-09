@@ -17,10 +17,12 @@ def clean_stack(stack_name, heat):
 
 def check_stack_status(stack_name, heat, status):
     if check_stack(stack_name, heat):
-        stack_status = [s.stack_status for s in heat.stacks.list() if s.stack_name == stack_name][0]
+        stack_status = [s.stack_status for s in heat.stacks.list()
+                        if s.stack_name == stack_name][0]
         while stack_status.find('IN_PROGRESS') != -1:
             sleep(1)
-            stack_status = [s.stack_status for s in heat.stacks.list() if s.stack_name == stack_name][0]
+            stack_status = [s.stack_status for s in heat.stacks.list()
+                            if s.stack_name == stack_name][0]
         if stack_status == status:
             return True
         return False
@@ -42,7 +44,8 @@ def create_stack(heatclient, stack_name, template, parameters={}):
     uid = stack['stack']['id']
 
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
-    timeout = time() + 60 * timeout_value  # default: 10 minutes of timeout to change stack status
+    # default: 10 minutes of timeout to change stack status
+    timeout = time() + 60 * timeout_value
     while stack['stack_status'] == 'CREATE_IN_PROGRESS':
         stack = heatclient.stacks.get(stack_id=uid).to_dict()
         if time() > timeout:
@@ -52,7 +55,8 @@ def create_stack(heatclient, stack_name, template, parameters={}):
 
     # Check that final status of a newly created stack is 'CREATE_COMPLETE'
     if stack['stack_status'] != 'CREATE_COMPLETE':
-        raise Exception("ERROR: Stack is not in 'CREATE_COMPLETE' state:\n{0}".format(stack))
+        raise Exception("ERROR: Stack is not in 'CREATE_COMPLETE' "
+                        "state:\n{0}".format(stack))
     return uid
 
 
@@ -65,7 +69,8 @@ def delete_stack(heatclient, uid):
     heatclient.stacks.delete(uid)
 
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
-    timeout = time() + 60 * timeout_value   # default: 10 minutes of timeout to change stack status
+    # default: 10 minutes of timeout to change stack status
+    timeout = time() + 60 * timeout_value
     while stack['stack_status'] == 'DELETE_IN_PROGRESS':
         stack = heatclient.stacks.get(stack_id=uid).to_dict()
         if time() > timeout:
@@ -75,4 +80,5 @@ def delete_stack(heatclient, uid):
 
     # Check that final status of a newly deleted stack is 'DELETE_COMPLETE'
     if stack['stack_status'] != 'DELETE_COMPLETE':
-        raise Exception("ERROR: Stack is not in 'DELETE_COMPLETE' state:\n{0}".format(stack))
+        raise Exception("ERROR: Stack is not in 'DELETE_COMPLETE' "
+                        "state:\n{0}".format(stack))
