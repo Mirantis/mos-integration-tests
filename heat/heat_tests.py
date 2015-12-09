@@ -77,28 +77,11 @@ class HeatIntegrationTests(unittest.TestCase):
         """
 
         # Variables
-        # TODO :akoryagin: Shall we pass URL in this way?
-        template_url = 'https://raw.githubusercontent.com/openstack/rally/master/samples/tasks/scenarios/heat/' \
-                       'templates/resource_group.yaml.template'
+        # TODO :akoryagin: Be sure that this template file will be put on controller during test preparation
+        file_name = './Templates/stack_create_template.yaml'  # File with template for stack creation
+
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])  # Like: 'Test_1449484927'
         timeout_value = 10  # Timeout in minutes to wait for stack status change
-
-        def get_template_from_url(url):
-            """ Read template from url from internet
-                    :param url: URL of a template file in internet
-                    :return: Content of a template file
-            """
-            try:
-                response = urllib2.urlopen(url)
-            except urllib2.HTTPError, e:
-                raise Exception('Can not get template from URL. HTTPError = {0}.\n\tURL = "{1}"'.format(str(e.code), url))
-            except urllib2.URLError, e:
-                raise Exception('Can not get template from URL. URLError = {0}.\n\tURL = "{1}"'.format(str(e.reason), url))
-            except Exception:
-                raise Exception('Can not get template from URL:\n\t{0}'.format(url))
-            # If all ok:
-            template_content = response.read()
-            return template_content
 
         def create_stack(heatclient, stack_name, template):
             """ Create a stack from template and check STATUS == CREATE_COMPLETE
@@ -134,10 +117,10 @@ class HeatIntegrationTests(unittest.TestCase):
                     :param heatclient: Heat API client connection point
                     :param uid:        UID of stack
             """
-            stack = heatclient.stacks.delete(uid)
+            heatclient.stacks.delete(uid)
 
             stack = heatclient.stacks.get(stack_id=uid).to_dict()
-            timeout = time.time() + 60 * timeout_value  # default: 10 minutes of timeout to change stack status
+            timeout = time.time() + 60 * timeout_value   # default: 10 minutes of timeout to change stack status
             while stack['stack_status'] == 'DELETE_IN_PROGRESS':
                 stack = heatclient.stacks.get(stack_id=uid).to_dict()
                 if time.time() > timeout:
@@ -152,8 +135,12 @@ class HeatIntegrationTests(unittest.TestCase):
             )
 
         # - 1 -
-        # Get Heat stack-create template from URL
-        template_content = get_template_from_url(template_url)
+        # Read Heat stack-create template from file
+        try:
+            with open(file_name, 'r') as template:
+                template_content = template.read()
+        except IOError:
+            raise Exception("ERROR: can not find template-file [{0}] on controller or read data".format(file_name))
 
         # - 2 -
         # Create new stack
