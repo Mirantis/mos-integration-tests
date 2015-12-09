@@ -22,6 +22,17 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 logger.setLevel(logging.INFO)
 
+_boolean_states = {'1': True, 'yes': True, 'true': True, 'on': True,
+                   '0': False, 'no': False, 'false': False, 'off': False}
+
+def get_var_as_bool(name, default):
+    value = os.environ.get(name, '')
+    return _boolean_states.get(value.lower(), default)
+
+PATH_TO_CERT = os.environ.get('PATH_TO_CERT', os.path.join(
+    SSL_CERTS_DIR, 'ca.crt'))
+DISABLE_SSL = get_var_as_bool('DISABLE_SSL', False)
+
 LOGS_DIR = os.environ.get('LOGS_DIR', os.getcwd())
 
 os.environ["ENV_NAME"] = "some_environment"
