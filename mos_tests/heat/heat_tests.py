@@ -131,8 +131,7 @@ class HeatIntegrationTests(unittest.TestCase):
             2. Update stack parameter
         """
         stack_name = 'empty_543337'
-        with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
-            template_content = template_file.read()
+        template_content = self.read_template('empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'string'})
@@ -217,8 +216,7 @@ class HeatIntegrationTests(unittest.TestCase):
              3. Launch heat stack-list and check 'CHECK_COMPLETE' status
         """
         stack_name = 'stack_to_check_543339'
-        with open(r'./Templates/empty_heat_templ.yaml', 'r') as template_file:
-            template_content = template_file.read()
+        template_content = self.read_template('empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'just text'})
