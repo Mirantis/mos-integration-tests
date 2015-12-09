@@ -79,7 +79,7 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         # Variables
         # Be sure that this template file will be put on controller during test preparation
-        file_name = './templates/stack_create_template.yaml'          # File with template for stack creation
+        file_name = './mos_tests/heat/templates/stack_create_template.yaml' # File with template for stack creation
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])   # Like: 'Test_1449484927'
 
         # - 1 -
@@ -107,7 +107,7 @@ class HeatIntegrationTests(unittest.TestCase):
         # TODO Alexandra Allakhverdieva: Check about possibility to use common functions
         # Stack creation
         stack_name = 'empty'
-        with open(r'./templates/empty_heat_template.yaml', 'r') as template_file:
+        with open(r'./mos_tests/heat/templates/empty_heat_template.yaml', 'r') as template_file:
             template_content = template_file.read()
         d_initial = {'stack_name': stack_name, 'template': template_content, 'parameters': {'param': 'string'}}
         self.heat.stacks.create(**d_initial)
@@ -171,7 +171,6 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIsInstance(resource_template_schema, dict,
                                   "Schema of resource template {0} is incorrect!".format(resource))
 
-
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
             Steps:
@@ -184,7 +183,7 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        with open('templates/empty_heat_templ.yaml', 'r') as f:
+        with open('./mos_tests/heat/templates/empty_heat_templ.yaml', 'r') as f:
             template = f.read()
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': 'some_param_string'}, 'timeout_mins': 60}
