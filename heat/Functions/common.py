@@ -1,14 +1,23 @@
-from time import sleep
-from time import time
+from time import sleep, time
 
 
 def check_stack(stack_name, heat):
+    """ Check the presence of stack_name in stacks list
+            :param heat: Heat API client connection point
+            :param stack_name: Name of stack
+            :return True or False
+    """
     if stack_name in [s.stack_name for s in heat.stacks.list()]:
         return True
     return False
 
 
 def clean_stack(stack_name, heat):
+    """ Delete stack
+            :param heat: Heat API client connection point
+            :param stack_name: Name of stack
+            :return None
+    """
     if stack_name in [s.stack_name for s in heat.stacks.list()]:
         heat.stacks.delete(stack_name)
         while check_stack(stack_name, heat):
@@ -16,6 +25,12 @@ def clean_stack(stack_name, heat):
 
 
 def check_stack_status(stack_name, heat, status):
+    """ Check stack status
+            :param heat: Heat API client connection point
+            :param stack_name: Name of stack
+            :param status: Expected stack status
+            :return True or False
+    """
     if check_stack(stack_name, heat):
         stack_status = [s.stack_status for s in heat.stacks.list() if s.stack_name == stack_name][0]
         while stack_status.find('IN_PROGRESS') != -1:
