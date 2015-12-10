@@ -18,6 +18,7 @@ import unittest
 
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
+from neutronclient.v2_0 import client as neutron_client
 
 from mos_tests.heat.functions import common as common_functions
 
@@ -48,6 +49,13 @@ class HeatIntegrationTests(unittest.TestCase):
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
+
+        # Neutron connect
+        neutron = neutron_client.Client(username=OS_USERNAME,
+                                        password=OS_PASSWORD,
+                                        tenant_name=OS_TENANT_NAME,
+                                        auth_url=OS_AUTH_URL,
+                                        insecure=True)
 
     def read_template(self, template_name):
         """Read template file and return it content.
