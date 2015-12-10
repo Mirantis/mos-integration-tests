@@ -13,20 +13,47 @@
 #    under the License.
 """Virtual test env setup and so on."""
 from devops.models import Environment
+# TBD: replace the logger
+from tools.setting import logger
 
 
 class VrtualEnviroment(object):
     """Method to work with the virtual env over fuel-devops."""
 
     @staticmethod
-    def revert_snapshot(env_name, snapshot_name=''):
-        """Resume the env and revert the snapshot."""
-        # TBD checl the exception here
-        env = Environment.get(name=env_name)
+    def get_env(env_name=''):
+        """Find and return env by name.
+
+        If name is empty will try to find the last created env.
+        Will return None is failed to find any env at all.
+        """
+        env = None
+        try:
+            if env_name:
+                env = Environment.get(name=env_name)
+            else:
+                env = Environment.list_all()[-1]
+        except Exception as e:
+            logger.error('failed to find the last created enviroment{}'.
+                         format(e))
+        return env
+
+    @staticmethod
+    def revert_snapshot(env_name='', snapshot_name=''):
+        """Resume the env and revert the snapshot.
+
+        If the snapshot_name is empty
+        than just find the last created snaphost
+        Return True if the resume-revert is sucesfully done
+        False othervise.
+        """
+        env = VrtualEnviroment.get_env(env_name)
+        if not env:
+            logger.error('Can\'t find the env')
+            return False
+
         not_interested = ['ready', 'empty']
         snapshots = []
-        # If the snapshot_name is empty
-        # than just find the last created snaphost
         if not snapshot_name:
             for node in env.get_nodes():
                 for snapshot in node.get_snapshots():
@@ -34,6 +61,24 @@ class VrtualEnviroment(object):
                         snapshots.append(snapshot.name)
                         not_interested.append(snapshot.name)
             snapshot_name = snapshots[-1]
+        # TBD the calls below are non blocking once, need to add wait
+        # Newed to check the exceptions here as well
         env.resume(verbose=False)
-        # TBD check the exception here
         env.revert(snapshot_name, flag=False)
+        return True
+
+    @staticmethod
+    def get_admin_node_ip(env_name=''):
+        """Return IP of admin node for given env_name as a string.
+
+        Will return empty string if admin node was not found in env.
+        """
+        admin_ip = ''
+        env = VrtualEnviroment.get_env(env_name)
+        if not env:
+            logger.error('Can\'t find the env')
+        else:
+            for node in env.get_nodes():
+                if node.is_admin:
+                    admin_ip = node.get_ip_address_by_network_name('admin')
+        return admin_ip
