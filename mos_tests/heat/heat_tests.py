@@ -263,7 +263,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
-        
+
             Steps:
              1. Create new stack
              2. Launch heat action-check stack_name
