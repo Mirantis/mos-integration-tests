@@ -498,7 +498,8 @@ class HeatIntegrationTests(unittest.TestCase):
             Steps:
              1. Create stack using template.
              2. Check id of created image.
-             3. Update stack template: disk_format = 'ami',  container_format = 'ami'
+             3. Update stack template: disk_format = 'ami',
+                                       container_format = 'ami'
              4. Update stack.
              5. Check id of updated image.
         """
@@ -506,17 +507,24 @@ class HeatIntegrationTests(unittest.TestCase):
         template_name = 'cirros_image_tmpl.yaml'
         template_path = os.path.join(self.templates_dir, template_name)
         try:
-            create_template = common_functions.read_template(self.templates_dir, template_name)
-            sid = common_functions.create_stack(self.heat, stack_name, create_template)
+            create_template = common_functions.read_template(
+                self.templates_dir, template_name)
+            sid = common_functions.create_stack(self.heat, stack_name,
+                                                create_template)
             first_resource_id = common_functions.get_resource_id(self.heat, sid)
             format_change = {'disk_format': 'ami', 'container_format': 'ami'}
-            common_functions.update_template_file(template_path, 'format', **format_change)
-            update_template = common_functions.read_template(self.templates_dir, template_name)
+            common_functions.update_template_file(template_path, 'format',
+                                                  **format_change)
+            update_template = common_functions.read_template(self.templates_dir,
+                                                             template_name)
             common_functions.update_stack(self.heat, sid, update_template)
             second_resource_id = common_functions.get_resource_id(self.heat, sid)
             self.assertNotEqual(first_resource_id, second_resource_id,
-                                msg='Resource id should be changed after modifying stack')
+                                msg='Resource id should be changed'
+                                    ' after modifying stack')
         finally:
             common_functions.delete_stack(self.heat, sid)
-            back_format_change = {'disk_format': 'qcow2', 'container_format': 'bare'}
-            common_functions.update_template_file(template_path, 'format', **back_format_change)
+            back_format_change = {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+            common_functions.update_template_file(template_path, 'format',
+                                                  **back_format_change)
