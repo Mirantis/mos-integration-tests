@@ -65,10 +65,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check count of resources.
-             3. Check that list of resources contains required resources.
+                1. Get list of Heat resources.
+                2. Check count of resources.
+                3. Check that list of resources contains required resources.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -85,14 +86,15 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543347_HeatCreateStack(self):
         """ This test performs creation of a new stack with
             a help of Heat. And then delete it.
+
             Steps:
-            1. Read template from URL
-            2. Create new stack.
-                + Check that stack became from
-                  'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
-            3. Delete created stack
-                + Check that stack became from
-                  'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+                1. Read template from URL
+                2. Create new stack.
+                    + Check that stack became from
+                      'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+                3. Delete created stack
+                    + Check that stack became from
+                      'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
         https://mirantis.testrail.com/index.php?/cases/view/543347
         [Alexander Koryagin]
@@ -184,9 +186,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check that all types of resources have correct representation.
+                1. Get list of Heat resources.
+                2. Check that all types of resources have correct \
+                    representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -199,10 +203,11 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543330_HeatResourceTypeTemplate(self):
         """ This test case checks representation of templates for all Heat
             resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check that templates for all resources have correct
-                representation.
+                1. Get list of Heat resources.
+                2. Check that templates for all resources have correct
+                    representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -214,11 +219,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
+
             Steps:
-             1. Create stack using template file empty_heat_templ.yaml.
-             2. Check that the stack is in the list of stacks
-             3. Delete the stack.
-             4. Check that the stack is absent in the list of stacks
+                1. Create stack using template file empty_heat_templ.yaml.
+                2. Check that the stack is in the list of stacks
+                3. Delete the stack.
+                4. Check that the stack is absent in the list of stacks
         """
         stack_name = 'empty_stack'
         if common_functions.check_stack(stack_name, self.heat):

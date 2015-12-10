@@ -1,7 +1,13 @@
 pytest
-python-keystoneclient>=0.3.2
+pytest-xdist
+tox
+sphinx==1.3.1
+requests>=2.2.0
+python-glanceclient==0.17.1
+python-keystoneclient>=2.0.0
 python-novaclient>=2.15.0
+python-cinderclient>=1.0.5
 python-neutronclient>=2.0
 python-heatclient>=0.2.12
-sphinx==1.3.1
-tox
+python-fuelclient
+git+git://github.com/openstack/fuel-devops.git@2.9.13
