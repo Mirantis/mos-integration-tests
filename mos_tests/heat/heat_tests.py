@@ -263,6 +263,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
+        
             Steps:
              1. Create new stack
              2. Launch heat action-check stack_name
@@ -293,6 +294,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543341_ShowStackEventList(self):
         """ This test checks list events for a stack
+
             Steps:
              1. Create new stack
              2. Launch heat event-list stack_name
@@ -340,6 +342,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543342_ShowInfoOfSpecifiedStackEvent(self):
         """ This test checks info about stack event
+
             Steps:
              1. Create new stack
              2. Launch heat event-list stack_name
