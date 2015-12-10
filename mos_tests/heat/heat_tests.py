@@ -493,6 +493,63 @@ class HeatIntegrationTests(unittest.TestCase):
         result = self.heat.stacks.validate(**template_data)
         self.assertIsInstance(result, dict)
 
+    def test_543340_StackResumeSuspend(self):
+        """ Suspend and resume stack
+            (with its resources for which that feature works)
+            Steps:
+             1. Create new stack
+             2. Launch heat action-suspend stack_name. Check status
+             3. Launch heat action-resume stack_name. Check status
+        """
+
+        # Create stack with resource
+        stack_name = 'stack_to_suspend_resume_543340'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'resource_group_template.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content)
+
+        # Suspend stack, check statuses of stack and its resources
+        self.heat.actions.suspend(stack_id)
+        timeout = time.time() + 60
+        while True:
+            status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
+            if status == 'SUSPEND_COMPLETE':
+                break
+            elif time.time() > timeout:
+                raise AssertionError(
+                    "Unable to find stack in 'SUSPEND_COMPLETE' state")
+            else:
+                time.sleep(1)
+        res = self.heat.resources.list(stack_id)
+        res_states = {r.resource_name: r.resource_status for r in res}
+        for name, status in res_states.items():
+            self.assertEqual(status, 'SUSPEND_COMPLETE',
+                             "Resource '{0}' has '{1}' "
+                             "status instead of 'SUSPEND_COMPLETE'"
+                             .format(name, status))
+
+        # Resume stack, check statuses of stack and its resources
+        self.heat.actions.resume(stack_id)
+        timeout = time.time() + 60
+        while True:
+            status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
+            if status == 'RESUME_COMPLETE':
+                break
+            elif time.time() > timeout:
+                raise AssertionError(
+                    "Unable to find stack in 'RESUME_COMPLETE' state")
+            else:
+                time.sleep(1)
+        res = self.heat.resources.list(stack_id)
+        res_states = {r.resource_name: r.resource_status for r in res}
+        for name, status in res_states.items():
+            self.assertEqual(status, 'RESUME_COMPLETE',
+                             "Resource '{0}' has '{1}' "
+                             "status instead of 'RESUME_COMPLETE'"
+                             .format(name, status))
+        common_functions.delete_stack(self.heat, stack_id)
+
     def test_543351_HeatStackUpdateReplace(self):
         """ This test case checks change stack id after stack update.
             Steps:
@@ -509,16 +566,18 @@ class HeatIntegrationTests(unittest.TestCase):
         try:
             create_template = common_functions.read_template(
                 self.templates_dir, template_name)
-            sid = common_functions.create_stack(self.heat, stack_name,
-                                                create_template)
-            first_resource_id = common_functions.get_resource_id(self.heat, sid)
+            sid = common_functions.create_stack(
+                self.heat, stack_name, create_template)
+            first_resource_id = common_functions.get_resource_id(
+                self.heat, sid)
             format_change = {'disk_format': 'ami', 'container_format': 'ami'}
-            common_functions.update_template_file(template_path, 'format',
-                                                  **format_change)
-            update_template = common_functions.read_template(self.templates_dir,
-                                                             template_name)
+            common_functions.update_template_file(
+                template_path, 'format', **format_change)
+            update_template = common_functions.read_template(
+                self.templates_dir, template_name)
             common_functions.update_stack(self.heat, sid, update_template)
-            second_resource_id = common_functions.get_resource_id(self.heat, sid)
+            second_resource_id = common_functions.get_resource_id(
+                self.heat, sid)
             self.assertNotEqual(first_resource_id, second_resource_id,
                                 msg='Resource id should be changed'
                                     ' after modifying stack')
@@ -526,5 +585,5 @@ class HeatIntegrationTests(unittest.TestCase):
             common_functions.delete_stack(self.heat, sid)
             back_format_change = {'disk_format': 'qcow2',
                                   'container_format': 'bare'}
-            common_functions.update_template_file(template_path, 'format',
-                                                  **back_format_change)
+            common_functions.update_template_file(
+                template_path, 'format', **back_format_change)
