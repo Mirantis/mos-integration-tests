@@ -318,8 +318,9 @@ class HeatIntegrationTests(unittest.TestCase):
         """ This test case checks representation of template of created stack.
 
             Steps:
-             1. Create stack using template file empty_heat_templ.yaml.
-             2. Check that template of created stack has correct representation
+                1. Create stack using template file empty_heat_templ.yaml.
+                2. Check that template of created stack has correct
+                 representation.
         """
         stack_name = 'empty_stack'
         if common_functions.check_stack(stack_name, self.heat):
@@ -463,7 +464,8 @@ class HeatIntegrationTests(unittest.TestCase):
                         'parameters': parameters}
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
-        template = self.read_template('empty_heat_templ.yaml')
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': parameter}}
         output = self.heat.stacks.preview(**stack_data)
@@ -477,3 +479,16 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(len(output.links[0]), 2)
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
+
+    def test_543343_HeatStackTemplateValidate(self):
+        """ This test case checks representation of template file.
+
+            Steps:
+                1. Check that selected template file has correct
+                 representation.
+        """
+        template_content = common_functions.read_template(
+            self.templates_dir, 'heat_create_nova_stack_template.yaml')
+        template_data = {'template': template_content}
+        result = self.heat.stacks.validate(**template_data)
+        self.assertIsInstance(result, dict)
