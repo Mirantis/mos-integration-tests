@@ -253,3 +253,4 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertIn(stack_name, resources,
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
+        common_functions.delete_stack(self.heat, stack_id)
