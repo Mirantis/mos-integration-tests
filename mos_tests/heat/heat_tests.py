@@ -252,9 +252,13 @@ class HeatIntegrationTests(unittest.TestCase):
         with open('templates/empty_heat_templ.yaml', 'r') as f:
             template = f.read()
         stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'}, 'timeout_mins': 20}
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': 20}
         output = self.heat.stacks.create(**stack_data)
-        self.assertIn(output['stack']['id'], [s.id for s in self.heat.stacks.list()])
-        self.assertTrue(common_functions.check_stack_status(stack_name, self.heat, 'CREATE_COMPLETE'))
+        stacks_id = [s.id for s in self.heat.stacks.list()]
+        self.assertIn(output['stack']['id'], stacks_id)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE'))
 
 
