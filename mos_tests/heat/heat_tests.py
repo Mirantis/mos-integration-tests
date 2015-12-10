@@ -35,17 +35,17 @@ class HeatIntegrationTests(unittest.TestCase):
         OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
-        keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
+        self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
                                           username=OS_USERNAME,
                                           password=OS_PASSWORD,
                                           tenat_name=OS_TENANT_NAME,
                                           project_name=OS_PROJECT_NAME)
-        services = keystone.service_catalog
+        services = self.keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
                                          endpoint_type='internalURL')
 
         self.heat = heat_client(endpoint=heat_endpoint,
-                                token=keystone.auth_token)
+                                token=self.keystone.auth_token)
 
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
@@ -443,3 +443,37 @@ class HeatIntegrationTests(unittest.TestCase):
         # - 6 -
         # Delete stack
         common_functions.delete_stack(self.heat, uid)
+
+    def test_543332_HeatStackPreview(self):
+        """ This test case previews a stack.
+
+            Steps:
+             1. Execute stack preview.
+             2. Check output result.
+        """
+        stack_name = 'empty__543332'
+        parameter = 'some_param_string'
+        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+                      'OS::stack_id': 'None', 'OS::stack_name': stack_name,
+                      'param': parameter}
+        correct_data = {'description': 'Sample template',
+                        'stack_name': stack_name,
+                        'disable_rollback': True,
+                        'template_description': 'Sample template',
+                        'parameters': parameters}
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+        template = self.read_template('empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template,
+                      'parameters': {'param': parameter}}
+        output = self.heat.stacks.preview(**stack_data)
+        preview_data = {'description': output.description,
+                        'stack_name': output.stack_name,
+                        'disable_rollback': output.disable_rollback,
+                        'template_description': output.template_description,
+                        'parameters': output.parameters}
+        self.assertDictEqual(preview_data, correct_data)
+        self.assertEqual(len(output.links), 1)
+        self.assertEqual(len(output.links[0]), 2)
+        self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
+        self.assertEqual(output.links[0]['rel'], 'self')
