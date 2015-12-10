@@ -15,8 +15,10 @@
 import os
 import time
 import unittest
+
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
+
 from mos_tests.heat.functions import common as common_functions
 
 
@@ -46,20 +48,6 @@ class HeatIntegrationTests(unittest.TestCase):
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
-
-    def read_template(self, template_name):
-        """Read template file and return it content.
-
-        :param template_name: name of template,
-            for ex.: empty_heat_template.yaml
-        :return: template file content
-        """
-        template_path = os.path.join(self.templates_dir, template_name)
-        try:
-            with open(template_path) as template:
-                return template.read()
-        except IOError as e:
-            raise IOError('Can\'t read template: {}'.format(e))
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
@@ -131,7 +119,8 @@ class HeatIntegrationTests(unittest.TestCase):
             2. Update stack parameter
         """
         stack_name = 'empty_543337'
-        template_content = self.read_template('empty_heat_templ.yaml')
+        template_content = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'string'})
@@ -198,7 +187,8 @@ class HeatIntegrationTests(unittest.TestCase):
         timeout = 20
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
-        template = self.read_template('empty_heat_templ.yaml')
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': 'some_param_string'},
                       'timeout_mins': timeout}
@@ -222,7 +212,8 @@ class HeatIntegrationTests(unittest.TestCase):
         timeout = 20
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
-        template = self.read_template('empty_heat_templ.yaml')
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': 'some_param_string'},
                       'timeout_mins': timeout}
@@ -270,7 +261,8 @@ class HeatIntegrationTests(unittest.TestCase):
              3. Launch heat stack-list and check 'CHECK_COMPLETE' status
         """
         stack_name = 'stack_to_check_543339'
-        template_content = self.read_template('empty_heat_templ.yaml')
+        template_content = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'just text'})
@@ -300,7 +292,8 @@ class HeatIntegrationTests(unittest.TestCase):
              2. Launch heat event-list stack_name
         """
         stack_name = 'stack_to_show_event_543341'
-        template_content = self.read_template('empty_heat_templ.yaml')
+        template_content = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'just text'})
@@ -323,7 +316,8 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        template_content = self.read_template('empty_heat_templ.yaml')
+        template_content = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template_content,
                       'parameters': {'param': 'some_param_string'},
                       'timeout_mins': 60}
@@ -350,7 +344,8 @@ class HeatIntegrationTests(unittest.TestCase):
                 for specified event and check result
         """
         stack_name = 'stack_to_show_event_info_543342'
-        template_content = self.read_template('empty_heat_templ.yaml')
+        template_content = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 123})
