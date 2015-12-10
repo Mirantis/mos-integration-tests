@@ -71,7 +71,7 @@ def create_stack(heatclient, stack_name, template, parameters={}):
         if time() > timeout:
             break
         else:
-            sleep(5)
+            sleep(1)
 
     # Check that final status of a newly created stack is 'CREATE_COMPLETE'
     if stack['stack_status'] != 'CREATE_COMPLETE':
@@ -96,7 +96,7 @@ def delete_stack(heatclient, uid):
         if time() > timeout:
             break
         else:
-            sleep(5)
+            sleep(1)
 
     # Check that final status of a newly deleted stack is 'DELETE_COMPLETE'
     if stack['stack_status'] != 'DELETE_COMPLETE':
