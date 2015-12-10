@@ -260,3 +260,31 @@ class HeatIntegrationTests(unittest.TestCase):
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543344_HeatStackTemplateShow(self):
+        """ This test case checks representation of template of created stack.
+
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml.
+             2. Check that template of created stack has correct representation
+        """
+        stack_name = 'empty_stack'
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template_content,
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': 60}
+        self.heat.stacks.create(**stack_data)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE'))
+        stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()}
+        stack_id = stack_dict[stack_name]
+        stack_template = self.heat.stacks.template(stack_id)
+        self.assertIsInstance(stack_template, dict)
+
+        common_functions.clean_stack(stack_name, self.heat)
+        stacks = [s.stack_name for s in self.heat.stacks.list()]
+        self.assertNotIn(stack_name, stacks)
