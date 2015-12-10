@@ -16,6 +16,10 @@
     "internal_subnet" : {
       "Description" : "UUID of an existing internal subnet",
       "Type" : "String"
+    },
+    "internal_subnet_ip" : {
+      "Description" : "IP for subnet ",
+      "Type" : "String"
     }
   },
 
@@ -27,7 +31,7 @@
         "network_id": { "Ref" : "internal_network" },
         "fixed_ips": [{
           "subnet_id": { "Ref" : "internal_subnet" },
-          "ip_address": "10.0.0.10"
+          "ip_address": { "Ref" : "internal_subnet_ip" }
         }]
       }
     },

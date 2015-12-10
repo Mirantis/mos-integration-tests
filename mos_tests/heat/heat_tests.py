@@ -15,6 +15,7 @@
 import os
 import time
 import unittest
+from random import randint
 
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
@@ -51,7 +52,7 @@ class HeatIntegrationTests(unittest.TestCase):
             'templates')
 
         # Neutron connect
-        neutron = neutron_client.Client(username=OS_USERNAME,
+        self.neutron = neutron_client.Client(username=OS_USERNAME,
                                         password=OS_PASSWORD,
                                         tenant_name=OS_TENANT_NAME,
                                         auth_url=OS_AUTH_URL,
@@ -245,3 +246,75 @@ class HeatIntegrationTests(unittest.TestCase):
         common_functions.clean_stack(stack_name, self.heat)
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
+
+    def test_543345_HeatCreateStackAWS(self):
+        """ This test creates stack using AWS format template
+            Steps:
+             1. Connect to Neutron and get ID of internal_network
+             2. Get ID of external_network
+             3. Get ID of internal_subnet of internal_network
+             4. Find IP for internal_subnet
+             5. Create stack
+             6. Delete stack
+
+        https://mirantis.testrail.com/index.php?/cases/view/543345
+        [Alexander Koryagin]
+        """
+        # Prepare new name. Like: 'Test_1449484927'
+        new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
+
+        # Get networks from Neutron
+        networks = self.neutron.list_networks()
+
+        # Check if Neutron has more then 1 network. We need intern and extern.
+        if len(networks['networks']) < 2:
+            raise AssertionError("ERROR: Need to have at least 2 networks")
+
+        # - 1,2,3 -
+        # Get IDs of networks
+        network_1_id = networks['networks'][1]['id']
+        network_1_subnet = networks['networks'][1]['subnets'][0]
+        network_2_id = networks['networks'][0]['id']
+
+        # - 4 -
+        # Get list of occupied IPs in "network_1_id"
+        neutron_list_ports = self.neutron.list_ports()['ports']
+        occupied_ips = [x['fixed_ips'][0]['ip_address']
+                        for x in neutron_list_ports
+                        if network_1_subnet in x['fixed_ips'][0]['subnet_id']]
+
+        # Cut last part of IPs: '192.168.111.3 --> 192.168.111._'
+        ips_without_last_part = [".".join(x.split('.')[0:-1]) + '.'
+                                 for x in occupied_ips]
+
+        # Get unique IP without last part: '192.168.111._'
+        seen = set()
+        seen_add = seen.add
+        ip_no_last_part = [x for x in ips_without_last_part
+                           if not (x in seen or seen_add(x))]
+        ip_no_last_part = ip_no_last_part[0]
+
+        # Generate new IP and check that it is free
+        internal_subnet_ip = ip_no_last_part + str(randint(100, 240))
+        while internal_subnet_ip in occupied_ips:
+            internal_subnet_ip = ip_no_last_part + str(randint(100, 240))
+
+        # - 5 -
+        # Prepare parameters
+        parameters = {'internal_network': network_1_id,
+                      'internal_subnet': network_1_subnet,
+                      'internal_subnet_ip': internal_subnet_ip,
+                      'external_network': network_2_id}
+
+        # Read template
+        template = self.read_template('Heat_template_AWL_543345.yaml')
+
+        # Create stack
+        uid = common_functions.create_stack(self.heat,
+                                            new_stack_name,
+                                            template,
+                                            parameters)
+        # - 6 -
+        # Delete stack
+        common_functions.delete_stack(self.heat, uid)
+

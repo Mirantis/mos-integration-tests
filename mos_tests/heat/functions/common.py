@@ -28,8 +28,9 @@ def check_stack_status(stack_name, heat, status):
         return False
 
 
-def create_stack(heatclient, stack_name, template):
+def create_stack(heatclient, stack_name, template, parameters={}):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
+            :param parameters: parameters from template
             :param heatclient: Heat API client connection point
             :param stack_name: Name of a new stack
             :param template:   Content of a template name
@@ -39,7 +40,7 @@ def create_stack(heatclient, stack_name, template):
     stack = heatclient.stacks.create(
         stack_name=stack_name,
         template=template,
-        parameters={})
+        parameters=parameters)
     uid = stack['stack']['id']
 
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
