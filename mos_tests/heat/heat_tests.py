@@ -194,23 +194,72 @@ class HeatIntegrationTests(unittest.TestCase):
                 3. Delete the stack.
                 4. Check that the stack is absent in the list of stacks
         """
-        stack_name = 'empty_stack'
+        stack_name = 'empty_543335'
+        timeout = 20
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
-
-        file_name = './mos_tests/heat/templates/empty_heat_templ.yaml'
-        with open(file_name, 'r') as f:
-            template = f.read()
+        template = self.read_template('empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template,
                       'parameters': {'param': 'some_param_string'},
-                      'timeout_mins': 60}
+                      'timeout_mins': timeout}
         self.heat.stacks.create(**stack_data)
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
-                                                            'CREATE_COMPLETE'))
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
         common_functions.clean_stack(stack_name, self.heat)
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
+
+    def test_543333_HeatStackCreateWithTemplate(self):
+        """ This test case checks creation of stack.
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml.
+             2. Check that the stack is in the list of stacks
+             3. Check that stack status is 'CREATE_COMPLETE'
+        """
+        stack_name = 'empty__543333'
+        timeout = 20
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+        template = self.read_template('empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template,
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': timeout}
+        output = self.heat.stacks.create(**stack_data)
+        stacks_id = [s.id for s in self.heat.stacks.list()]
+        self.assertIn(output['stack']['id'], stacks_id)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        common_functions.clean_stack(stack_name, self.heat)
+
+    def test_543334_HeatStackCreateWithURL(self):
+        """ This test case checks creation of stack using template URL.
+            Steps:
+             1. Create stack using template URL.
+             2. Check that the stack is in the list of stacks
+             3. Check that stack status is 'CREATE_COMPLETE'
+        """
+        stack_name = 'empty__543334'
+        template_url = 'https://raw.githubusercontent.com/tkuterina/' \
+                       'mos-integration-tests/master/mos_tests/heat/' \
+                       'templates/empty_heat_templ.yaml'
+        timeout = 20
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+        stack_data = {'stack_name': stack_name, 'template_url': template_url,
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': timeout}
+        output = self.heat.stacks.create(**stack_data)
+        stacks_id = [s.id for s in self.heat.stacks.list()]
+        self.assertIn(output['stack']['id'], stacks_id)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        common_functions.clean_stack(stack_name, self.heat)
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
