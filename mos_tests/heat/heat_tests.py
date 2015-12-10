@@ -468,7 +468,7 @@ class HeatIntegrationTests(unittest.TestCase):
                       'parameters': {'param': parameter}}
         output = self.heat.stacks.preview(**stack_data)
         preview_data = {'description': output.description,
-                        'stack_name':  output.stack_name,
+                        'stack_name': output.stack_name,
                         'disable_rollback': output.disable_rollback,
                         'template_description': output.template_description,
                         'parameters': output.parameters}
