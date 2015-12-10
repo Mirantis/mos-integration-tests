@@ -4,4 +4,9 @@ scp -rp ./../../mos_tests/ node-$CONTR_ID:~/
 
 ssh node-$CONTR_ID "export PYTHONPATH=.:$PYTHONPATH && source ~/openrc && nosetests mos_tests/heat/heat_tests.py --with-xunit --xunit-file=heat_tests_report.xml"
 scp node-$CONTR_ID:~/heat_tests_report.xml ~/
+
+# CleanUp
+ssh node-$CONTR_ID "\rm -rf ~/mos_tests"
+
+# Show command to view results
 echo -e "For test results see:\n\t# less ~/heat_tests_report.xml\n\t# xmllint --format ~/heat_tests_report.xml"

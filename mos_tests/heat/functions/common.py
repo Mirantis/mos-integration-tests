@@ -1,3 +1,4 @@
+import os
 from time import sleep, time
 
 
@@ -70,7 +71,7 @@ def create_stack(heatclient, stack_name, template, parameters={}):
         if time() > timeout:
             break
         else:
-            sleep(5)
+            sleep(1)
 
     # Check that final status of a newly created stack is 'CREATE_COMPLETE'
     if stack['stack_status'] != 'CREATE_COMPLETE':
@@ -95,9 +96,26 @@ def delete_stack(heatclient, uid):
         if time() > timeout:
             break
         else:
-            sleep(5)
+            sleep(1)
 
     # Check that final status of a newly deleted stack is 'DELETE_COMPLETE'
     if stack['stack_status'] != 'DELETE_COMPLETE':
         raise Exception("ERROR: Stack is not in 'DELETE_COMPLETE' "
                         "state:\n{0}".format(stack))
+
+
+def read_template(templates_dir, template_name):
+    """Read template file and return it content.
+
+    :param templates_dir: dir
+    :param template_name: name of template,
+        for ex.: empty_heat_template.yaml
+    :return: template file content
+    """
+
+    template_path = os.path.join(templates_dir, template_name)
+    try:
+        with open(template_path) as template:
+            return template.read()
+    except IOError as e:
+        raise IOError('Can\'t read template: {}'.format(e))
