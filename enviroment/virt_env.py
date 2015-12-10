@@ -14,10 +14,10 @@
 """Virtual test env setup and so on."""
 from devops.models import Environment
 # TBD: replace the logger
-from tools.setting import logger
+from tools.settings import logger
 
 
-class VrtualEnviroment(object):
+class VirtualEnviroment(object):
     """Method to work with the virtual env over fuel-devops."""
 
     @staticmethod
@@ -47,7 +47,7 @@ class VrtualEnviroment(object):
         Return True if the resume-revert is sucesfully done
         False othervise.
         """
-        env = VrtualEnviroment.get_env(env_name)
+        env = VirtualEnviroment.get_env(env_name)
         if not env:
             logger.error('Can\'t find the env')
             return False
@@ -74,7 +74,7 @@ class VrtualEnviroment(object):
         Will return empty string if admin node was not found in env.
         """
         admin_ip = ''
-        env = VrtualEnviroment.get_env(env_name)
+        env = VirtualEnviroment.get_env(env_name)
         if not env:
             logger.error('Can\'t find the env')
         else:
