@@ -101,7 +101,7 @@ class HeatIntegrationTests(unittest.TestCase):
         # controller during test preparation
 
         # File with template for stack creation
-        file_name = './mos_tests/heat/templates/stack_create_template.yaml'
+        file_name = './mos_tests/heat/templates/empty_heat_template_v2.yaml'
         # Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
 
