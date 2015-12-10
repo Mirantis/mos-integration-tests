@@ -248,10 +248,8 @@ class HeatIntegrationTests(unittest.TestCase):
         if common_functions.check_stack(stack_name, self.heat):
             common_functions.clean_stack(stack_name, self.heat)
 
-        file_name = './mos_tests/heat/templates/empty_heat_templ.yaml'
-        with open(file_name, 'r') as template_file:
-            template = template_file.read()
-        stack_data = {'stack_name': stack_name, 'template': template,
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template_content,
                       'parameters': {'param': 'some_param_string'},
                       'timeout_mins': 60}
         self.heat.stacks.create(**stack_data)
