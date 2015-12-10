@@ -11,7 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-"""Doc."""
+"""The module used to handle connection to the OS cluster."""
 
 import time
 
@@ -149,12 +149,12 @@ class OpenStackActions(object):
                     logger.info('The Security Group {} is not deletable'
                                  .format(sg))
 
-        # After some experiments the followin sequence for deleteion was found
-        # roter_interface and ports -> subnets -> routers -> nets
+        # After some experiments the following sequence for deletion was found
+        # router_interface and ports -> subnets -> routers -> nets
         # Delete router interafce and ports
         # TBD some ports are still kept after the cleanup.
         # Need to find why and delete them as well
-        # But it does not fail the executoin so far.
+        # But it does not fail the execution so far.
         for port in ports:
             try:
                 # TBD Looks like the port migh be used either by router or
