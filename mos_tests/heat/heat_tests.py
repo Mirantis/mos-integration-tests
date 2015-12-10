@@ -260,3 +260,80 @@ class HeatIntegrationTests(unittest.TestCase):
                                                             'CREATE_COMPLETE',
                                                             timeout))
         common_functions.clean_stack(stack_name, self.heat)
+
+    def test_543339_CheckStackResourcesStatuses(self):
+        """ This test case checks that stack resources are in expected states
+            Steps:
+             1. Create new stack
+             2. Launch heat action-check stack_name
+             3. Launch heat stack-list and check 'CHECK_COMPLETE' status
+        """
+        stack_name = 'stack_to_check_543339'
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'just text'})
+        self.heat.actions.check(stack_id)
+        timeout = time.time() + 10
+        while True:
+            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
+                          if s.stack_status == 'CHECK_COMPLETE'}
+            if stack_name in stack_dict.keys():
+                break
+            elif time.time() > timeout:
+                raise AssertionError(
+                    "Stack {0} is not in CHECK_COMPLETE state".format(
+                        stack_name))
+            else:
+                time.sleep(1)
+        self.assertIn(stack_name, stack_dict,
+                      "Stack {0} is not in CHECK_COMPLETE state".format(
+                          stack_name))
+        common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543341_ShowStackEventList(self):
+        """ This test checks list events for a stack
+            Steps:
+             1. Create new stack
+             2. Launch heat event-list stack_name
+        """
+        stack_name = 'stack_to_show_event_543341'
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'just text'})
+        event_list = self.heat.events.list(stack_id)
+        self.assertTrue(event_list, "NOK, event list is empty")
+        resources = [event.resource_name for event in event_list]
+        self.assertIn(stack_name, resources,
+                      "Event list doesn't contain at least one event for {0}"
+                      .format(stack_name))
+        common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543344_HeatStackTemplateShow(self):
+        """ This test case checks representation of template of created stack.
+
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml.
+             2. Check that template of created stack has correct representation
+        """
+        stack_name = 'empty_stack'
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template_content,
+                      'parameters': {'param': 'some_param_string'},
+                      'timeout_mins': 60}
+        self.heat.stacks.create(**stack_data)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE'))
+        stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()}
+        stack_id = stack_dict[stack_name]
+        stack_template = self.heat.stacks.template(stack_id)
+        self.assertIsInstance(stack_template, dict)
+
+        common_functions.clean_stack(stack_name, self.heat)
+        stacks = [s.stack_name for s in self.heat.stacks.list()]
+        self.assertNotIn(stack_name, stacks)
