@@ -24,6 +24,8 @@ from fuelclient import client
 class Environment(EnvironmentBase):
     """Extended fuelclient Environment model with some helpful methods"""
 
+    admin_ssh_keys = None
+
     def get_primary_controller_ip(self):
         """Return public ip of primary controller"""
         return self.get_network_data()['public_vip']
@@ -34,6 +36,31 @@ class Environment(EnvironmentBase):
             if node.data['fqdn'] == fqdn:
                 return node
 
+    def get_ssh_to_node(self, ip):
+        return SSHClient(
+            host=ip,
+            username='root',
+            private_keys=self.admin_ssh_keys
+        )
+
+    @property
+    def is_operational(self):
+        return self.status == 'operational'
+
+    @property
+    def is_ha(self):
+        return self.data['mode'] == 'ha_compact'
+
+    @property
+    def network_segmentation_type(self):
+        return self.get_network_data()[
+            'networking_parameters']['segmentation_type']
+
+    def get_nodes_by_role(self, role):
+        """Returns nodes by assigned role"""
+        return [x for x in self.get_all_nodes()
+                if role in x.data['roles']]
+
 
 class FuelClient(object):
     """Fuel API client"""
@@ -42,7 +69,7 @@ class FuelClient(object):
         self.admin_ip = ip
         self.ssh_login = ssh_login
         self.ssh_password = ssh_password
-        self._admin_keys = []
+        self._admin_keys = None
 
     @staticmethod
     def reconfigure_fuelclient(ip, login, password):
@@ -57,7 +84,9 @@ class FuelClient(object):
 
     def get_last_created_cluster(self):
         """Returns Environment instance for laset deployed cluster"""
-        return Environment.get_all()[-1]
+        env = Environment.get_all()[-1]
+        env.admin_ssh_keys = self.admin_keys
+        return env
 
     @property
     def admin_keys(self):
@@ -72,13 +101,3 @@ class FuelClient(object):
                     with remote.open(path) as f:
                         self._admin_keys.append(RSAKey.from_private_key(f))
         return self._admin_keys
-
-    def get_ssh_to_node(self, ip, username=None, password=None):
-        if username is None:
-            username = self.ssh_login
-        return SSHClient(
-            host=ip,
-            username=username,
-            password=password,
-            private_keys=self.admin_keys
-        )
