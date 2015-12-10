@@ -260,27 +260,3 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
                                                             'CREATE_COMPLETE'))
-
-    def test_543333_HeatStackCreateWithTemplate(self):
-        """ This test case checks creation of stack.
-            Steps:
-             1. Create stack using template file empty_heat_templ.yaml.
-             2. Check that the stack is in the list of stacks
-             3. Check that stack status is 'CREATE_COMPLETE'
-        """
-        stack_name = 'empty__543333'
-        if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
-
-        with open('templates/empty_heat_templ.yaml', 'r') as f:
-            template = f.read()
-        stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'},
-                      'timeout_mins': 20}
-        output = self.heat.stacks.create(**stack_data)
-        stacks_id = [s.id for s in self.heat.stacks.list()]
-        self.assertIn(output['stack']['id'], stacks_id)
-        self.assertTrue(common_functions.check_stack_status(stack_name,
-                                                            self.heat,
-                                                            'CREATE_COMPLETE'))
-
