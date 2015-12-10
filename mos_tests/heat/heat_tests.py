@@ -15,10 +15,8 @@
 import os
 import time
 import unittest
-
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
-
 from mos_tests.heat.functions import common as common_functions
 
 
@@ -237,3 +235,21 @@ class HeatIntegrationTests(unittest.TestCase):
                       "Stack {0} is not in CHECK_COMPLETE state".format(
                           stack_name))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543341_ShowStackEventList(self):
+        """ This test checks list events for a stack
+            Steps:
+             1. Create new stack
+             2. Launch heat event-list stack_name
+        """
+        stack_name = 'stack_to_show_event_543341'
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'just text'})
+        event_list = self.heat.events.list(stack_id)
+        self.assertTrue(event_list, "NOK, event list is empty")
+        resources = [event.resource_name for event in event_list]
+        self.assertIn(stack_name, resources,
+                      "Event list doesn't contain at least one event for {0}"
+                      .format(stack_name))
