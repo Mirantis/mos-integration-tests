@@ -24,22 +24,26 @@ def clean_stack(stack_name, heat):
             sleep(1)
 
 
-def check_stack_status(stack_name, heat, status):
+def check_stack_status(stack_name, heat, status, timeout=60):
     """ Check stack status
             :param heat: Heat API client connection point
             :param stack_name: Name of stack
             :param status: Expected stack status
+            :param timeout: Timeout for check operation
             :return True or False
     """
     if check_stack(stack_name, heat):
-        stack_status = [s.stack_status for s in heat.stacks.list()
-                        if s.stack_name == stack_name][0]
-        while stack_status.find('IN_PROGRESS') != -1:
-            sleep(1)
+        if check_stack(stack_name, heat):
+            start_time = time()
             stack_status = [s.stack_status for s in heat.stacks.list()
-                            if s.stack_name == stack_name][0]
-        if stack_status == status:
-            return True
+                        if s.stack_name == stack_name][0]
+            while stack_status.find('IN_PROGRESS') != -1 and time() < \
+                            start_time + 60*timeout:
+                sleep(1)
+                stack_status = [s.stack_status for s in heat.stacks.list()
+                                if s.stack_name == stack_name][0]
+            if stack_status == status:
+                return True
         return False
 
 
