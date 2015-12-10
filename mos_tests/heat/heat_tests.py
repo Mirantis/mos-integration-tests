@@ -254,3 +254,30 @@ class HeatIntegrationTests(unittest.TestCase):
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543342_ShowInfoOfSpecifiedStackEvent(self):
+        """ This test checks info about stack event
+            Steps:
+             1. Create new stack
+             2. Launch heat event-list stack_name
+             3. Launch heat event-show <NAME or ID> <RESOURCE> <EVENT>
+                for specified event and check result
+        """
+        stack_name = 'stack_to_show_event_info_543342'
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 123})
+        stack_status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
+        even_list = self.heat.events.list(stack_id)
+        self.assertTrue(even_list, "NOK, event list is empty")
+        event_to_show = even_list[-1]
+        resource_name, event_id = event_to_show.resource_name, event_to_show.id
+        event_info = self.heat.events.get(stack_id, resource_name, event_id)
+        self.assertEqual(event_info.resource_name, stack_name,
+                         "Expected resource name: {0}, actual: {1}"
+                         .format(event_info.resource_name, stack_id))
+        self.assertEqual(event_info.resource_status, stack_status,
+                         "Expected resource status: {0}, actual: {1}"
+                         .format(event_info.resource_status, stack_status))
+        common_functions.delete_stack(self.heat, stack_id)
