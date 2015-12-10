@@ -53,10 +53,10 @@ class HeatIntegrationTests(unittest.TestCase):
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
-                                        password=OS_PASSWORD,
-                                        tenant_name=OS_TENANT_NAME,
-                                        auth_url=OS_AUTH_URL,
-                                        insecure=True)
+                                             password=OS_PASSWORD,
+                                             tenant_name=OS_TENANT_NAME,
+                                             auth_url=OS_AUTH_URL,
+                                             insecure=True)
 
     def read_template(self, template_name):
         """Read template file and return it content.
