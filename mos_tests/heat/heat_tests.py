@@ -15,10 +15,8 @@
 import os
 import time
 import unittest
-
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
-
 from mos_tests.heat.functions import common as common_functions
 
 
@@ -65,10 +63,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check count of resources.
-             3. Check that list of resources contains required resources.
+                1. Get list of Heat resources.
+                2. Check count of resources.
+                3. Check that list of resources contains required resources.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -85,14 +84,15 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543347_HeatCreateStack(self):
         """ This test performs creation of a new stack with
             a help of Heat. And then delete it.
+
             Steps:
-            1. Read template from URL
-            2. Create new stack.
-                + Check that stack became from
-                  'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
-            3. Delete created stack
-                + Check that stack became from
-                  'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+                1. Read template from URL
+                2. Create new stack.
+                    + Check that stack became from
+                      'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+                3. Delete created stack
+                    + Check that stack became from
+                      'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
         https://mirantis.testrail.com/index.php?/cases/view/543347
         [Alexander Koryagin]
@@ -130,43 +130,15 @@ class HeatIntegrationTests(unittest.TestCase):
             1. Create stack using template file empty_heat_templ.yaml
             2. Update stack parameter
         """
-        # TODO Alexandra Allakhverdieva: Check about possibility to
-        # use common functions
-        # Stack creation
-        stack_name = 'empty'
-        file_name = r'./mos_tests/heat/templates/empty_heat_template.yaml'
-
-        with open(file_name, 'r') as template_file:
-            template_content = template_file.read()
-
-        d_initial = {'stack_name': stack_name, 'template': template_content,
-                     'parameters': {'param': 'string'}}
-        self.heat.stacks.create(**d_initial)
-        timeout = time.time() + 10
-
-        # stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
-        #               if s.stack_status == 'CREATE_COMPLETE'}
-        # self.assertIn(stack_name, stack_dict.keys(),
-        #                "Unable to find stack in 'CREATE_COMPLETE' state")
-        # Quick fix. Need to avoid duplicated code
-        while True:
-            stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()
-                          if s.stack_status == 'CREATE_COMPLETE'}
-            if stack_name in stack_dict.keys():
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Unable to find stack 'empty' in "
-                                     "'CREATE_COMPLETE' state")
-            else:
-                time.sleep(1)
-
-        # Stack update
-        stack_id = stack_dict[stack_name]
+        stack_name = 'empty_543337'
+        template_content = self.read_template('empty_heat_templ.yaml')
+        stack_id = common_functions.create_stack(self.heat, stack_name,
+                                                 template_content,
+                                                 {'param': 'string'})
         d_updated = {'stack_name': stack_name, 'template': template_content,
                      'parameters': {'param': 'string2'}}
         self.heat.stacks.update(stack_id, **d_updated)
         timeout = time.time() + 10
-
         while True:
             stack_dict_upd = {s.stack_name: s.id for s in
                               self.heat.stacks.list()
@@ -178,15 +150,15 @@ class HeatIntegrationTests(unittest.TestCase):
                                      "'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
-
-        # Clean-up
-        self.heat.stacks.delete(stack_id)
+        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check that all types of resources have correct representation.
+                1. Get list of Heat resources.
+                2. Check that all types of resources have correct \
+                    representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -199,10 +171,11 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543330_HeatResourceTypeTemplate(self):
         """ This test case checks representation of templates for all Heat
             resources.
+
             Steps:
-             1. Get list of Heat resources.
-             2. Check that templates for all resources have correct
-                representation.
+                1. Get list of Heat resources.
+                2. Check that templates for all resources have correct
+                    representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -214,11 +187,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
+
             Steps:
-             1. Create stack using template file empty_heat_templ.yaml.
-             2. Check that the stack is in the list of stacks
-             3. Delete the stack.
-             4. Check that the stack is absent in the list of stacks
+                1. Create stack using template file empty_heat_templ.yaml.
+                2. Check that the stack is in the list of stacks
+                3. Delete the stack.
+                4. Check that the stack is absent in the list of stacks
         """
         stack_name = 'empty_543335'
         timeout = 20
