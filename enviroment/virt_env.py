@@ -32,7 +32,13 @@ class VirtualEnviroment(object):
             if env_name:
                 env = Environment.get(name=env_name)
             else:
-                env = Environment.list_all()[-1]
+                # The call below returns QuerySet not a list
+                envs = Environment.list_all().order_by('created')
+                # QuerySet doesn't support the Negative indexing
+                # So just reverse it and get the first element
+                # which due to the order method above
+                # shoud be the last created env
+                env = envs.reverse()[0]
         except Exception as e:
             logger.error('failed to find the last created enviroment{}'.
                          format(e))
@@ -48,23 +54,23 @@ class VirtualEnviroment(object):
         False othervise.
         """
         env = VirtualEnviroment.get_env(env_name)
-        if not env:
-            logger.error('Can\'t find the env')
-            return False
-
         not_interested = ['ready', 'empty']
         snapshots = []
-        if not snapshot_name:
-            for node in env.get_nodes():
-                for snapshot in node.get_snapshots():
-                    if snapshot.name not in not_interested:
-                        snapshots.append(snapshot.name)
-                        not_interested.append(snapshot.name)
-            snapshot_name = snapshots[-1]
-        # TBD the calls below are non blocking once, need to add wait
-        # Newed to check the exceptions here as well
-        env.resume(verbose=False)
-        env.revert(snapshot_name, flag=False)
+        try:
+            if not snapshot_name:
+                for node in env.get_nodes():
+                    for snapshot in node.get_snapshots():
+                        if snapshot.name not in not_interested:
+                            snapshots.append(snapshot.name)
+                            not_interested.append(snapshot.name)
+                snapshot_name = snapshots[-1]
+            # TBD the calls below are non blocking once, need to add wait
+            env.resume(verbose=False)
+            env.revert(snapshot_name, flag=False)
+        except Exception as e:
+            logger.error('Can\'t revert snapshot due to error: {}'.
+                         format(e))
+            return False
         return True
 
     @staticmethod
