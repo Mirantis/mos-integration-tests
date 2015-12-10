@@ -511,14 +511,16 @@ class HeatIntegrationTests(unittest.TestCase):
                 self.templates_dir, template_name)
             sid = common_functions.create_stack(self.heat, stack_name,
                                                 create_template)
-            first_resource_id = common_functions.get_resource_id(self.heat, sid)
+            first_resource_id = common_functions.get_resource_id(self.heat,
+                                                                 sid)
             format_change = {'disk_format': 'ami', 'container_format': 'ami'}
             common_functions.update_template_file(template_path, 'format',
                                                   **format_change)
-            update_template = common_functions.read_template(self.templates_dir,
-                                                             template_name)
+            update_template = common_functions.read_template(
+                self.templates_dir, template_name)
             common_functions.update_stack(self.heat, sid, update_template)
-            second_resource_id = common_functions.get_resource_id(self.heat, sid)
+            second_resource_id = common_functions.get_resource_id(self.heat,
+                                                                  sid)
             self.assertNotEqual(first_resource_id, second_resource_id,
                                 msg='Resource id should be changed'
                                     ' after modifying stack')
