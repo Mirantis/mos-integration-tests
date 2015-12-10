@@ -419,4 +419,3 @@ class HeatIntegrationTests(unittest.TestCase):
         # - 6 -
         # Delete stack
         common_functions.delete_stack(self.heat, uid)
-
