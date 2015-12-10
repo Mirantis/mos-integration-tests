@@ -550,4 +550,3 @@ class HeatIntegrationTests(unittest.TestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
         common_functions.delete_stack(self.heat, stack_id)
-
