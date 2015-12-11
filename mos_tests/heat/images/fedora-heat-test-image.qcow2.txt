@@ -1,0 +1,1 @@
+http://tarballs.openstack.org/heat-test-image/fedora-heat-test-image.qcow2
