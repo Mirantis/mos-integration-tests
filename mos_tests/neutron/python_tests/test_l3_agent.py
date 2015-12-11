@@ -13,7 +13,6 @@
 #    under the License.
 
 import pytest
-from contextlib import contextmanager
 
 from devops.helpers.helpers import wait
 
@@ -25,24 +24,7 @@ class NotFound(Exception):
     message = "Not Found."
 
 
-def clear_l3_agent(ip, fqdn, env):
-    with env.get_ssh_to_node(ip) as remote:
-        remote.execute(
-            "pcs clear ban p_neutron-l3-agent {0}".format(fqdn))
-
-
-@contextmanager
-def ban_l3_agent(ip, fqdn, env):
-    with env.get_ssh_to_node(ip) as remote:
-        remote.execute(
-            "pcs resource ban p_neutron-l3-agent {0}".format(fqdn))
-    try:
-        yield
-    finally:
-        clear_l3_agent(ip, fqdn, env)
-
-
-@pytest.mark.usefixtures("check_ha_env", "check_several_computes", "clean_os")
+@pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
 class TestL3Agent(object):
 
     def get_node_with_dhcp(self, net_id):
@@ -231,7 +213,8 @@ class TestL3Agent(object):
         # check pings
         self.check_vm_connectivity()
 
-    def test_ban_one_l3_agent(self, fuel, env, os_conn, clear_l3_ban):
+    @pytest.mark.parametrize('ban_count', [1, 2], ids=['single', 'twice'])
+    def test_ban_one_l3_agent(self, fuel, env, os_conn, ban_count):
         """Check l3-agent rescheduling after l3-agent dies on vlan
 
         Scenario:
@@ -264,33 +247,18 @@ class TestL3Agent(object):
         ip = devops_node.data['ip']
 
         # ban l3 agent
-        router = self.os_conn.neutron.list_routers(
-            name="router01")['routers'][0]
-        node_with_l3 = self.os_conn.get_l3_agent_hosts(router['id'])[0]
+        for _ in range(ban_count):
+            self.ban_l3_agent(_ip=ip, router_name="router01")
 
-        with ban_l3_agent(ip, node_with_l3, env):
+        # create another server on net01
+        net01 = self.os_conn.nova.networks.find(label="net01")
+        self.os_conn.create_server(
+            name='server03',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             self.hosts[0]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': net01.id}],
+            security_groups=[self.security_group.id])
 
-            wait(
-                lambda: self.os_conn.get_l3_for_router(
-                    router['id'])['agents'][0]['alive'] is False,
-                timeout=60 * 3, timeout_msg="L3 agent is alive"
-            )
-
-            # Wait to migrate l3 agent on new controller
-            err_msg = "l3 agent wasn't banned, it is still {0}"
-            wait(lambda: not node_with_l3 == self.os_conn.get_l3_agent_hosts(
-                 router['id'])[0], timeout=60 * 3,
-                 timeout_msg=err_msg.format(node_with_l3))
-
-            # create another server on net01
-            net01 = self.os_conn.nova.networks.find(label="net01")
-            self.os_conn.create_server(
-                name='server03',
-                availability_zone='{}:{}'.format(self.zone.zoneName,
-                                                 self.hosts[0]),
-                key_name=self.instance_keypair.name,
-                nics=[{'net-id': net01.id}],
-                security_groups=[self.security_group.id])
-
-            # check pings
-            self.check_vm_connectivity()
+        # check pings
+        self.check_vm_connectivity()

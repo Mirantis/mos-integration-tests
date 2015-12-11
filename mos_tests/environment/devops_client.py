@@ -12,16 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 """Virtual test env setup and so on."""
+from devops.error import TimeoutError
+from devops.helpers.ntp import sync_time
 from devops.models import Environment
 # TBD: replace the logger
 from tools.settings import logger
 
 
-class VirtualEnviroment(object):
+class DevopsClient(object):
     """Method to work with the virtual env over fuel-devops."""
 
-    @staticmethod
-    def get_env(env_name=''):
+    @classmethod
+    def get_env(cls, env_name=''):
         """Find and return env by name.
 
         If name is empty will try to find the last created env.
@@ -32,20 +34,15 @@ class VirtualEnviroment(object):
             if env_name:
                 env = Environment.get(name=env_name)
             else:
-                # The call below returns QuerySet not a list
-                envs = Environment.list_all().order_by('created')
-                # QuerySet doesn't support the Negative indexing
-                # So just reverse it and get the first element
-                # which due to the order method above
-                # shoud be the last created env
-                env = envs.reverse()[0]
+                env = Environment.objects.all().order_by('created').last()
         except Exception as e:
             logger.error('failed to find the last created enviroment{}'.
                          format(e))
+            raise
         return env
 
-    @staticmethod
-    def revert_snapshot(env_name='', snapshot_name=''):
+    @classmethod
+    def revert_snapshot(cls, env_name='', snapshot_name=''):
         """Resume the env and revert the snapshot.
 
         If the snapshot_name is empty
@@ -53,7 +50,7 @@ class VirtualEnviroment(object):
         Return True if the resume-revert is sucesfully done
         False othervise.
         """
-        env = VirtualEnviroment.get_env(env_name)
+        env = cls.get_env(env_name)
         not_interested = ['ready', 'empty']
         snapshots = []
         try:
@@ -65,26 +62,34 @@ class VirtualEnviroment(object):
                             not_interested.append(snapshot.name)
                 snapshot_name = snapshots[-1]
             # TBD the calls below are non blocking once, need to add wait
-            env.resume(verbose=False)
             env.revert(snapshot_name, flag=False)
+            env.resume(verbose=False)
+            nodes = [node.name for node in env.get_nodes()
+                     if node.driver.node_active(node)]
+            for _ in range(3):
+                try:
+                    sync_time(env, nodes, skip_sync=False)
+                    break
+                except TimeoutError:
+                    pass
+            else:
+                raise
         except Exception as e:
             logger.error('Can\'t revert snapshot due to error: {}'.
                          format(e))
-            return False
-        return True
+            raise
 
-    @staticmethod
-    def get_admin_node_ip(env_name=''):
+    @classmethod
+    def get_admin_node_ip(cls, env_name=''):
         """Return IP of admin node for given env_name as a string.
 
         Will return empty string if admin node was not found in env.
         """
         admin_ip = ''
-        env = VirtualEnviroment.get_env(env_name)
+        env = cls.get_env(env_name)
         if not env:
             logger.error('Can\'t find the env')
         else:
-            for node in env.get_nodes():
-                if node.is_admin:
-                    admin_ip = node.get_ip_address_by_network_name('admin')
+            master = env.get_nodes(role='fuel_master')[0]
+            admin_ip = master.get_ip_address_by_network_name('admin')
         return admin_ip

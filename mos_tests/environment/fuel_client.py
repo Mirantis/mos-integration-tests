@@ -43,6 +43,11 @@ class Environment(EnvironmentBase):
             private_keys=self.admin_ssh_keys
         )
 
+    def get_nodes_by_role(self, role):
+        """Returns nodes by assigned role"""
+        return [x for x in self.get_all_nodes()
+                if role in x.data['roles']]
+
     @property
     def is_operational(self):
         return self.status == 'operational'
@@ -56,10 +61,11 @@ class Environment(EnvironmentBase):
         return self.get_network_data()[
             'networking_parameters']['segmentation_type']
 
-    def get_nodes_by_role(self, role):
-        """Returns nodes by assigned role"""
-        return [x for x in self.get_all_nodes()
-                if role in x.data['roles']]
+    @property
+    def certificate(self):
+        ssl = self.get_settings_data()['editable']['public_ssl']
+        if ssl['services']['value']:
+            return ssl['cert_data']['value']['content']
 
 
 class FuelClient(object):

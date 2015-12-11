@@ -14,16 +14,16 @@
 
 import time
 import random
+from tempfile import NamedTemporaryFile
 
 from cinderclient import client as cinderclient
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
-from keystoneclient.exceptions import ClientException
+from keystoneclient.exceptions import ClientException as KeyStoneException
 from novaclient.v1_1 import Client as NovaClient
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
-
 from devops.error import TimeoutError
 from devops.helpers import helpers
 
@@ -33,12 +33,20 @@ from tools.settings import logger
 class OpenStackActions(object):
 
     def __init__(self, controller_ip, user='admin', password='admin',
-                 tenant='admin'):
+                 tenant='admin', cert=None):
         self.controller_ip = controller_ip
 
-        auth_url = 'http://{0}:5000/v2.0/'.format(self.controller_ip)
-        path_to_cert = None
+        if cert is None:
+            auth_url = 'http://{0}:5000/v2.0/'.format(self.controller_ip)
+            path_to_cert = None
+        else:
+            auth_url = 'https://{0}:5000/v2.0/'.format(self.controller_ip)
+            with NamedTemporaryFile(prefix="fuel_cert_", suffix=".pem",
+                                    delete=False) as f:
+                f.write(cert)
+            path_to_cert = f.name
 
+        logger.debug('Auth URL is {0}'.format(auth_url))
         self.nova = NovaClient(username=user,
                                api_key=password,
                                project_id=tenant,
@@ -62,8 +70,10 @@ class OpenStackActions(object):
                                                  ca_cert=path_to_cert)
 
         token = self.keystone.auth_token
+        logger.debug('Token is {0}'.format(token))
         glance_endpoint = self.keystone.service_catalog.url_for(
             service_type='image', endpoint_type='publicURL')
+        logger.debug('Glance endpoind is {0}'.format(glance_endpoint))
 
         self.glance = GlanceClient(endpoint=glance_endpoint,
                                    token=token,
@@ -87,7 +97,9 @@ class OpenStackActions(object):
                                               tenant_name=tenant_name,
                                               auth_url=auth_url)
                 break
-            except ClientException:
+            except KeyStoneException as e:
+                err = "Try nr {0}. Could not get keystone client, error: {1}"
+                logger.warning(err.format(i + 1, e))
                 time.sleep(5)
         if not keystone:
             raise
@@ -265,31 +277,30 @@ class OpenStackActions(object):
         logger.debug('Try to create key {0}'.format(key_name))
         return self.nova.keypairs.create(key_name)
 
-    def cleanup_network(self, networks_to_skip=[]):
-        """Clean up the neutron networks.
-
-        The networks that should be kept are passed as list of names
-        """
-        # net ids with the names from networks_to_skip are filtered out
-        networks = [x['id'] for x in self.neutron.list_networks()['networks']
-                    if x['name'] not in networks_to_skip]
+    def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
-        subnets = [x['id'] for x in self.neutron.list_subnets()['subnets']
-                   if x['network_id'] in networks]
-        ports = [x for x in self.neutron.list_ports()['ports']
-                 if x['network_id'] in networks]
+        for subnet in self.neutron.list_subnets()['subnets']:
+            if subnet['network_id'] not in networks:
+                continue
+            try:
+                self.neutron.delete_subnet(subnet['id'])
+            except NeutronClientException:
+                logger.info('the subnet {} is not deletable'
+                            .format(subnet['id']))
+
+    def delete_routers(self):
         # Did not find the better way to detect the fuel admin router
         # Looks like it just always has fixed name router04
-        routers = [x['id'] for x in self.neutron.list_routers()['routers']
-                   if x['name'] != 'router04']
-
-        for key_pair in self.nova.keypairs.list():
+        for router in self.neutron.list_routers()['routers']:
+            if router['name'] == 'router04':
+                continue
             try:
-                self.nova.keypairs.delete(key_pair)
-            except NovaClientException:
-                logger.info('key pair {} is not deletable'.
-                             format(key_pair.id))
+                self.neutron.delete_router(router)
+            except NeutronClientException:
+                logger.info('the router {} is not deletable'
+                            .format(router))
 
+    def delete_floating_ips(self):
         for floating_ip in self.nova.floating_ips.list():
             try:
                 self.nova.floating_ips.delete(floating_ip)
@@ -297,27 +308,41 @@ class OpenStackActions(object):
                 logger.info('floating_ip {} is not deletable'.
                              format(floating_ip.id))
 
+    def delete_servers(self):
         for server in self.nova.servers.list():
             try:
                 self.nova.servers.delete(server)
             except NovaClientException:
                 logger.info('nova server {} is not deletable'.format(server))
 
-        for sg in self.nova.security_groups.list():
-            if sg.description != 'Default security group':
-                try:
-                    self.nova.security_groups.delete(sg)
-                except NovaClientException:
-                    logger.info('The Security Group {} is not deletable'
-                                 .format(sg))
+    def delete_keypairs(self):
+        for key_pair in self.nova.keypairs.list():
+            try:
+                self.nova.keypairs.delete(key_pair)
+            except NovaClientException:
+                logger.info('key pair {} is not deletable'.
+                             format(key_pair.id))
 
+    def delete_security_groups(self):
+        for sg in self.nova.security_groups.list():
+            if sg.description == 'Default security group':
+                continue
+            try:
+                self.nova.security_groups.delete(sg)
+            except NovaClientException:
+                logger.info('The Security Group {} is not deletable'
+                             .format(sg))
+
+    def delete_ports(self, networks):
         # After some experiments the following sequence for deletion was found
         # router_interface and ports -> subnets -> routers -> nets
         # Delete router interafce and ports
         # TBD some ports are still kept after the cleanup.
         # Need to find why and delete them as well
         # But it does not fail the execution so far.
-        for port in ports:
+        for port in self.neutron.list_ports()['ports']:
+            if port['network_id'] not in networks:
+                continue
             try:
                 # TBD Looks like the port migh be used either by router or
                 # l3 agent
@@ -341,21 +366,28 @@ class OpenStackActions(object):
                 logger.info('the port {} is not deletable'
                             .format(port['id']))
 
-        # Delete subnets
-        for subnet in subnets:
-            try:
-                self.neutron.delete_subnet(subnet)
-            except NeutronClientException:
-                logger.info('the subnet {} is not deletable'
-                            .format(subnet))
+    def cleanup_network(self, networks_to_skip=[]):
+        """Clean up the neutron networks.
 
-        # Delete routers
-        for router in routers:
-            try:
-                self.neutron.delete_router(router)
-            except NeutronClientException:
-                logger.info('the router {} is not deletable'
-                            .format(router))
+        The networks that should be kept are passed as list of names
+        """
+        # net ids with the names from networks_to_skip are filtered out
+        networks = [x['id'] for x in self.neutron.list_networks()['networks']
+                    if x['name'] not in networks_to_skip]
+
+        self.delete_keypairs()
+
+        self.delete_floating_ips()
+
+        self.delete_servers()
+
+        self.delete_security_groups()
+
+        self.delete_ports(networks)
+
+        self.delete_subnets(networks)
+
+        self.delete_routers()
 
         # Delete nets
         for net in networks:

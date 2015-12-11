@@ -4,6 +4,13 @@ Neutron python tests
 
 ## Running
 
+### Arguments
+
+* `-I FUEL_IP, --fuel-ip=FUEL_IP`      Fuel master server ip address
+* `-E ENV, --env=ENV`                  Fuel devops env name
+* `-S SNAPSHOT, --snapshot=SNAPSHOT`   Fuel devops snapshot name
+
+
 ### Local
 
 For run test on local machine just execute from this project root:

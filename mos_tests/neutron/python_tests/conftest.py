@@ -13,9 +13,11 @@
 #    under the License.
 
 import pytest
+from devops.helpers.helpers import wait
 
-from environment.fuel_client import FuelClient
-from environment.os_actions import OpenStackActions
+from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.environment.fuel_client import FuelClient
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.settings import SERVER_ADDRESS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import KEYSTONE_PASS
@@ -23,9 +25,39 @@ from mos_tests.settings import SSH_CREDENTIALS
 
 
 @pytest.fixture
-def fuel():
+def env_name(request):
+    return request.config.getoption("--env")
+
+
+@pytest.fixture
+def snapshot_name(request):
+    return request.config.getoption("--snapshot")
+
+
+@pytest.fixture
+def revert_snapshot(env_name, snapshot_name):
+    """Revert Fuel devops snapshot before test"""
+    DevopsClient.revert_snapshot(env_name=env_name,
+                                 snapshot_name=snapshot_name)
+
+
+@pytest.fixture
+def fuel_master_ip(request, env_name, snapshot_name):
+    """Get fuel master ip"""
+    fuel_ip = request.config.getoption("--fuel-ip")
+    if not fuel_ip:
+        fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
+        revert_snapshot(env_name, snapshot_name)
+        setattr(request.node, 'reverted', True)
+    if not fuel_ip:
+        fuel_ip = SERVER_ADDRESS
+    return fuel_ip
+
+
+@pytest.fixture
+def fuel(fuel_master_ip):
     """Initialized fuel client"""
-    return FuelClient(ip=SERVER_ADDRESS,
+    return FuelClient(ip=fuel_master_ip,
                       login=KEYSTONE_USER,
                       password=KEYSTONE_PASS,
                       ssh_login=SSH_CREDENTIALS['login'],
@@ -41,18 +73,22 @@ def env(fuel):
 @pytest.fixture
 def os_conn(env):
     """Openstack common actions"""
-    return OpenStackActions(
-        controller_ip=env.get_primary_controller_ip())
+    os_conn = OpenStackActions(
+        controller_ip=env.get_primary_controller_ip(),
+        cert=env.certificate)
 
-
-@pytest.fixture
-def clean_os(os_conn):
-    """Cleanup OpenStack"""
-    os_conn.cleanup_network()
+    def is_alive():
+        try:
+            os_conn.get_servers()
+            return True
+        except:
+            return False
+    wait(is_alive, timeout=60 * 5, timeout_msg="OpenStack nova isn't alive")
+    return os_conn
 
 
 @pytest.yield_fixture
-def clear_l3_ban(fuel, env, os_conn):
+def clear_l3_ban(env, os_conn):
     """Clear all l3-agent bans after test"""
     yield
     controllers = env.get_nodes_by_role('controller')
@@ -61,6 +97,22 @@ def clear_l3_ban(fuel, env, os_conn):
         for node in controllers:
             remote.execute("pcs resource clear p_neutron-l3-agent {0}".format(
                 node.data['fqdn']))
+
+
+@pytest.fixture
+def clean_os(os_conn):
+    """Cleanup OpenStack"""
+    os_conn.cleanup_network()
+
+
+@pytest.yield_fixture(scope="function")
+def setup(request, env_name, snapshot_name, env, os_conn):
+    if not getattr(request.node, 'reverted', False) and env_name:
+        revert_snapshot(env_name, snapshot_name)
+    yield
+    if not env_name:
+        clear_l3_ban(env, os_conn)
+        clean_os(os_conn)
 
 
 @pytest.fixture
