@@ -38,10 +38,10 @@ class HeatIntegrationTests(unittest.TestCase):
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
         self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                          username=OS_USERNAME,
-                                          password=OS_PASSWORD,
-                                          tenat_name=OS_TENANT_NAME,
-                                          project_name=OS_PROJECT_NAME)
+                                               username=OS_USERNAME,
+                                               password=OS_PASSWORD,
+                                               tenat_name=OS_TENANT_NAME,
+                                               project_name=OS_PROJECT_NAME)
         services = self.keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
                                          endpoint_type='internalURL')
@@ -49,9 +49,14 @@ class HeatIntegrationTests(unittest.TestCase):
         self.heat = heat_client(endpoint=heat_endpoint,
                                 token=self.keystone.auth_token)
 
+        # Get path on node to 'templates' dir
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
+        # Get path on node to 'images' dir
+        self.images_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'images')
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -79,7 +84,6 @@ class HeatIntegrationTests(unittest.TestCase):
         # Glance connect
         glance_endpoint = services.url_for(service_type='image',
                                            endpoint_type='publicURL')
-
         self.glance = glance_client.Client(endpoint=glance_endpoint,
                                            token=OS_TOKEN,
                                            insecure=True)
@@ -576,12 +580,31 @@ class HeatIntegrationTests(unittest.TestCase):
                              .format(name, status))
         common_functions.delete_stack(self.heat, stack_id)
 
+    '''  NOT READY YET
     def test_543348_HeatCreateStackWaitCondition(self):
-        """ This test creates stack  with WaitCondition resources
+        """ This test creates stack with WaitCondition resources
 
             Steps:
+             1.
 
         https://mirantis.testrail.com/index.php?/cases/view/543348
         [Alexander Koryagin]
         """
-        pass
+        file_name = 'fedora-heat-test-image.qcow2.txt'
+        image_name = 'fedora-heat-test-image'
+
+        # Prepare full path to image file
+        # Like: /root/mos_tests/heat/images/fedora-heat-test-image.qcow2.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        # image = self.glance.images.create(name=image_name,
+        #                                   os_distro='Fedora',
+        #                                   disk_format="qcow2",
+        #                                   visibility='public',
+        #                                   container_format="bare")
+        # self.glance.images.upload(image.id, image_content)
+    '''
