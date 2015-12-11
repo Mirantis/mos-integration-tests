@@ -628,7 +628,6 @@ class HeatIntegrationTests(unittest.TestCase):
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
 
-
     def test_543352_HeatStackUpdateInPlace(self):
         """ This test case checks stack id doesn't change after stack update.
             Steps:
@@ -722,4 +721,3 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(len(output.links[0]), 2)
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
-
