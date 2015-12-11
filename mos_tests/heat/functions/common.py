@@ -62,6 +62,7 @@ def create_stack(heatclient, stack_name, template, parameters={}):
         template=template,
         parameters=parameters)
     uid = stack['stack']['id']
+    sleep(1)
 
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
     # default: 10 minutes of timeout to change stack status
@@ -87,6 +88,7 @@ def delete_stack(heatclient, uid):
     """
     timeout_value = 10  # Timeout in minutes to wait for stack status change
     heatclient.stacks.delete(uid)
+    sleep(1)
 
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
     # default: 10 minutes of timeout to change stack status

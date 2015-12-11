@@ -116,7 +116,6 @@ class HeatIntegrationTests(unittest.TestCase):
         uid_of_new_stack = common_functions.create_stack(self.heat,
                                                          new_stack_name,
                                                          template_content)
-        time.sleep(3)
         # - 3 -
         # Delete created stack
         common_functions.delete_stack(self.heat, uid_of_new_stack)
@@ -441,7 +440,6 @@ class HeatIntegrationTests(unittest.TestCase):
                                             new_stack_name,
                                             template,
                                             parameters)
-        time.sleep(3)
         # - 6 -
         # Delete stack
         common_functions.delete_stack(self.heat, uid)
