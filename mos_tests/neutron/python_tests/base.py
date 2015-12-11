@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
 import pytest
 
 from devops.helpers.helpers import wait
@@ -84,8 +85,11 @@ class TestBase(object):
 
     def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None):
         if ip_to_ping is None:
-            ip_to_ping = settings.PUBLIC_TEST_IP
-        cmd = "ping -c1 {ip}".format(ip=ip_to_ping)
+            ip_to_ping = [settings.PUBLIC_TEST_IP]
+        if isinstance(ip_to_ping, six.string_types):
+            ip_to_ping = [ip_to_ping]
+        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
+        cmd = ' && '.join(cmd_list)
         res = self.run_on_vm(vm, vm_keypair, cmd)
         assert (0 == res['exit_code'],
                      'Instance has no connectivity, exit code {0},'
@@ -98,11 +102,11 @@ class TestBase(object):
         """Check that all vms can ping each other and public ip"""
         servers = self.os_conn.get_servers()
         for server1 in servers:
+            ips_to_ping = [settings.PUBLIC_TEST_IP]
             for server2 in servers:
                 if server1 == server2:
                     continue
-                for ip in (
-                    self.os_conn.get_nova_instance_ips(server2).values() +
-                    [settings.PUBLIC_TEST_IP]
-                ):
-                    self.check_ping_from_vm(server1, self.instance_keypair, ip)
+                ips_to_ping += self.os_conn.get_nova_instance_ips(
+                    server2).values()
+            self.check_ping_from_vm(server1, self.instance_keypair,
+                                    ips_to_ping)
