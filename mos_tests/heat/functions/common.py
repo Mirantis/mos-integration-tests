@@ -118,14 +118,16 @@ def read_template(templates_dir, template_name):
         raise IOError('Can\'t read template: {}'.format(e))
 
 
-def update_stack(heat_client, uid, template_file):
+def update_stack(heat_client, uid, template_file, parameters={}):
     """ Update stack using template file
             :param heat_client: Heat API client connection point
             :param id:        ID of stack
             :param template_file: path to stack template file.
+            :param parameters: parameters from template
             :return: -
     """
-    heat_client.stacks.update(stack_id=uid, template=template_file)
+    heat_client.stacks.update(stack_id=uid, template=template_file,
+                              parameters=parameters)
     check_stack_status_complete(heat_client, uid, 'UPDATE')
 
 
@@ -137,6 +139,17 @@ def get_resource_id(heat_client, uid):
     """
     stack_resources = heat_client.resources.list(stack_id=uid)
     return stack_resources[0].physical_resource_id
+
+
+def get_specific_resource_id(heat_client, uid, resource_name):
+    """ Get stack resource id by name
+            :param heat_client:   heat API client connection point
+            :param id:            ID of stack
+            :param resource_name: resource name
+            :return: resource id
+    """
+    stack_resources = heat_client.resources.get(uid, resource_name).to_dict()
+    return stack_resources['physical_resource_id']
 
 
 def update_template_file(template_file, type_of_changes, **kwargs):
