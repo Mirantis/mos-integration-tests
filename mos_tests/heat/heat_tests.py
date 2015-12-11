@@ -777,5 +777,3 @@ class HeatIntegrationTests(unittest.TestCase):
         # Wait for rollback competed and check
         self.assertTrue(common_functions.check_stack_status
                         (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
-
-
