@@ -12,8 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 """Virtual test env setup and so on."""
-from devops.error import TimeoutError
-from devops.helpers.ntp import sync_time
 from devops.models import Environment
 # TBD: replace the logger
 from tools.settings import logger
@@ -64,16 +62,7 @@ class DevopsClient(object):
             # TBD the calls below are non blocking once, need to add wait
             env.revert(snapshot_name, flag=False)
             env.resume(verbose=False)
-            nodes = [node.name for node in env.get_nodes()
-                     if node.driver.node_active(node)]
-            for _ in range(3):
-                try:
-                    sync_time(env, nodes, skip_sync=False)
-                    break
-                except TimeoutError:
-                    pass
-            else:
-                raise
+            cls.sync_tyme(env)
         except Exception as e:
             logger.error('Can\'t revert snapshot due to error: {}'.
                          format(e))
@@ -93,3 +82,10 @@ class DevopsClient(object):
             master = env.get_nodes(role='fuel_master')[0]
             admin_ip = master.get_ip_address_by_network_name('admin')
         return admin_ip
+
+    @classmethod
+    def sync_tyme(cls, env):
+        for node in env.get_nodes():
+            ip = node.get_ip_address_by_network_name('admin')
+            with env.get_ssh_to_remote(ip) as remote:
+                remote.execute('hwclock --hctosys')

@@ -16,92 +16,12 @@ import pytest
 
 from devops.helpers.helpers import wait
 
-from mos_tests import settings
 from tools.settings import logger
-
-
-class NotFound(Exception):
-    message = "Not Found."
+from mos_tests.neutron.python_tests.base import TestBase
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
-class TestL3Agent(object):
-
-    def get_node_with_dhcp(self, net_id):
-        nodes = self.os_conn.get_node_with_dhcp_for_network(net_id)
-        if not nodes:
-            raise NotFound("Nodes with dhcp for network with id:{}"
-                           " not found.".format(net_id))
-
-        return self.env.find_node_by_fqdn(nodes[0])
-
-    def run_on_vm(self, vm, vm_keypair, command, vm_login="cirros"):
-        command = command.replace('"', r'\"')
-        net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
-        vm_ip = vm.addresses[net_name][0]['addr']
-        net_id = self.os_conn.neutron.list_networks(
-            name=net_name)['networks'][0]['id']
-        dhcp_namespace = "qdhcp-{0}".format(net_id)
-        devops_node = self.get_node_with_dhcp(net_id)
-        _ip = devops_node.data['ip']
-        with self.env.get_ssh_to_node(_ip) as remote:
-            res = remote.execute(
-                'ip netns list | grep -q {0}'.format(dhcp_namespace)
-            )
-            if res['exit_code'] != 0:
-                raise Exception("Network namespace '{0}' doesn't exist on "
-                                "remote slave!".format(dhcp_namespace))
-            key_path = '/tmp/instancekey_rsa'
-            res = remote.execute(
-                'echo "{0}" > {1} ''&& chmod 400 {1}'.format(
-                    vm_keypair.private_key, key_path))
-            cmd = (
-                ". openrc; ip netns exec {ns} ssh -i {key_path}"
-                " -o 'StrictHostKeyChecking no'"
-                " {vm_login}@{vm_ip} \"{command}\""
-            ).format(
-                ns=dhcp_namespace,
-                key_path=key_path,
-                vm_login=vm_login,
-                vm_ip=vm_ip,
-                command=command)
-            err_msg = ("SSH command:\n{command}\nwas not completed with "
-                       "exit code 0 after 3 attempts with 1 minute timeout.")
-            results = []
-
-            def run(cmd):
-                results.append(remote.execute(cmd))
-                return results[-1]
-
-            wait(lambda: run(cmd)['exit_code'] == 0,
-                 interval=60, timeout=3 * 60,
-                 timeout_msg=err_msg.format(command=cmd))
-            return results[-1]
-
-    def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None):
-        if ip_to_ping is None:
-            ip_to_ping = settings.PUBLIC_TEST_IP
-        cmd = "ping -c1 {ip}".format(ip=ip_to_ping)
-        res = self.run_on_vm(vm, vm_keypair, cmd)
-        assert (0 == res['exit_code'],
-                     'Instance has no connectivity, exit code {0},'
-                     'stdout {1}, stderr {2}'.format(res['exit_code'],
-                                                     res['stdout'],
-                                                     res['stderr'])
-        )
-
-    def check_vm_connectivity(self):
-        """Check that all vms can ping each other and public ip"""
-        servers = self.os_conn.get_servers()
-        for server1 in servers:
-            for server2 in servers:
-                if server1 == server2:
-                    continue
-                for ip in (
-                    self.os_conn.get_nova_instance_ips(server2).values() +
-                    [settings.PUBLIC_TEST_IP]
-                ):
-                    self.check_ping_from_vm(server1, self.instance_keypair, ip)
+class TestL3Agent(TestBase):
 
     def ban_l3_agent(self, _ip, router_name, wait_for_migrate=True,
                      wait_for_die=True):
@@ -143,7 +63,7 @@ class TestL3Agent(object):
                  timeout_msg=err_msg.format(node_with_l3))
         return node_with_l3
 
-    def clear_l3_agent(self, _ip, router_name, node):
+    def clear_l3_agent(self, _ip, router_name, node, wait_for_alive=False):
         """Clear L3 agent ban and wait until router moved to this node
 
         Clear previously banned L3 agent on node wait until ruter moved to this
@@ -153,13 +73,24 @@ class TestL3Agent(object):
         :param router_name: name of router to wait until it move to node
         :param node: name of node to clear
         """
+        router = self.os_conn.neutron.list_routers(
+            name=router_name)['routers'][0]
         with self.env.get_ssh_to_node(_ip) as remote:
             remote.execute(
                 "pcs resource clear p_neutron-l3-agent {0}".format(node))
 
         logger.info("Clear L3 agent on node {0}".format(node))
 
-    def prepare_openstack(self, fuel, env, os_conn):
+        # wait for l3 agent alive
+        if wait_for_alive:
+            wait(
+                lambda: self.os_conn.get_l3_for_router(
+                    router['id'])['agents'][0]['alive'] is True,
+                timeout=60 * 3, timeout_msg="L3 agent is dead yet"
+            )
+
+    @pytest.fixture(autouse=True)
+    def prepare_openstack(self, init):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -172,10 +103,6 @@ class TestL3Agent(object):
             6. Ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
         """
         # init variables
-        self.fuel = fuel
-        self.env = env
-        self.os_conn = os_conn
-
         exist_networks = self.os_conn.list_networks()['networks']
         ext_network = [x for x in exist_networks
                        if x.get('router:external')][0]
@@ -214,7 +141,7 @@ class TestL3Agent(object):
         self.check_vm_connectivity()
 
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['single', 'twice'])
-    def test_ban_one_l3_agent(self, fuel, env, os_conn, ban_count):
+    def test_ban_one_l3_agent(self, ban_count):
         """Check l3-agent rescheduling after l3-agent dies on vlan
 
         Scenario:
@@ -240,7 +167,6 @@ class TestL3Agent(object):
         Duration 30m
 
         """
-        self.prepare_openstack(fuel, env, os_conn)
         net_id = self.os_conn.neutron.list_networks(
             name="net01")['networks'][0]['id']
         devops_node = self.get_node_with_dhcp(net_id)
@@ -249,6 +175,62 @@ class TestL3Agent(object):
         # ban l3 agent
         for _ in range(ban_count):
             self.ban_l3_agent(_ip=ip, router_name="router01")
+
+        # create another server on net01
+        net01 = self.os_conn.nova.networks.find(label="net01")
+        self.os_conn.create_server(
+            name='server03',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             self.hosts[0]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': net01.id}],
+            security_groups=[self.security_group.id])
+
+        # check pings
+        self.check_vm_connectivity()
+
+    def test_ban_l3_agents_and_clear_last(self):
+        """Ban all l3-agents, clear last of them and check health of l3-agent
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network1, network2
+            3. Create router1 and connect it with network1, network2 and
+               external net
+            4. Boot vm1 in network1 and associate floating ip
+            5. Boot vm2 in network2
+            6. Add rules for ping
+            7. ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
+            8. Ban l3-agent on what router1 is
+            9. Wait for route rescheduling
+            10. Repeat steps 7-8 twice
+            11. Clear last L3 agent
+            12. Check that router moved to the health l3-agent
+            13. Boot one more VM (VM3) in network1
+            14. Boot vm3 in network1
+            15. ping 8.8.8.8, vm1 (both ip), vm2 (fixed ip) and vm3 (fixed ip)
+                from each other
+
+        Duration 30m
+
+        """
+        net_id = self.os_conn.neutron.list_networks(
+            name="net01")['networks'][0]['id']
+        devops_node = self.get_node_with_dhcp(net_id)
+        ip = devops_node.data['ip']
+
+        # ban l3 agents
+        for _ in range(2):
+            self.ban_l3_agent(router_name="router01", _ip=ip)
+        last_banned_node = self.ban_l3_agent(router_name="router01",
+                                             _ip=ip,
+                                             wait_for_migrate=False)
+
+        # clear last banned l3 agent
+        self.clear_l3_agent(_ip=ip,
+                            router_name="router01",
+                            node=last_banned_node,
+                            wait_for_alive=True)
 
         # create another server on net01
         net01 = self.os_conn.nova.networks.find(label="net01")
