@@ -616,3 +616,73 @@ class HeatIntegrationTests(unittest.TestCase):
                                   'container_format': 'bare'}
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
+
+
+    def test_543348_HeatCreateStackWaitCondition(self):
+        """ This test creates stack with WaitCondition resources
+
+            Steps:
+             1.
+
+        https://mirantis.testrail.com/index.php?/cases/view/543348
+        [Alexander Koryagin]
+        """
+        file_name = 'fedora-heat-test-image.qcow2.txt'
+        image_name = 'fedora-heat-test-image' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file
+        # Like: /root/mos_tests/heat/images/fedora-heat-test-image.qcow2.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/fedora-heat-test-image.qcow2
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Fedora',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status'])
+        )
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get ID of internal network
+        networks = self.neutron.list_networks()
+
+        # Find network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name']]
+
+        # If empty, get id of any network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Create stack with heat
+
+        # CLEANUP
+        # Delete image
+        # glance.images.delete(image.id)
+        # Delete keypair
+        # keypair.delete()
+
