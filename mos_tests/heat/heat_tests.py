@@ -496,7 +496,6 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543340_StackResumeSuspend(self):
         """ Suspend and resume stack
             (with its resources for which that feature works)
-
             Steps:
              1. Create new stack
              2. Launch heat action-suspend stack_name. Check status
@@ -550,3 +549,41 @@ class HeatIntegrationTests(unittest.TestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543351_HeatStackUpdateReplace(self):
+        """ This test case checks change stack id after stack update.
+            Steps:
+             1. Create stack using template.
+             2. Check id of created image.
+             3. Update stack template: disk_format = 'ami',
+                                       container_format = 'ami'
+             4. Update stack.
+             5. Check id of updated image.
+        """
+        stack_name = 'image_stack'
+        template_name = 'cirros_image_tmpl.yaml'
+        template_path = os.path.join(self.templates_dir, template_name)
+        try:
+            create_template = common_functions.read_template(
+                self.templates_dir, template_name)
+            sid = common_functions.create_stack(
+                self.heat, stack_name, create_template)
+            first_resource_id = common_functions.get_resource_id(
+                self.heat, sid)
+            format_change = {'disk_format': 'ami', 'container_format': 'ami'}
+            common_functions.update_template_file(
+                template_path, 'format', **format_change)
+            update_template = common_functions.read_template(
+                self.templates_dir, template_name)
+            common_functions.update_stack(self.heat, sid, update_template)
+            second_resource_id = common_functions.get_resource_id(
+                self.heat, sid)
+            self.assertNotEqual(first_resource_id, second_resource_id,
+                                msg='Resource id should be changed'
+                                    ' after modifying stack')
+        finally:
+            common_functions.delete_stack(self.heat, sid)
+            back_format_change = {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+            common_functions.update_template_file(
+                template_path, 'format', **back_format_change)
