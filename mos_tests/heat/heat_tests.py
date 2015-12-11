@@ -58,6 +58,9 @@ class HeatIntegrationTests(unittest.TestCase):
                                              auth_url=OS_AUTH_URL,
                                              insecure=True)
 
+    def tearDown(self):
+        time.sleep(3)
+
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
 
@@ -212,10 +215,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543333_HeatStackCreateWithTemplate(self):
         """ This test case checks creation of stack.
+
             Steps:
              1. Create stack using template file empty_heat_templ.yaml.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
+             4. Delete stack
         """
         stack_name = 'empty__543333'
         timeout = 20
@@ -237,10 +242,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543334_HeatStackCreateWithURL(self):
         """ This test case checks creation of stack using template URL.
+
             Steps:
              1. Create stack using template URL.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
+             4. Delete stack
         """
         stack_name = 'empty__543334'
         template_url = 'https://raw.githubusercontent.com/tkuterina/' \
@@ -550,3 +557,60 @@ class HeatIntegrationTests(unittest.TestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543336_HeatStackShow(self):
+        """ This test case checks detailed stack's information.
+
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml
+             2. Check that the stack is in the list of stacks
+             3. Check that stack status is 'CREATE_COMPLETE'
+             4. Check stack's information
+             5. Delete stack
+        """
+        stack_name = 'empty__543336'
+        parameter = 'some_param_string'
+        timeout = 20
+        if common_functions.check_stack(stack_name, self.heat):
+            common_functions.clean_stack(stack_name, self.heat)
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
+        stack_data = {'stack_name': stack_name, 'template': template,
+                      'parameters': {'param': parameter},
+                      'timeout_mins': timeout}
+        stak = self.heat.stacks.create(**stack_data)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        stack_id = stak['stack']['id']
+        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+                      'OS::stack_id': stack_id,
+                      'OS::stack_name': stack_name,
+                      'param': parameter}
+        correct_data = {'description': 'Sample template',
+                        'stack_name': stack_name,
+                        'disable_rollback': True,
+                        'template_description': 'Sample template',
+                        'timeout_mins': timeout,
+                        'stack_status': 'CREATE_COMPLETE',
+                        'id': stack_id,
+                        'stack_status_reason': 'Stack CREATE completed '
+                                               'successfully',
+                        'parameters': parameters}
+        output = self.heat.stacks.get(stack_id)
+        show_data = {'description': output.description,
+                     'stack_name': output.stack_name,
+                     'disable_rollback': output.disable_rollback,
+                     'template_description': output.template_description,
+                     'timeout_mins': output.timeout_mins,
+                     'stack_status': output.stack_status,
+                     'id': output.id,
+                     'stack_status_reason': output.stack_status_reason,
+                     'parameters': output.parameters}
+        self.assertDictEqual(show_data, correct_data)
+        self.assertEqual(len(output.links), 1)
+        self.assertEqual(len(output.links[0]), 2)
+        self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
+        self.assertEqual(output.links[0]['rel'], 'self')
+        common_functions.clean_stack(stack_name, self.heat)
