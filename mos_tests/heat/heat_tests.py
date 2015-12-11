@@ -49,9 +49,14 @@ class HeatIntegrationTests(unittest.TestCase):
         self.heat = heat_client(endpoint=heat_endpoint,
                                 token=self.keystone.auth_token)
 
+        # Get path on node to 'templates' dir
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
+        # Get path on node to 'images' dir
+        self.images_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'images')
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -141,7 +146,6 @@ class HeatIntegrationTests(unittest.TestCase):
         uid_of_new_stack = common_functions.create_stack(self.heat,
                                                          new_stack_name,
                                                          template_content)
-
         # - 3 -
         # Delete created stack
         common_functions.delete_stack(self.heat, uid_of_new_stack)
