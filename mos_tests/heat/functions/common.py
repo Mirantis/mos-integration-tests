@@ -14,14 +14,14 @@ def check_stack(stack_name, heat):
     return stack_name in [s.stack_name for s in heat.stacks.list()]
 
 
-def get_stack_id(heatclient, stack_name):
+def get_stack_id(heat_client, stack_name):
     """ Check stack status
-            :param heatclient: Heat API client connection point
+            :param heat_client: Heat API client connection point
             :param stack_name: Name of stack
             :return Stack uid
     """
-    if check_stack(stack_name, heatclient):
-        stack_dict = {s.stack_name: s.id for s in heatclient.stacks.list()}
+    if check_stack(stack_name, heat_client):
+        stack_dict = {s.stack_name: s.id for s in heat_client.stacks.list()}
         return stack_dict[stack_name]
     raise Exception("ERROR: Stack {0} is not defined".format(stack_name))
 
