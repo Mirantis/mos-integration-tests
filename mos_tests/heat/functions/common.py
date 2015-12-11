@@ -1,5 +1,6 @@
 import os
 from time import sleep, time
+import yaml
 
 
 def check_stack(stack_name, heat):
@@ -56,27 +57,12 @@ def create_stack(heatclient, stack_name, template, parameters={}):
             :param template:   Content of a template name
             :return uid: UID of created stack
     """
-    timeout_value = 10  # Timeout in minutes to wait for stack status change
     stack = heatclient.stacks.create(
         stack_name=stack_name,
         template=template,
         parameters=parameters)
     uid = stack['stack']['id']
-
-    stack = heatclient.stacks.get(stack_id=uid).to_dict()
-    # default: 10 minutes of timeout to change stack status
-    timeout = time() + 60 * timeout_value
-    while stack['stack_status'] == 'CREATE_IN_PROGRESS':
-        stack = heatclient.stacks.get(stack_id=uid).to_dict()
-        if time() > timeout:
-            break
-        else:
-            sleep(1)
-
-    # Check that final status of a newly created stack is 'CREATE_COMPLETE'
-    if stack['stack_status'] != 'CREATE_COMPLETE':
-        raise Exception("ERROR: Stack is not in 'CREATE_COMPLETE' "
-                        "state:\n{0}".format(stack))
+    check_stack_status_complete(heatclient, uid, 'CREATE')
     return uid
 
 
@@ -85,23 +71,30 @@ def delete_stack(heatclient, uid):
             :param heatclient: Heat API client connection point
             :param uid:        UID of stack
     """
-    timeout_value = 10  # Timeout in minutes to wait for stack status change
     heatclient.stacks.delete(uid)
+    check_stack_status_complete(heatclient, uid, 'DELETE')
 
-    stack = heatclient.stacks.get(stack_id=uid).to_dict()
-    # default: 10 minutes of timeout to change stack status
-    timeout = time() + 60 * timeout_value
-    while stack['stack_status'] == 'DELETE_IN_PROGRESS':
-        stack = heatclient.stacks.get(stack_id=uid).to_dict()
+
+def check_stack_status_complete(heat_client, uid, action):
+    """ Check stack STATUS in COMPLETE state
+            :param heatclient: Heat API client connection point
+            :param id: ID stack
+            :param action: status that will be checked.
+                           Could be CREATE, UPDATE, DELETE.
+            :return uid: UID of created stack
+    """
+    timeout_value = 10
+    stack = heat_client.stacks.get(stack_id=uid).to_dict()
+    timeout = time() + 10 * timeout_value
+    while stack['stack_status'] == '{0}_IN_PROGRESS'.format(action):
+        stack = heat_client.stacks.get(stack_id=uid).to_dict()
         if time() > timeout:
             break
         else:
             sleep(1)
-
-    # Check that final status of a newly deleted stack is 'DELETE_COMPLETE'
-    if stack['stack_status'] != 'DELETE_COMPLETE':
-        raise Exception("ERROR: Stack is not in 'DELETE_COMPLETE' "
-                        "state:\n{0}".format(stack))
+    if stack['stack_status'] != '{0}_COMPLETE'.format(action):
+        raise Exception("ERROR: Stack {0} is not in '{1}_COMPLETE' "
+                        "state:\n".format(stack, action))
 
 
 def read_template(templates_dir, template_name):
@@ -119,3 +112,47 @@ def read_template(templates_dir, template_name):
             return template.read()
     except IOError as e:
         raise IOError('Can\'t read template: {}'.format(e))
+
+
+def update_stack(heat_client, uid, template_file):
+    """ Update stack using template file
+            :param heat_client: Heat API client connection point
+            :param id:        ID of stack
+            :param template_file: path to stack template file.
+            :return: -
+    """
+    heat_client.stacks.update(stack_id=uid, template=template_file)
+    check_stack_status_complete(heat_client, uid, 'UPDATE')
+
+
+def get_resource_id(heat_client, uid):
+    """ Get stack resource id
+            :param heat_client: Heat API client connection point
+            :param id:        ID of stack
+            :return: -
+    """
+    stack_resources = heat_client.resources.list(stack_id=uid)
+    return stack_resources[0].physical_resource_id
+
+
+def update_template_file(template_file, type_of_changes, **kwargs):
+    """ Update template file specific fields.
+        :param template_file: path to template file.
+        :param type_of_changes: if changes in format - 'format'
+                                if changes in flavor size - 'flavor'
+        :param disk_format: new disk_format value(optional)
+        :param container_format: new container_format value(optional)
+        :param flavor: new flavor size
+        :return -
+    """
+    with open(template_file, 'r') as stream:
+        data = yaml.load(stream)
+    if type_of_changes == 'format':
+        data['resources']['cirros_image']['properties']['disk_format']\
+            = kwargs['disk_format']
+        data['resources']['cirros_image']['properties']['container_format']\
+            = kwargs['container_format']
+    elif type_of_changes == 'flavor':
+        data['resources']['vm']['properties']['flavor'] = kwargs['flavor']
+    with open(template_file, 'w') as yaml_file:
+        yaml_file.write(yaml.dump(data, default_flow_style=False))
