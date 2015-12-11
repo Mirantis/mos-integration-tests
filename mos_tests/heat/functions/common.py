@@ -142,7 +142,7 @@ def get_resource_id(heat_client, uid):
 def get_specific_resource_id(heat_client, uid, resource_name):
     """ Get stack resource id by name
             :param heat_client:   heat API client connection point
-            :param id:            ID of stack
+            :param uid: UID of stack
             :param resource_name: resource name
             :return: resource id
     """
