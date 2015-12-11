@@ -1,5 +1,6 @@
 import os
 from time import sleep, time
+import urllib2
 import yaml
 
 
@@ -156,3 +157,54 @@ def update_template_file(template_file, type_of_changes, **kwargs):
         data['resources']['vm']['properties']['flavor'] = kwargs['flavor']
     with open(template_file, 'w') as yaml_file:
         yaml_file.write(yaml.dump(data, default_flow_style=False))
+
+
+def download_image(image_link_file, where_to_put='/tmp/'):
+    """ This function will download image from internet and write it
+        if image is not already present on node.
+
+    :param image_link_file: Location of file with a link
+    :param where_to_put:    Path to output folder on node
+    :return: full path to downloaded image. Default: '/tmp/blablablb.bla'
+    """
+    # Get URL from file
+    try:
+        with open(image_link_file, 'r') as file_with_link:
+            image_url = file_with_link.read()
+    except Exception:
+        raise Exception("Can not find or read from file on node:"
+                        "\n\t{0}".format(image_link_file))
+
+    # Get image name from URL. Like: 'fedora-heat-test-image.qcow2'
+    image_name_from_url = image_url.rsplit('/', 1)[-1]
+
+    # Prepare full path on node. Like: '/tmp/fedora-heat-test-image.qcow2'
+    image_path_on_node = where_to_put + image_name_from_url
+
+    # Check if image already exists on node with path above.
+    # If present - return full path to it. If NOT -> download.
+    if os.path.isfile(image_path_on_node):
+        return image_path_on_node
+    else:
+        # Open URL
+        try:
+            response = urllib2.urlopen(image_url)
+        except urllib2.HTTPError, e:
+            raise Exception('Can not get file from URL. HTTPError = {0}.'
+                            '\n\tURL = "{1}"'.format(str(e.code), image_url))
+        except urllib2.URLError, e:
+            raise Exception('Can not get file from URL. URLError = {0}.'
+                            '\n\tURL = "{1}"'.format(str(e.reason), image_url))
+        except Exception:
+            raise Exception("Can not get file from URL:"
+                            "\n\t{0}".format(image_url))
+
+        # Write image to file. With Chunk to avoid memory errors.
+        CHUNK = 16 * 1024
+        with open(image_path_on_node, 'wb') as f:
+            while True:
+                chunk = response.read(CHUNK)
+                if not chunk:
+                    break
+                f.write(chunk)
+        return image_path_on_node

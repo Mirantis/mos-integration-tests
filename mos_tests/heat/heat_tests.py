@@ -20,6 +20,8 @@ from random import randint
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
+from novaclient import client as nova_client
+from glanceclient.v2 import client as glance_client
 
 from mos_tests.heat.functions import common as common_functions
 
@@ -36,10 +38,10 @@ class HeatIntegrationTests(unittest.TestCase):
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
         self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                          username=OS_USERNAME,
-                                          password=OS_PASSWORD,
-                                          tenat_name=OS_TENANT_NAME,
-                                          project_name=OS_PROJECT_NAME)
+                                               username=OS_USERNAME,
+                                               password=OS_PASSWORD,
+                                               tenat_name=OS_TENANT_NAME,
+                                               project_name=OS_PROJECT_NAME)
         services = self.keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
                                          endpoint_type='internalURL')
@@ -47,9 +49,14 @@ class HeatIntegrationTests(unittest.TestCase):
         self.heat = heat_client(endpoint=heat_endpoint,
                                 token=self.keystone.auth_token)
 
+        # Get path on node to 'templates' dir
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
+        # Get path on node to 'images' dir
+        self.images_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'images')
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -57,6 +64,29 @@ class HeatIntegrationTests(unittest.TestCase):
                                              tenant_name=OS_TENANT_NAME,
                                              auth_url=OS_AUTH_URL,
                                              insecure=True)
+
+        # Nova connect
+        OS_TOKEN = self.keystone.get_token(self.keystone.session)
+        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
+            auth_url=OS_AUTH_URL,
+            username=OS_USERNAME,
+            password=OS_PASSWORD,
+            tenant_name=OS_TENANT_NAME)
+        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
+
+        self.nova = nova_client.Client('2',
+                                       auth_url=OS_AUTH_URL,
+                                       username=OS_USERNAME,
+                                       auth_token=OS_TOKEN,
+                                       tenant_id=OS_TENANT_ID,
+                                       insecure=True)
+
+        # Glance connect
+        glance_endpoint = services.url_for(service_type='image',
+                                           endpoint_type='publicURL')
+        self.glance = glance_client.Client(endpoint=glance_endpoint,
+                                           token=OS_TOKEN,
+                                           insecure=True)
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
@@ -116,7 +146,6 @@ class HeatIntegrationTests(unittest.TestCase):
         uid_of_new_stack = common_functions.create_stack(self.heat,
                                                          new_stack_name,
                                                          template_content)
-
         # - 3 -
         # Delete created stack
         common_functions.delete_stack(self.heat, uid_of_new_stack)
