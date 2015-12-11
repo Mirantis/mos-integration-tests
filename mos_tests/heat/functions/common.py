@@ -7,11 +7,10 @@ def check_stack(stack_name, heat):
     """ Check the presence of stack_name in stacks list
             :param heat: Heat API client connection point
             :param stack_name: Name of stack
-            :return True or False
+            :return True if required stack presents in list of stacks from hear
+                    False otherwise
     """
-    if stack_name in [s.stack_name for s in heat.stacks.list()]:
-        return True
-    return False
+    return stack_name in [s.stack_name for s in heat.stacks.list()]
 
 
 def clean_stack(stack_name, heat):
@@ -32,56 +31,54 @@ def check_stack_status(stack_name, heat, status, timeout=60):
             :param stack_name: Name of stack
             :param status: Expected stack status
             :param timeout: Timeout for check operation
-            :return True or False
+            :return True if stack status is equals to expected status
+                    False otherwise
     """
     if check_stack(stack_name, heat):
-        if check_stack(stack_name, heat):
-            start_time = time()
-            stack_status = [s.stack_status for s in heat.stacks.list()
+        start_time = time()
+        stack_status = [s.stack_status for s in heat.stacks.list()
                         if s.stack_name == stack_name][0]
-            while stack_status.find('IN_PROGRESS') != -1 and time() < \
-                            start_time + 60 * timeout:
-                sleep(1)
-                stack_status = [s.stack_status for s in heat.stacks.list()
-                                if s.stack_name == stack_name][0]
-            if stack_status == status:
-                return True
-        return False
+        while stack_status.find('IN_PROGRESS') != -1 and time() < start_time + 60 * timeout:
+            sleep(1)
+            stack_status = [s.stack_status for s in heat.stacks.list()
+                            if s.stack_name == stack_name][0]
+        if stack_status == status:
+            return True
+    return False
 
 
-def create_stack(heatclient, stack_name, template, parameters={}):
+def create_stack(heat_client, stack_name, template, parameters={}):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
-            :param parameters: parameters from template
-            :param heatclient: Heat API client connection point
+            :param heat_client: Heat API client connection point
             :param stack_name: Name of a new stack
-            :param template:   Content of a template name
+            :param template: Content of a template name
+            :param parameters: parameters from template
             :return uid: UID of created stack
     """
-    stack = heatclient.stacks.create(
+    stack = heat_client.stacks.create(
         stack_name=stack_name,
         template=template,
         parameters=parameters)
     uid = stack['stack']['id']
-    check_stack_status_complete(heatclient, uid, 'CREATE')
+    check_stack_status_complete(heat_client, uid, 'CREATE')
     return uid
 
 
-def delete_stack(heatclient, uid):
-    """ Delete stack and check STATUS == DELETE_COMPLETE
-            :param heatclient: Heat API client connection point
-            :param uid:        UID of stack
+def delete_stack(heat_client, uid):
+    """ Delete stack and check that STATUS == DELETE_COMPLETE
+            :param heat_client: Heat API client connection point
+            :param uid: UID of stack
     """
-    heatclient.stacks.delete(uid)
-    check_stack_status_complete(heatclient, uid, 'DELETE')
+    heat_client.stacks.delete(uid)
+    check_stack_status_complete(heat_client, uid, 'DELETE')
 
 
 def check_stack_status_complete(heat_client, uid, action):
     """ Check stack STATUS in COMPLETE state
-            :param heatclient: Heat API client connection point
-            :param id: ID stack
+            :param heat_client: Heat API client connection point
+            :param uid: UID of stack
             :param action: status that will be checked.
                            Could be CREATE, UPDATE, DELETE.
-            :return uid: UID of created stack
     """
     timeout_value = 10
     stack = heat_client.stacks.get(stack_id=uid).to_dict()
@@ -98,12 +95,11 @@ def check_stack_status_complete(heat_client, uid, action):
 
 
 def read_template(templates_dir, template_name):
-    """Read template file and return it content.
-
-    :param templates_dir: dir
-    :param template_name: name of template,
-        for ex.: empty_heat_template.yaml
-    :return: template file content
+    """ Read template file and return it content.
+            :param templates_dir: dir
+            :param template_name: name of template,
+                                  for ex.: empty_heat_template.yaml
+            :return: template file content
     """
 
     template_path = os.path.join(templates_dir, template_name)
@@ -117,7 +113,7 @@ def read_template(templates_dir, template_name):
 def update_stack(heat_client, uid, template_file):
     """ Update stack using template file
             :param heat_client: Heat API client connection point
-            :param id:        ID of stack
+            :param uid: UID of stack
             :param template_file: path to stack template file.
             :return: -
     """
@@ -128,7 +124,7 @@ def update_stack(heat_client, uid, template_file):
 def get_resource_id(heat_client, uid):
     """ Get stack resource id
             :param heat_client: Heat API client connection point
-            :param id:        ID of stack
+            :param uid: UID of stack
             :return: -
     """
     stack_resources = heat_client.resources.list(stack_id=uid)
@@ -137,13 +133,15 @@ def get_resource_id(heat_client, uid):
 
 def update_template_file(template_file, type_of_changes, **kwargs):
     """ Update template file specific fields.
-        :param template_file: path to template file.
-        :param type_of_changes: if changes in format - 'format'
-                                if changes in flavor size - 'flavor'
-        :param disk_format: new disk_format value(optional)
-        :param container_format: new container_format value(optional)
-        :param flavor: new flavor size
-        :return -
+            :param template_file: path to template file.
+            :param type_of_changes: if changes in format - 'format'
+                                    if changes in flavor size - 'flavor'
+            :param kwargs: the key-value dictionary of parameters.
+                           currently following keys are supported
+                           disk_format: new disk_format value(optional)
+                           container_format: new container_format value(optional)
+                           flavor: new flavor size
+            :return -
     """
     with open(template_file, 'r') as stream:
         data = yaml.load(stream)
