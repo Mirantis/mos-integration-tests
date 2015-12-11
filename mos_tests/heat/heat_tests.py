@@ -616,32 +616,3 @@ class HeatIntegrationTests(unittest.TestCase):
                                   'container_format': 'bare'}
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
-
-    '''  NOT READY YET
-    def test_543348_HeatCreateStackWaitCondition(self):
-        """ This test creates stack with WaitCondition resources
-
-            Steps:
-             1.
-
-        https://mirantis.testrail.com/index.php?/cases/view/543348
-        [Alexander Koryagin]
-        """
-        file_name = 'fedora-heat-test-image.qcow2.txt'
-        image_name = 'fedora-heat-test-image'
-
-        # Prepare full path to image file
-        # Like: /root/mos_tests/heat/images/fedora-heat-test-image.qcow2.txt
-        image_link_location = os.path.join(self.images_dir, file_name)
-
-        # Download image on node
-        image_path = common_functions.download_image(image_link_location)
-
-        # Create image in Glance
-        # image = self.glance.images.create(name=image_name,
-        #                                   os_distro='Fedora',
-        #                                   disk_format="qcow2",
-        #                                   visibility='public',
-        #                                   container_format="bare")
-        # self.glance.images.upload(image.id, image_content)
-    '''
