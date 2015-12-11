@@ -607,6 +607,48 @@ class HeatIntegrationTests(unittest.TestCase):
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
 
+    def test_543352_HeatStackUpdateInPlace(self):
+        """ This test case checks stack id doesn't change after stack update.
+            Steps:
+             1. Create stack using template nova_server.yaml.
+             2. Check id of created image.
+             3. Update stack template: flavor = 'm1.small'
+             4. Update stack.
+             5. Check id of updated image.
+        """
+        stack_name = 'vm_stack'
+        template_name = 'nova_server.yaml'
+        template_path = os.path.join(self.templates_dir, template_name)
+        try:
+            networks = self.neutron.list_networks()
+            if len(networks['networks']) < 2:
+                raise AssertionError("ERROR: Need to have at least 2 networks")
+            internal_network_id = networks['networks'][1]['id']
+            create_template = common_functions.read_template(
+                self.templates_dir, template_name)
+            parameters = {'network': internal_network_id}
+            sid = common_functions.create_stack(self.heat, stack_name,
+                                                create_template, parameters)
+            first_resource_id = common_functions.get_specific_resource_id(
+                self.heat, sid, 'vm')
+            flavor_change = {'flavor': 'm1.small'}
+            common_functions.update_template_file(template_path, 'flavor',
+                                                  **flavor_change)
+            update_template = common_functions.read_template(
+                self.templates_dir, template_name)
+            common_functions.update_stack(self.heat, sid, update_template,
+                                          parameters)
+            second_resource_id = common_functions.get_specific_resource_id(
+                self.heat, sid, 'vm')
+            self.assertEqual(first_resource_id, second_resource_id,
+                                msg='Resource id should not be changed'
+                                    ' after modifying stack')
+        finally:
+            common_functions.delete_stack(self.heat, sid)
+            back_flavor_change = {'flavor': 'm1.tiny'}
+            common_functions.update_template_file(template_path, 'flavor',
+                                                  **back_flavor_change)
+
     def test_543336_HeatStackShow(self):
         """ This test case checks detailed stack's information.
             Steps:
