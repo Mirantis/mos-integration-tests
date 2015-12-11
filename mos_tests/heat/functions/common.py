@@ -1,5 +1,6 @@
 import os
 from time import sleep, time
+import urllib2
 import yaml
 
 
@@ -13,16 +14,16 @@ def check_stack(stack_name, heat):
     return stack_name in [s.stack_name for s in heat.stacks.list()]
 
 
-def clean_stack(stack_name, heat):
-    """ Delete stack
-            :param heat: Heat API client connection point
+def get_stack_id(heatclient, stack_name):
+    """ Check stack status
+            :param heatclient: Heat API client connection point
             :param stack_name: Name of stack
-            :return None
+            :return Stack uid
     """
-    if stack_name in [s.stack_name for s in heat.stacks.list()]:
-        heat.stacks.delete(stack_name)
-        while check_stack(stack_name, heat):
-            sleep(1)
+    if check_stack(stack_name, heatclient):
+        stack_dict = {s.stack_name: s.id for s in heatclient.stacks.list()}
+        return stack_dict[stack_name]
+    raise Exception("ERROR: Stack {0} is not defined".format(stack_name))
 
 
 def check_stack_status(stack_name, heat, status, timeout=60):
@@ -38,7 +39,8 @@ def check_stack_status(stack_name, heat, status, timeout=60):
         start_time = time()
         stack_status = [s.stack_status for s in heat.stacks.list()
                         if s.stack_name == stack_name][0]
-        while stack_status.find('IN_PROGRESS') != -1 and time() < start_time + 60 * timeout:
+        while stack_status.find('IN_PROGRESS') != -1 \
+                and time() < start_time + 60 * timeout:
             sleep(1)
             stack_status = [s.stack_status for s in heat.stacks.list()
                             if s.stack_name == stack_name][0]
@@ -47,20 +49,22 @@ def check_stack_status(stack_name, heat, status, timeout=60):
     return False
 
 
-def create_stack(heat_client, stack_name, template, parameters={}):
+def create_stack(heat_client, stack_name, template, parameters={}, timeout=20):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
             :param heat_client: Heat API client connection point
             :param stack_name: Name of a new stack
             :param template: Content of a template name
             :param parameters: parameters from template
+            :param timeout: Timeout for the check operation
             :return uid: UID of created stack
     """
     stack = heat_client.stacks.create(
         stack_name=stack_name,
         template=template,
-        parameters=parameters)
+        parameters=parameters,
+        timeout_mins=timeout)
     uid = stack['stack']['id']
-    check_stack_status_complete(heat_client, uid, 'CREATE')
+    check_stack_status_complete(heat_client, uid, 'CREATE', timeout)
     return uid
 
 
@@ -69,23 +73,25 @@ def delete_stack(heat_client, uid):
             :param heat_client: Heat API client connection point
             :param uid: UID of stack
     """
-    heat_client.stacks.delete(uid)
-    check_stack_status_complete(heat_client, uid, 'DELETE')
+    if uid in [s.id for s in heat_client.stacks.list()]:
+        heat_client.stacks.delete(uid)
+        while uid in [s.id for s in heat_client.stacks.list()]:
+            sleep(1)
 
 
-def check_stack_status_complete(heat_client, uid, action):
+def check_stack_status_complete(heat_client, uid, action, timeout=10):
     """ Check stack STATUS in COMPLETE state
             :param heat_client: Heat API client connection point
             :param uid: UID of stack
             :param action: status that will be checked.
                            Could be CREATE, UPDATE, DELETE.
+            :param timeout: Timeout for check operation
     """
-    timeout_value = 10
     stack = heat_client.stacks.get(stack_id=uid).to_dict()
-    timeout = time() + 10 * timeout_value
+    end_time = time() + 60 * timeout
     while stack['stack_status'] == '{0}_IN_PROGRESS'.format(action):
         stack = heat_client.stacks.get(stack_id=uid).to_dict()
-        if time() > timeout:
+        if time() > end_time:
             break
         else:
             sleep(1)
@@ -138,19 +144,72 @@ def update_template_file(template_file, type_of_changes, **kwargs):
                                     if changes in flavor size - 'flavor'
             :param kwargs: the key-value dictionary of parameters.
                            currently following keys are supported
-                           disk_format: new disk_format value(optional)
-                           container_format: new container_format value(optional)
+                           disk_format: new disk_format value
+                                       (optional parameter)
+                           container_format: new container_format value
+                                             (optional parameter)
                            flavor: new flavor size
             :return -
     """
     with open(template_file, 'r') as stream:
         data = yaml.load(stream)
     if type_of_changes == 'format':
-        data['resources']['cirros_image']['properties']['disk_format']\
+        data['resources']['cirros_image']['properties']['disk_format'] \
             = kwargs['disk_format']
-        data['resources']['cirros_image']['properties']['container_format']\
+        data['resources']['cirros_image']['properties']['container_format'] \
             = kwargs['container_format']
     elif type_of_changes == 'flavor':
         data['resources']['vm']['properties']['flavor'] = kwargs['flavor']
     with open(template_file, 'w') as yaml_file:
         yaml_file.write(yaml.dump(data, default_flow_style=False))
+
+
+def download_image(image_link_file, where_to_put='/tmp/'):
+    """ This function will download image from internet and write it if image
+        is not already present on node.
+            :param image_link_file: Location of file with a link
+            :param where_to_put: Path to output folder on node
+            :return: full path to downloaded image.
+                     Default: '/tmp/file_name.ext'
+    """
+    # Get URL from file
+    try:
+        with open(image_link_file, 'r') as file_with_link:
+            image_url = file_with_link.read()
+    except Exception:
+        raise Exception("Can not find or read from file on node:"
+                        "\n\t{0}".format(image_link_file))
+
+    # Get image name from URL. Like: 'fedora-heat-test-image.qcow2'
+    image_name_from_url = image_url.rsplit('/', 1)[-1]
+
+    # Prepare full path on node. Like: '/tmp/fedora-heat-test-image.qcow2'
+    image_path_on_node = where_to_put + image_name_from_url
+
+    # Check if image already exists on node with path above.
+    # If present - return full path to it. If NOT -> download.
+    if os.path.isfile(image_path_on_node):
+        return image_path_on_node
+    else:
+        # Open URL
+        try:
+            response = urllib2.urlopen(image_url)
+        except urllib2.HTTPError, e:
+            raise Exception('Can not get file from URL. HTTPError = {0}.'
+                            '\n\tURL = "{1}"'.format(str(e.code), image_url))
+        except urllib2.URLError, e:
+            raise Exception('Can not get file from URL. URLError = {0}.'
+                            '\n\tURL = "{1}"'.format(str(e.reason), image_url))
+        except Exception:
+            raise Exception("Can not get file from URL:"
+                            "\n\t{0}".format(image_url))
+
+        # Write image to file. With Chunk to avoid memory errors.
+        CHUNK = 16 * 1024
+        with open(image_path_on_node, 'wb') as f:
+            while True:
+                chunk = response.read(CHUNK)
+                if not chunk:
+                    break
+                f.write(chunk)
+        return image_path_on_node

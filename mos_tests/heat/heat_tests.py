@@ -20,6 +20,8 @@ from random import randint
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
+from novaclient import client as nova_client
+from glanceclient.v2 import client as glance_client
 
 from mos_tests.heat.functions import common as common_functions
 
@@ -47,9 +49,14 @@ class HeatIntegrationTests(unittest.TestCase):
         cls.heat = heat_client(endpoint=heat_endpoint,
                                token=cls.keystone.auth_token)
 
+        # Get path on node to 'templates' dir
         cls.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
+        # Get path on node to 'images' dir
+        cls.images_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'images')
 
         # Neutron connect
         cls.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -58,9 +65,37 @@ class HeatIntegrationTests(unittest.TestCase):
                                             auth_url=OS_AUTH_URL,
                                             insecure=True)
 
+        # Nova connect
+        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
+        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
+            auth_url=OS_AUTH_URL,
+            username=OS_USERNAME,
+            password=OS_PASSWORD,
+            tenant_name=OS_TENANT_NAME)
+        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
+
+        cls.nova = nova_client.Client('2',
+                                      auth_url=OS_AUTH_URL,
+                                      username=OS_USERNAME,
+                                      auth_token=OS_TOKEN,
+                                      tenant_id=OS_TENANT_ID,
+                                      insecure=True)
+
+        # Glance connect
+        glance_endpoint = services.url_for(service_type='image',
+                                           endpoint_type='publicURL')
+        cls.glance = glance_client.Client(endpoint=glance_endpoint,
+                                          token=OS_TOKEN,
+                                          insecure=True)
+        cls.uid_list = []
+
+    def tearDown(self):
+        for stack_uid in self.uid_list:
+            common_functions.delete_stack(self.heat, stack_uid)
+        self.uid_list = []
+
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
-
             Steps:
                 1. Get list of Heat resources.
                 2. Check count of resources.
@@ -81,7 +116,6 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543347_HeatCreateStack(self):
         """ This test performs creation of a new stack with
             a help of Heat. And then delete it.
-
             Steps:
                 1. Read template from URL
                 2. Create new stack.
@@ -90,18 +124,15 @@ class HeatIntegrationTests(unittest.TestCase):
                 3. Delete created stack
                     + Check that stack became from
                       'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
-
         https://mirantis.testrail.com/index.php?/cases/view/543347
         [Alexander Koryagin]
         """
         # Be sure that this template file will be put on
         # controller during test preparation
-
         # File with template for stack creation
         file_name = './mos_tests/heat/templates/empty_heat_template_v2.yaml'
         # Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
-
         # - 1 -
         # Read Heat stack-create template from file
         try:
@@ -110,16 +141,12 @@ class HeatIntegrationTests(unittest.TestCase):
         except IOError:
             raise Exception("ERROR: can not find template-file [{0}]"
                             "on controller or read data".format(file_name))
-
         # - 2 -
         # Create new stack
         uid_of_new_stack = common_functions.create_stack(self.heat,
                                                          new_stack_name,
                                                          template_content)
-
-        # - 3 -
-        # Delete created stack
-        common_functions.delete_stack(self.heat, uid_of_new_stack)
+        self.uid_list.append(uid_of_new_stack)
 
     def test_543337_HeatStackUpdate(self):
         """ This test case checks stack-update action.
@@ -133,6 +160,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'string'})
+        self.uid_list.append(stack_id)
         d_updated = {'stack_name': stack_name, 'template': template_content,
                      'parameters': {'param': 'string2'}}
         self.heat.stacks.update(stack_id, **d_updated)
@@ -148,11 +176,9 @@ class HeatIntegrationTests(unittest.TestCase):
                                      "'UPDATE_COMPLETE' state")
             else:
                 time.sleep(1)
-        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
-
             Steps:
                 1. Get list of Heat resources.
                 2. Check that all types of resources have correct \
@@ -160,7 +186,6 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
-
         for resource in resource_types:
             resource_schema = self.heat.resource_types.get(resource)
             msg = "Schema of resource {0} is incorrect!"
@@ -169,7 +194,6 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543330_HeatResourceTypeTemplate(self):
         """ This test case checks representation of templates for all Heat
             resources.
-
             Steps:
                 1. Get list of Heat resources.
                 2. Check that templates for all resources have correct
@@ -177,7 +201,6 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
-
         for resource in resource_types:
             schema = self.heat.resource_types.generate_template(resource)
             msg = "Schema of resource template {0} is incorrect!"
@@ -185,7 +208,6 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
-
             Steps:
                 1. Create stack using template file empty_heat_templ.yaml.
                 2. Check that the stack is in the list of stacks
@@ -194,19 +216,20 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         stack_name = 'empty_543335'
         timeout = 20
+        parameter = 'some_param_string'
         if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
             self.templates_dir, 'empty_heat_templ.yaml')
-        stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'},
-                      'timeout_mins': timeout}
-        self.heat.stacks.create(**stack_data)
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template, timeout=timeout,
+                                            parameters={'param': parameter})
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
                                                             'CREATE_COMPLETE',
                                                             timeout))
-        common_functions.clean_stack(stack_name, self.heat)
+        common_functions.delete_stack(self.heat, uid)
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
 
@@ -216,24 +239,26 @@ class HeatIntegrationTests(unittest.TestCase):
              1. Create stack using template file empty_heat_templ.yaml.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
+             4. Delete stack
         """
         stack_name = 'empty__543333'
+        parameter = 'some_param_string'
         timeout = 20
         if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
             self.templates_dir, 'empty_heat_templ.yaml')
-        stack_data = {'stack_name': stack_name, 'template': template,
-                      'parameters': {'param': 'some_param_string'},
-                      'timeout_mins': timeout}
-        output = self.heat.stacks.create(**stack_data)
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template, timeout=timeout,
+                                            parameters={'param': parameter})
+        self.uid_list.append(uid)
         stacks_id = [s.id for s in self.heat.stacks.list()]
-        self.assertIn(output['stack']['id'], stacks_id)
+        self.assertIn(uid, stacks_id)
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
                                                             'CREATE_COMPLETE',
                                                             timeout))
-        common_functions.clean_stack(stack_name, self.heat)
 
     def test_543334_HeatStackCreateWithURL(self):
         """ This test case checks creation of stack using template URL.
@@ -241,6 +266,7 @@ class HeatIntegrationTests(unittest.TestCase):
              1. Create stack using template URL.
              2. Check that the stack is in the list of stacks
              3. Check that stack status is 'CREATE_COMPLETE'
+             4. Delete stack
         """
         stack_name = 'empty__543334'
         template_url = 'https://raw.githubusercontent.com/tkuterina/' \
@@ -248,22 +274,23 @@ class HeatIntegrationTests(unittest.TestCase):
                        'templates/empty_heat_templ.yaml'
         timeout = 20
         if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
         stack_data = {'stack_name': stack_name, 'template_url': template_url,
                       'parameters': {'param': 'some_param_string'},
                       'timeout_mins': timeout}
         output = self.heat.stacks.create(**stack_data)
+        stack_id = output['stack']['id']
+        self.uid_list.append(stack_id)
         stacks_id = [s.id for s in self.heat.stacks.list()]
-        self.assertIn(output['stack']['id'], stacks_id)
+        self.assertIn(stack_id, stacks_id)
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
                                                             'CREATE_COMPLETE',
                                                             timeout))
-        common_functions.clean_stack(stack_name, self.heat)
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
-
             Steps:
              1. Create new stack
              2. Launch heat action-check stack_name
@@ -275,6 +302,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'just text'})
+        self.uid_list.append(stack_id)
         self.heat.actions.check(stack_id)
         timeout = time.time() + 10
         while True:
@@ -291,11 +319,9 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertIn(stack_name, stack_dict,
                       "Stack {0} is not in CHECK_COMPLETE state".format(
                           stack_name))
-        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543341_ShowStackEventList(self):
         """ This test checks list events for a stack
-
             Steps:
              1. Create new stack
              2. Launch heat event-list stack_name
@@ -306,32 +332,33 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 'just text'})
+        self.uid_list.append(stack_id)
         event_list = self.heat.events.list(stack_id)
         self.assertTrue(event_list, "NOK, event list is empty")
         resources = [event.resource_name for event in event_list]
         self.assertIn(stack_name, resources,
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
-        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543344_HeatStackTemplateShow(self):
         """ This test case checks representation of template of created stack.
-
             Steps:
                 1. Create stack using template file empty_heat_templ.yaml.
                 2. Check that template of created stack has correct
                  representation.
         """
         stack_name = 'empty_stack'
+        timeout = 60
+        parameter = "some_string"
         if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
-
-        template_content = common_functions.read_template(
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
+        template = common_functions.read_template(
             self.templates_dir, 'empty_heat_templ.yaml')
-        stack_data = {'stack_name': stack_name, 'template': template_content,
-                      'parameters': {'param': 'some_param_string'},
-                      'timeout_mins': 60}
-        self.heat.stacks.create(**stack_data)
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template, timeout=timeout,
+                                            parameters={'param': parameter})
+        self.uid_list.append(uid)
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
                                                             'CREATE_COMPLETE'))
@@ -340,13 +367,8 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_template = self.heat.stacks.template(stack_id)
         self.assertIsInstance(stack_template, dict)
 
-        common_functions.clean_stack(stack_name, self.heat)
-        stacks = [s.stack_name for s in self.heat.stacks.list()]
-        self.assertNotIn(stack_name, stacks)
-
     def test_543342_ShowInfoOfSpecifiedStackEvent(self):
         """ This test checks info about stack event
-
             Steps:
              1. Create new stack
              2. Launch heat event-list stack_name
@@ -359,6 +381,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content,
                                                  {'param': 123})
+        self.uid_list.append(stack_id)
         stack_status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
         even_list = self.heat.events.list(stack_id)
         self.assertTrue(even_list, "NOK, event list is empty")
@@ -382,7 +405,6 @@ class HeatIntegrationTests(unittest.TestCase):
              4. Find IP for internal_subnet
              5. Create stack
              6. Delete stack
-
         https://mirantis.testrail.com/index.php?/cases/view/543345
         [Alexander Koryagin]
         """
@@ -441,13 +463,10 @@ class HeatIntegrationTests(unittest.TestCase):
                                             new_stack_name,
                                             template,
                                             parameters)
-        # - 6 -
-        # Delete stack
-        common_functions.delete_stack(self.heat, uid)
+        self.uid_list.append(uid)
 
     def test_543332_HeatStackPreview(self):
         """ This test case previews a stack.
-
             Steps:
              1. Execute stack preview.
              2. Check output result.
@@ -463,7 +482,8 @@ class HeatIntegrationTests(unittest.TestCase):
                         'template_description': 'Sample template',
                         'parameters': parameters}
         if common_functions.check_stack(stack_name, self.heat):
-            common_functions.clean_stack(stack_name, self.heat)
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
             self.templates_dir, 'empty_heat_templ.yaml')
         stack_data = {'stack_name': stack_name, 'template': template,
@@ -482,7 +502,6 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543343_HeatStackTemplateValidate(self):
         """ This test case checks representation of template file.
-
             Steps:
                 1. Check that selected template file has correct
                  representation.
@@ -508,6 +527,7 @@ class HeatIntegrationTests(unittest.TestCase):
             self.templates_dir, 'resource_group_template.yaml')
         stack_id = common_functions.create_stack(self.heat, stack_name,
                                                  template_content)
+        self.uid_list.append(stack_id)
 
         # Suspend stack, check statuses of stack and its resources
         self.heat.actions.suspend(stack_id)
@@ -548,7 +568,6 @@ class HeatIntegrationTests(unittest.TestCase):
                              "Resource '{0}' has '{1}' "
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
-        common_functions.delete_stack(self.heat, stack_id)
 
     def test_543351_HeatStackUpdateReplace(self):
         """ This test case checks change stack id after stack update.
@@ -568,6 +587,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 self.templates_dir, template_name)
             sid = common_functions.create_stack(
                 self.heat, stack_name, create_template)
+            self.uid_list.append(sid)
             first_resource_id = common_functions.get_resource_id(
                 self.heat, sid)
             format_change = {'disk_format': 'ami', 'container_format': 'ami'}
@@ -582,8 +602,58 @@ class HeatIntegrationTests(unittest.TestCase):
                                 msg='Resource id should be changed'
                                     ' after modifying stack')
         finally:
-            common_functions.delete_stack(self.heat, sid)
             back_format_change = {'disk_format': 'qcow2',
                                   'container_format': 'bare'}
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
+
+    def test_543336_HeatStackShow(self):
+        """ This test case checks detailed stack's information.
+            Steps:
+             1. Create stack using template file empty_heat_templ.yaml
+             2. Check that the stack is in the list of stacks
+             3. Check that stack status is 'CREATE_COMPLETE'
+             4. Check stack's information
+             5. Delete stack
+        """
+        stack_name = 'empty__543336'
+        parameter = 'some_param_string'
+        timeout = 20
+        if common_functions.check_stack(stack_name, self.heat):
+            uid = common_functions.get_stack_id(self.heat, stack_name)
+            common_functions.delete_stack(self.heat, uid)
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_templ.yaml')
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template, timeout=timeout,
+                                            parameters={'param': parameter})
+        self.uid_list.append(uid)
+        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+                      'OS::stack_id': uid,
+                      'OS::stack_name': stack_name,
+                      'param': parameter}
+        correct_data = {'description': 'Sample template',
+                        'stack_name': stack_name,
+                        'disable_rollback': True,
+                        'template_description': 'Sample template',
+                        'timeout_mins': timeout,
+                        'stack_status': 'CREATE_COMPLETE',
+                        'id': uid,
+                        'stack_status_reason': 'Stack CREATE completed '
+                                               'successfully',
+                        'parameters': parameters}
+        output = self.heat.stacks.get(uid)
+        show_data = {'description': output.description,
+                     'stack_name': output.stack_name,
+                     'disable_rollback': output.disable_rollback,
+                     'template_description': output.template_description,
+                     'timeout_mins': output.timeout_mins,
+                     'stack_status': output.stack_status,
+                     'id': output.id,
+                     'stack_status_reason': output.stack_status_reason,
+                     'parameters': output.parameters}
+        self.assertDictEqual(show_data, correct_data)
+        self.assertEqual(len(output.links), 1)
+        self.assertEqual(len(output.links[0]), 2)
+        self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
+        self.assertEqual(output.links[0]['rel'], 'self')
