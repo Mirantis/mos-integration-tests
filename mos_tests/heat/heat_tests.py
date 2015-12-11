@@ -64,12 +64,6 @@ class HeatIntegrationTests(unittest.TestCase):
                                              tenant_name=OS_TENANT_NAME,
                                              auth_url=OS_AUTH_URL,
                                              insecure=True)
-        self.uid_list = []
-
-    def tearDown(self):
-        for stack_uid in self.uid_list:
-            common_functions.delete_stack(self.heat, stack_uid)
-        self.uid_list = []
 
         # Nova connect
         OS_TOKEN = self.keystone.get_token(self.keystone.session)
@@ -93,6 +87,12 @@ class HeatIntegrationTests(unittest.TestCase):
         self.glance = glance_client.Client(endpoint=glance_endpoint,
                                            token=OS_TOKEN,
                                            insecure=True)
+        self.uid_list = []
+
+    def tearDown(self):
+        for stack_uid in self.uid_list:
+            common_functions.delete_stack(self.heat, stack_uid)
+        self.uid_list = []
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
