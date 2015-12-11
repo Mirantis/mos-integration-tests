@@ -20,6 +20,8 @@ from random import randint
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
+from novaclient import client as nova_client
+from glanceclient.v2 import client as glance_client
 
 from mos_tests.heat.functions import common as common_functions
 
@@ -57,6 +59,30 @@ class HeatIntegrationTests(unittest.TestCase):
                                              tenant_name=OS_TENANT_NAME,
                                              auth_url=OS_AUTH_URL,
                                              insecure=True)
+
+        # Nova connect
+        OS_TOKEN = self.keystone.get_token(self.keystone.session)
+        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
+            auth_url=OS_AUTH_URL,
+            username=OS_USERNAME,
+            password=OS_PASSWORD,
+            tenant_name=OS_TENANT_NAME)
+        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
+
+        self.nova = nova_client.Client('2',
+                                       auth_url=OS_AUTH_URL,
+                                       username=OS_USERNAME,
+                                       auth_token=OS_TOKEN,
+                                       tenant_id=OS_TENANT_ID,
+                                       insecure=True)
+
+        # Glance connect
+        glance_endpoint = services.url_for(service_type='image',
+                                           endpoint_type='publicURL')
+
+        self.glance = glance_client.Client(endpoint=glance_endpoint,
+                                           token=OS_TOKEN,
+                                           insecure=True)
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
@@ -549,3 +575,13 @@ class HeatIntegrationTests(unittest.TestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
         common_functions.delete_stack(self.heat, stack_id)
+
+    def test_543348_HeatCreateStackWaitCondition(self):
+        """ This test creates stack  with WaitCondition resources
+
+            Steps:
+
+        https://mirantis.testrail.com/index.php?/cases/view/543348
+        [Alexander Koryagin]
+        """
+        pass
