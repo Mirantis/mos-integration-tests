@@ -15,16 +15,16 @@ def check_stack(stack_name, heat):
     return False
 
 
-def clean_stack(stack_name, heat):
-    """ Delete stack
-            :param heat: Heat API client connection point
+def get_stack_id(heatclient, stack_name):
+    """ Check stack status
+            :param heatclient: Heat API client connection point
             :param stack_name: Name of stack
-            :return None
+            :return Stack uid
     """
-    if stack_name in [s.stack_name for s in heat.stacks.list()]:
-        heat.stacks.delete(stack_name)
-        while check_stack(stack_name, heat):
-            sleep(1)
+    if check_stack(stack_name, heatclient):
+        stack_dict = {s.stack_name: s.id for s in heatclient.stacks.list()}
+        return stack_dict[stack_name]
+    raise Exception("ERROR: Stack {0} is not defined".format(stack_name))
 
 
 def check_stack_status(stack_name, heat, status, timeout=60):
@@ -36,34 +36,35 @@ def check_stack_status(stack_name, heat, status, timeout=60):
             :return True or False
     """
     if check_stack(stack_name, heat):
-        if check_stack(stack_name, heat):
-            start_time = time()
+        start_time = time()
+        stack_status = [s.stack_status for s in heat.stacks.list()
+                    if s.stack_name == stack_name][0]
+        while stack_status.find('IN_PROGRESS') != -1 and time() < \
+                        start_time + 60 * timeout:
+            sleep(1)
             stack_status = [s.stack_status for s in heat.stacks.list()
-                        if s.stack_name == stack_name][0]
-            while stack_status.find('IN_PROGRESS') != -1 and time() < \
-                            start_time + 60 * timeout:
-                sleep(1)
-                stack_status = [s.stack_status for s in heat.stacks.list()
-                                if s.stack_name == stack_name][0]
-            if stack_status == status:
-                return True
-        return False
+                            if s.stack_name == stack_name][0]
+        if stack_status == status:
+            return True
+    return False
 
 
-def create_stack(heatclient, stack_name, template, parameters={}):
+def create_stack(heatclient, stack_name, template, parameters={}, timeout=20):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
             :param parameters: parameters from template
             :param heatclient: Heat API client connection point
             :param stack_name: Name of a new stack
             :param template:   Content of a template name
+            :param timeout: Timeout for check operation
             :return uid: UID of created stack
     """
     stack = heatclient.stacks.create(
         stack_name=stack_name,
         template=template,
-        parameters=parameters)
+        parameters=parameters,
+        timeout_mins=timeout)
     uid = stack['stack']['id']
-    check_stack_status_complete(heatclient, uid, 'CREATE')
+    check_stack_status_complete(heatclient, uid, 'CREATE', timeout)
     return uid
 
 
@@ -72,24 +73,26 @@ def delete_stack(heatclient, uid):
             :param heatclient: Heat API client connection point
             :param uid:        UID of stack
     """
-    heatclient.stacks.delete(uid)
-    check_stack_status_complete(heatclient, uid, 'DELETE')
+    if uid in [s.id for s in heatclient.stacks.list()]:
+        heatclient.stacks.delete(uid)
+        while uid in [s.id for s in heatclient.stacks.list()]:
+            sleep(1)
 
 
-def check_stack_status_complete(heat_client, uid, action):
+def check_stack_status_complete(heatclient, uid, action, timeout=10):
     """ Check stack STATUS in COMPLETE state
             :param heatclient: Heat API client connection point
-            :param id: ID stack
+            :param uid: ID stack
             :param action: status that will be checked.
                            Could be CREATE, UPDATE, DELETE.
+            :param timeout: Timeout for check operation
             :return uid: UID of created stack
     """
-    timeout_value = 10
-    stack = heat_client.stacks.get(stack_id=uid).to_dict()
-    timeout = time() + 10 * timeout_value
+    stack = heatclient.stacks.get(stack_id=uid).to_dict()
+    end_time = time() + 60 * timeout
     while stack['stack_status'] == '{0}_IN_PROGRESS'.format(action):
-        stack = heat_client.stacks.get(stack_id=uid).to_dict()
-        if time() > timeout:
+        stack = heatclient.stacks.get(stack_id=uid).to_dict()
+        if time() > end_time:
             break
         else:
             sleep(1)
@@ -115,14 +118,16 @@ def read_template(templates_dir, template_name):
         raise IOError('Can\'t read template: {}'.format(e))
 
 
-def update_stack(heat_client, uid, template_file):
+def update_stack(heat_client, uid, template_file, parameters={}):
     """ Update stack using template file
             :param heat_client: Heat API client connection point
             :param id:        ID of stack
             :param template_file: path to stack template file.
+            :param parameters: parameters from template
             :return: -
     """
-    heat_client.stacks.update(stack_id=uid, template=template_file)
+    heat_client.stacks.update(stack_id=uid, template=template_file,
+                              parameters=parameters)
     check_stack_status_complete(heat_client, uid, 'UPDATE')
 
 
@@ -134,6 +139,17 @@ def get_resource_id(heat_client, uid):
     """
     stack_resources = heat_client.resources.list(stack_id=uid)
     return stack_resources[0].physical_resource_id
+
+
+def get_specific_resource_id(heat_client, uid, resource_name):
+    """ Get stack resource id by name
+            :param heat_client:   heat API client connection point
+            :param id:            ID of stack
+            :param resource_name: resource name
+            :return: resource id
+    """
+    stack_resources = heat_client.resources.get(uid, resource_name).to_dict()
+    return stack_resources['physical_resource_id']
 
 
 def update_template_file(template_file, type_of_changes, **kwargs):
