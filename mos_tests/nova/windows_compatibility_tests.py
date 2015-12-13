@@ -101,6 +101,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
         pass
 
+    @unittest.skip("Unimplemented")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
 
@@ -117,6 +118,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         print self.nova.flavors.list()
         pass
 
+    @unittest.skip("Unimplemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
         """
 
@@ -124,6 +126,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
         pass
 
+    @unittest.skip("Unimplemented")
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
         """
 
