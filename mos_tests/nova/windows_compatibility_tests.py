@@ -92,15 +92,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
-        image = self.glance.images.create(name='MyTestSystem',
-                                          disk_format='qcow2',
-                                          container_format='bare')
-        self.glance.images.upload(
-                image.id,
-                open('~/images/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
-        print self.glance.images.list()
-        print self.nova.servers.list()
-        print self.nova.flavors.list()
         pass
 
     def tearDown(self):
@@ -115,6 +106,15 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
+        image = self.glance.images.create(name='MyTestSystem',
+                                          disk_format='qcow2',
+                                          container_format='bare')
+        self.glance.images.upload(
+                image.id,
+                open('~/images/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
+        print self.glance.images.list()
+        print self.nova.servers.list()
+        print self.nova.flavors.list()
         pass
 
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
