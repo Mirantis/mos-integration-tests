@@ -24,8 +24,8 @@ parameters:
     default: 300
   int_network_id:
     type: string
-      description: UUID of an existing internal network
-      default: nope
+    description: UUID of an existing internal network
+    default: nope
 
 resources:
   wait_condition:
@@ -44,7 +44,7 @@ resources:
     properties:
       image: {get_param: image}
       flavor: {get_param: flavor}
-      networks: {network: {get_param: int_network_id}}
+      networks: [{network: {get_param: int_network_id}}]
       key_name: {get_param: key_name}
       user_data_format: RAW
       user_data:
