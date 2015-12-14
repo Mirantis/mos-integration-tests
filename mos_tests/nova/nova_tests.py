@@ -15,7 +15,6 @@
 import os
 import time
 import unittest
-
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
@@ -38,7 +37,6 @@ class BasicNovaVerificationTests(unittest.TestCase):
                                                password=OS_PASSWORD,
                                                tenat_name=OS_TENANT_NAME,
                                                project_name=OS_PROJECT_NAME)
-        services = self.keystone.service_catalog
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -178,8 +176,3 @@ class BasicNovaVerificationTests(unittest.TestCase):
                 raise AssertionError("Instance is not removed")
             else:
                 time.sleep(1)
-
-
-
-
-
