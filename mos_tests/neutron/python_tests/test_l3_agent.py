@@ -323,13 +323,13 @@ class TestL3Agent(TestBase):
                           wait_for_migrate=False,
                           wait_for_die=False)
 
-        # clear last banned l3 agent
+        # clear first banned l3 agent
         self.clear_l3_agent(_ip=ip,
                             router_name="router01",
                             node=first_banned_node,
                             wait_for_alive=True)
 
-        # wait for router migrate to clearend node
+        # wait for router migrate to cleared node
         router = self.os_conn.neutron.list_routers(
             name='router01')['routers'][0]
         err_msg = "l3 agent wasn't migrate to {0}"

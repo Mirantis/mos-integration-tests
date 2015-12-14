@@ -290,8 +290,8 @@ class OpenStackActions(object):
             try:
                 self.neutron.delete_subnet(subnet['id'])
             except NeutronClientException:
-                logger.info('the subnet {} is not deletable'
-                            .format(subnet['id']))
+                logger.info(
+                    'the subnet {} is not deletable'.format(subnet['id']))
 
     def delete_routers(self):
         # Did not find the better way to detect the fuel admin router
@@ -302,16 +302,15 @@ class OpenStackActions(object):
             try:
                 self.neutron.delete_router(router)
             except NeutronClientException:
-                logger.info('the router {} is not deletable'
-                            .format(router))
+                logger.info('the router {} is not deletable'.format(router))
 
     def delete_floating_ips(self):
         for floating_ip in self.nova.floating_ips.list():
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info('floating_ip {} is not deletable'.
-                             format(floating_ip.id))
+                logger.info(
+                    'floating_ip {} is not deletable'.format(floating_ip.id))
 
     def delete_servers(self):
         for server in self.nova.servers.list():
@@ -325,8 +324,7 @@ class OpenStackActions(object):
             try:
                 self.nova.keypairs.delete(key_pair)
             except NovaClientException:
-                logger.info('key pair {} is not deletable'.
-                             format(key_pair.id))
+                logger.info('key pair {} is not deletable'.format(key_pair.id))
 
     def delete_security_groups(self):
         for sg in self.nova.security_groups.list():
@@ -335,13 +333,13 @@ class OpenStackActions(object):
             try:
                 self.nova.security_groups.delete(sg)
             except NovaClientException:
-                logger.info('The Security Group {} is not deletable'
-                             .format(sg))
+                logger.info(
+                    'The Security Group {} is not deletable'.format(sg))
 
     def delete_ports(self, networks):
         # After some experiments the following sequence for deletion was found
         # router_interface and ports -> subnets -> routers -> nets
-        # Delete router interafce and ports
+        # Delete router interface and ports
         # TBD some ports are still kept after the cleanup.
         # Need to find why and delete them as well
         # But it does not fail the execution so far.
@@ -349,7 +347,7 @@ class OpenStackActions(object):
             if port['network_id'] not in networks:
                 continue
             try:
-                # TBD Looks like the port migh be used either by router or
+                # TBD Looks like the port might be used either by router or
                 # l3 agent
                 # in case of router this condition is true
                 # port['network'] == 'router_interface'
@@ -371,10 +369,10 @@ class OpenStackActions(object):
                 logger.info('the port {} is not deletable'
                             .format(port['id']))
 
-    def cleanup_network(self, networks_to_skip=[]):
+    def cleanup_network(self, networks_to_skip=tuple()):
         """Clean up the neutron networks.
 
-        The networks that should be kept are passed as list of names
+        :param networks_to_skip: list of networks names that should be kept
         """
         # net ids with the names from networks_to_skip are filtered out
         networks = [x['id'] for x in self.neutron.list_networks()['networks']
