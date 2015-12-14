@@ -16,17 +16,13 @@ import os
 import time
 import unittest
 
-from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
-from glanceclient.v2 import client as glance_client
 from cinderclient import client as cinder_client
 
-from mos_tests.nova.functions import common as common_functions
 
-
-class NovaTests(unittest.TestCase):
+class BasicNovaVerificationTests(unittest.TestCase):
     """ Basic automated tests for OpenStack Nova verification. """
 
     @classmethod
@@ -43,20 +39,6 @@ class NovaTests(unittest.TestCase):
                                                tenat_name=OS_TENANT_NAME,
                                                project_name=OS_PROJECT_NAME)
         services = self.keystone.service_catalog
-        heat_endpoint = services.url_for(service_type='orchestration',
-                                         endpoint_type='internalURL')
-
-        self.heat = heat_client(endpoint=heat_endpoint,
-                                token=self.keystone.auth_token)
-
-        # Get path on node to 'templates' dir
-        self.templates_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'templates')
-        # Get path on node to 'images' dir
-        self.images_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'images')
 
         # Neutron connect
         self.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -81,13 +63,6 @@ class NovaTests(unittest.TestCase):
                                        tenant_id=OS_TENANT_ID,
                                        insecure=True)
 
-        # Glance connect
-        glance_endpoint = services.url_for(service_type='image',
-                                           endpoint_type='publicURL')
-        self.glance = glance_client.Client(endpoint=glance_endpoint,
-                                           token=OS_TOKEN,
-                                           insecure=True)
-
         # Cinder endpoint
         self.cinder = cinder_client.Client('2', OS_USERNAME, OS_PASSWORD,
                                            OS_TENANT_NAME,
@@ -103,8 +78,7 @@ class NovaTests(unittest.TestCase):
             3. Resize instance from m1.small to m1.tiny
         """
 
-        # 0. Add ALL ICMP rule to Default security group
-
+        # 0. Add ALL ICMP rule to Default security group?
 
         # 1. Create bootable volume
         image_id = [image.id for image in self.nova.images.list() if
@@ -132,13 +106,15 @@ class NovaTests(unittest.TestCase):
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
 
-        instance_id = self.nova.servers.create(name=name, image='',
-                                               flavor=initial_flavor,
-                                               block_device_mapping=bdm,
-                                               nics=[{'net-id': net}])
+        instance = self.nova.servers.create(name=name, image='',
+                                            flavor=initial_flavor,
+                                            block_device_mapping=bdm,
+                                            nics=[{'net-id': net}])
+        # self.assertTrue(
+        #     common_functions.check_inst_status(self.nova, instance.id, 10))
         timeout = time.time() + 60
         while True:
-            status = self.nova.servers.get(instance_id).status
+            status = self.nova.servers.get(instance).status
             if status == 'ACTIVE':
                 break
             elif time.time() > timeout:
@@ -147,25 +123,25 @@ class NovaTests(unittest.TestCase):
                 time.sleep(1)
 
         # Assert for attached volumes
-        attached_volumes = self.nova.servers.get(instance_id).to_dict()[
+        attached_volumes = self.nova.servers.get(instance).to_dict()[
             'os-extended-volumes:volumes_attached']
         self.assertIn({'id': volume.id}, attached_volumes)
 
         # Assert to flavor size
-        self.assertEqual(self.nova.servers.get(instance_id).flavor['id'],
+        self.assertEqual(self.nova.servers.get(instance).flavor['id'],
                          initial_flavor,
                          "Unexpected instance flavor before resize")
 
         floating_ip = self.nova.floating_ips.create()
-        instance_id.add_floating_ip(floating_ip.ip)
+        instance.add_floating_ip(floating_ip.ip)
 
         # 3. Resize from m1.small to m1.tiny
-        self.nova.servers.resize(instance_id, resize_flavor)
+        self.nova.servers.resize(instance, resize_flavor)
         timeout = time.time() + 60
         while True:
-            status = self.nova.servers.get(instance_id).status
+            status = self.nova.servers.get(instance).status
             if status == 'VERIFY_RESIZE':
-                self.nova.servers.confirm_resize(instance_id)
+                self.nova.servers.confirm_resize(instance)
                 break
             elif time.time() > timeout:
                 raise AssertionError(
@@ -175,7 +151,7 @@ class NovaTests(unittest.TestCase):
 
         timeout = time.time() + 120
         while True:
-            status = self.nova.servers.get(instance_id).status
+            status = self.nova.servers.get(instance).status
             if status == 'ACTIVE':
                 break
             elif time.time() > timeout:
@@ -183,19 +159,19 @@ class NovaTests(unittest.TestCase):
             else:
                 time.sleep(1)
 
-        self.assertEqual(self.nova.servers.get(instance_id).flavor['id'],
+        self.assertEqual(self.nova.servers.get(instance).flavor['id'],
                          resize_flavor,
-                         "Unexpected instance flavor before resize")
+                         "Unexpected instance flavor after resize")
 
         # Check that instance is reachable
         ping = os.system("ping -c 2 -w 60 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
         # Clean-up (to be re-worked)
-        self.nova.servers.delete(instance_id)
+        self.nova.servers.delete(instance)
         timeout = time.time() + 120
         while True:
-            if instance_id not in self.nova.servers.list():
+            if instance not in self.nova.servers.list():
                 self.cinder.volumes.delete(volume)
                 break
             elif time.time() > timeout:
