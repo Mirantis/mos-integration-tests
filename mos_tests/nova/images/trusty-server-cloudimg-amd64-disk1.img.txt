@@ -1,0 +1,1 @@
+http://uec-images.ubuntu.com/trusty/current/trusty-server-cloudimg-amd64-disk1.img

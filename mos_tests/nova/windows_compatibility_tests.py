@@ -111,7 +111,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                                           container_format='bare')
         self.glance.images.upload(
                 image.id,
-                open('~/images/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
+                open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
         print self.glance.images.list()
         print self.nova.servers.list()
         print self.nova.flavors.list()
