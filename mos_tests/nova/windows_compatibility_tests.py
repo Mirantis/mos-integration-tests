@@ -101,7 +101,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
         pass
 
-    @unittest.skip("Unimplemented")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
 
