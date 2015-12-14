@@ -797,10 +797,10 @@ class HeatIntegrationTests(unittest.TestCase):
         image_name = 'cirros-test-image' + '_' + str(randint(100, 10000))
 
         # Prepare full path to image file. Return e.g.:
-        # Like: /root/mos_tests/heat/images/fedora-heat-test-image.qcow2.txt
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
         image_link_location = os.path.join(self.images_dir, file_name)
 
-        # Download image on node. Like: /tmp/fedora-heat-test-image.qcow2
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
         image_path = common_functions.download_image(image_link_location)
 
         # Create image in Glance
