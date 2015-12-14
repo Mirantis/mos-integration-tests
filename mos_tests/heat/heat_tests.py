@@ -722,6 +722,62 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
 
+    def test_543338_StackCancelUpdate(self):
+        """ This test check the possibility to cancel update
+
+            Steps:
+             1. Create new stack
+             2. Launch heat action-suspend stack_name
+             3. Launch heat stack-update stack_name
+             4. Launch heat stack-cancel-update stack_name while update
+                operation is in progress
+            5. Check state of stack after cancel update
+        """
+
+        # network ID, image ID, InstanceType
+        networks = self.neutron.list_networks()['networks']
+        internal_net = [net['id'] for net in networks
+                        if not net['router:external']][0]
+        image_id = self.nova.images.list()[0].id
+        instance_type = 'm1.tiny'
+
+        # Stack creation
+        stack_name = 'stack_to_cancel_update_543338'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'heat_create_neutron_stack_template.yaml')
+        initial_params = {'network': internal_net, 'ImageId': image_id,
+                          'InstanceType': instance_type}
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, initial_params)
+        self.uid_list.append(stack_id)
+
+        # Stack update (from m1.tiny to m1.small)
+        upd_params = {'network': internal_net, 'ImageId': image_id,
+                      'InstanceType': 'm1.small'}
+        d_updated = {'stack_name': stack_name, 'template': template_content,
+                     'parameters': upd_params}
+        self.heat.stacks.update(stack_id, **d_updated)
+
+        # Perform cancel-update operation
+        # when stack status is 'UPDATE_IN_PROGRESS'
+        timeout = time.time() + 60
+        while True:
+            status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
+            if status == 'UPDATE_IN_PROGRESS':
+                self.heat.actions.cancel_update(stack_id)
+                break
+            elif time.time() > timeout:
+                raise AttributeError(
+                    "Unable to find stack in 'UPDATE_IN_PROGRESS' state. "
+                    "Status '{0}' doesn't allow to perform cancel-update"
+                    .format(status))
+            else:
+                time.sleep(1)
+
+        # Wait for rollback competed and check
+        self.assertTrue(common_functions.check_stack_status
+                        (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
+
 
     def test_543348_HeatCreateStackWaitCondition(self):
         """ This test creates stack with WaitCondition resources
