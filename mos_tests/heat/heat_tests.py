@@ -778,20 +778,25 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertTrue(common_functions.check_stack_status
                         (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
 
-
     def test_543348_HeatCreateStackWaitCondition(self):
         """ This test creates stack with WaitCondition resources
 
             Steps:
-             1.
+                1. Download Cirros image
+                2. Create image with Glance and check that it is 'Active'
+                3. Create new key-pair with Nova
+                4. Find ID of internal network with Neutron
+                5. Create stack with WaitCondition and check that it was
+                   created successfully
+                6. CleanUp
 
         https://mirantis.testrail.com/index.php?/cases/view/543348
         [Alexander Koryagin]
         """
-        file_name = 'fedora-heat-test-image.qcow2.txt'
-        image_name = 'fedora-heat-test-image' + '_' + str(randint(100, 10000))
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = 'cirros-test-image' + '_' + str(randint(100, 10000))
 
-        # Prepare full path to image file
+        # Prepare full path to image file. Return e.g.:
         # Like: /root/mos_tests/heat/images/fedora-heat-test-image.qcow2.txt
         image_link_location = os.path.join(self.images_dir, file_name)
 
@@ -800,7 +805,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
         # Create image in Glance
         image = self.glance.images.create(name=image_name,
-                                          os_distro='Fedora',
+                                          os_distro='Cirros',
                                           disk_format='qcow2',
                                           visibility='public',
                                           container_format='bare')
@@ -810,7 +815,7 @@ class HeatIntegrationTests(unittest.TestCase):
                                  "[{0}]. "
                                  "Expected [queued]".format(image.status))
 
-        # Put image-file in created image
+        # Put image-file in created Image
         with open(image_path, 'rb') as image_content:
             self.glance.images.upload(image.id, image_content)
 
@@ -820,30 +825,42 @@ class HeatIntegrationTests(unittest.TestCase):
             'active',
             'After creation in Glance image status is [{0}]. '
             'Expected is [active]'
-                .format(self.glance.images.get(image.id)['status'])
-        )
+                .format(self.glance.images.get(image.id)['status']))
 
         # Create new keypair
         keypair = self.nova.keypairs.create(name=image_name)
 
-        # Get ID of internal network
+        # Get list of networks
         networks = self.neutron.list_networks()
 
         # Find network ID if network name contains 'inter'
         int_network_id = [x['id'] for x in networks['networks']
                           if 'intern' in x['name']]
 
-        # If empty, get id of any network
+        # If can't find 'inter' in networks -> get ID of any network
         if not int_network_id:
             int_network_id = networks['networks'][-1]['id']
         else:
             int_network_id = int_network_id[0]
 
-        # Create stack with heat
+        # Create stack with Heat
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_WaitCondition_543348.yaml')
 
+        uid = common_functions.create_stack(self.heat,
+                                            'Wait_Condition_Stack_543348',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image': image_name,
+                                             'flavor': 'm1.small',
+                                             'timeout': 900,  # 15 min
+                                             'int_network_id': int_network_id},
+                                            20)
         # CLEANUP
-        # Delete image
-        # glance.images.delete(image.id)
-        # Delete keypair
-        # keypair.delete()
-
+        # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
