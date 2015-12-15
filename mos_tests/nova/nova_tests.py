@@ -90,85 +90,85 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
 
-    def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
-        """ This test case checks creation of instance from image with all
-        types of flavor. For this test needs 2 nodes with compute role:
-        20Gb RAM and 150GB disk for each
-
-            Steps:
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
-        """
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks
-                        if not net['router:external']][0]
-        image_id = self.nova.images.list()[0].id
-        security_group = self.nova.security_groups.list()[0].name
-        flavor_list = self.nova.flavors.list()
-        for flavor in flavor_list:
-            floating_ip = self.nova.floating_ips.create()
-            self.floating_ips.append(floating_ip)
-            self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
-                                           self.nova.floating_ips.list()])
-            inst = common_functions.create_instance(self.nova, "inst_543358_{}"
-                                                    .format(flavor.name),
-                                                    flavor.id, net,
-                                                    security_group,
-                                                    image_id=image_id)
-            inst_id = inst.id
-            self.instances.append(inst_id)
-            inst.add_floating_ip(floating_ip.ip)
-            self.assertTrue(common_functions.check_ip(self.nova, inst_id,
-                                                      floating_ip.ip))
-            ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
-            self.assertEqual(ping, 0, "Instance is not reachable")
-
-    def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
-        """ This test case checks creation of instance from volume with all
-        types of flavor. For this test needs 2 nodes with compute role:
-        20Gb RAM and 150GB disk for each
-
-            Steps:
-             1. Create bootable volume
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
-        """
-        image_id = self.nova.images.list()[0].id
-
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks if not net['router:external']][0]
-        security_group = self.nova.security_groups.list()[0].name
-        flavor_list = self.nova.flavors.list()
-        for flavor in flavor_list:
-            floating_ip = self.nova.floating_ips.create()
-            self.floating_ips.append(floating_ip)
-            self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
-                                           self.nova.floating_ips.list()])
-            volume = common_functions.create_volume(self.cinder, image_id)
-            self.volumes.append(volume)
-            bdm = {'vda': volume.id}
-            inst = common_functions.create_instance(self.nova, "inst_543360_{}"
-                                                    .format(flavor.name),
-                                                    flavor.id, net,
-                                                    security_group,
-                                                    block_device_mapping=bdm)
-            inst_id = inst.id
-            self.instances.append(inst_id)
-            inst.add_floating_ip(floating_ip.ip)
-            self.assertTrue(common_functions.check_ip(self.nova, inst_id,
-                                                      floating_ip.ip))
-            ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
-            self.assertEqual(ping, 0, "Instance is not reachable")
+    # def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
+    #     """ This test case checks creation of instance from image with all
+    #     types of flavor. For this test needs 2 nodes with compute role:
+    #     20Gb RAM and 150GB disk for each
+    #
+    #         Steps:
+    #          1. Create a floating ip
+    #          2. Create an instance from an image with some flavor
+    #          3. Add the floating ip to the instance
+    #          4. Ping the instance by the floating ip
+    #          5. Delete the floating ip
+    #          6. delete the instance
+    #          7. Repeat all steps for all types of flavor
+    #     """
+    #     networks = self.neutron.list_networks()['networks']
+    #     net = [net['id'] for net in networks
+    #                     if not net['router:external']][0]
+    #     image_id = self.nova.images.list()[0].id
+    #     security_group = self.nova.security_groups.list()[0].name
+    #     flavor_list = self.nova.flavors.list()
+    #     for flavor in flavor_list:
+    #         floating_ip = self.nova.floating_ips.create()
+    #         self.floating_ips.append(floating_ip)
+    #         self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+    #                                        self.nova.floating_ips.list()])
+    #         inst = common_functions.create_instance(self.nova, "inst_543358_{}"
+    #                                                 .format(flavor.name),
+    #                                                 flavor.id, net,
+    #                                                 security_group,
+    #                                                 image_id=image_id)
+    #         inst_id = inst.id
+    #         self.instances.append(inst_id)
+    #         inst.add_floating_ip(floating_ip.ip)
+    #         self.assertTrue(common_functions.check_ip(self.nova, inst_id,
+    #                                                   floating_ip.ip))
+    #         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+    #         self.assertEqual(ping, 0, "Instance is not reachable")
+    #
+    # def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
+    #     """ This test case checks creation of instance from volume with all
+    #     types of flavor. For this test needs 2 nodes with compute role:
+    #     20Gb RAM and 150GB disk for each
+    #
+    #         Steps:
+    #          1. Create bootable volume
+    #          1. Create a floating ip
+    #          2. Create an instance from an image with some flavor
+    #          3. Add the floating ip to the instance
+    #          4. Ping the instance by the floating ip
+    #          5. Delete the floating ip
+    #          6. delete the instance
+    #          7. Repeat all steps for all types of flavor
+    #     """
+    #     image_id = self.nova.images.list()[0].id
+    #
+    #     networks = self.neutron.list_networks()['networks']
+    #     net = [net['id'] for net in networks if not net['router:external']][0]
+    #     security_group = self.nova.security_groups.list()[0].name
+    #     flavor_list = self.nova.flavors.list()
+    #     for flavor in flavor_list:
+    #         floating_ip = self.nova.floating_ips.create()
+    #         self.floating_ips.append(floating_ip)
+    #         self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+    #                                        self.nova.floating_ips.list()])
+    #         volume = common_functions.create_volume(self.cinder, image_id)
+    #         self.volumes.append(volume)
+    #         bdm = {'vda': volume.id}
+    #         inst = common_functions.create_instance(self.nova, "inst_543360_{}"
+    #                                                 .format(flavor.name),
+    #                                                 flavor.id, net,
+    #                                                 security_group,
+    #                                                 block_device_mapping=bdm)
+    #         inst_id = inst.id
+    #         self.instances.append(inst_id)
+    #         inst.add_floating_ip(floating_ip.ip)
+    #         self.assertTrue(common_functions.check_ip(self.nova, inst_id,
+    #                                                   floating_ip.ip))
+    #         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+    #         self.assertEqual(ping, 0, "Instance is not reachable")
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
@@ -183,21 +183,9 @@ class NovaIntegrationTests(unittest.TestCase):
         # 1. Create bootable volume
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
-        volume = self.cinder.volumes.create(1, name='TestVM_volume',
-                                            imageRef=image_id)
-        self.volumes.append(volume)
 
-        timeout = time.time() + 60
-        while True:
-            status = self.cinder.volumes.get(volume.id).status
-            if status == 'available':
-                break
-            elif time.time() > timeout:
-                raise AssertionError(
-                    "Volume status is '{0}' instead of 'available".format(
-                        status))
-            else:
-                time.sleep(1)
+        volume = common_functions.create_volume(self.cinder, image_id, 60)
+        self.volumes.append(volume)
 
         # 2. Create instance from newly created volume, associate floating_ip
         name = 'TestVM_543355_instance_to_resize'
@@ -207,22 +195,12 @@ class NovaIntegrationTests(unittest.TestCase):
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
-
-        instance = self.nova.servers.create(name=name, image='',
-                                            flavor=initial_flavor,
-                                            block_device_mapping=bdm,
-                                            nics=[{'net-id': net}])
+        security_group = self.nova.security_groups.list()[0].name
+        instance = common_functions.create_instance(self.nova, name,
+                                                    initial_flavor, net,
+                                                    security_group,
+                                                    block_device_mapping=bdm)
         self.instances.append(instance.id)
-
-        timeout = time.time() + 60
-        while True:
-            status = self.nova.servers.get(instance).status
-            if status == 'ACTIVE':
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Unable to find running instance")
-            else:
-                time.sleep(1)
 
         # Assert for attached volumes
         attached_volumes = self.nova.servers.get(instance).to_dict()[
@@ -240,28 +218,11 @@ class NovaIntegrationTests(unittest.TestCase):
 
         # 3. Resize from m1.small to m1.tiny
         self.nova.servers.resize(instance, resize_flavor)
-        timeout = time.time() + 60
-        while True:
-            status = self.nova.servers.get(instance).status
-            if status == 'VERIFY_RESIZE':
-                self.nova.servers.confirm_resize(instance)
-                break
-            elif time.time() > timeout:
-                raise AssertionError(
-                    "Unable to find instance in 'VERIFY_RESIZE' state")
-            else:
-                time.sleep(1)
-
-        timeout = time.time() + 120
-        while True:
-            status = self.nova.servers.get(instance).status
-            if status == 'ACTIVE':
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Unable to find running instance")
-            else:
-                time.sleep(1)
-
+        common_functions.check_inst_status(self.nova, instance.id,
+                                           'VERIFY_RESIZE', 60)
+        self.nova.servers.confirm_resize(instance)
+        common_functions.check_inst_status(self.nova, instance.id,
+                                           'ACTIVE', 60)
         self.assertEqual(self.nova.servers.get(instance).flavor['id'],
                          resize_flavor,
                          "Unexpected instance flavor after resize")
@@ -288,19 +249,8 @@ class NovaIntegrationTests(unittest.TestCase):
                     1, name='Volume_{}'.format(num + 1)))
             self.volumes.extend(volumes)
 
-        timeout = time.time() + 60
-        while True:
-            vol_list = {v.name: v.status for v in self.cinder.volumes.list()}
-            available_list = [name for name in vol_list.keys() if
-                              vol_list[name] == 'available']
-            error_list = [name for name in vol_list.keys() if
-                          vol_list[name] != 'available']
-            if not error_list and len(available_list) == 10:
-                break
-            elif time.time() > timeout:
-                raise AssertionError(
-                    "\nList of not available volumes:\n\t"
-                    "{0}\nList of not available volumes:\n\t{1}".format(
-                        error_list, available_list))
-            else:
-                time.sleep(1)
+        for volume in self.cinder.volumes.list():
+            self.assertTrue(
+                common_functions.check_volume_status(self.cinder, volume.id,
+                                                     'available', 60),
+                "Volume '{0}' is not available".format(volume.id))
