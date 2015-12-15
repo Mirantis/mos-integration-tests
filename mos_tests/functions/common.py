@@ -49,18 +49,23 @@ def check_stack_status(stack_name, heat, status, timeout=60):
     return False
 
 
-def create_stack(heatclient, stack_name, template, parameters={}, timeout=20):
+def create_stack(heatclient, stack_name, template, parameters={}, timeout=20,
+                 files=None):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
             :param parameters: parameters from template
             :param heatclient: Heat API client connection point
             :param stack_name: Name of a new stack
             :param template:   Content of a template name
             :param timeout: Timeout for check operation
+            :param files: In case if template uses file as reference
+                          e.g: "type: volume_with_attachment.yaml"
             :return uid: UID of created stack
     """
+    templ_files = files or {}
     stack = heatclient.stacks.create(
         stack_name=stack_name,
         template=template,
+        files=templ_files,
         parameters=parameters,
         timeout_mins=timeout)
     uid = stack['stack']['id']
