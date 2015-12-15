@@ -241,6 +241,43 @@ class OpenStackActions(object):
             self.nova.servers.add_floating_ip(srv, floating_ip)
             return floating_ip
 
+    def disassociate_floating_ip(self, srv, floating_ip, use_neutron=False):
+        """
+        """
+        if use_neutron:
+            try:
+                self.neutron.update_floatingip(
+                    floatingip=floating_ip['id'],
+                    body={'floatingip':{}})
+
+                id = floating_ip['id']
+                helpers.wait(
+                    lambda: self.neutron.show_floatingip(id)
+                            ['floatingip']['status'] == "DOWN",timeout=60)
+            except NeutronClientException:
+                logger.info('The floatingip {} can not be disassociated.'
+                            .format(floating_ip['id']))
+        else:
+            try:
+                self.nova.servers.remove_floating_ip(srv, floating_ip)
+            except NovaClientException:
+                logger.info('The floatingip {} can not be disassociated.'
+                            .format(floating_ip))
+
+    def delete_floating_ip(self, floating_ip, use_neutron=False):
+        if use_neutron:
+            try:
+                self.neutron.delete_floatingip(floating_ip['id'])
+            except NeutronClientException:
+                logger.info('floating_ip {} is not deletable'
+                            .format(floating_ip['id']))
+        else:
+            try:
+                self.nova.floating_ips.delete(floating_ip)
+            except NovaClientException:
+                logger.info('floating_ip {} is not deletable'.
+                             format(floating_ip))
+
     def create_router(self, name, tenant_id=None):
         router = {'name': name}
         if tenant_id is not None:
