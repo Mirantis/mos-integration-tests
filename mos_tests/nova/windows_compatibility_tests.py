@@ -99,6 +99,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.expected_flavor_id = 3
         self.node_to_boot = None
         self.security_group_name = "ms_compatibility"
+        # protect for multiple definition of the same group
+        for sg in self.nova.security_groups.list():
+            if sg.name == self.security_group_name:
+                self.nova.security_groups.delete(sg)
+        # adding required security group
         self.the_security_group = self.nova.security_groups.create(
                 name=self.security_group_name,
                 description="Windows Compatibility")
