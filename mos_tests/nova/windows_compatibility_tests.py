@@ -113,9 +113,13 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
         print self.glance.images.list()
-        print self.nova.servers.list()
-        print self.nova.flavors.list()
-        pass
+        for image in self.glance.images.list():
+            print image
+        for server in self.nova.servers.list():
+            print server
+        for flavor in self.nova.flavors.list():
+            print flavor
+        assert 0
 
     @unittest.skip("Unimplemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
