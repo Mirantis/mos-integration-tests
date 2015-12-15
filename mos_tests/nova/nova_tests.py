@@ -189,7 +189,8 @@ class BasicNovaVerificationTests(unittest.TestCase):
         # Creation using Cinder
         for num in xrange(volume_count):
             volumes.append(
-                self.cinder.volumes.create(1, name='Volume_{}'.format(num+1)))
+                self.cinder.volumes.create(
+                    1, name='Volume_{}'.format(num + 1)))
 
         timeout = time.time() + 60
         while True:
@@ -210,4 +211,3 @@ class BasicNovaVerificationTests(unittest.TestCase):
 
         for volume in self.cinder.volumes.list():
             self.cinder.volumes.delete(volume.id)
-
