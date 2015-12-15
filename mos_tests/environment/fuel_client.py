@@ -67,6 +67,17 @@ class Environment(EnvironmentBase):
         if ssl['services']['value']:
             return ssl['cert_data']['value']['content']
 
+    @property
+    def leader_controller(self):
+        controllers = self.get_nodes_by_role('controller')
+        controller_ip = controllers[0].data['ip']
+        with self.get_ssh_to_node(controller_ip) as remote:
+            response = remote.execute('pcs status cluster')
+        stdout = ' '.join(response['stdout'])
+        for controller in controllers:
+            if controller.data['fqdn'] in stdout:
+                return controller
+
 
 class FuelClient(object):
     """Fuel API client"""

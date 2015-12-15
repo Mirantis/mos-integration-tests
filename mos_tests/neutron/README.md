@@ -16,6 +16,9 @@ Neutron python tests
 For run test on local machine just execute from this project root:
 
 `$ py.test mos_tests/neutron`
+`$ py.test test_l3_agent.py/test_l3_agent.py::TestL3Agent::test_ban_one_l3_agent # check this ability
+`$ py.test mos_tests/neutron -k test_ban_one_dhcp_agent # run a single test`
+
 
 ### Remote
 
