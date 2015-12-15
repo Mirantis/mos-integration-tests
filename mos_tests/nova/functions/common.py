@@ -46,11 +46,11 @@ def check_inst_status(novaclient, uid, status, timeout=5):
     return False
 
 
-def check_ip(novaclient, uid, ip, timeout=1):
+def check_ip(novaclient, uid, fip, timeout=1):
     """ Check floating ip address adding to instance
             :param novaclient: Nova API client connection point
             :param uid: UID of instance
-            :param ip: Floating ip
+            :param fip: Floating ip
             :param timeout: Timeout for check operation
             :return True or False
     """
@@ -58,11 +58,11 @@ def check_ip(novaclient, uid, ip, timeout=1):
         start_time = time()
         ips = [ip['addr'] for ip in novaclient.servers.ips(uid)[
                 'admin_internal_net']]
-        while ip not in ips and time() < start_time + 10 * timeout:
+        while fip not in ips and time() < start_time + 10 * timeout:
             sleep(1)
             ips = [ip['addr'] for ip in novaclient.servers.ips(uid)[
                 'admin_internal_net']]
-        if ip in ips:
+        if fip in ips:
             return True
         return False
 

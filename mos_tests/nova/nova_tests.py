@@ -63,7 +63,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
-        types of flavor. For this test is needed 2 nodes with compute role:
+        types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
 
             Steps:
@@ -83,7 +83,7 @@ class HeatIntegrationTests(unittest.TestCase):
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
-            self.assertIn(floating_ip.ip,  [fip_info.ip for fip_info in
+            self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                             self.nova.floating_ips.list()])
 
             inst = self.nova.servers.create(name='inst_543358_{}'.format(
