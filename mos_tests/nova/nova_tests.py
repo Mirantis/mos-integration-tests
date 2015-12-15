@@ -13,7 +13,6 @@
 #    under the License.
 
 import os
-import time
 import unittest
 
 from novaclient import client as nova_client
@@ -131,9 +130,8 @@ class NovaIntegrationTests(unittest.TestCase):
         bdm = {'vda': volume_id}
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
-            self.assertIn(floating_ip.ip,  [fip_info.ip for fip_info in
-                                            self.nova.floating_ips.list()])
-
+            self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                           self.nova.floating_ips.list()])
             inst = common_functions.create_instance(self.nova, "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
