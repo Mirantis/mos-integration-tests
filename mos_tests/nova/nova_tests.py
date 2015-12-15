@@ -246,7 +246,7 @@ class NovaIntegrationTests(unittest.TestCase):
             volumes.append(
                 self.cinder.volumes.create(
                     1, name='Volume_{}'.format(num + 1)))
-            self.volumes.extend(volumes)
+        self.volumes.extend(volumes)
 
         for volume in self.cinder.volumes.list():
             self.assertTrue(
