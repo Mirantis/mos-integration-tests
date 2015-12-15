@@ -26,7 +26,7 @@ def check_instance(novaclient, uid):
 
 
 def check_inst_status(novaclient, uid, status, timeout=5):
-    """ Check status if instance
+    """ Check status of instance
             :param novaclient: Nova API client connection point
             :param uid: UID of instance
             :param status: Expected instance status
@@ -58,7 +58,7 @@ def check_ip(novaclient, uid, fip, timeout=1):
         start_time = time()
         ips = [ip['addr'] for ip in novaclient.servers.ips(uid)[
                 'admin_internal_net']]
-        while fip not in ips and time() < start_time + 10 * timeout:
+        while fip not in ips and time() < start_time + 60 * timeout:
             sleep(1)
             ips = [ip['addr'] for ip in novaclient.servers.ips(uid)[
                 'admin_internal_net']]
@@ -68,11 +68,63 @@ def check_ip(novaclient, uid, fip, timeout=1):
 
 
 def delete_instance(novaclient, uid):
-    """ Delete stack and check STATUS == DELETE_COMPLETE
+    """ Delete instance and check that it is absent in the list
             :param novaclient: Nova API client connection point
             :param uid: UID of instance
     """
     if check_instance(novaclient, uid):
         novaclient.servers.delete(uid)
         while check_instance(novaclient, uid):
+            sleep(1)
+
+
+def create_volume(cinderclient, image_id, timeout=5):
+    """ Check volume creation
+            :param cinderclient: Nova API client connection point
+            :param image_id: UID of image
+            :param timeout: Timeout for check operation
+            :return volume id
+    """
+    end_time = time() + 60 * timeout
+    volume = cinderclient.volumes.create(1, name='Test_volume',
+                                         imageRef=image_id)
+    while True:
+        status = cinderclient.volumes.get(volume.id).status
+        if status == 'available':
+            return volume.id
+        elif time() > end_time:
+            raise AssertionError(
+                "Volume status is '{0}' instead of 'available".format(status))
+        else:
+            sleep(1)
+
+
+def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
+                    image_id='', block_device_mapping=None, timeout=5):
+    """ Check instance creation
+            :param novaclient: Nova API client connection point
+            :param inst_name: name for instance
+            :param image_id: id of image
+            :param flavor_id: id of flavor
+            :param net_id: id of network
+            :param security_group: corresponding security_group
+            :param block_device_mapping: if volume is used
+            :param timeout: Timeout for check operation
+            :return instance id
+    """
+    end_time = time() + 60 * timeout
+    inst = novaclient.servers.create(name=inst_name, nics=[{"net-id": net_id}],
+                                     flavor=flavor_id, image=image_id,
+                                     security_groups=[security_group],
+                                     block_device_mapping=block_device_mapping)
+    while True:
+        inst_status = [s.status for s in novaclient.servers.list() if s.id ==
+                       inst.id][0]
+        if inst_status == 'ACTIVE':
+            return inst
+        elif time() > end_time:
+            raise AssertionError(
+                "Instance status is '{0}' instead of 'ACTIVE".format(
+                    inst_status))
+        else:
             sleep(1)
