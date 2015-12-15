@@ -88,9 +88,6 @@ class NovaIntegrationTests(unittest.TestCase):
         image_id = self.nova.images.list()[0].id
         security_group = self.nova.security_groups.list()[0].name
         flavor_list = self.nova.flavors.list()
-
-        flavor_list = [flavor_list[5], flavor_list[0], flavor_list[1]]
-
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
@@ -130,9 +127,6 @@ class NovaIntegrationTests(unittest.TestCase):
         net = [net['id'] for net in networks if not net['router:external']][0]
         security_group = self.nova.security_groups.list()[0].name
         flavor_list = self.nova.flavors.list()
-
-        flavor_list = [flavor_list[5], flavor_list[0], flavor_list[1]]
-
         volume_id = common_functions.create_volume(self.cinder, image_id)
         bdm = {'vda': volume_id}
         for flavor in flavor_list:
