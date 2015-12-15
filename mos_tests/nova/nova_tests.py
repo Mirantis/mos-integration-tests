@@ -176,7 +176,7 @@ class BasicNovaVerificationTests(unittest.TestCase):
                 time.sleep(1)
 
     def test_543359_MassivelySpawnVolumes(self):
-        """ This test checks massivelly spawn volumes
+        """ This test checks massively spawn volumes
 
             Steps:
                 1. Create 10 volumes
