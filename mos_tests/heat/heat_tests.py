@@ -416,12 +416,12 @@ class HeatIntegrationTests(unittest.TestCase):
         """ This test creates stack using AWS format template
 
             Steps:
-             1. Connect to Neutron and get ID of internal_network
-             2. Get ID of external_network
-             3. Get ID of internal_subnet of internal_network
-             4. Find IP for internal_subnet
-             5. Create stack
-             6. Delete stack
+                1. Connect to Neutron and get ID of internal_network
+                2. Get ID of external_network
+                3. Get ID of internal_subnet of internal_network
+                4. Find IP for internal_subnet
+                5. Create stack
+                6. Delete stack
         https://mirantis.testrail.com/index.php?/cases/view/543345
         """
         # Prepare new name. Like: 'Test_1449484927'
