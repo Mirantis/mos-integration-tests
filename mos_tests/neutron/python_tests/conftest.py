@@ -81,7 +81,7 @@ def os_conn(env):
         try:
             os_conn.get_servers()
             return True
-        except:
+        except Exception:
             return False
     wait(is_alive, timeout=60 * 5, timeout_msg="OpenStack nova isn't alive")
     return os_conn
