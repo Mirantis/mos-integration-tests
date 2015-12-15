@@ -128,11 +128,27 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # TODO: add check flavor parameters vs. vm parameters
         network_interfaces = \
             [{"net-id": self.nova.networks.list()[0].id, "v4-fixed-ip": ''}]
-        print "Starting with flavor {}".format(self.nova.flavors.get(2))
-        boot_node = self.nova.servers.create(name="MyTestSystemWithNova",
-                                             image=image,
-                                             flavor=self.nova.flavors.get(2),
-                                             nics=network_interfaces)
+        # Collect information about the medium flavor and modify it to our needs
+        expected_flavor_id = self.nova.flavors.get(3)
+        our_own_flavor_was_created = False
+        for flavor in self.nova.flavors.list():
+            if 'medium' in flavor.name:
+                expected_flavor = self.nova.flavors.create(
+                    name="copy.of." + flavor.name,
+                    ram=flavor.ram,
+                    vcpus=1,  # Only one VCPU
+                    disk=flavor.disk
+                )
+                expected_flavor_id = expected_flavor.id
+                our_own_flavor_was_created = True
+                break
+        print "Starting with flavor {}".format(
+                self.nova.flavors.get(expected_flavor_id))
+        boot_node = self.nova.servers.create(
+                name="MyTestSystemWithNova",
+                image=image,
+                flavor=self.nova.flavors.get(expected_flavor_id),
+                nics=network_interfaces)
         is_created = False
         while not is_created:
             for server_object in self.nova.servers.list():
@@ -146,6 +162,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # attempt to delete the image at the end
         self.nova.servers.delete(boot_node.id)
         self.glance.images.delete(image.id)
+        if our_own_flavor_was_created:
+            self.nova.flavors.delete(expected_flavor_id)
         amount_of_images_after = len(list(self.glance.images.list()))
         self.assertEqual(amount_of_images_before, amount_of_images_after,
                          "Length of list with images should be the same")
