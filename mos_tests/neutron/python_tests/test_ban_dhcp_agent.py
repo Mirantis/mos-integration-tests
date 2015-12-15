@@ -26,10 +26,10 @@ class TestDHCPAgent(base.TestBase):
     """Check DHCP agents rescheduling."""
 
     def create_internal_network_with_subnet(self, suffix=1):
-        """Create network with subnet
+        """Create network with subnet.
 
         :param suffix: desired integer suffix to names of network, subnet
-        :returns network and subnet tuple
+        :returns: tuple, network and subnet
         """
         network = self.os_conn.create_network(name='net%02d' % suffix)
         subnet = self.os_conn.create_subnet(
@@ -45,7 +45,7 @@ class TestDHCPAgent(base.TestBase):
         :param subnet: subnet which for provide route to external network
         :param suffix: desired integer suffix to names of router
 
-        :returns created router
+        :returns: created router
         """
         router = self.os_conn.create_router(name='router%02d' % suffix)
         self.os_conn.router_gateway_add(
@@ -64,7 +64,7 @@ class TestDHCPAgent(base.TestBase):
         :param name: instance name
         :param net_name: network name
         :param kwargs: some other params to create instance
-        :return: created instance
+        :returns: created instance
         """
         security_group = self.os_conn.create_sec_group_for_ssh()
 
@@ -88,7 +88,7 @@ class TestDHCPAgent(base.TestBase):
         :param network_name: name of network to determine node with dhcp agents
         :param wait_for_migrate:
             wait until dhcp-agent migrate to new controller
-        :returns: name of banned node
+        :returns: str, name of banned node
         """
         network = self.os_conn.neutron.list_networks(
             name=network_name)['networks'][0]
@@ -116,6 +116,12 @@ class TestDHCPAgent(base.TestBase):
         return node_with_dhcp
 
     def run_on_cirros_through_host(self, vm, cmd):
+        """Run command on Cirros VM, connected through some host.
+
+        :param vm: instance with cirros
+        :param cmd: command to execute
+        :returns: dict, result of command with code, stdout, stderr.
+        """
         vm = self.os_conn.get_instance_detail(vm)
         srv_host = self.env.find_node_by_fqdn(
             self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
@@ -128,6 +134,11 @@ class TestDHCPAgent(base.TestBase):
         return res
 
     def check_ping_from_cirros(self, vm, ip_to_ping=None):
+        """Run ping some ip from Cirros instance.
+
+        :param vm: instance with cirros
+        :param ip_to_ping: ip to ping
+        """
         ip_to_ping = ip_to_ping or settings.PUBLIC_TEST_IP
         cmd = "ping -c1 {0}".format(ip_to_ping)
         res = self.run_on_cirros_through_host(vm, cmd)
@@ -138,13 +149,17 @@ class TestDHCPAgent(base.TestBase):
         assert 0 == res['exit_code'], error_msg
 
     def check_dhcp_on_cirros_instance(self, vm):
-            cmd = 'sudo -i cirros-dhcpc up eth0'
-            res = self.run_on_cirros_through_host(vm, cmd)
-            err_msg = (
-                'DHCP client can\'t get ip, '
-                'exit code {exit_code}, '
-                'stdout {stdout}, stderr {stderr}'.format(**res))
-            assert 0 == res['exit_code'], err_msg
+        """Check dhcp client on Cirros instance.
+
+        :param vm: instance with cirros
+        """
+        cmd = 'sudo -i cirros-dhcpc up eth0'
+        res = self.run_on_cirros_through_host(vm, cmd)
+        err_msg = (
+            'DHCP client can\'t get ip, '
+            'exit code {exit_code}, '
+            'stdout {stdout}, stderr {stderr}'.format(**res))
+        assert 0 == res['exit_code'], err_msg
 
     @pytest.fixture(autouse=True)
     def _prepare_openstack_state(self, init):
