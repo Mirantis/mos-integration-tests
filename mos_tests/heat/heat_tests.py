@@ -854,7 +854,7 @@ class HeatIntegrationTests(unittest.TestCase):
                                             {'key_name': image_name,
                                              'image': image_name,
                                              'flavor': 'm1.small',
-                                             'timeout': 900,  # 15 min
+                                             'timeout': 600,  # 10 min
                                              'int_network_id': int_network_id},
                                             20)
         # CLEANUP
