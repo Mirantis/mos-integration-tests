@@ -93,6 +93,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
+        self.amount_of_images_before = len(list(self.glance.images.list()))
         self.image = None
         self.our_own_flavor_was_created = False
         self.expected_flavor_id = 3
@@ -109,13 +110,15 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             self.glance.images.delete(self.image.id)
         if self.our_own_flavor_was_created:
             self.nova.flavors.delete(self.expected_flavor_id)
+        self.assertEqual(self.amount_of_images_before,
+                         len(list(self.glance.images.list())),
+                         "Length of list with images should be the same")
 
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
 
         :return: Nothing
         """
-        amount_of_images_before = len(list(self.glance.images.list()))
         # creating of the image
         self.image = self.glance.images.create(
                 name='MyTestSystem',
@@ -182,10 +185,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          "The node not in active state!")
 
         # TODO: test is here
-
-        amount_of_images_after = len(list(self.glance.images.list()))
-        self.assertEqual(amount_of_images_before, amount_of_images_after,
-                         "Length of list with images should be the same")
 
     @unittest.skip("Unimplemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
