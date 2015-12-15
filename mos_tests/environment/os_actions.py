@@ -18,6 +18,8 @@ import random
 from tempfile import NamedTemporaryFile
 
 from cinderclient import client as cinderclient
+from devops.error import TimeoutError
+from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
@@ -25,8 +27,7 @@ from novaclient.v2 import Client as NovaClient
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
-from devops.error import TimeoutError
-from devops.helpers import helpers
+import paramiko
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,10 @@ class OpenStackActions(object):
         servers = self.nova.servers.list()
         if servers:
             return servers
+
+    def get_srv_hypervisor_name(self, srv):
+        srv = self.nova.servers.get(srv.id)
+        return getattr(srv, "OS-EXT-SRV-ATTR:hypervisor_hostname")
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=100, **kwargs):
@@ -399,3 +404,42 @@ class OpenStackActions(object):
             except NeutronClientException:
                 logger.info('the net {} is not deletable'
                             .format(net))
+
+    def execute_through_host(self, ssh, vm_host, cmd, creds=()):
+        logger.debug("Making intermediate transport")
+        intermediate_transport = ssh._ssh.get_transport()
+
+        logger.debug("Opening channel to VM")
+        intermediate_channel = intermediate_transport.open_channel(
+            'direct-tcpip', (vm_host, 22), (ssh.host, 0))
+        logger.debug("Opening paramiko transport")
+        transport = paramiko.Transport(intermediate_channel)
+        logger.debug("Starting client")
+        transport.start_client()
+        logger.info("Passing authentication to VM: {}".format(creds))
+        if not creds:
+            creds = ('cirros', 'cubswin:)')
+        transport.auth_password(creds[0], creds[1])
+
+        logger.debug("Opening session")
+        channel = transport.open_session()
+        logger.info("Executing command: {}".format(cmd))
+        channel.exec_command(cmd)
+
+        result = {
+            'stdout': [],
+            'stderr': [],
+            'exit_code': 0
+        }
+
+        logger.debug("Receiving exit_code")
+        result['exit_code'] = channel.recv_exit_status()
+        logger.debug("Receiving stdout")
+        result['stdout'] = channel.recv(1024)
+        logger.debug("Receiving stderr")
+        result['stderr'] = channel.recv_stderr(1024)
+
+        logger.debug("Closing channel")
+        channel.close()
+
+        return result
