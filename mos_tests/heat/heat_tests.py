@@ -794,7 +794,7 @@ class HeatIntegrationTests(unittest.TestCase):
         [Alexander Koryagin]
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
-        image_name = 'cirros-test-image' + '_' + str(randint(100, 10000))
+        image_name = '543348_Cirros-image' + '_' + str(randint(100, 10000))
 
         # Prepare full path to image file. Return e.g.:
         # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
@@ -857,6 +857,117 @@ class HeatIntegrationTests(unittest.TestCase):
                                              'timeout': 600,  # 10 min
                                              'int_network_id': int_network_id},
                                             20)
+        # CLEANUP
+        # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
+
+    def test_543349_HeatCreateStackNeutronResources(self):
+        """ This test creates stack with Neutron resources
+
+            Steps:
+                1. Download Cirros image
+                2. Create image with Glance and check that it is 'Active'
+                3. Create new key-pair with Nova
+                4. Find ID of internal network with Neutron
+                5. Find ID of internal sub network with Neutron
+                6. Find ID of public network with Neutron
+                7. Create stack with Neutron resources and check that it was
+                created successfully
+                8. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543349
+        [Alexander Koryagin]
+        """
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = '543349_Cirros-image' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.:
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Cirros',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Check if Neutron has more then 1 network. We need intern and extern.
+        if len(networks['networks']) < 2:
+            raise AssertionError("ERROR: Need to have at least 2 networks")
+
+        # Find internal network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'inter' in networks -> get ID of last network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Find private subnet ID
+        int_sub_network_id = [x['subnets'][0] for x in networks['networks']
+                              if int_network_id in x['id'] and
+                              x['status'] == 'ACTIVE']
+        int_sub_network_id = int_sub_network_id[0]
+
+        # Find public network ID
+        pub_network_id = [x['id'] for x in networks['networks']
+                          if 'float' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'float' in networks -> get ID of 0 network
+        if not int_network_id:
+            pub_network_id = networks['networks'][0]['id']
+        else:
+            pub_network_id = pub_network_id[0]
+
+        # Create stack with Heat
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Neutron_resources_543349.yaml')
+
+        uid = common_functions.create_stack(self.heat,
+                                            'Heat_Neutron_resources_543349',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image': image_name,
+                                             'flavor': 'm1.small',
+                                             'public_net_id': pub_network_id,
+                                             'private_net_id': int_network_id,
+                                             'private_subnet_id':
+                                                 int_sub_network_id},
+                                            15)
         # CLEANUP
         # Delete stack with tearDown:
         self.uid_list.append(uid)
