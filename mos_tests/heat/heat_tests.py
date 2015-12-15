@@ -126,9 +126,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 3. Delete created stack
                     + Check that stack became from
                       'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
-
         https://mirantis.testrail.com/index.php?/cases/view/543347
-        [Alexander Koryagin]
         """
         # Be sure that this template file will be put on
         # controller during test preparation
@@ -422,9 +420,7 @@ class HeatIntegrationTests(unittest.TestCase):
              4. Find IP for internal_subnet
              5. Create stack
              6. Delete stack
-
         https://mirantis.testrail.com/index.php?/cases/view/543345
-        [Alexander Koryagin]
         """
         # Prepare new name. Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
@@ -792,9 +788,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 5. Create stack with WaitCondition and check that it was
                    created successfully
                 6. CleanUp
-
         https://mirantis.testrail.com/index.php?/cases/view/543348
-        [Alexander Koryagin]
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
         image_name = '543348_Cirros-image' + '_' + str(randint(100, 10000))
@@ -881,9 +875,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 7. Create stack with Neutron resources and check that it was
                 created successfully
                 8. CleanUp
-
         https://mirantis.testrail.com/index.php?/cases/view/543349
-        [Alexander Koryagin]
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
         image_name = '543349_Cirros-image' + '_' + str(randint(100, 10000))
@@ -978,7 +970,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.glance.images.delete(image.id)
         # Delete keypair:
         keypair.delete()
-    '''
+
     def test_543350_HeatCreateStackNovaResources(self):
         """ This test creates stack with Nova resources
 
@@ -986,15 +978,14 @@ class HeatIntegrationTests(unittest.TestCase):
                 1. Download Cirros image
                 2. Create image with Glance and check that it is 'Active'
                 3. Create new key-pair with Nova
-
-                8. CleanUp
-
+                4. Find network ID
+                5. Prepare template and reference template
+                6. Create stack
+                7. CleanUp
         https://mirantis.testrail.com/index.php?/cases/view/543350
-        [Alexander Koryagin]
         """
-        pass
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
-        image_name = '543350_Cirros-image'# + '_' + str(randint(100, 10000))
+        image_name = '543350_Cirros-image' + '_' + str(randint(100, 10000))
 
         # Prepare full path to image file. Return e.g.:
         # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
@@ -1043,21 +1034,15 @@ class HeatIntegrationTests(unittest.TestCase):
         else:
             int_network_id = int_network_id[0]
 
-        # Get full path to:
-        # 'Heat_Nova_resources_543350_volume_with_attachment.yaml'
-        volume_template_path = os.path.join(
-            self.templates_dir,
-            'Heat_Nova_resources_543350_volume_with_attachment.yaml')
-
         # Read main template for creation
         template = common_functions.read_template(
             self.templates_dir,
             'Heat_Nova_resources_543350.yaml')
 
-        # Replace string in main template
-        template = template.replace(
-            '##-change_me_mark-##',
-            volume_template_path)
+        # Read additional reference template for creation
+        template_additional = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Nova_resources_543350_volume_with_attachment.yaml')
 
         # Create stack
         uid = common_functions.create_stack(self.heat,
@@ -1069,13 +1054,16 @@ class HeatIntegrationTests(unittest.TestCase):
                                              'num_volumes': 1,
                                              'flavor': 'm1.tiny',
                                              'network_id': int_network_id},
-                                            15)
+                                            15,
+                                            {'Heat_Nova_resources_543350'
+                                             '_volume_with_attachment.yaml':
+                                                 template_additional})
         # CLEANUP
         # Delete stack with tearDown:
-        # self.uid_list.append(uid)
+        self.uid_list.append(uid)
         # Delete image:
-        # self.glance.images.delete(image.id)
+        self.glance.images.delete(image.id)
         # Delete keypair:
-        # keypair.delete()
-        '''
+        keypair.delete()
+
 
