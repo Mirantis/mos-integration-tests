@@ -361,7 +361,7 @@ class HeatIntegrationTests(unittest.TestCase):
         Steps:
         1. Create stack using template file empty_heat_templ.yaml.
         2. Check that template of created stack has correct
-            representation.
+        representation.
         """
         stack_name = 'empty_stack'
         timeout = 60
