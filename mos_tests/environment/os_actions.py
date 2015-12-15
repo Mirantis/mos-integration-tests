@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import time
 import random
 from tempfile import NamedTemporaryFile
@@ -27,7 +28,7 @@ from neutronclient.common.exceptions import NeutronClientException
 from devops.error import TimeoutError
 from devops.helpers import helpers
 
-from tools.settings import logger
+logger = logging.getLogger(__name__)
 
 
 class OpenStackActions(object):
@@ -166,11 +167,15 @@ class OpenStackActions(object):
 
     def get_node_with_dhcp_for_network(self, net_id):
         result = self.list_dhcp_agents_for_network(net_id)
-        nodes = [i['host'] for i in result['agents']]
+        nodes = [i['host'] for i in result['agents'] if i['alive']]
         return nodes
 
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
+
+    def list_l3_agents(self):
+        return [x for x in self.neutron.list_agents()['agents']
+                if x['agent_type'] == "L3 agent"]
 
     def get_l3_agent_hosts(self, router_id):
         result = self.get_l3_for_router(router_id)
