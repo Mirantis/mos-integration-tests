@@ -20,7 +20,7 @@ from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v2_0 import client as keystone_client
 from cinderclient import client as cinder_client
 
-from mos_tests.nova.functions import common as common_functions
+from mos_tests.functions import common as common_functions
 
 
 class NovaIntegrationTests(unittest.TestCase):
