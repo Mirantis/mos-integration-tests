@@ -14,10 +14,13 @@
 
 import six
 import pytest
+import logging
 
 from devops.helpers.helpers import wait
 
 from mos_tests import settings
+
+logger = logging.getLogger(__name__)
 
 
 class NotFound(Exception):
@@ -40,7 +43,8 @@ class TestBase(object):
 
         return self.env.find_node_by_fqdn(nodes[0])
 
-    def run_on_vm(self, vm, vm_keypair, command, vm_login="cirros"):
+    def run_on_vm(self, vm, vm_keypair, command, vm_login="cirros",
+                  timeout=3 * 60):
         command = command.replace('"', r'\"')
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
         vm_ip = vm.addresses[net_name][0]['addr']
@@ -49,6 +53,7 @@ class TestBase(object):
         dhcp_namespace = "qdhcp-{0}".format(net_id)
         devops_node = self.get_node_with_dhcp(net_id)
         _ip = devops_node.data['ip']
+        logger.info('Connect to {ip}'.format(ip=_ip))
         with self.env.get_ssh_to_node(_ip) as remote:
             res = remote.execute(
                 'ip netns list | grep -q {0}'.format(dhcp_namespace)
@@ -78,27 +83,30 @@ class TestBase(object):
                 results.append(remote.execute(cmd))
                 return results[-1]
 
+            logger.info('Executing {cmd} on {vm_name}'.format(
+                cmd=cmd,
+                vm_name=vm.name))
             wait(lambda: run(cmd)['exit_code'] == 0,
-                 interval=60, timeout=3 * 60,
+                 interval=60, timeout=timeout,
                  timeout_msg=err_msg.format(command=cmd))
             return results[-1]
 
-    def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None):
+    def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None,
+                           timeout=3 * 60):
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
         if isinstance(ip_to_ping, six.string_types):
             ip_to_ping = [ip_to_ping]
         cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
         cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd)
-        assert (0 == res['exit_code'],
-                     'Instance has no connectivity, exit code {0},'
-                     'stdout {1}, stderr {2}'.format(res['exit_code'],
-                                                     res['stdout'],
-                                                     res['stderr'])
-        )
+        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout)
+        error_msg = (
+            'Instance has no connectivity, exit code {exit_code},'
+            'stdout {stdout}, stderr {stderr}'
+        ).format(**res)
+        assert 0 == res['exit_code'], error_msg
 
-    def check_vm_connectivity(self):
+    def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""
         servers = self.os_conn.get_servers()
         for server1 in servers:
@@ -109,4 +117,4 @@ class TestBase(object):
                 ips_to_ping += self.os_conn.get_nova_instance_ips(
                     server2).values()
             self.check_ping_from_vm(server1, self.instance_keypair,
-                                    ips_to_ping)
+                                    ips_to_ping, timeout=timeout)

@@ -13,11 +13,15 @@
 #    under the License.
 
 import pytest
+import logging
+from neutronclient.common.exceptions import NeutronClientException
 
 from devops.helpers.helpers import wait
 
-from tools.settings import logger
+from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
@@ -423,6 +427,90 @@ class TestL3Agent(TestBase):
                                 router_name="router01",
                                 node=last_banned_node,
                                 wait_for_alive=True)
+
+        # check pings
+        self.check_vm_connectivity()
+
+    def test_shutdown_not_primary_controller(self, check_devops, env_name):
+        """Shut down non-primary controller and check l3-agent work
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network1, network2
+            3. Create router1 and connect it with network1, network2 and
+               external net
+            4. Boot vm1 in network1 and associate floating ip
+            5. Boot vm2 in network2
+            6. Add rules for ping
+            7. ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
+            8. Check on what agents is router1
+            9. If agent on primary controller move it to any other controller
+            10. Destroy non primary controller
+            11. Wait for L3 agent dies
+            12. Check that all routers reshedule from non primary controller
+            13. Boot one more VM (VM3) in network1
+            14. Boot vm3 in network1
+            15. ping 8.8.8.8, vm1 (both ip), vm2 (fixed ip) and vm3 (fixed ip)
+                from each other vm
+
+        Duration 10m
+
+        """
+        router = self.os_conn.neutron.list_routers(
+            name='router01')['routers'][0]
+        l3_agent = self.os_conn.get_l3_for_router(router['id'])['agents'][0]
+        leader_node = self.env.leader_controller
+
+        # Move router to slave l3 agent, if needed
+        if leader_node.data['fqdn'] == l3_agent['host']:
+            l3_agents = self.os_conn.list_l3_agents()
+            leader_l3_agent = [x for x in l3_agents
+                               if x['host'] == leader_node.data['fqdn']][0]
+            self.os_conn.neutron.remove_router_from_l3_agent(
+                leader_l3_agent['id'],
+                router_id=router['id'])
+            slave_l3_agents = [x for x in l3_agents if x != leader_l3_agent]
+            l3_agent = slave_l3_agents[0]
+            self.os_conn.neutron.add_router_to_l3_agent(
+                l3_agent['id'],
+                body={'router_id': router['id']})
+
+        # Destroy node with l3 agent
+        node = self.env.find_node_by_fqdn(l3_agent['host'])
+        devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
+                                                   mac=node.data['mac'])
+        if devops_node is not None:
+            devops_node.destroy()
+        else:
+            raise Exception("Can't find devops controller node to destroy it")
+
+        # Wait for l3 agent die
+        def is_l3_die():
+            try:
+                return self.os_conn.get_l3_for_router(
+                    router['id'])['agents'][0]['alive'] is False
+            except NeutronClientException:
+                return False
+
+        wait(is_l3_die, timeout=60 * 5, timeout_msg="L3 agent is alive")
+
+        # Wait for migrate all router from died L3 agent
+        wait(
+            lambda: len(self.os_conn.neutron.list_routers_on_l3_agent(
+                l3_agent['id'])['routers']) == 0,
+            timeout=60 * 5,
+            timeout_msg = "Routers are not resheduled from L3 agent"
+        )
+
+        # create another server on net01
+        net01 = self.os_conn.nova.networks.find(label="net01")
+        self.os_conn.create_server(
+            name='server03',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             self.hosts[0]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': net01.id}],
+            security_groups=[self.security_group.id])
 
         # check pings
         self.check_vm_connectivity()
