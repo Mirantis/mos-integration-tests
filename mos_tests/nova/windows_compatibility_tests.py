@@ -103,17 +103,17 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 name=self.security_group_name,
                 description="Windows Compatibility")
         # Add rules for ICMP, TCP/22
-        self.nova.security_group_rules.create(
+        self.icmp_rule = self.nova.security_group_rules.create(
                 self.the_security_group.id,
                 ip_protocol="icmp",
                 from_port=-1,
                 to_port=-1,
                 cidr="0.0.0.0/0")
-        self.nova.security_group_rules.create(
+        self.tcp_rule = self.nova.security_group_rules.create(
                 self.the_security_group.id,
                 ip_protocol="tcp",
-                from_port=80,
-                to_port=80,
+                from_port=22,
+                to_port=22,
                 cidr="0.0.0.0/0")
         # adding floating ip
         self.floating_ip = self.nova.floating_ips.create(
@@ -131,7 +131,9 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         if self.our_own_flavor_was_created:
             self.nova.flavors.delete(self.expected_flavor_id)
         # delete the security group
-        self.nova.security_groups.delete(self.the_security_group)
+        self.nova.security_group_rules.delete(self.icmp_rule)
+        self.nova.security_group_rules.delete(self.tcp_rule)
+        self.nova.security_groups.delete(self.the_security_group.id)
         # delete the floating ip
         self.nova.floating_ips.delete(self.floating_ip)
         self.assertEqual(self.amount_of_images_before,
