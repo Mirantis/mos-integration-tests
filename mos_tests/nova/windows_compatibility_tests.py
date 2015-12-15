@@ -125,9 +125,17 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                         is_activated = True
                         break
             time.sleep(1)
-        # TODO: add check flavor parameters vs. vm parameters
+
+        # Default - the first
         network_interfaces = \
-            [{"net-id": self.nova.networks.list()[0].id, "v4-fixed-ip": ''}]
+            [{"net-id": self.nova.networks.list()[0].id}]
+        # More detailed check of network list
+        for network in self.nova.networks.list():
+            if 'floating' in network.label:
+                network_interfaces = [{"net-id": network.id}]
+        print "Starting with network interface(s) {}".format(network_interfaces)
+
+        # TODO: add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and modify it to our needs
         expected_flavor_id = self.nova.flavors.get(3)
         our_own_flavor_was_created = False
