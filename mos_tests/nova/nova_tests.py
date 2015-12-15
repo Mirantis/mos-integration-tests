@@ -108,8 +108,6 @@ class BasicNovaVerificationTests(unittest.TestCase):
                                             flavor=initial_flavor,
                                             block_device_mapping=bdm,
                                             nics=[{'net-id': net}])
-        # self.assertTrue(
-        #     common_functions.check_inst_status(self.nova, instance.id, 10))
         timeout = time.time() + 60
         while True:
             status = self.nova.servers.get(instance).status
