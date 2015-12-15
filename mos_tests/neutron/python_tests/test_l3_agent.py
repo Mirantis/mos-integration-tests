@@ -16,7 +16,7 @@ import pytest
 import logging
 from neutronclient.common.exceptions import NeutronClientException
 
-from devops.helpers.helpers import wait
+from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase
@@ -41,9 +41,6 @@ class TestL3Agent(TestBase):
             6. Ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
         """
         # init variables
-        exist_networks = self.os_conn.list_networks()['networks']
-        ext_network = [x for x in exist_networks
-                       if x.get('router:external')][0]
         self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         self.security_group = self.os_conn.create_sec_group_for_ssh()
         self.hosts = self.zone.hosts.keys()[:2]
@@ -51,8 +48,9 @@ class TestL3Agent(TestBase):
 
         # create router
         router = self.os_conn.create_router(name="router01")
-        self.os_conn.router_gateway_add(router_id=router['router']['id'],
-                                        network_id=ext_network['id'])
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
 
         # create 2 networks and 2 instances
         for i, hostname in enumerate(self.hosts, 1):
@@ -107,15 +105,17 @@ class TestL3Agent(TestBase):
             wait(
                 lambda: self.os_conn.get_l3_for_router(
                     router['id'])['agents'][0]['alive'] is False,
-                timeout=60 * 3, timeout_msg="L3 agent is alive"
+                timeout_seconds=60 * 3, waiting_for="L3 agent is die",
+                sleep_seconds=(1, 60)
             )
 
         # Wait to migrate l3 agent on new controller
         if wait_for_migrate:
-            err_msg = "l3 agent wasn't banned, it is still {0}"
+            waiting_for = "l3 agent migrate from {0}"
             wait(lambda: not node_with_l3 == self.os_conn.get_l3_agent_hosts(
-                 router['id'])[0], timeout=60 * 3,
-                 timeout_msg=err_msg.format(node_with_l3))
+                 router['id'])[0], timeout_seconds=60 * 3,
+                 waiting_for=waiting_for.format(node_with_l3),
+                 sleep_seconds=(1, 60))
         return node_with_l3
 
     def clear_l3_agent(self, _ip, router_name, node, wait_for_alive=False):
@@ -142,7 +142,8 @@ class TestL3Agent(TestBase):
             wait(
                 lambda: self.os_conn.get_l3_for_router(
                     router['id'])['agents'][0]['alive'] is True,
-                timeout=60 * 3, timeout_msg="L3 agent is dead yet"
+                timeout_seconds=60 * 3, waiting_for="L3 agent is alive",
+                sleep_seconds=(1, 60)
             )
 
     def drop_rabbit_port(self, router_name):
@@ -171,14 +172,16 @@ class TestL3Agent(TestBase):
         wait(
             lambda: self.os_conn.get_l3_for_router(
                 router['id'])['agents'][0]['alive'] is False,
-            timeout=60 * 3, timeout_msg="L3 agent is still alive"
+            timeout_seconds=60 * 3, waiting_for="L3 agent is died",
+            sleep_seconds=(1, 60)
         )
 
         # Wait to migrate l3 agent on new controller
-        err_msg = "l3 agent wasn't migrated, it is still on {0}"
+        waiting_for = "l3 agent migrated from {0}"
         wait(lambda: not node_with_l3 == self.os_conn.get_l3_agent_hosts(
-             router['id'])[0], timeout=60 * 3,
-             timeout_msg=err_msg.format(node_with_l3))
+             router['id'])[0], timeout_seconds=60 * 3,
+             waiting_for=waiting_for.format(node_with_l3),
+             sleep_seconds=(1, 60))
 
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['single', 'twice'])
     def test_ban_one_l3_agent(self, ban_count):
@@ -333,10 +336,11 @@ class TestL3Agent(TestBase):
         # wait for router migrate to cleared node
         router = self.os_conn.neutron.list_routers(
             name='router01')['routers'][0]
-        err_msg = "l3 agent wasn't migrate to {0}"
+        waiting_for = "l3 agent wasn't migrate to {0}"
         wait(lambda: first_banned_node == self.os_conn.get_l3_agent_hosts(
-             router['id'])[0], timeout=60 * 3,
-             timeout_msg=err_msg.format(first_banned_node))
+             router['id'])[0], timeout_seconds=60 * 3,
+             waiting_for=waiting_for.format(first_banned_node),
+             sleep_seconds=(1, 60))
 
         # create another server on net01
         net01 = self.os_conn.nova.networks.find(label="net01")
@@ -486,21 +490,19 @@ class TestL3Agent(TestBase):
             raise Exception("Can't find devops controller node to destroy it")
 
         # Wait for l3 agent die
-        def is_l3_die():
-            try:
-                return self.os_conn.get_l3_for_router(
-                    router['id'])['agents'][0]['alive'] is False
-            except NeutronClientException:
-                return False
+        wait(
+            lambda: self.os_conn.get_l3_for_router(
+                router['id'])['agents'][0]['alive'] is False,
+            expected_exceptions=NeutronClientException,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="L3 agent is died")
 
-        wait(is_l3_die, timeout=60 * 5, timeout_msg="L3 agent is alive")
-
-        # Wait for migrate all router from died L3 agent
+        # Wait for migrating all routers from died L3 agent
         wait(
             lambda: len(self.os_conn.neutron.list_routers_on_l3_agent(
                 l3_agent['id'])['routers']) == 0,
-            timeout=60 * 5,
-            timeout_msg="Routers are not rescheduled from L3 agent"
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating all routers from died L3 agent"
         )
 
         # create another server on net01

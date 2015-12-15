@@ -35,6 +35,7 @@ class Environment(EnvironmentBase):
         for node in self.get_all_nodes():
             if node.data['fqdn'] == fqdn:
                 return node
+        raise Exception("Node doesn't found")
 
     def get_ssh_to_node(self, ip):
         return SSHClient(
