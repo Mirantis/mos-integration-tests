@@ -734,7 +734,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 2. Launch heat action-suspend stack_name
                 3. Launch heat stack-update stack_name
                 4. Launch heat stack-cancel-update stack_name while update
-                    operation is in progress
+                   operation is in progress
                 5. Check state of stack after cancel update
         """
 
