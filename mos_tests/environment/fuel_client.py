@@ -100,7 +100,7 @@ class FuelClient(object):
         client.APIClient.__init__()
 
     def get_last_created_cluster(self):
-        """Returns Environment instance for laset deployed cluster"""
+        """Returns Environment instance for latest deployed cluster"""
         env = Environment.get_all()[-1]
         env.admin_ssh_keys = self.admin_keys
         return env
