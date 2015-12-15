@@ -13,7 +13,6 @@
 #    under the License.
 
 import os
-import time
 import unittest
 
 from novaclient import client as nova_client
