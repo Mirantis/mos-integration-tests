@@ -50,12 +50,12 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         # Get path on node to 'templates' dir
         cls.templates_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'templates')
+                os.path.dirname(os.path.abspath(__file__)),
+                'templates')
         # Get path on node to 'images' dir
         cls.images_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'images')
+                os.path.dirname(os.path.abspath(__file__)),
+                'images')
 
         # Neutron connect
         cls.neutron = neutron_client.Client(username=OS_USERNAME,
@@ -67,10 +67,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Nova connect
         OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
         RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
-            auth_url=OS_AUTH_URL,
-            username=OS_USERNAME,
-            password=OS_PASSWORD,
-            tenant_name=OS_TENANT_NAME)
+                auth_url=OS_AUTH_URL,
+                username=OS_USERNAME,
+                password=OS_PASSWORD,
+                tenant_name=OS_TENANT_NAME)
         OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
 
         cls.nova = nova_client.Client('2',
@@ -98,11 +98,28 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.our_own_flavor_was_created = False
         self.expected_flavor_id = 3
         self.node_to_boot = None
-        self.default_security_group_name = 'default'
-        self.default_security_group = None
-        for security_group in self.nova.security_groups.list():
-            if security_group.name == self.default_security_group_name:
-                self.default_security_group = security_group
+        self.security_group_name = "ms_compatibility"
+        self.nova.security_groups.create(
+                name=self.security_group_name,
+                description="Windows Compatibility")
+        self.the_security_group = self.nova.security_groups.find(
+                name=self.security_group_name)
+        # Add rules for ICMP, TCP/22
+        self.nova.security_group_rules.create(
+                self.the_security_group.id,
+                ip_protocol="icmp",
+                from_port=-1,
+                to_port=-1,
+                cidr="0.0.0.0/0")
+        self.nova.security_group_rules.create(
+                self.the_security_group.id,
+                ip_protocol="tcp",
+                from_port=80,
+                to_port=80,
+                cidr="0.0.0.0/0")
+        # adding floating ip
+        self.floating_ip = self.nova.floating_ips.create(
+                self.nova.floating_ip_pools.list()[0].name)
 
     def tearDown(self):
         """
@@ -115,6 +132,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             self.glance.images.delete(self.image.id)
         if self.our_own_flavor_was_created:
             self.nova.flavors.delete(self.expected_flavor_id)
+        # delete the security group
+        self.nova.security_groups.delete(self.the_security_group)
+        # delete the floating ip
+        self.nova.floating_ips.delete(self.floating_ip)
         self.assertEqual(self.amount_of_images_before,
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
@@ -158,10 +179,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         for flavor in self.nova.flavors.list():
             if 'medium' in flavor.name:
                 expected_flavor = self.nova.flavors.create(
-                    name="copy.of." + flavor.name,
-                    ram=flavor.ram,
-                    vcpus=1,  # Only one VCPU
-                    disk=flavor.disk
+                        name="copy.of." + flavor.name,
+                        ram=flavor.ram,
+                        vcpus=1,  # Only one VCPU
+                        disk=flavor.disk
                 )
                 self.expected_flavor_id = expected_flavor.id
                 self.our_own_flavor_was_created = True
@@ -189,10 +210,18 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertEqual(self.node_to_boot.status, 'ACTIVE',
                          "The node not in active state!")
 
-        # TODO: test is here
+        # adding security group
+        self.node_to_boot.add_security_group(self.the_security_group)
 
-        # check the security group
-        print self.default_security_group.rules
+        print "Using following floating ip {}".format(
+                self.floating_ip.ip)
+
+        self.node_to_boot.add_floating_ip(self.floating_ip)
+
+        # TODO: test is here
+        ping = os.system("ping -c 4 -i 4 {}".format(
+                self.floating_ip.ip))
+        self.assertEqual(ping, 0, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
