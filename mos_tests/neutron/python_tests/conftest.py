@@ -127,3 +127,12 @@ def check_several_computes(env):
     """Check that count of compute nodes not less than 2"""
     if len(env.get_nodes_by_role('compute')) < 2:
         pytest.skip('requires at least 2 compute node')
+
+
+@pytest.fixture
+def check_devops(env_name):
+    """Check that devops env is defined"""
+    try:
+        DevopsClient.get_env(env_name=env_name)
+    except Exception:
+        pytest.skip('requires devops env to be defined')

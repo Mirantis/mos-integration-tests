@@ -17,13 +17,13 @@ import time
 import unittest
 from random import randint
 
+from glanceclient.v2 import client as glance_client
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
-from glanceclient.v2 import client as glance_client
 
-from mos_tests.heat.functions import common as common_functions
+from mos_tests.functions import common as common_functions
 
 
 class HeatIntegrationTests(unittest.TestCase):
