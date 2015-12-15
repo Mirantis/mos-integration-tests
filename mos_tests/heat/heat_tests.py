@@ -975,3 +975,104 @@ class HeatIntegrationTests(unittest.TestCase):
         self.glance.images.delete(image.id)
         # Delete keypair:
         keypair.delete()
+    '''
+    def test_543350_HeatCreateStackNovaResources(self):
+        """ This test creates stack with Nova resources
+
+            Steps:
+                1. Download Cirros image
+                2. Create image with Glance and check that it is 'Active'
+                3. Create new key-pair with Nova
+
+                8. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543350
+        [Alexander Koryagin]
+        """
+        pass
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = '543350_Cirros-image'# + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.:
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Cirros',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Find internal network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'inter' in networks -> get ID of last network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Get full path to:
+        # 'Heat_Nova_resources_543350_volume_with_attachment.yaml'
+        volume_template_path = os.path.join(
+            self.templates_dir,
+            'Heat_Nova_resources_543350_volume_with_attachment.yaml')
+
+        # Read main template for creation
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Nova_resources_543350.yaml')
+
+        # Replace string in main template
+        template = template.replace(
+            '##-change_me_mark-##',
+            volume_template_path)
+
+        # Create stack
+        uid = common_functions.create_stack(self.heat,
+                                            'Heat_Nova_resources_543350',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image_id': image_name,
+                                             'volume_size': 1,
+                                             'num_volumes': 1,
+                                             'flavor': 'm1.tiny',
+                                             'network_id': int_network_id},
+                                            15)
+        # CLEANUP
+        # Delete stack with tearDown:
+        # self.uid_list.append(uid)
+        # Delete image:
+        # self.glance.images.delete(image.id)
+        # Delete keypair:
+        # keypair.delete()
+        '''
+
