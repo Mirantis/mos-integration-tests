@@ -98,6 +98,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.our_own_flavor_was_created = False
         self.expected_flavor_id = 3
         self.node_to_boot = None
+        self.default_security_group_name = 'default'
+        self.default_security_group = None
+        for security_group in self.nova.security_groups.list():
+            if security_group.name == self.default_security_group_name:
+                self.default_security_group = security_group
 
     def tearDown(self):
         """
@@ -114,7 +119,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
 
-    @unittest.skip("Not Implemented")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
 
@@ -186,6 +190,9 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          "The node not in active state!")
 
         # TODO: test is here
+
+        # check the security group
+        print self.default_security_group.rules
 
     @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
