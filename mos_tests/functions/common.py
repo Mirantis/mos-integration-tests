@@ -58,7 +58,7 @@ def create_stack(heatclient, stack_name, template, parameters={}, timeout=20,
             :param template:   Content of a template name
             :param timeout: Timeout for check operation
             :param files: In case if template uses file as reference
-                          e.g: "type: volume_with_attachment.yaml"
+            e.g: "type: volume_with_attachment.yaml"
             :return uid: UID of created stack
     """
     templ_files = files or {}
@@ -90,7 +90,7 @@ def check_stack_status_complete(heatclient, uid, action, timeout=10):
     :param heatclient: Heat API client connection point
     :param uid: ID stack
     :param action: status that will be checked.
-        Could be CREATE, UPDATE, DELETE.
+    Could be CREATE, UPDATE, DELETE.
     :param timeout: Timeout for check operation
     :return uid: UID of created stack
     """
@@ -112,7 +112,7 @@ def read_template(templates_dir, template_name):
 
     :param templates_dir: dir
     :param template_name: name of template,
-        for ex.: empty_heat_template.yaml
+    for ex.: empty_heat_template.yaml
     :return: template file content
     """
 
@@ -163,8 +163,8 @@ def update_template_file(template_file, type_of_changes, **kwargs):
 
     :param template_file: path to template file.
     :param type_of_changes:
-        if changes in format - 'format'
-        if changes in flavor size - 'flavor'
+    if changes in format - 'format'
+    if changes in flavor size - 'flavor'
     :param disk_format: new disk_format value(optional)
     :param container_format: new container_format value(optional)
     :param flavor: new flavor size
@@ -184,7 +184,7 @@ def update_template_file(template_file, type_of_changes, **kwargs):
 
 def download_image(image_link_file, where_to_put='/tmp/'):
     """ This function will download image from internet and write it
-        if image is not already present on node.
+    if image is not already present on node.
 
     :param image_link_file: Location of file with a link
     :param where_to_put:    Path to output folder on node
