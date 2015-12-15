@@ -116,13 +116,14 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
         # check that required image in active state
-        is_active = False
-        while not is_active:
+        is_activated = False
+        while not is_activated:
             for image_object in self.glance.images.list():
-                if image_object.id == image.id and \
-                   image_object.status == 'active':
-                    is_active = True
-                    break
+                if image_object.id == image.id:
+                    print "Image in the {} state".format(image_object.status)
+                    if image_object.status == 'active':
+                        is_activated = True
+                        break
             time.sleep(1)
         # TODO: add check flavor parameters vs. vm parameters
         network_interfaces = \
@@ -132,7 +133,14 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                                              image=image,
                                              flavor=self.nova.flavors.get(2),
                                              nics=network_interfaces)
-        while boot_node.status == 'BUILD':
+        is_created = False
+        while not is_created:
+            for server_object in self.nova.servers.list():
+                if server_object.name == boot_node.name:
+                    print "Node in the {} state".format(boot_node.status)
+                    if boot_node.status != 'BUILD':
+                        is_created = True
+                        break
             time.sleep(1)
         print boot_node.status
         # attempt to delete the image at the end
