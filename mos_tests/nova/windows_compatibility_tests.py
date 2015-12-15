@@ -15,6 +15,7 @@
 
 import os
 import unittest
+import time
 
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
@@ -122,6 +123,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                    image_object['status'] == 'active':
                     is_active = True
                     break
+            time.sleep(1)
         # TODO: add check flavor parameters vs. vm parameters
         network_interfaces = \
             [{"net-id": self.nova.networks.list()[0].id, "v4-fixed-ip": ''}]
@@ -129,7 +131,9 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                                              image=image,
                                              flavor=self.nova.flavors.get(2),
                                              nics=network_interfaces)
-        print boot_node
+        while boot_node['status'] == 'BUILD':
+            time.sleep(1)
+        print boot_node['status']
         # attempt to delete the image at the end
         self.glance.images.delete(image.id)
         amount_of_images_after = len(list(self.glance.images.list()))
