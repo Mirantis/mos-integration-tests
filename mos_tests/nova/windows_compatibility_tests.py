@@ -114,6 +114,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
 
+    @unittest.skip("Not Implemented")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
 
@@ -186,7 +187,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         # TODO: test is here
 
-    @unittest.skip("Unimplemented")
+    @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
         """
 
@@ -194,7 +195,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
         pass
 
-    @unittest.skip("Unimplemented")
+    @unittest.skip("Not Implemented")
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
         """
 
