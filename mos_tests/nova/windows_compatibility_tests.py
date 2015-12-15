@@ -106,14 +106,14 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
-        amount_of_images_before = len(self.glance.images.list())
+        amount_of_images_before = len(list(self.glance.images.list()))
         image = self.glance.images.create(name='MyTestSystem',
                                           disk_format='qcow2',
                                           container_format='bare')
         self.glance.images.upload(
                 image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
-        amount_of_images_after = len(self.glance.images.list())
+        amount_of_images_after = len(list(self.glance.images.list()))
         self.assertEqual(amount_of_images_before, amount_of_images_after,
                          "Length of list with images should be the same")
 
