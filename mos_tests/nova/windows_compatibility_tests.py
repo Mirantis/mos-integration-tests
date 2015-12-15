@@ -93,14 +93,22 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
-        pass
+        self.image = None
+        self.our_own_flavor_was_created = False
+        self.expected_flavor_id = 3
+        self.node_to_boot = None
 
     def tearDown(self):
         """
 
         :return:
         """
-        pass
+        if self.node_to_boot is not None:
+            self.nova.servers.delete(self.node_to_boot.id)
+        if self.image is not None:
+            self.glance.images.delete(self.image.id)
+        if self.our_own_flavor_was_created:
+            self.nova.flavors.delete(self.expected_flavor_id)
 
     def test_542825_CreateInstanceWithWindowsImage(self):
         """
@@ -109,19 +117,21 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
         amount_of_images_before = len(list(self.glance.images.list()))
         # creating of the image
-        image = self.glance.images.create(name='MyTestSystem',
-                                          disk_format='qcow2',
-                                          container_format='bare')
+        self.image = self.glance.images.create(
+                name='MyTestSystem',
+                disk_format='qcow2',
+                container_format='bare')
         self.glance.images.upload(
-                image.id,
+                self.image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
         # check that required image in active state
         is_activated = False
         while not is_activated:
             for image_object in self.glance.images.list():
-                if image_object.id == image.id:
-                    print "Image in the {} state".format(image_object.status)
-                    if image_object.status == 'active':
+                if image_object.id == self.image.id:
+                    self.image = image_object
+                    print "Image in the {} state".format(self.image.status)
+                    if self.image.status == 'active':
                         is_activated = True
                         break
             time.sleep(1)
@@ -137,8 +147,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         # TODO: add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and modify it to our needs
-        expected_flavor_id = self.nova.flavors.get(3)
-        our_own_flavor_was_created = False
         for flavor in self.nova.flavors.list():
             if 'medium' in flavor.name:
                 expected_flavor = self.nova.flavors.create(
@@ -147,36 +155,37 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                     vcpus=1,  # Only one VCPU
                     disk=flavor.disk
                 )
-                expected_flavor_id = expected_flavor.id
-                our_own_flavor_was_created = True
+                self.expected_flavor_id = expected_flavor.id
+                self.our_own_flavor_was_created = True
                 break
         print "Starting with flavor {}".format(
-                self.nova.flavors.get(expected_flavor_id))
-        boot_node = self.nova.servers.create(
+                self.nova.flavors.get(self.expected_flavor_id))
+        # nova boot
+        self.node_to_boot = self.nova.servers.create(
                 name="MyTestSystemWithNova",
-                image=image,
-                flavor=self.nova.flavors.get(expected_flavor_id),
+                image=self.image,
+                flavor=self.nova.flavors.get(self.expected_flavor_id),
                 nics=network_interfaces)
+        # waiting while the build process will be completed
         is_created = False
         while not is_created:
             for server_object in self.nova.servers.list():
-                if server_object.id == boot_node.id:
-                    boot_node = server_object
-                    print "Node in the {} state".format(boot_node.status)
-                    if boot_node.status != 'BUILD':
+                if server_object.id == self.node_to_boot.id:
+                    self.node_to_boot = server_object
+                    print "Node in the {} state".format(self.node_to_boot.status)
+                    if self.node_to_boot.status != 'BUILD':
                         is_created = True
                         break
             time.sleep(5)
-        # TODO: Temporary disabling clean-up process
-        if False:
-            # attempt to delete the image at the end
-            self.nova.servers.delete(boot_node.id)
-            self.glance.images.delete(image.id)
-            if our_own_flavor_was_created:
-                self.nova.flavors.delete(expected_flavor_id)
-            amount_of_images_after = len(list(self.glance.images.list()))
-            self.assertEqual(amount_of_images_before, amount_of_images_after,
-                             "Length of list with images should be the same")
+        # check that boot returns expected results
+        self.assertEqual(self.node_to_boot.status, 'ACTIVE',
+                         "The node not in active state!")
+
+        # TODO: test is here
+
+        amount_of_images_after = len(list(self.glance.images.list()))
+        self.assertEqual(amount_of_images_before, amount_of_images_after,
+                         "Length of list with images should be the same")
 
     @unittest.skip("Unimplemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
