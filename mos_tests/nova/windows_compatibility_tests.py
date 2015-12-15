@@ -119,22 +119,24 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         is_active = False
         while not is_active:
             for image_object in self.glance.images.list():
-                if image_object['id'] == image.id and \
-                   image_object['status'] == 'active':
+                if image_object.id == image.id and \
+                   image_object.status == 'active':
                     is_active = True
                     break
             time.sleep(1)
         # TODO: add check flavor parameters vs. vm parameters
         network_interfaces = \
             [{"net-id": self.nova.networks.list()[0].id, "v4-fixed-ip": ''}]
+        print "Starting with flavor {}".format(self.nova.flavors.get(2))
         boot_node = self.nova.servers.create(name="MyTestSystemWithNova",
                                              image=image,
                                              flavor=self.nova.flavors.get(2),
                                              nics=network_interfaces)
-        while boot_node['status'] == 'BUILD':
+        while boot_node.status == 'BUILD':
             time.sleep(1)
-        print boot_node['status']
+        print boot_node.status
         # attempt to delete the image at the end
+        self.nova.servers.delete(boot_node.id)
         self.glance.images.delete(image.id)
         amount_of_images_after = len(list(self.glance.images.list()))
         self.assertEqual(amount_of_images_before, amount_of_images_after,
