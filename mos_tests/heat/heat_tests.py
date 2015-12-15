@@ -121,12 +121,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
         Steps:
         1. Read template from URL
-        2. Create new stack.
-            + Check that stack became from
-            'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
-        3. Delete created stack
-            + Check that stack became from
-            'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+        2. Create new stack. \
+        Check that stack became from \
+        'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+        3. Delete created stack \
+        Check that stack became from \
+        'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
         https://mirantis.testrail.com/index.php?/cases/view/543347
         """
@@ -205,7 +205,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
         Steps:
         1. Get list of Heat resources.
-        2. Check that templates for all resources have correct
+        2. Check that templates for all resources have correct \
         representation.
         """
         resource_types = [r.resource_type for r in
@@ -360,7 +360,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
         Steps:
         1. Create stack using template file empty_heat_templ.yaml.
-        2. Check that template of created stack has correct
+        2. Check that template of created stack has correct \
         representation.
         """
         stack_name = 'empty_stack'
@@ -389,8 +389,8 @@ class HeatIntegrationTests(unittest.TestCase):
         Steps:
         1. Create new stack
         2. Launch heat event-list stack_name
-        3. Launch heat event-show <NAME or ID> <RESOURCE> <EVENT>
-            for specified event and check result
+        3. Launch heat event-show <NAME or ID> <RESOURCE> <EVENT> \
+        for specified event and check result
         """
         stack_name = 'stack_to_show_event_info_543342'
         template_content = common_functions.read_template(
@@ -523,8 +523,8 @@ class HeatIntegrationTests(unittest.TestCase):
         """ This test case checks representation of template file.
 
         Steps:
-        1. Check that selected template file has correct
-            representation.
+        1. Check that selected template file has correct \
+        representation.
         """
         template_content = common_functions.read_template(
             self.templates_dir, 'heat_create_nova_stack_template.yaml')
@@ -534,7 +534,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543340_StackResumeSuspend(self):
         """ Suspend and resume stack
-            (with its resources for which that feature works)
+        (with its resources for which that feature works)
 
         Steps:
         1. Create new stack
@@ -597,8 +597,8 @@ class HeatIntegrationTests(unittest.TestCase):
         1. Create stack using template.
         2. Check id of created image.
         3. Update stack template:
-            disk_format = 'ami',
-            container_format = 'ami'
+        disk_format = 'ami',
+        container_format = 'ami'
         4. Update stack.
         5. Check id of updated image.
         """
@@ -733,7 +733,7 @@ class HeatIntegrationTests(unittest.TestCase):
         2. Launch heat action-suspend stack_name
         3. Launch heat stack-update stack_name
         4. Launch heat stack-cancel-update stack_name while update
-            operation is in progress
+        operation is in progress
         5. Check state of stack after cancel update
         """
 
@@ -787,7 +787,7 @@ class HeatIntegrationTests(unittest.TestCase):
         Steps:
         1. Create stack using template.
         2. Check list of all attributes in format:
-            output_key - description.
+        output_key - description.
         """
         stack_name = 'random_str_stack'
         template_name = 'random_str.yaml'
@@ -849,8 +849,8 @@ class HeatIntegrationTests(unittest.TestCase):
         2. Create image with Glance and check that it is 'Active'
         3. Create new key-pair with Nova
         4. Find ID of internal network with Neutron
-        5. Create stack with WaitCondition and check that it was
-            created successfully
+        5. Create stack with WaitCondition and check that it was \
+        created successfully
         6. CleanUp
 
         https://mirantis.testrail.com/index.php?/cases/view/543348
@@ -937,7 +937,7 @@ class HeatIntegrationTests(unittest.TestCase):
         4. Find ID of internal network with Neutron
         5. Find ID of internal sub network with Neutron
         6. Find ID of public network with Neutron
-        7. Create stack with Neutron resources and check that it was
+        7. Create stack with Neutron resources and check that it was \
         created successfully
         8. CleanUp
 
