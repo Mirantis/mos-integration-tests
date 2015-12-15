@@ -135,12 +135,12 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             self.glance.images.delete(self.image.id)
         if self.our_own_flavor_was_created:
             self.nova.flavors.delete(self.expected_flavor_id)
+        # delete the floating ip
+        self.nova.floating_ips.delete(self.floating_ip)
         # delete the security group
         self.nova.security_group_rules.delete(self.icmp_rule)
         self.nova.security_group_rules.delete(self.tcp_rule)
         self.nova.security_groups.delete(self.the_security_group.id)
-        # delete the floating ip
-        self.nova.floating_ips.delete(self.floating_ip)
         self.assertEqual(self.amount_of_images_before,
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
