@@ -138,11 +138,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             for server_object in self.nova.servers.list():
                 if server_object.name == boot_node.name:
                     print "Node in the {} state".format(boot_node.status)
-                    if boot_node.status != 'BUILD':
+                    if server_object.status != 'BUILD':
                         is_created = True
                         break
             time.sleep(1)
-        print boot_node.status
         # attempt to delete the image at the end
         self.nova.servers.delete(boot_node.id)
         self.glance.images.delete(image.id)
