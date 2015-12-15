@@ -312,10 +312,10 @@ def delete_instance(novaclient, uid):
 
 def create_volume(cinderclient, image_id, timeout=5):
     """ Check volume creation
-            :param cinderclient: Nova API client connection point
+            :param cinderclient: Cinder API client connection point
             :param image_id: UID of image
             :param timeout: Timeout for check operation
-            :return volume id
+            :return volume
     """
     end_time = time() + 60 * timeout
     volume = cinderclient.volumes.create(1, name='Test_volume',
@@ -324,10 +324,10 @@ def create_volume(cinderclient, image_id, timeout=5):
     while status != 'available':
         if time() > end_time:
             raise AssertionError(
-                "Volume status is '{0}' instead of 'available".format(status))
+                "Volume status is '{0}' instead of 'available'".format(status))
         sleep(1)
         status = cinderclient.volumes.get(volume.id).status
-    return volume.id
+    return volume
 
 
 def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
@@ -359,3 +359,25 @@ def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
         inst_status = [s.status for s in novaclient.servers.list() if s.id ==
                        inst.id][0]
     return inst
+
+
+def delete_volume(cinderclient, volume):
+    """ Delete volume and check that it is absent in the list
+            :param cinderclient: Cinder API client connection point
+            :param volume: volume
+    """
+    if volume in cinderclient.volumes.list():
+        cinderclient.volumes.delete(volume)
+        while volume in cinderclient.volumes.list():
+            sleep(1)
+
+
+def delete_floating_ip(novaclient, floating_ip):
+    """ Delete floating ip and check that it is absent in the list
+            :param novaclient: Nova API client connection point
+            :param floating_ip: floating ip
+    """
+    if floating_ip in novaclient.floating_ips.list():
+        novaclient.floating_ips.delete(floating_ip)
+        while floating_ip in novaclient.floating_ips.list():
+            sleep(1)
