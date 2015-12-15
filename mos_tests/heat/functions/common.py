@@ -81,12 +81,13 @@ def delete_stack(heatclient, uid):
 
 def check_stack_status_complete(heatclient, uid, action, timeout=10):
     """ Check stack STATUS in COMPLETE state
-            :param heatclient: Heat API client connection point
-            :param uid: ID stack
-            :param action: status that will be checked.
-                           Could be CREATE, UPDATE, DELETE.
-            :param timeout: Timeout for check operation
-            :return uid: UID of created stack
+
+    :param heatclient: Heat API client connection point
+    :param uid: ID stack
+    :param action: status that will be checked.
+        Could be CREATE, UPDATE, DELETE.
+    :param timeout: Timeout for check operation
+    :return uid: UID of created stack
     """
     stack = heatclient.stacks.get(stack_id=uid).to_dict()
     end_time = time() + 60 * timeout
@@ -154,13 +155,14 @@ def get_specific_resource_id(heat_client, uid, resource_name):
 
 def update_template_file(template_file, type_of_changes, **kwargs):
     """ Update template file specific fields.
-        :param template_file: path to template file.
-        :param type_of_changes: if changes in format - 'format'
-                                if changes in flavor size - 'flavor'
-        :param disk_format: new disk_format value(optional)
-        :param container_format: new container_format value(optional)
-        :param flavor: new flavor size
-        :return -
+
+    :param template_file: path to template file.
+    :param type_of_changes:
+        if changes in format - 'format'
+        if changes in flavor size - 'flavor'
+    :param disk_format: new disk_format value(optional)
+    :param container_format: new container_format value(optional)
+    :param flavor: new flavor size
     """
     with open(template_file, 'r') as stream:
         data = yaml.load(stream)
