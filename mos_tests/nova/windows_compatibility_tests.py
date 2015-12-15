@@ -122,15 +122,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                    image_object['status'] == 'active':
                     is_active = True
                     break
-        # get vm settings
-        for hypervisor in self.nova.hypervisors.list():
-            print ""
-            print "<H>"
-            print self.nova.hypervisors.get(hypervisor.id)
-        for flavor in self.nova.flavors.list():
-            print ""
-            print "<F>"
-            print self.nova.flavors.get(flavor.id)
+        # TODO: add check flavor parameters vs. vm parameters
+        self.nova.servers.create("MyTestSystemWithNova",
+                                 image,
+                                 self.nova.flavors.get(2))
+        assert 0
         # attempt to delete the image at the end
         self.glance.images.delete(image.id)
         amount_of_images_after = len(list(self.glance.images.list()))
