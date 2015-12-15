@@ -153,8 +153,9 @@ def get_specific_resource_id(heat_client, uid, resource_name):
 def update_template_file(template_file, type_of_changes, **kwargs):
     """ Update template file specific fields.
             :param template_file: path to template file.
-            :param type_of_changes: if changes in format - 'format'
-                                    if changes in flavor size - 'flavor'
+            :param type_of_changes:
+                if changes in format - 'format'
+                if changes in flavor size - 'flavor'
             :param kwargs: the key-value dictionary of parameters.
                            currently following keys are supported
                            disk_format: new disk_format value

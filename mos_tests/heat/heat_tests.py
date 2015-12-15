@@ -345,7 +345,7 @@ class HeatIntegrationTests(unittest.TestCase):
             Steps:
                 1. Create stack using template file empty_heat_templ.yaml.
                 2. Check that template of created stack has correct
-                 representation.
+                    representation.
         """
         stack_name = 'empty_stack'
         timeout = 60
@@ -504,7 +504,7 @@ class HeatIntegrationTests(unittest.TestCase):
         """ This test case checks representation of template file.
             Steps:
                 1. Check that selected template file has correct
-                 representation.
+                    representation.
         """
         template_content = common_functions.read_template(
             self.templates_dir, 'heat_create_nova_stack_template.yaml')
@@ -571,13 +571,15 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543351_HeatStackUpdateReplace(self):
         """ This test case checks change stack id after stack update.
+
             Steps:
-             1. Create stack using template.
-             2. Check id of created image.
-             3. Update stack template: disk_format = 'ami',
-                                       container_format = 'ami'
-             4. Update stack.
-             5. Check id of updated image.
+                1. Create stack using template.
+                2. Check id of created image.
+                3. Update stack template:
+                    disk_format = 'ami',
+                    container_format = 'ami'
+                4. Update stack.
+                5. Check id of updated image.
         """
         stack_name = 'image_stack'
         template_name = 'cirros_image_tmpl.yaml'
@@ -609,12 +611,13 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543352_HeatStackUpdateInPlace(self):
         """ This test case checks stack id doesn't change after stack update.
+
             Steps:
-             1. Create stack using template nova_server.yaml.
-             2. Check id of created image.
-             3. Update stack template: flavor = 'm1.small'
-             4. Update stack.
-             5. Check id of updated image.
+                1. Create stack using template nova_server.yaml.
+                2. Check id of created image.
+                3. Update stack template: flavor = 'm1.small'
+                4. Update stack.
+                5. Check id of updated image.
         """
         stack_name = 'vm_stack'
         template_name = 'nova_server.yaml'
@@ -704,12 +707,12 @@ class HeatIntegrationTests(unittest.TestCase):
         """ This test check the possibility to cancel update
 
             Steps:
-             1. Create new stack
-             2. Launch heat action-suspend stack_name
-             3. Launch heat stack-update stack_name
-             4. Launch heat stack-cancel-update stack_name while update
-                operation is in progress
-            5. Check state of stack after cancel update
+                1. Create new stack
+                2. Launch heat action-suspend stack_name
+                3. Launch heat stack-update stack_name
+                4. Launch heat stack-cancel-update stack_name while update
+                    operation is in progress
+                5. Check state of stack after cancel update
         """
 
         # network ID, image ID, InstanceType
