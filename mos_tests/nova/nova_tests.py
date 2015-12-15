@@ -174,3 +174,40 @@ class BasicNovaVerificationTests(unittest.TestCase):
                 raise AssertionError("Instance is not removed")
             else:
                 time.sleep(1)
+
+    def test_543359_MassivelySpawnVolumes(self):
+        """ This test checks massivelly spawn volumes
+
+            Steps:
+                1. Create 10 volumes
+                2. Check status of newly created volumes
+                3. Delete all volumes
+        """
+        volume_count = 10
+        volumes = []
+
+        # Creation using Cinder
+        for num in xrange(volume_count):
+            volumes.append(
+                self.cinder.volumes.create(1, name='Volume_{}'.format(num+1)))
+
+        timeout = time.time() + 60
+        while True:
+            vol_list = {v.name: v.status for v in self.cinder.volumes.list()}
+            available_list = [name for name in vol_list.keys() if
+                              vol_list[name] == 'available']
+            error_list = [name for name in vol_list.keys() if
+                          vol_list[name] != 'available']
+            if not error_list and len(available_list) == 10:
+                break
+            elif time.time() > timeout:
+                raise AssertionError(
+                    "\nList of not available volumes:\n\t"
+                    "{0}\nList of not available volumes:\n\t{1}".format(
+                        error_list, available_list))
+            else:
+                time.sleep(1)
+
+        for volume in self.cinder.volumes.list():
+            self.cinder.volumes.delete(volume.id)
+
