@@ -75,6 +75,20 @@ class NovaIntegrationTests(unittest.TestCase):
         self.cinder = cinder_client.Client('2', OS_USERNAME, OS_PASSWORD,
                                            OS_TENANT_NAME,
                                            auth_url=OS_AUTH_URL)
+        self.instances = []
+        self.floating_ips = []
+        self.volumes = []
+
+    def tearDown(self):
+        for inst in self.instances:
+            common_functions.delete_instance(self.nova, inst)
+        self.instances = []
+        for fip in self.floating_ips:
+            common_functions.delete_floating_ip(self.nova, fip)
+        self.floating_ips = []
+        for volume in self.volumes:
+            common_functions.delete_volume(self.cinder, volume)
+        self.volumes = []
 
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
@@ -98,6 +112,7 @@ class NovaIntegrationTests(unittest.TestCase):
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
+            self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
             inst = common_functions.create_instance(self.nova, "inst_543358_{}"
@@ -106,13 +121,12 @@ class NovaIntegrationTests(unittest.TestCase):
                                                     security_group,
                                                     image_id=image_id)
             inst_id = inst.id
+            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
-            self.nova.floating_ips.delete(floating_ip)
-            common_functions.delete_instance(self.nova, inst_id)
 
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
@@ -135,18 +149,21 @@ class NovaIntegrationTests(unittest.TestCase):
         net = [net['id'] for net in networks if not net['router:external']][0]
         security_group = self.nova.security_groups.list()[0].name
         flavor_list = self.nova.flavors.list()
-        volume_id = common_functions.create_volume(self.cinder, image_id)
-        bdm = {'vda': volume_id}
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
+            self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
+            volume = common_functions.create_volume(self.cinder, image_id)
+            self.volumes.append(volume)
+            bdm = {'vda': volume.id}
             inst = common_functions.create_instance(self.nova, "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
                                                     security_group,
                                                     block_device_mapping=bdm)
             inst_id = inst.id
+            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
@@ -170,6 +187,7 @@ class NovaIntegrationTests(unittest.TestCase):
                     image.name == 'TestVM'][0]
         volume = self.cinder.volumes.create(1, name='TestVM_volume',
                                             imageRef=image_id)
+        self.volumes.append(volume)
 
         timeout = time.time() + 60
         while True:
@@ -196,6 +214,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                             flavor=initial_flavor,
                                             block_device_mapping=bdm,
                                             nics=[{'net-id': net}])
+        self.instances.append(instance.id)
 
         timeout = time.time() + 60
         while True:
@@ -218,6 +237,7 @@ class NovaIntegrationTests(unittest.TestCase):
                          "Unexpected instance flavor before resize")
 
         floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip.ip)
         instance.add_floating_ip(floating_ip.ip)
 
         # 3. Resize from m1.small to m1.tiny
@@ -252,19 +272,6 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
-        # Clean-up (to be re-worked)
-        self.nova.servers.delete(instance)
-        timeout = time.time() + 120
-        while True:
-            if instance not in self.nova.servers.list():
-                self.cinder.volumes.delete(volume)
-                break
-            elif time.time() > timeout:
-                raise AssertionError("Instance is not removed")
-            else:
-                time.sleep(1)
-        time.sleep(60)
-
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
 
@@ -281,6 +288,7 @@ class NovaIntegrationTests(unittest.TestCase):
             volumes.append(
                 self.cinder.volumes.create(
                     1, name='Volume_{}'.format(num + 1)))
+            self.volumes.extend(volumes)
 
         timeout = time.time() + 60
         while True:
@@ -298,10 +306,3 @@ class NovaIntegrationTests(unittest.TestCase):
                         error_list, available_list))
             else:
                 time.sleep(1)
-
-        for volume in self.cinder.volumes.list():
-            self.cinder.volumes.delete(volume.id)
-
-
-
-
