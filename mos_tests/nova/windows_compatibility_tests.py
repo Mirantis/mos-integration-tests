@@ -106,20 +106,16 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         :return: Nothing
         """
+        amount_of_images_before = len(self.glance.images.list())
         image = self.glance.images.create(name='MyTestSystem',
                                           disk_format='qcow2',
                                           container_format='bare')
         self.glance.images.upload(
                 image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
-        print self.glance.images.list()
-        for image in self.glance.images.list():
-            print image
-        for server in self.nova.servers.list():
-            print server
-        for flavor in self.nova.flavors.list():
-            print flavor
-        assert 0
+        amount_of_images_after = len(self.glance.images.list())
+        self.assertEqual(amount_of_images_before, amount_of_images_after,
+                         "Length of list with images should be the same")
 
     @unittest.skip("Unimplemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
