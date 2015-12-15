@@ -18,6 +18,7 @@ from devops.helpers.helpers import wait
 
 from tools.settings import logger
 from mos_tests.neutron.python_tests import base
+from mos_tests import settings
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
@@ -56,6 +57,27 @@ class TestDHCPAgent(base.TestBase):
             subnet_id=subnet['subnet']['id'])
         return router
 
+    def create_cirros_instance_with_ssh(self, name='server01',
+                                        net_name='net04', **kwargs):
+        """Boot instance from cirros image with access by ssh.
+
+        :param name: instance name
+        :param net_name: network name
+        :param kwargs: some other params to create instance
+        :return: created instance
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+
+        network = [net.id for net in self.os_conn.nova.networks.list()
+                   if net.label == net_name]
+
+        kwargs.update({'nics': [{'net-id': network[0]}],
+                       'security_groups': [security_group.name]})
+
+        instance = self.os_conn.create_server(
+            name=name, **kwargs)
+        return instance
+
     def ban_dhcp_agent(self, host, network_name, wait_for_migrate=True):
         """Ban DHCP agent and wait until agents rescheduling.
 
@@ -74,7 +96,7 @@ class TestDHCPAgent(base.TestBase):
             network['id'])[0]
 
         # ban dhcp agent on this node
-        with self.env.get_ssh_to_remote(host) as remote:
+        with self.env.get_ssh_to_node(host) as remote:
             remote.execute(
                 "pcs resource ban p_neutron-dhcp-agent {0}".format(
                     node_with_dhcp))
@@ -93,30 +115,51 @@ class TestDHCPAgent(base.TestBase):
                 timeout_msg=err_msg.format(node_with_dhcp))
         return node_with_dhcp
 
-    def _check_dhcp_on_instance(self, vm):
-            vm = self.os_conn.get_instance_detail(vm)
-            srv_host = self.env.find_node_by_fqdn(
-                self.os_conn.get_srv_hypervisor_name(vm))['ip']
+    def run_on_cirros_through_host(self, vm, cmd):
+        vm = self.os_conn.get_instance_detail(vm)
+        srv_host = self.env.find_node_by_fqdn(
+            self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
 
-            _floating_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
+        _floating_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
 
+        with self.env.get_ssh_to_node(srv_host) as remote:
+            res = self.os_conn.execute_through_host(
+                remote, _floating_ip, cmd)
+        return res
+
+    def check_ping_from_cirros(self, vm, ip_to_ping=None):
+        ip_to_ping = ip_to_ping or settings.PUBLIC_TEST_IP
+        cmd = "ping -c1 {0}".format(ip_to_ping)
+        res = self.run_on_cirros_through_host(vm, cmd)
+        error_msg = (
+            'Instance has no connectivity, '
+            'exit code {exit_code},'
+            'stdout {stdout}, stderr {stderr}').format(**res)
+        assert 0 == res['exit_code'], error_msg
+
+    def check_dhcp_on_cirros_instance(self, vm):
             cmd = 'sudo -i cirros-dhcpc up eth0'
+            res = self.run_on_cirros_through_host(vm, cmd)
+            err_msg = (
+                'DHCP client can\'t get ip, '
+                'exit code {exit_code}, '
+                'stdout {stdout}, stderr {stderr}'.format(**res))
+            assert 0 == res['exit_code'], err_msg
 
-            with self.env.get_ssh_to_remote(srv_host) as remote:
-                res = self.os_conn.execute_through_host(
-                    remote, _floating_ip, cmd)
+    @pytest.fixture(autouse=True)
+    def _prepare_openstack_state(self, init):
+        """Prepare OpenStack for scenarios run
 
-            assert 0 == res['exit_code'], \
-                'DHCP client can\'t get ip, exit code {0}, stdout {1}, ' \
-                'stderr {2}'.format(
-                    res['exit_code'], res['stdout'], res['stderr'])
-
-    def check_ban_dhcp_agent(self, ban_count=1):
-        """Check DHCP agent migration after ban.
-
-        :param ban_count: count of banned dhcp-agents
+        Steps:
+            1. Revert snapshot with neutron cluster
+            2. Create network net01, subnet net01_subnet
+            3. Create router with gateway to external net and
+               interface with net01
+            4. Launch instance and associate floating IP
+            4. Check ping from instance google DNS
+            6. Check run dhcp-client in instance's console:
+               sudo cirros-dhcpc up eth0
         """
-
         # init variables
         exist_networks = self.os_conn.list_networks()['networks']
         ext_net = [net for net in exist_networks
@@ -124,42 +167,28 @@ class TestDHCPAgent(base.TestBase):
 
         # create network with subnet and router
         int_net, sub_net = self.create_internal_network_with_subnet()
+        self.net_id = int_net['network']['id']
         router = self.create_router_between_nets(ext_net, sub_net)
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
         # create instance and assign floating ip to it
-        instance = self.os_conn.create_server_for_migration(
-            label=int_net['network']['name'],
+        self.instance = self.create_cirros_instance_with_ssh(
+            net_name=int_net['network']['name'],
+            key_name=self.instance_keypair.name,
             router=router)
 
-        self.os_conn.assign_floating_ip(instance)
+        self.os_conn.assign_floating_ip(self.instance)
 
-        # check dhcp client on instance
-        self._check_dhcp_on_instance(vm=instance)
-
-        # get dhcp agents and ban some of it
-        net_id = int_net['network']['id']
-        agents_hosts = self.os_conn.get_node_with_dhcp_for_network(net_id)
-        controller_host = self.env.find_node_by_fqdn(
-            agents_hosts[0])['ip']
-
-        for _ in range(ban_count):
-            self.ban_dhcp_agent(host=controller_host, network_name='net01')
-
-        # check dhcp client on instance
-        self._check_dhcp_on_instance(vm=instance)
-
-        # check dhcp agent nodes after rescheduling
-        new_agents_hosts = self.os_conn.get_node_with_dhcp_for_network(net_id)
-        err_msg = ('Rescheduling failed, agents list after and '
-                   'before scheduling are same: '
-                   'old agents hosts - {0}, '
-                   'new agents hosts - {1}'.format(agents_hosts,
-                                                   new_agents_hosts))
-        assert sorted(agents_hosts) != sorted(new_agents_hosts), err_msg
+        # check ping from instance and dhcp client on instance
+        self.check_vm_is_connectable(self.instance)
+        self.check_ping_from_cirros(vm=self.instance)
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
 
     @pytest.mark.parametrize('ban_count', [1, 2])
-    def test_ban_one_dhcp_agent_vlan(self, ban_count):
-        """Check dhcp-agent rescheduling after dhcp-agent dies on vlan.
+    def test_ban_one_dhcp_agent(self, ban_count):
+        """Check dhcp-agent rescheduling after dhcp-agent dies.
+
+        :param ban_count: count of banned dhcp-agents
 
         Scenario:
             1. Revert snapshot with neutron cluster
@@ -180,7 +209,24 @@ class TestDHCPAgent(base.TestBase):
         Duration 30m
 
         """
-        import pydevd
-        pydevd.settrace('172.16.68.146', port=20001,
-                        stdoutToServer=True, stderrToServer=True)
-        self.check_ban_dhcp_agent(ban_count=ban_count)
+        # Fixture init from method self._prepare_openstack_state
+        # Get dhcp agents and ban some of it
+        agents_hosts = self.os_conn.get_node_with_dhcp_for_network(self.net_id)
+        controller_host = self.env.find_node_by_fqdn(
+            agents_hosts[0]).data['ip']
+
+        for _ in range(ban_count):
+            self.ban_dhcp_agent(host=controller_host, network_name='net01')
+
+        # check dhcp client on instance
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check dhcp agent nodes after rescheduling
+        new_agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id)
+        err_msg = ('Rescheduling failed, agents list after and '
+                   'before scheduling are same: '
+                   'old agents hosts - {0}, '
+                   'new agents hosts - {1}'.format(agents_hosts,
+                                                   new_agents_hosts))
+        assert sorted(agents_hosts) != sorted(new_agents_hosts), err_msg
