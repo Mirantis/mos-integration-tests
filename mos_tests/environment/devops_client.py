@@ -12,9 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 """Virtual test env setup and so on."""
+import logging
+
 from devops.models import Environment
-# TBD: replace the logger
-from tools.settings import logger
+
+logger = logging.getLogger(__name__)
 
 
 class DevopsClient(object):
@@ -34,7 +36,7 @@ class DevopsClient(object):
             else:
                 env = Environment.objects.all().order_by('created').last()
         except Exception as e:
-            logger.error('failed to find the last created enviroment{}'.
+            logger.error('failed to find the last created environment{}'.
                          format(e))
             raise
         return env
@@ -45,8 +47,8 @@ class DevopsClient(object):
 
         If the snapshot_name is empty
         than just find the last created snaphost
-        Return True if the resume-revert is sucesfully done
-        False othervise.
+        Return True if the resume-revert is successfully done
+        False otherwise.
         """
         env = cls.get_env(env_name)
         not_interested = ['ready', 'empty']
@@ -60,6 +62,7 @@ class DevopsClient(object):
                             not_interested.append(snapshot.name)
                 snapshot_name = snapshots[-1]
             # TBD the calls below are non blocking once, need to add wait
+            logger.info("Reverting snapshot {0}".format(snapshot_name))
             env.revert(snapshot_name, flag=False)
             env.resume(verbose=False)
             cls.sync_tyme(env)
@@ -85,7 +88,17 @@ class DevopsClient(object):
 
     @classmethod
     def sync_tyme(cls, env):
-        for node in env.get_nodes():
-            ip = node.get_ip_address_by_network_name('admin')
-            with env.get_ssh_to_remote(ip) as remote:
-                remote.execute('hwclock --hctosys')
+        with env.get_admin_remote() as remote:
+            slaves_count = len(env.nodes().all) - 1
+            remote.execute('hwclock --hctosys')
+            remote.execute('for i in {{1..{0}}}; do ssh node-$i '
+                           '"hwclock --hctosys"; done'.format(slaves_count))
+
+    @classmethod
+    def get_node_by_mac(cls, env_name, mac):
+        env = cls.get_env(env_name=env_name)
+        for node in env.nodes().slaves:
+            interfaces = node.interface_by_network_name('admin')
+            mac_addresses = [x.mac_address for x in interfaces]
+            if mac in mac_addresses:
+                return node

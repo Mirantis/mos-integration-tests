@@ -13,5 +13,5 @@ Base Heat tests
 
 Heat common functions
 ---------------------
-.. automodule:: mos_tests.heat.functions.common
+.. automodule:: mos_tests.functions.common
    :members:
