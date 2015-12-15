@@ -131,7 +131,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             [{"net-id": self.nova.networks.list()[0].id}]
         # More detailed check of network list
         for network in self.nova.networks.list():
-            if 'floating' in network.label:
+            if 'internal' in network.label:
                 network_interfaces = [{"net-id": network.id}]
         print "Starting with network interface(s) {}".format(network_interfaces)
 
