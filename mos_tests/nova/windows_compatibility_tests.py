@@ -125,11 +125,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # TODO: add check flavor parameters vs. vm parameters
         network_interfaces = \
             [{"net-id": self.nova.networks.list()[0].id, "v4-fixed-ip": ''}]
-        self.nova.servers.create(name="MyTestSystemWithNova",
-                                 image=image,
-                                 flavor=self.nova.flavors.get(2),
-                                 nics=network_interfaces)
-        assert 0
+        boot_node = self.nova.servers.create(name="MyTestSystemWithNova",
+                                             image=image,
+                                             flavor=self.nova.flavors.get(2),
+                                             nics=network_interfaces)
+        print boot_node
         # attempt to delete the image at the end
         self.glance.images.delete(image.id)
         amount_of_images_after = len(list(self.glance.images.list()))
