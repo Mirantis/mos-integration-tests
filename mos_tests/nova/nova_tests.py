@@ -15,6 +15,7 @@
 import os
 import unittest
 
+import time
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v2_0 import client as keystone_client
@@ -145,6 +146,7 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertEqual(ping, 0, "Instance is not reachable")
             self.nova.floating_ips.delete(floating_ip)
             common_functions.delete_instance(self.nova, inst_id)
+
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
@@ -176,7 +178,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.nova.servers.create(primary_name, image_id, flavor_id,
                                  max_count=count,
                                  nics=[{"net-id": net_internal_id}])
-
+        time.sleep(10)
         inst_ids = [inst.id for inst in self.nova.servers.list()]
         msg = "Count of instances is incorrect"
         self.assertEqual(len(inst_ids), count, msg)
@@ -200,10 +202,8 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertEqual(ping, 0, msg)
 
         #clean up
-        for fip in [fip_info.ip for fip_info in floating_ips]:
-            self.nova.floating_ips.delete(fip)
-        for fip in floating_ips:
-            self.nova.floating_ips.delete(fip)
+        for fip in self.nova.floating_ips.list():
+            self.nova.floating_ips.delete(fip.ip)
 
         for inst in self.nova.servers.list():
             common_functions.delete_instance(self.nova, inst)
