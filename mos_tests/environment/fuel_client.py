@@ -16,11 +16,15 @@ import logging
 import os
 from paramiko import RSAKey
 
+<<<<<<< 5f72dc538ccf0edc66c2bda5d31a78dd58a5e187
 from devops.helpers.helpers import SSHClient
 from devops.helpers.helpers import wait
+=======
+>>>>>>> Added SSHClient with conditional support of sftp.
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from fuelclient import client
+from ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +51,11 @@ class Environment(EnvironmentBase):
             username='root',
             private_keys=self.admin_ssh_keys
         )
+
+    def get_ssh_to_cirros(self, ip, private_keys):
+        return SSHClient(
+            host=ip, username="cirros", password=None,
+            private_keys=private_keys, use_sftp=False)
 
     def get_nodes_by_role(self, role):
         """Returns nodes by assigned role"""
