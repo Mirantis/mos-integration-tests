@@ -178,7 +178,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.nova.servers.create(primary_name, image_id, flavor_id,
                                  max_count=count,
                                  nics=[{"net-id": net_internal_id}])
-        time.sleep(10)
+        time.sleep(5)
         inst_ids = [inst.id for inst in self.nova.servers.list()]
         msg = "Count of instances is incorrect"
         self.assertEqual(len(inst_ids), count, msg)
@@ -201,10 +201,8 @@ class NovaIntegrationTests(unittest.TestCase):
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
-        #clean up
         for fip in self.nova.floating_ips.list():
             self.nova.floating_ips.delete(fip.ip)
 
         for inst in self.nova.servers.list():
             common_functions.delete_instance(self.nova, inst)
-
