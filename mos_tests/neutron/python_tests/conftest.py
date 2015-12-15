@@ -13,6 +13,7 @@
 #    under the License.
 
 import pytest
+from distutils.spawn import find_executable
 from devops.helpers.helpers import wait
 
 from mos_tests.environment.devops_client import DevopsClient
@@ -116,6 +117,15 @@ def setup(request, env_name, snapshot_name, env, os_conn):
 
 
 @pytest.fixture
+def tshark():
+    """Returns tshark bin path"""
+    path = find_executable('tshark')
+    if path is None:
+        pytest.skip('requires tshark executable')
+    return path
+
+
+@pytest.fixture
 def check_ha_env(env):
     """Check that deployment type is HA"""
     if not env.is_ha:
@@ -136,3 +146,10 @@ def check_devops(env_name):
         DevopsClient.get_env(env_name=env_name)
     except Exception:
         pytest.skip('requires devops env to be defined')
+
+
+@pytest.fixture
+def check_vxlan(env):
+    """Check that count of compute nodes not less than 2"""
+    if env.network_segmentation_type != 'tun':
+        pytest.skip('requires vxlan segmentation')
