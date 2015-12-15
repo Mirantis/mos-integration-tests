@@ -169,8 +169,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                                       floating_ip.ip))
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
-            self.nova.floating_ips.delete(floating_ip)
-            common_functions.delete_instance(self.nova, inst_id)
+
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
