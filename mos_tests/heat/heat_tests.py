@@ -414,6 +414,7 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543345_HeatCreateStackAWS(self):
         """ This test creates stack using AWS format template
+
             Steps:
              1. Connect to Neutron and get ID of internal_network
              2. Get ID of external_network
@@ -1126,5 +1127,3 @@ class HeatIntegrationTests(unittest.TestCase):
         self.glance.images.delete(image.id)
         # Delete keypair:
         keypair.delete()
-
-
