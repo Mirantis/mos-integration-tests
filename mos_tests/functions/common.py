@@ -23,7 +23,7 @@ def get_stack_id(heat_client, stack_name):
     if check_stack(stack_name, heat_client):
         stack_dict = {s.stack_name: s.id for s in heat_client.stacks.list()}
         return stack_dict[stack_name]
-    raise Exception("ERROR: Stack {0} is not defined".format(stack_name))
+    raise Exception("ERROR: Stack {} is not defined".format(stack_name))
 
 
 def check_stack_status(stack_name, heat, status, timeout=60):
@@ -39,13 +39,12 @@ def check_stack_status(stack_name, heat, status, timeout=60):
         start_time = time()
         stack_status = [s.stack_status for s in heat.stacks.list()
                         if s.stack_name == stack_name][0]
-        while stack_status.find('IN_PROGRESS') != -1 \
+        while 'IN_PROGRESS' not in stack_status \
                 and time() < start_time + 60 * timeout:
             sleep(1)
             stack_status = [s.stack_status for s in heat.stacks.list()
                             if s.stack_name == stack_name][0]
-        if stack_status == status:
-            return True
+        return stack_status == status
     return False
 
 
@@ -89,14 +88,14 @@ def check_stack_status_complete(heat_client, uid, action, timeout=10):
     """
     stack = heat_client.stacks.get(stack_id=uid).to_dict()
     end_time = time() + 60 * timeout
-    while stack['stack_status'] == '{0}_IN_PROGRESS'.format(action):
+    while stack['stack_status'] == '{}_IN_PROGRESS'.format(action):
         stack = heat_client.stacks.get(stack_id=uid).to_dict()
         if time() > end_time:
             break
         else:
             sleep(1)
-    if stack['stack_status'] != '{0}_COMPLETE'.format(action):
-        raise Exception("ERROR: Stack {0} is not in '{1}_COMPLETE' "
+    if stack['stack_status'] != '{}_COMPLETE'.format(action):
+        raise Exception("ERROR: Stack {} is not in '{}_COMPLETE' "
                         "state:\n".format(stack, action))
 
 
@@ -192,7 +191,7 @@ def download_image(image_link_file, where_to_put='/tmp/'):
             image_url = file_with_link.read()
     except Exception:
         raise Exception("Can not find or read from file on node:"
-                        "\n\t{0}".format(image_link_file))
+                        "\n\t{}".format(image_link_file))
 
     # Get image name from URL. Like: 'fedora-heat-test-image.qcow2'
     image_name_from_url = image_url.rsplit('/', 1)[-1]
@@ -209,14 +208,14 @@ def download_image(image_link_file, where_to_put='/tmp/'):
         try:
             response = urllib2.urlopen(image_url)
         except urllib2.HTTPError, e:
-            raise Exception('Can not get file from URL. HTTPError = {0}.'
-                            '\n\tURL = "{1}"'.format(str(e.code), image_url))
+            raise Exception('Can not get file from URL. HTTPError = {}.'
+                            '\n\tURL = "{}"'.format(str(e.code), image_url))
         except urllib2.URLError, e:
-            raise Exception('Can not get file from URL. URLError = {0}.'
-                            '\n\tURL = "{1}"'.format(str(e.reason), image_url))
+            raise Exception('Can not get file from URL. URLError = {}.'
+                            '\n\tURL = "{}"'.format(str(e.reason), image_url))
         except Exception:
             raise Exception("Can not get file from URL:"
-                            "\n\t{0}".format(image_url))
+                            "\n\t{}".format(image_url))
 
         # Write image to file. With Chunk to avoid memory errors.
         CHUNK = 16 * 1024
@@ -239,7 +238,7 @@ def get_inst_id(nova_client, inst_name):
     if inst_name in [s.name for s in inst_list]:
         inst_dict = {s.name: s.id for s in inst_list}
         return inst_dict[inst_name]
-    raise Exception("ERROR: Instance {0} is not defined".format(inst_name))
+    raise Exception("ERROR: Instance {} is not defined".format(inst_name))
 
 
 def check_instance(nova_client, uid):
@@ -316,7 +315,7 @@ def create_volume(cinder_client, image_id, timeout=5):
     while status != 'available':
         if time() > end_time:
             raise AssertionError(
-                "Volume status is '{0}' instead of 'available".format(status))
+                "Volume status is '{}' instead of 'available".format(status))
         sleep(1)
         status = cinder_client.volumes.get(volume.id).status
     return volume.id
