@@ -109,14 +109,12 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.the_security_group.id,
                 ip_protocol="icmp",
                 from_port=-1,
-                to_port=-1,
-                cidr="0.0.0.0/0")
+                to_port=-1)
         self.nova.security_group_rules.create(
                 self.the_security_group.id,
                 ip_protocol="tcp",
                 from_port=80,
-                to_port=80,
-                cidr="0.0.0.0/0")
+                to_port=80)
         # adding floating ip
         self.floating_ip = self.nova.floating_ips.create(
                 self.nova.floating_ip_pools.list()[0].name)
