@@ -99,22 +99,22 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.expected_flavor_id = 3
         self.node_to_boot = None
         self.security_group_name = "ms_compatibility"
-        self.nova.security_groups.create(
+        self.the_security_group = self.nova.security_groups.create(
                 name=self.security_group_name,
                 description="Windows Compatibility")
-        self.the_security_group = self.nova.security_groups.find(
-                name=self.security_group_name)
         # Add rules for ICMP, TCP/22
         self.nova.security_group_rules.create(
                 self.the_security_group.id,
                 ip_protocol="icmp",
                 from_port=-1,
-                to_port=-1)
+                to_port=-1,
+                cidr="0.0.0.0/0")
         self.nova.security_group_rules.create(
                 self.the_security_group.id,
                 ip_protocol="tcp",
                 from_port=80,
-                to_port=80)
+                to_port=80,
+                cidr="0.0.0.0/0")
         # adding floating ip
         self.floating_ip = self.nova.floating_ips.create(
                 self.nova.floating_ip_pools.list()[0].name)
