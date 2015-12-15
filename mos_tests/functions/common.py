@@ -252,6 +252,17 @@ def check_instance(novaclient, uid):
     return False
 
 
+def check_volume(cinderclient, uid):
+    """ Check the presence of volume id in the list of volume
+            :param cinderclient: Cinder API client connection point
+            :param uid: UID of volume
+            :return True or False
+    """
+    if uid in [s.id for s in cinderclient.volumes.list()]:
+        return True
+    return False
+
+
 def check_inst_status(novaclient, uid, status, timeout=5):
     """ Check status of instance
             :param novaclient: Nova API client connection point
@@ -376,3 +387,24 @@ def delete_floating_ip(novaclient, floating_ip):
         novaclient.floating_ips.delete(floating_ip)
         while floating_ip in novaclient.floating_ips.list():
             sleep(1)
+
+
+def check_volume_status(cinderclient, uid, status, timeout=5):
+    """ Check status of volume
+            :param cinderclient: Cinder API client connection point
+            :param uid: UID of volume
+            :param status: Expected volume status
+            :param timeout: Timeout for check operation
+            :return True or False
+    """
+    if check_volume(cinderclient, uid):
+        start_time = time()
+        inst_status = [s.status for s in cinderclient.volumes.list() if s.id ==
+                       uid][0]
+        while inst_status != status and time() < start_time + 60 * timeout:
+            sleep(1)
+            inst_status = [s.status for s in cinderclient.volumes.list() if
+                           s.id == uid][0]
+        if inst_status == status:
+            return True
+    return False
