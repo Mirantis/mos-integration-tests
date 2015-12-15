@@ -107,12 +107,32 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         amount_of_images_before = len(list(self.glance.images.list()))
+        # creating of the image
         image = self.glance.images.create(name='MyTestSystem',
                                           disk_format='qcow2',
                                           container_format='bare')
         self.glance.images.upload(
                 image.id,
                 open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
+        # check that required image in active state
+        is_active = False
+        while not is_active:
+            for image_object in self.glance.images.list():
+                if image_object['id'] == image.id and \
+                   image_object['status'] == 'active':
+                    is_active = True
+                    break
+        # get vm settings
+        for hypervisor in self.nova.hypervisors.list():
+            print ""
+            print "<H>"
+            print hypervisor
+        for flavor in self.nova.flavors.list():
+            print ""
+            print "<F>"
+            print flavor
+        # attempt to delete the image at the end
+        self.glance.images.delete(image.id)
         amount_of_images_after = len(list(self.glance.images.list()))
         self.assertEqual(amount_of_images_before, amount_of_images_after,
                          "Length of list with images should be the same")
