@@ -18,15 +18,16 @@ import random
 from tempfile import NamedTemporaryFile
 
 from cinderclient import client as cinderclient
+from devops.error import TimeoutError
+from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
-from novaclient.v1_1 import Client as NovaClient
+from novaclient.v2 import Client as NovaClient
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
-from devops.error import TimeoutError
-from devops.helpers import helpers
+import paramiko
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,10 @@ class OpenStackActions(object):
         servers = self.nova.servers.list()
         if servers:
             return servers
+
+    def get_srv_hypervisor_name(self, srv):
+        srv = self.nova.servers.get(srv.id)
+        return getattr(srv, "OS-EXT-SRV-ATTR:hypervisor_hostname")
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=100, **kwargs):
@@ -290,8 +295,8 @@ class OpenStackActions(object):
             try:
                 self.neutron.delete_subnet(subnet['id'])
             except NeutronClientException:
-                logger.info('the subnet {} is not deletable'
-                            .format(subnet['id']))
+                logger.info(
+                    'the subnet {} is not deletable'.format(subnet['id']))
 
     def delete_routers(self):
         # Did not find the better way to detect the fuel admin router
@@ -302,16 +307,15 @@ class OpenStackActions(object):
             try:
                 self.neutron.delete_router(router)
             except NeutronClientException:
-                logger.info('the router {} is not deletable'
-                            .format(router))
+                logger.info('the router {} is not deletable'.format(router))
 
     def delete_floating_ips(self):
         for floating_ip in self.nova.floating_ips.list():
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info('floating_ip {} is not deletable'.
-                             format(floating_ip.id))
+                logger.info(
+                    'floating_ip {} is not deletable'.format(floating_ip.id))
 
     def delete_servers(self):
         for server in self.nova.servers.list():
@@ -325,8 +329,7 @@ class OpenStackActions(object):
             try:
                 self.nova.keypairs.delete(key_pair)
             except NovaClientException:
-                logger.info('key pair {} is not deletable'.
-                             format(key_pair.id))
+                logger.info('key pair {} is not deletable'.format(key_pair.id))
 
     def delete_security_groups(self):
         for sg in self.nova.security_groups.list():
@@ -335,13 +338,13 @@ class OpenStackActions(object):
             try:
                 self.nova.security_groups.delete(sg)
             except NovaClientException:
-                logger.info('The Security Group {} is not deletable'
-                             .format(sg))
+                logger.info(
+                    'The Security Group {} is not deletable'.format(sg))
 
     def delete_ports(self, networks):
         # After some experiments the following sequence for deletion was found
         # router_interface and ports -> subnets -> routers -> nets
-        # Delete router interafce and ports
+        # Delete router interface and ports
         # TBD some ports are still kept after the cleanup.
         # Need to find why and delete them as well
         # But it does not fail the execution so far.
@@ -349,7 +352,7 @@ class OpenStackActions(object):
             if port['network_id'] not in networks:
                 continue
             try:
-                # TBD Looks like the port migh be used either by router or
+                # TBD Looks like the port might be used either by router or
                 # l3 agent
                 # in case of router this condition is true
                 # port['network'] == 'router_interface'
@@ -371,10 +374,10 @@ class OpenStackActions(object):
                 logger.info('the port {} is not deletable'
                             .format(port['id']))
 
-    def cleanup_network(self, networks_to_skip=[]):
+    def cleanup_network(self, networks_to_skip=tuple()):
         """Clean up the neutron networks.
 
-        The networks that should be kept are passed as list of names
+        :param networks_to_skip: list of networks names that should be kept
         """
         # net ids with the names from networks_to_skip are filtered out
         networks = [x['id'] for x in self.neutron.list_networks()['networks']
@@ -401,3 +404,42 @@ class OpenStackActions(object):
             except NeutronClientException:
                 logger.info('the net {} is not deletable'
                             .format(net))
+
+    def execute_through_host(self, ssh, vm_host, cmd, creds=()):
+        logger.debug("Making intermediate transport")
+        intermediate_transport = ssh._ssh.get_transport()
+
+        logger.debug("Opening channel to VM")
+        intermediate_channel = intermediate_transport.open_channel(
+            'direct-tcpip', (vm_host, 22), (ssh.host, 0))
+        logger.debug("Opening paramiko transport")
+        transport = paramiko.Transport(intermediate_channel)
+        logger.debug("Starting client")
+        transport.start_client()
+        logger.info("Passing authentication to VM: {}".format(creds))
+        if not creds:
+            creds = ('cirros', 'cubswin:)')
+        transport.auth_password(creds[0], creds[1])
+
+        logger.debug("Opening session")
+        channel = transport.open_session()
+        logger.info("Executing command: {}".format(cmd))
+        channel.exec_command(cmd)
+
+        result = {
+            'stdout': [],
+            'stderr': [],
+            'exit_code': 0
+        }
+
+        logger.debug("Receiving exit_code")
+        result['exit_code'] = channel.recv_exit_status()
+        logger.debug("Receiving stdout")
+        result['stdout'] = channel.recv(1024)
+        logger.debug("Receiving stderr")
+        result['stderr'] = channel.recv_stderr(1024)
+
+        logger.debug("Closing channel")
+        channel.close()
+
+        return result

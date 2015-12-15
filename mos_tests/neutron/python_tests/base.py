@@ -118,3 +118,26 @@ class TestBase(object):
                     server2).values()
             self.check_ping_from_vm(server1, self.instance_keypair,
                                     ips_to_ping, timeout=timeout)
+
+    def check_vm_is_connectable(self, vm):
+        """Check that instance is pingable from hypervisor.
+
+        :param vm: instance to ping from it compute node.
+        """
+        # TODO(rpromyshlennikov): check ssh, not only ping,
+        # vm needs keys for it
+        vm = self.os_conn.get_instance_detail(vm)
+        srv_host = self.env.find_node_by_fqdn(
+            self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
+
+        vm_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
+
+        with self.env.get_ssh_to_node(srv_host) as remote:
+            cmd = "ping -c1 {0}".format(vm_ip)
+
+            error_msg = ('Instance with ip {0} has no connectivity from '
+                         'node with ip {1}.').format(vm_ip, srv_host)
+
+            wait(lambda: remote.execute(cmd)['exit_code'] == 0,
+                 interval=10, timeout=3 * 10,
+                 timeout_msg=error_msg)
