@@ -36,7 +36,7 @@ class DevopsClient(object):
             else:
                 env = Environment.objects.all().order_by('created').last()
         except Exception as e:
-            logger.error('failed to find the last created enviroment{}'.
+            logger.error('failed to find the last created environment{}'.
                          format(e))
             raise
         return env
@@ -47,8 +47,8 @@ class DevopsClient(object):
 
         If the snapshot_name is empty
         than just find the last created snaphost
-        Return True if the resume-revert is sucesfully done
-        False othervise.
+        Return True if the resume-revert is successfully done
+        False otherwise.
         """
         env = cls.get_env(env_name)
         not_interested = ['ready', 'empty']
