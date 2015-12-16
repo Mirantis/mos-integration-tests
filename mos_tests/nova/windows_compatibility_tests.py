@@ -179,10 +179,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         for network in self.nova.networks.list():
             if 'internal' in network.label:
                 network_interfaces = [{"net-id": network.id}]
-        print "Starting with network interface(s) {}".format(network_interfaces)
+        print "Starting with network interface(s) {}".\
+            format(network_interfaces)
 
         # TODO: add check flavor parameters vs. vm parameters
-        # Collect information about the medium flavor and modify it to our needs
+        # Collect information about the medium flavor and create a copy of it
         for flavor in self.nova.flavors.list():
             if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
                 # delete the flavor if it already exists
@@ -213,7 +214,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             for server_object in self.nova.servers.list():
                 if server_object.id == self.node_to_boot.id:
                     self.node_to_boot = server_object
-                    print "Node in the {} state".format(self.node_to_boot.status)
+                    print "Node in the {} state".format(
+                            self.node_to_boot.status)
                     if self.node_to_boot.status != 'BUILD':
                         is_created = True
                         break
@@ -223,16 +225,18 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          "The node not in active state!")
 
         # adding security group
-        # self.node_to_boot.add_security_group(self.the_security_group.name)
 
         print "Using following floating ip {}".format(
                 self.floating_ip.ip)
 
         self.node_to_boot.add_floating_ip(self.floating_ip)
 
-        # TODO: test is here
-        ping = os.system("ping -c 4 -i 4 {}".format(
+        self.assertTrue(common_functions.check_ip(
+                self.nova,
+                self.node_to_boot.id,
                 self.floating_ip.ip))
+
+        ping = common_functions.ping_command(self.floating_ip.ip)
         self.assertEqual(ping, 0, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")

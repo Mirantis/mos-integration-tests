@@ -2,6 +2,7 @@ import os
 from time import sleep, time
 import urllib2
 import yaml
+import platform
 
 
 def check_stack(stack_name, heat):
@@ -412,3 +413,16 @@ def delete_flavor(nova_client, flavor_name):
     for flavor in nova_client.flavors.list():
         if flavor.name == flavor_name:
             nova_client.flavors.delete(flavor)
+
+
+def ping_command(ip_address):
+    """ This function executes the ping program and check its results
+        :param ip_address: The IP address to ping
+        :return: True in case of success, False otherwise
+    """
+    the_count_key = '-c'
+    if platform.system() == 'Windows':
+        the_count_key = '-n'
+    the_result = os.system("ping {} 4 -i 4 {}".
+                           format(the_count_key, ip_address))
+    return the_result == 0
