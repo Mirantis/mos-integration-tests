@@ -199,6 +199,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 name="MyTestSystemWithNova",
                 image=self.image,
                 flavor=self.nova.flavors.get(self.expected_flavor_id),
+                security_groups=self.the_security_group,
                 nics=network_interfaces)
         # waiting while the build process will be completed
         is_created = False
@@ -216,7 +217,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          "The node not in active state!")
 
         # adding security group
-        self.node_to_boot.add_security_group(self.the_security_group.name)
+        # self.node_to_boot.add_security_group(self.the_security_group.name)
 
         print "Using following floating ip {}".format(
                 self.floating_ip.ip)
