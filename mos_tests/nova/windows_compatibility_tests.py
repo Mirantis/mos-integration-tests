@@ -205,7 +205,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 name="MyTestSystemWithNova",
                 image=self.image,
                 flavor=self.nova.flavors.get(self.expected_flavor_id),
-                security_groups=[self.the_security_group],
+                security_groups=[self.the_security_group.name],
                 nics=network_interfaces)
         # waiting while the build process will be completed
         is_created = False
