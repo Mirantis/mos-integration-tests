@@ -188,6 +188,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
                 new_flavor_name = "copy.of." + flavor.name
                 new_flavor_id = common_functions.get_flavor_id_by_name(
+                        self.nova,
                         new_flavor_name)
                 # delete the flavor if it already exists
                 if new_flavor_id is not None:
