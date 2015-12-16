@@ -2,10 +2,7 @@ import logging
 import os
 import paramiko
 import posixpath
-<<<<<<< 732ffb3f430b89715b01230c9ede7a2c2013a2dd
-=======
 import six
->>>>>>> Added SSHClient with conditional support of sftp.
 import stat
 
 
@@ -50,14 +47,11 @@ class SSHClient(object):
         self.username = username
         self.password = password
         if not private_keys:
-            private_keys = []
-<<<<<<< 732ffb3f430b89715b01230c9ede7a2c2013a2dd
+            private_keys = []d
         self.private_keys = private_keys
-=======
         self.private_keys = [
             paramiko.RSAKey.from_private_key(six.StringIO(str(pkey)))
             for pkey in private_keys]
->>>>>>> Added SSHClient with conditional support of sftp.
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
@@ -277,8 +271,4 @@ class SSHClient(object):
 
 
 def ssh(*args, **kwargs):
-<<<<<<< 732ffb3f430b89715b01230c9ede7a2c2013a2dd
     return SSHClient(*args, **kwargs)
-=======
-    return SSHClient(*args, **kwargs)
->>>>>>> Added SSHClient with conditional support of sftp.
