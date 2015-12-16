@@ -264,6 +264,17 @@ def check_volume(cinderclient, uid):
     return False
 
 
+def check_volume_snapshot(cinderclient, uid):
+    """ Check the presence of volume status id in the list of volume status
+        :param cinderclient: Cinder API client connection point
+        :param uid: UID of volume status
+        :return True or False
+    """
+    if uid in [s for s in cinderclient.volume_snapshots.list()]:
+        return True
+    return False
+
+
 def check_inst_status(novaclient, uid, status, timeout=5):
     """ Check status of instance
         :param novaclient: Nova API client connection point
@@ -409,3 +420,37 @@ def check_volume_status(cinderclient, uid, status, timeout=5):
         if inst_status == status:
             return True
     return False
+
+
+def check_volume_snapshot_status(cinderclient, uid, status, timeout=5):
+    """ Check status of volume
+            :param cinderclient: Cinder API client connection point
+            :param uid: UID of volume snapshot
+            :param status: Expected volume snapshot status
+            :param timeout: Timeout for check operation
+            :return True or False
+    """
+    if check_volume_snapshot(cinderclient, uid):
+        start_time = time()
+        snapshot_status = [s.status
+                           for s in cinderclient.volume_snapshots.list()
+                           if s.id == uid.id][0]
+        while snapshot_status != status and time() < start_time + 60 * timeout:
+            sleep(1)
+            snapshot_status = [s.status
+                               for s in cinderclient.volume_snapshots.list()
+                               if s.id == uid.id][0]
+        if snapshot_status == status:
+            return True
+    return False
+
+
+def delete_volume_snapshot(cinderclient, snapshot):
+    """ Delete volume snapshot and check that it is absent in the list
+        :param cinderclient: Cinder API client connection point
+        :param volume: volume snapshot
+    """
+    if snapshot in cinderclient.volume_snapshots.list():
+        cinderclient.volume_snapshots.delete(snapshot)
+        while snapshot in cinderclient.volume_snapshots.list():
+            sleep(1)
