@@ -425,7 +425,7 @@ def delete_flavor(nova_client, flavor_id):
             :return: Nothing
     """
     for flavor in nova_client.flavors.list():
-        if flavor.name == flavor_id:
+        if flavor.id == flavor_id:
             nova_client.flavors.delete(flavor)
             break
     while is_flavor_exists(nova_client, flavor_id):
