@@ -12,15 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-<<<<<<< efbdb9f5ddc5278927c84f89a6457b4be5133af6
-import pytest
 
-from paramiko.ssh_exception import SSHException, NoValidConnectionsError
-=======
-from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 import pytest
 import time
->>>>>>> Added test_ssh_after_deleting_floating.
+
+from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -31,7 +27,6 @@ class TestFloatingIP(TestBase):
 
     @pytest.fixture(autouse=True)
     def _prepare_openstack(self, init):
->>>>>>> Added test_ssh_after_deleting_floating.
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -68,15 +63,18 @@ class TestFloatingIP(TestBase):
             key_name=self.instance_keypair.name,
             nics=[{'net-id': net['network']['id']}],
             security_groups=[security_group.id])
->>>>>>> Added test_ssh_after_deleting_floating.
 
         # add floating ip to first server
         server = self.os_conn.nova.servers.find(name="server01")
         self.floating_ip = self.os_conn.assign_floating_ip(server,
                                                            use_neutron=True)
+
+        pkeys = self.convert_private_key_for_vm(
+            [self.instance_keypair.private_key])
+
         self.check_vm_is_accessible_with_ssh(
             vm_ip=self.floating_ip['floating_ip_address'],
-            pkeys=[self.instance_keypair.private_key])
+            pkeys=pkeys)
 
     def check_vm_inaccessible_by_ssh(self, vm_ip, pkeys):
         """Check that instance is inaccessible with ssh via floating_ip.
@@ -93,7 +91,6 @@ class TestFloatingIP(TestBase):
     def test_ssh_after_deleting_floating(self):
         """Check ssh-connection by floating ip for vm after
         deleting floating ip
->>>>>>> Added test_ssh_after_deleting_floating.
 
         Steps:
             1. Create network net01, subnet net01__subnet with CIDR 10.1.1.0/24
@@ -111,12 +108,13 @@ class TestFloatingIP(TestBase):
         """
         ip = self.floating_ip["floating_ip_address"]
         server = self.os_conn.nova.servers.find(name="server01")
-        pkeys = [self.instance_keypair.private_key]
+        pkeys = self.convert_private_key_for_vm(
+            [self.instance_keypair.private_key])
 
         res1 = None
         res2 = None
 
-        with pytest.raises(SSHException) as exc:
+        with pytest.raises(SSHException):
             with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
                 res1 = vm_remote.execute("ping -c1 8.8.8.8")
                 self.os_conn.disassociate_floating_ip(
@@ -129,7 +127,6 @@ class TestFloatingIP(TestBase):
                 res1['stdout'], res1['stderr']))
 
         # check that disassociate_floating_ip has been performed
->>>>>>> Added test_ssh_after_deleting_floating.
         assert self.os_conn.neutron.show_floatingip(
             self.floating_ip['id'])['floatingip']['status'] == 'DOWN', \
             'Floatingip is not in the DOWN state.' \
@@ -141,5 +138,4 @@ class TestFloatingIP(TestBase):
         self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)
 
         # for cleanup delete floating_ip using neutron
->>>>>>> Added test_ssh_after_deleting_floating.
         self.os_conn.delete_floating_ip(self.floating_ip, use_neutron=True)
