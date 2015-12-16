@@ -228,8 +228,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.floating_ip.ip))
 
         ping = common_functions.ping_command(self.floating_ip.ip)
-        # Just to debug real system
-        assert 0
         self.assertTrue(ping, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")
