@@ -401,3 +401,14 @@ def check_volume_status(cinder_client, uid, status, timeout=5):
                            s.id == uid][0]
         return inst_status == status
     return False
+
+
+def delete_flavor(nova_client, flavor_name):
+    """ This function delete the flavor by its name.
+        :param nova_client: Nova API client connection point
+        :param flavor_name: Name of the flavor to delete
+        :return: Nothing
+    """
+    for flavor in nova_client.flavors.list():
+        if flavor.name == flavor_name:
+            nova_client.flavors.delete(flavor)

@@ -23,6 +23,8 @@ from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
 from glanceclient.v2 import client as glance_client
 
+from mos_tests.functions import common as common_functions
+
 
 class WindowCompatibilityIntegrationTests(unittest.TestCase):
     """ Basic automated tests for OpenStack Windows Compatibility verification.
@@ -182,7 +184,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # TODO: add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and modify it to our needs
         for flavor in self.nova.flavors.list():
-            if 'medium' in flavor.name:
+            if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
+                # delete the flavor if it already exists
+                common_functions.delete_flavor(
+                        self.nova,
+                        "copy.of." + flavor.name)
                 expected_flavor = self.nova.flavors.create(
                         name="copy.of." + flavor.name,
                         ram=flavor.ram,
