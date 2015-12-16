@@ -14,6 +14,7 @@
 
 import os
 import unittest
+from time import time, sleep
 
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
@@ -270,3 +271,64 @@ class NovaIntegrationTests(unittest.TestCase):
                 common_functions.check_volume_status(self.cinder, volume.id,
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
+
+    def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
+        """ This test case creates a lot of VMs with boot local, checks it
+        state and availability and then deletes it.
+
+            Steps:
+                1. Boot 10-100 instances from image.
+                2. Check that list of instances contains created VMs.
+                3. Check state of created instances
+                4. Add the floating ips to the instances
+                5. Ping the instances by the floating ips
+                6. Delete all created instances
+        """
+        initial_instances = self.nova.servers.list()
+        primary_name = "testVM_543356"
+        count = 10
+        image_dict = {im.name: im.id for im in self.nova.images.list()}
+        image_id = image_dict["TestVM"]
+        flavor_dict = {f.name: f.id for f in self.nova.flavors.list()}
+        flavor_id = flavor_dict["m1.micro"]
+        networks = self.neutron.list_networks()["networks"]
+        net_dict = {net["name"]: net["id"] for net in networks}
+        net_internal_id = net_dict["admin_internal_net"]
+
+        self.floating_ips = [self.nova.floating_ips.create()
+                             for i in xrange(count)]
+        fip_new = [fip_info.ip for fip_info in self.floating_ips]
+        fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
+        for fip in fip_new:
+            self.assertIn(fip, fip_all)
+
+        self.nova.servers.create(primary_name, image_id, flavor_id,
+                                 max_count=count,
+                                 nics=[{"net-id": net_internal_id}])
+        start_time = time()
+        timeout = 5
+        while len(self.nova.servers.list()) < len(initial_instances) + count \
+                and time() < start_time + timeout * 60:
+            sleep(5)
+
+        instances = [inst for inst in self.nova.servers.list()
+                     if inst not in initial_instances]
+        self.instances = [inst.id for inst in instances]
+        for inst_id in self.instances:
+            self.assertTrue(common_functions.check_inst_status(self.nova,
+                                                               inst_id,
+                                                               'ACTIVE'))
+        fip_dict = {}
+        for inst in instances:
+            fip = fip_new.pop()
+            inst.add_floating_ip(fip)
+            fip_dict[inst.id] = fip
+
+        for inst_id in self.instances:
+            self.assertTrue(common_functions.check_ip(
+                self.nova, inst_id, fip_dict[inst_id]))
+
+        for inst_id in self.instances:
+            ping = os.system("ping -c 4 -i 8 {}".format(fip_dict[inst_id]))
+            msg = "Instance {0} is not reachable".format(inst_id)
+            self.assertEqual(ping, 0, msg)
