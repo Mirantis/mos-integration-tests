@@ -1,0 +1,48 @@
+description: 'Example of using ResourceGroup to attach multiple volumes to an instance'
+heat_template_version: '2013-05-23'
+
+outputs:
+  server_ip:
+    description: IP Address of server having volumes attached.
+    value:
+      get_attr: [instance, first_address]
+
+parameters:
+  flavor: {default: m1.nano, description: Type of the instance to be created., type: string}
+  image_id: {default: cirros-0.3.2-x86_64-disk, description: ID of the image to use
+      for the instance to be created., type: string}
+  key_name: {default: stack_key, description: keypair to enable SSH access to the
+      instance., type: string}
+  network_id: {default: nope, description: UUID of an existing internal network, type: string}
+  num_volumes:
+    constraints:
+    - range: {max: 10, min: 1}
+    default: 2
+    description: Number of volumes to attach to instance
+    type: number
+  volume_size:
+    constraints:
+    - range: {max: 10, min: 1}
+    default: 1
+    description: Size of volume to attach to instance
+    type: number
+
+resources:
+  group_of_volumes:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: {get_param: num_volumes}
+      resource_def:
+        type: Heat_Nova_resources_543350_volume_with_attachment.yaml
+        properties:
+          instance_id: {get_resource: instance}
+          volume_size: {get_param: volume_size}
+
+  instance:
+    type: OS::Nova::Server
+    properties:
+      flavor: {get_param: flavor}
+      image: {get_param: image_id}
+      key_name: {get_param: key_name}
+      networks:
+      - network: {get_param: network_id}
