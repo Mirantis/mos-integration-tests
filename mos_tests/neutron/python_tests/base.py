@@ -13,10 +13,10 @@
 #    under the License.
 
 import logging
+
 import paramiko
 import pytest
 import six
-
 from waiting import wait
 
 from mos_tests import settings
@@ -171,12 +171,13 @@ class TestBase(object):
         with self.env.get_ssh_to_node(srv_host) as remote:
             cmd = "ping -c1 {0}".format(vm_ip)
 
-            error_msg = ('Instance with ip {0} has no connectivity from '
-                         'node with ip {1}.').format(vm_ip, srv_host)
+            waiting_for_msg = (
+                'Waiting for instance with ip {0} has '
+                'connectivity from node with ip {1}.').format(vm_ip, srv_host)
 
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
                  sleep_seconds=10, timeout_seconds=3 * 10,
-                 waiting_for=error_msg)
+                 waiting_for=waiting_for_msg)
 
     def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.

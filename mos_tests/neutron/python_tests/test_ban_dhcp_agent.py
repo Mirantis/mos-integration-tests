@@ -22,7 +22,7 @@ from mos_tests import settings
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
-class TestDHCPAgent(base.TestBase):
+class TestBanDHCPAgent(base.TestBase):
     """Check DHCP agents rescheduling."""
 
     def create_cirros_instance_with_ssh(self, name='server01',
