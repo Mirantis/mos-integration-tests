@@ -75,16 +75,25 @@ class NovaIntegrationTests(unittest.TestCase):
                                                           'Security group, '
                                                           'created for Nova '
                                                           'automatic tests')
-        rule = {
+        rules = [
+            {
+                # ssh
+                'ip_protocol': 'tcp',
+                'from_port': 22,
+                'to_port': 22,
+                'cidr': '0.0.0.0/0',
+            },
+            {
                 # ping
                 'ip_protocol': 'icmp',
                 'from_port': -1,
                 'to_port': -1,
                 'cidr': '0.0.0.0/0',
             }
-        self.nova.security_group_rules.create(self.sec_group.id, **rule)
+        ]
+        for rule in rules:
+            self.nova.security_group_rules.create(self.sec_group.id, **rule)
 
-    @classmethod
     def tearDownClass(self):
         self.nova.security_groups.delete(self.sec_group)
 
@@ -126,7 +135,7 @@ class NovaIntegrationTests(unittest.TestCase):
             inst = common_functions.create_instance(self.nova, "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    self.sec_group,
+                                                    self.sec_group.name,
                                                     image_id=image_id)
             inst_id = inst.id
             self.instances.append(inst_id)
@@ -167,7 +176,7 @@ class NovaIntegrationTests(unittest.TestCase):
             inst = common_functions.create_instance(self.nova, "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    self.sec_group,
+                                                    self.sec_group.name,
                                                     block_device_mapping=bdm)
             inst_id = inst.id
             self.instances.append(inst_id)
@@ -204,7 +213,7 @@ class NovaIntegrationTests(unittest.TestCase):
         bdm = {'vda': volume.id}
         instance = common_functions.create_instance(self.nova, name,
                                                     initial_flavor, net,
-                                                    self.sec_group,
+                                                    self.sec_group.name,
                                                     block_device_mapping=bdm)
         self.instances.append(instance.id)
 
