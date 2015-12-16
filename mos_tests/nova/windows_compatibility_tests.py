@@ -254,7 +254,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         end_time = time.time() + 120
         ping_result = False
         attempt_id = 1
-        while time.time() > end_time:
+        while time.time() < end_time:
             print "Attempt #{} to ping the instance".format(attempt_id)
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
