@@ -121,8 +121,8 @@ class TestL3Agent(TestBase):
     def clear_l3_agent(self, _ip, router_name, node, wait_for_alive=False):
         """Clear L3 agent ban and wait until router moved to this node
 
-        Clear previously banned L3 agent on node wait until router moved to this
-        node
+        Clear previously banned L3 agent on node wait until router moved
+        to this node
 
         :param _ip: ip of server to to execute clear command
         :param router_name: name of router to wait until it move to node

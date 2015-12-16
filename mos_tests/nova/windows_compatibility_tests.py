@@ -122,6 +122,24 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 from_port=22,
                 to_port=22,
                 cidr="0.0.0.0/0")
+        # Add both rules to default group
+        self.default_security_group_id = 0
+        for sg in self.nova.security_groups.list():
+            if sg.name == 'default':
+                self.default_security_group_id = sg.id
+                break
+        self.icmp_rule_default = self.nova.security_group_rules.create(
+                self.default_security_group_id,
+                ip_protocol="icmp",
+                from_port=-1,
+                to_port=-1,
+                cidr="0.0.0.0/0")
+        self.tcp_rule_default = self.nova.security_group_rules.create(
+                self.default_security_group_id,
+                ip_protocol="tcp",
+                from_port=22,
+                to_port=22,
+                cidr="0.0.0.0/0")
         # adding floating ip
         self.floating_ip = self.nova.floating_ips.create(
                 self.nova.floating_ip_pools.list()[0].name)
@@ -130,7 +148,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """
 
         :return:
-
+        """
         if self.node_to_boot is not None:
             common_functions.delete_instance(self.nova, self.node_to_boot.id)
         if self.image is not None:
@@ -143,15 +161,19 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.nova.security_group_rules.delete(self.icmp_rule)
         self.nova.security_group_rules.delete(self.tcp_rule)
         self.nova.security_groups.delete(self.the_security_group.id)
+        # delete security rules from the 'default' group
+        self.nova.security_group_rules.delete(self.icmp_rule_default)
+        self.nova.security_group_rules.delete(self.tcp_rule_default)
         self.assertEqual(self.amount_of_images_before,
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
-        """
-        pass
 
     def test_542825_CreateInstanceWithWindowsImage(self):
-        """
+        """ This test check that instance with Windows image could be created
 
+        Steps:
+        1. Create image
+        2. Check that VM is reachable
         :return: Nothing
         """
         # creating of the image

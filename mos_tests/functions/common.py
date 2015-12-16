@@ -33,7 +33,7 @@ def check_stack_status(stack_name, heat, status, timeout=60):
         :param status: Expected stack status
         :param timeout: Timeout for check operation
         :return True if stack status is equals to expected status
-                False otherwise
+        False otherwise
     """
     if is_stack_exists(stack_name, heat):
         start_time = time()
@@ -85,12 +85,12 @@ def delete_stack(heat_client, uid):
 
 def check_stack_status_complete(heat_client, uid, action, timeout=10):
     """ Check stack STATUS in COMPLETE state
-    :param heat_client: Heat API client connection point
-    :param uid: ID stack
-    :param action: status that will be checked.
-    Could be CREATE, UPDATE, DELETE.
-    :param timeout: Timeout for check operation
-    :return uid: UID of created stack
+        :param heat_client: Heat API client connection point
+        :param uid: ID stack
+        :param action: status that will be checked.
+        Could be CREATE, UPDATE, DELETE.
+        :param timeout: Timeout for check operation
+        :return uid: UID of created stack
     """
     stack = heat_client.stacks.get(stack_id=uid).to_dict()
     end_time = time() + 60 * timeout
@@ -159,15 +159,13 @@ def update_template_file(template_file, type_of_changes, **kwargs):
     """ Update template file specific fields.
         :param template_file: path to template file.
         :param type_of_changes:
-            if changes in format - 'format'
-            if changes in flavor size - 'flavor'
+        if changes in format - 'format'
+        if changes in flavor size - 'flavor'
         :param kwargs: the key-value dictionary of parameters.
-                       currently following keys are supported
-                       disk_format: new disk_format value
-                                   (optional parameter)
-                       container_format: new container_format value
-                                         (optional parameter)
-                       flavor: new flavor size
+        currently following keys are supported
+        disk_format: new disk_format value (optional parameter)
+        container_format: new container_format value (optional parameter)
+        flavor: new flavor size
         :return -
     """
     with open(template_file, 'r') as stream:
@@ -441,7 +439,7 @@ def get_flavor_id_by_name(nova_client, flavor_name):
         :param nova_client: Nova API client connection point
         :param flavor_name: Name of the flavor
         :return: UID of the flavor
-                 None if the flavor with required name does not exist
+        None if the flavor with required name does not exist
     """
     for flavor in nova_client.flavors.list():
         if flavor.name == flavor_name:
@@ -469,8 +467,8 @@ def is_image_exists(glance_client, image_id):
         or not
         :param glance_client: Glance API client connection point
         :param image_id: UID of the image to delete
-        :return: True if the image with provided id presents in the system,
-                 False otherwise
+        :return: True if the image with provided id presents in the system;
+        False otherwise
     """
     return image_id in [image.id for image in glance_client.images.list()]
 
