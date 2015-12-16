@@ -1,6 +1,7 @@
 git+git://github.com/openstack/fuel-devops.git@2.9.13
 pytest
 pytest-xdist
+waiting
 python-glanceclient==0.17.1
 python-keystoneclient>=2.0.0
 python-novaclient>=2.15.0
