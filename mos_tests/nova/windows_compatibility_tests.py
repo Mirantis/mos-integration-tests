@@ -173,14 +173,12 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             time.sleep(1)
 
         # Default - the first
-        network_interfaces = \
-            [{"net-id": self.nova.networks.list()[0].id}]
+        network_id = self.nova.networks.list()[0].id
         # More detailed check of network list
         for network in self.nova.networks.list():
             if 'internal' in network.label:
-                network_interfaces = [{"net-id": network.id}]
-        print "Starting with network interface(s) {}".\
-            format(network_interfaces)
+                network_id = network.id
+        print "Starting with network interface id {}".format(network_id)
 
         # TODO: add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and create a copy of it
@@ -208,29 +206,16 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         print "Starting with flavor {}".format(
                 self.nova.flavors.get(self.expected_flavor_id))
         # nova boot
-        self.node_to_boot = self.nova.servers.create(
-                name="MyTestSystemWithNova",
-                image=self.image,
-                flavor=self.nova.flavors.get(self.expected_flavor_id),
-                security_groups=[self.the_security_group.name],
-                nics=network_interfaces)
-        # waiting while the build process will be completed
-        is_created = False
-        while not is_created:
-            for server_object in self.nova.servers.list():
-                if server_object.id == self.node_to_boot.id:
-                    self.node_to_boot = server_object
-                    print "Node in the {} state".format(
-                            self.node_to_boot.status)
-                    if self.node_to_boot.status != 'BUILD':
-                        is_created = True
-                        break
-            time.sleep(5)
+        self.node_to_boot = common_functions.create_instance(
+                    nova_client=self.nova,
+                    inst_name="MyTestSystemWithNova",
+                    flavor_id=self.expected_flavor_id,
+                    net_id=network_id,
+                    security_group=self.the_security_group.name,
+                    image_id=self.image.id)
         # check that boot returns expected results
         self.assertEqual(self.node_to_boot.status, 'ACTIVE',
                          "The node not in active state!")
-
-        # adding security group
 
         print "Using following floating ip {}".format(
                 self.floating_ip.ip)
