@@ -16,17 +16,74 @@ import pytest
 import subprocess
 import threading
 import logging
+from contextlib import contextmanager
 
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("check_ha_env", "check_vxlan", "setup")
-class TestVxlan(TestBase):
-    """ Vxlan (tun) specific tests"""
+@contextmanager
+def tcpdump_vxlan(ip, env, log_path):
+    """Start tcpdump on vxlan port before enter and stop it after
 
-    def test_tunnel_established(self, tshark):
+    Log will download to log_path argument
+    """
+    def tcpdump(ip):
+        logger.info('Start tcpdump')
+        with env.get_ssh_to_node(ip) as remote:
+            result = remote.execute(
+                'tcpdump -U -vvni any port 4789 -w /tmp/vxlan.log')
+            assert result['exit_code'] == 0
+
+    thread = threading.Thread(target=tcpdump, args=(ip,))
+    try:
+        # Start tcpdump
+        thread.start()
+        yield
+    except:
+        raise
+    else:
+        # Download log
+        with env.get_ssh_to_node(ip) as remote:
+            remote.download('/tmp/vxlan.log', log_path)
+    finally:
+        # Kill tcpdump
+        with env.get_ssh_to_node(ip) as remote:
+            remote.execute('killall tcpdump')
+        thread.join(0)
+
+
+def check_all_traffic_has_vni(vni, log_file, tshark):
+    __tracebackhide__ = True
+    output = subprocess.check_output([tshark, '-d', 'udp.port==4789,vxlan',
+                                      '-r', log_file, '-Y',
+                                      'vxlan.vni!={0}'.format(vni)])
+    if output.strip():
+        pytest.fail("Log contains records with another VNI\n{}".format(output))
+
+
+@pytest.mark.usefixtures("check_vxlan", "setup")
+class TestVxlan(TestBase):
+    """Vxlan (tun) specific tests"""
+
+    @pytest.fixture
+    def variables(self, init):
+        """Init Openstack variables"""
+        self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        self.security_group = self.os_conn.create_sec_group_for_ssh()
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+
+    @pytest.fixture
+    def router(self, variables):
+        """Make router and connnect it to external network"""
+        router = self.os_conn.create_router(name="router01")
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        return router
+
+    def test_tunnel_established(self, router, tshark):
         """Check that VxLAN is established on nodes and VNI matching
            the segmentation_id of a network
 
@@ -47,19 +104,8 @@ class TestVxlan(TestBase):
                 Press right button, choose Decode as, Transport
                 and choose VXLAN
         """
-        # Init variables
-        self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
-        self.security_group = self.os_conn.create_sec_group_for_ssh()
-        compute_node = self.zone.hosts.keys()[0]
-        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
-
-        # Create router
-        router = self.os_conn.create_router(name="router01")
-        self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
-            network_id=self.os_conn.ext_network['id'])
-
         # Create network and instance
+        compute_node = self.zone.hosts.keys()[0]
         network = self.os_conn.create_network(name='net01')
         subnet = self.os_conn.create_subnet(
             network_id=network['network']['id'],
@@ -86,35 +132,14 @@ class TestVxlan(TestBase):
                 result = remote.execute('ovs-vsctl show | grep -q br-tun')
                 assert result['exit_code'] == 0
 
-        def tcpdump():
-            ip = compute.data['ip']
-            logger.info('Start tcpdump')
-            with self.env.get_ssh_to_node(ip) as remote:
-                result = remote.execute(
-                    'tcpdump -U -vvni any port 4789 -w /tmp/vxlan.log')
-                assert result['exit_code'] == 0
-
-        # Start tcpdump
-        thread = threading.Thread(target=tcpdump)
-
-        try:
-            thread.start()
-            # Ping server01
+        with tcpdump_vxlan(ip=compute.data['ip'], env=self.env,
+                           log_path='/tmp/vxlan.log'):
             with self.env.get_ssh_to_node(controller.data['ip']) as remote:
                 vm_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
                 result = remote.execute(
                     'ip netns exec qrouter-{router_id} ping -c1 {ip}'.format(
                         router_id=router['router']['id'],
                         ip=vm_ip))
-        finally:
-            ip = compute.data['ip']
-            with self.env.get_ssh_to_node(ip) as remote:
-                remote.execute('killall tcpdump')
-            thread.join(0)
-
-        # Download log
-        with self.env.get_ssh_to_node(compute.data['ip']) as remote:
-            remote.download('/tmp/vxlan.log', '/tmp/vxlan.log')
 
         # Check log
         vni = network['network']['provider:segmentation_id']
@@ -122,3 +147,75 @@ class TestVxlan(TestBase):
                                           '-r', '/tmp/vxlan.log', '-Y',
                                           'vxlan.vni!={0}'.format(vni)])
         assert not output.strip(), 'Log contains records with another VNI'
+
+    @pytest.mark.usefixtures('check_several_computes')
+    def test_vni_for_icmp_between_instances(self, router, tshark):
+        """Check VNI and segmention_id for icmp traffic between instances
+        on different computers
+
+        Scenario:
+            1. Create private network net01, subnet 10.1.1.0/24
+            2. Create private network net02, subnet 10.1.2.0/24
+            3. Create router01_02 and connect net01 and net02 with it
+            4. Boot instances vm1 and vm2 on different computers
+            5. Check that net02 got a new segmentation_id, different from net1
+            6. Ping vm1 from vm2
+            7. On compute with vm_1 start listen vxlan port 4789
+            8. On compute with vm_2 start listen vxlan port 4789
+            9. Ping vm2 from vm1
+            10. Check that when traffic goes through net02 tunnel
+                (from vm2 to router01_02) all packets have VNI of net02
+                and when they travel through net01 tunnel
+                (from router to vm1) they have VNI of net01
+        """
+        # Create network and instance
+        compute_nodes = self.zone.hosts.keys()[:2]
+        for i, compute_node in enumerate(compute_nodes, 1):
+            network = self.os_conn.create_network(name='net%02d' % i)
+            subnet = self.os_conn.create_subnet(
+                network_id=network['network']['id'],
+                name='net%02d__subnet' % i,
+                cidr="10.1.%d.0/24" % i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_node),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': network['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        net1, net2 = [x for x in self.os_conn.list_networks()['networks']
+                      if x['name'] in ("net01", "net02")]
+
+        # Check that networks has different segmentation_id
+        assert (net1['provider:segmentation_id'] !=
+                net2['provider:segmentation_id'])
+
+        # Check ping from server1 to server2
+        server1, server2 = self.os_conn.get_servers()
+        server2_ip = self.os_conn.get_nova_instance_ips(server2).values()[0]
+        self.check_ping_from_vm(server1, self.instance_keypair, server2_ip)
+
+        # Start tcpdump
+        compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
+        compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+        with tcpdump_vxlan(
+                ip=compute1.data['ip'], env=self.env,
+                log_path='/tmp/vxlan1.log'
+            ), tcpdump_vxlan(
+                ip=compute2.data['ip'], env=self.env,
+                log_path='/tmp/vxlan2.log'
+            ):
+            # Ping server1 from server2
+            server1_ip = self.os_conn.get_nova_instance_ips(
+                server1).values()[0]
+            self.check_ping_from_vm(server2, self.instance_keypair, server1_ip)
+
+        # Check traffic
+        check_all_traffic_has_vni(net1['provider:segmentation_id'],
+                                  '/tmp/vxlan1.log', tshark)
+        check_all_traffic_has_vni(net2['provider:segmentation_id'],
+                                  '/tmp/vxlan2.log', tshark)
