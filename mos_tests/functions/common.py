@@ -262,12 +262,12 @@ def check_inst_status(nova_client, uid, status, timeout=5):
     """
     if is_instance_exists(nova_client, uid):
         start_time = time()
-        inst_status = [s.status for s in nova_client.servers.list() if s.id ==
-                       uid][0]
+        inst_status = [s.status for s in nova_client.servers.list()
+                       if s.id == uid][0]
         while inst_status != status and time() < start_time + 60 * timeout:
             sleep(1)
-            inst_status = [s.status for s in nova_client.servers.list() if
-                           s.id == uid][0]
+            inst_status = [s.status for s in nova_client.servers.list()
+                           if s.id == uid][0]
         return inst_status == status
     return False
 
@@ -297,20 +297,23 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_group,
             :return instance
     """
     end_time = time() + 60 * timeout
-    inst = nova_client.servers.create(name=inst_name, nics=[{"net-id": net_id}],
-                                      flavor=flavor_id, image=image_id,
-                                      security_groups=[security_group],
-                                      block_device_mapping=block_device_mapping)
-    inst_status = [s.status for s in nova_client.servers.list() if s.id ==
-                   inst.id][0]
+    inst = nova_client.servers.create(
+            name=inst_name,
+            nics=[{"net-id": net_id}],
+            flavor=flavor_id,
+            image=image_id,
+            security_groups=[security_group],
+            block_device_mapping=block_device_mapping)
+    inst_status = [s.status for s in nova_client.servers.list()
+                   if s.id == inst.id][0]
     while inst_status != 'ACTIVE':
         if time() > end_time:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     inst_status))
         sleep(1)
-        inst_status = [s.status for s in nova_client.servers.list() if s.id ==
-                       inst.id][0]
+        inst_status = [s.status for s in nova_client.servers.list()
+                       if s.id == inst.id][0]
     return inst
 
 
@@ -398,12 +401,12 @@ def check_volume_status(cinder_client, uid, status, timeout=5):
     """
     if is_volume_exists(cinder_client, uid):
         start_time = time()
-        inst_status = [s.status for s in cinder_client.volumes.list() if s.id ==
-                       uid][0]
+        inst_status = [s.status for s in cinder_client.volumes.list()
+                       if s.id == uid][0]
         while inst_status != status and time() < start_time + 60 * timeout:
             sleep(1)
-            inst_status = [s.status for s in cinder_client.volumes.list() if
-                           s.id == uid][0]
+            inst_status = [s.status for s in cinder_client.volumes.list()
+                           if s.id == uid][0]
         return inst_status == status
     return False
 
@@ -416,6 +419,19 @@ def is_flavor_exists(nova_client, flavor_id):
             :return True or False
     """
     return flavor_id in [f.id for f in nova_client.flavors.list()]
+
+
+def get_flavor_id_by_name(nova_client, flavor_name):
+    """ The function returns flavor's id by its name
+            :param nova_client: Nova API client connection point
+            :param flavor_name: Name of the flavor
+            :return: UID of the flavor
+                     None if the flavor with required name does not exist
+    """
+    for flavor in nova_client.flavors.list():
+        if flavor.name == flavor_name:
+            return flavor.id
+    return None
 
 
 def delete_flavor(nova_client, flavor_id):

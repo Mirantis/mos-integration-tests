@@ -186,12 +186,17 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Collect information about the medium flavor and create a copy of it
         for flavor in self.nova.flavors.list():
             if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
+                new_flavor_name = "copy.of." + flavor.name
+                new_flavor_id = common_functions.get_flavor_id_by_name(
+                        new_flavor_name)
                 # delete the flavor if it already exists
-                common_functions.delete_flavor(
-                        self.nova,
-                        "copy.of." + flavor.name)
+                if new_flavor_id is not None:
+                    common_functions.delete_flavor(
+                            self.nova,
+                            new_flavor_id)
+                # create the flavor for our needs
                 expected_flavor = self.nova.flavors.create(
-                        name="copy.of." + flavor.name,
+                        name=new_flavor_name,
                         ram=flavor.ram,
                         vcpus=1,  # Only one VCPU
                         disk=flavor.disk
