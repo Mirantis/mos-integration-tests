@@ -110,6 +110,7 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
 
+    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -147,6 +148,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
 
+    @unittest.skip
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -188,6 +190,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
 
+    @unittest.skip
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
@@ -248,6 +251,7 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
+    @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
 
@@ -303,6 +307,7 @@ class NovaIntegrationTests(unittest.TestCase):
 
         self.nova.servers.create(primary_name, image_id, flavor_id,
                                  max_count=count,
+                                 security_groups=[self.sec_group.name],
                                  nics=[{"net-id": net_internal_id}])
         start_time = time()
         timeout = 5
@@ -354,7 +359,6 @@ class NovaIntegrationTests(unittest.TestCase):
         networks = self.neutron.list_networks()["networks"]
         net_dict = {net["name"]: net["id"] for net in networks}
         net_internal_id = net_dict["admin_internal_net"]
-        security_group = self.nova.security_groups.list()[0].name
 
         initial_volumes = self.cinder.volumes.list()
         for i in xrange(count):
@@ -374,7 +378,7 @@ class NovaIntegrationTests(unittest.TestCase):
         for volume in self.volumes:
             bdm = {'vda': volume.id}
             self.nova.servers.create(primary_name, '', flavor_id,
-                                     security_groups=[security_group],
+                                     security_groups=[self.sec_group.name],
                                      block_device_mapping=bdm,
                                      nics=[{"net-id": net_internal_id}])
         start_time = time()
