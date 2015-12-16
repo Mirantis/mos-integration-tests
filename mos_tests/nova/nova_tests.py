@@ -94,6 +94,7 @@ class NovaIntegrationTests(unittest.TestCase):
         for rule in rules:
             self.nova.security_group_rules.create(self.sec_group.id, **rule)
 
+    @classmethod
     def tearDownClass(self):
         self.nova.security_groups.delete(self.sec_group)
 
