@@ -150,6 +150,6 @@ def check_devops(env_name):
 
 @pytest.fixture
 def check_vxlan(env):
-    """Check that count of compute nodes not less than 2"""
+    """Check that env has vxlan network segmentation"""
     if env.network_segmentation_type != 'tun':
         pytest.skip('requires vxlan segmentation')
