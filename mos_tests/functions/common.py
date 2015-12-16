@@ -6,9 +6,9 @@ import yaml
 
 def check_stack(stack_name, heat):
     """ Check the presence of stack_name in stacks list
-            :param heat: Heat API client connection point
-            :param stack_name: Name of stack
-            :return True or False
+        :param heat: Heat API client connection point
+        :param stack_name: Name of stack
+        :return True or False
     """
     if stack_name in [s.stack_name for s in heat.stacks.list()]:
         return True
@@ -17,9 +17,9 @@ def check_stack(stack_name, heat):
 
 def get_stack_id(heatclient, stack_name):
     """ Check stack status
-            :param heatclient: Heat API client connection point
-            :param stack_name: Name of stack
-            :return Stack uid
+        :param heatclient: Heat API client connection point
+        :param stack_name: Name of stack
+        :return Stack uid
     """
     if check_stack(stack_name, heatclient):
         stack_dict = {s.stack_name: s.id for s in heatclient.stacks.list()}
@@ -29,11 +29,11 @@ def get_stack_id(heatclient, stack_name):
 
 def check_stack_status(stack_name, heat, status, timeout=60):
     """ Check stack status
-            :param heat: Heat API client connection point
-            :param stack_name: Name of stack
-            :param status: Expected stack status
-            :param timeout: Timeout for check operation
-            :return True or False
+        :param heat: Heat API client connection point
+        :param stack_name: Name of stack
+        :param status: Expected stack status
+        :param timeout: Timeout for check operation
+        :return True or False
     """
     if check_stack(stack_name, heat):
         start_time = time()
@@ -52,14 +52,14 @@ def check_stack_status(stack_name, heat, status, timeout=60):
 def create_stack(heatclient, stack_name, template, parameters={}, timeout=20,
                  files=None):
     """ Create a stack from template and check STATUS == CREATE_COMPLETE
-            :param parameters: parameters from template
-            :param heatclient: Heat API client connection point
-            :param stack_name: Name of a new stack
-            :param template:   Content of a template name
-            :param timeout: Timeout for check operation
-            :param files: In case if template uses file as reference
-            e.g: "type: volume_with_attachment.yaml"
-            :return uid: UID of created stack
+        :param parameters: parameters from template
+        :param heatclient: Heat API client connection point
+        :param stack_name: Name of a new stack
+        :param template:   Content of a template name
+        :param timeout: Timeout for check operation
+        :param files: In case if template uses file as reference
+        e.g: "type: volume_with_attachment.yaml"
+        :return uid: UID of created stack
     """
     templ_files = files or {}
     stack = heatclient.stacks.create(
@@ -75,8 +75,8 @@ def create_stack(heatclient, stack_name, template, parameters={}, timeout=20,
 
 def delete_stack(heatclient, uid):
     """ Delete stack and check STATUS == DELETE_COMPLETE
-            :param heatclient: Heat API client connection point
-            :param uid:        UID of stack
+        :param heatclient: Heat API client connection point
+        :param uid:        UID of stack
     """
     if uid in [s.id for s in heatclient.stacks.list()]:
         heatclient.stacks.delete(uid)
@@ -86,7 +86,6 @@ def delete_stack(heatclient, uid):
 
 def check_stack_status_complete(heatclient, uid, action, timeout=10):
     """ Check stack STATUS in COMPLETE state
-
     :param heatclient: Heat API client connection point
     :param uid: ID stack
     :param action: status that will be checked.
@@ -109,7 +108,6 @@ def check_stack_status_complete(heatclient, uid, action, timeout=10):
 
 def read_template(templates_dir, template_name):
     """Read template file and return it content.
-
     :param templates_dir: dir
     :param template_name: name of template,
     for ex.: empty_heat_template.yaml
@@ -126,11 +124,11 @@ def read_template(templates_dir, template_name):
 
 def update_stack(heat_client, uid, template_file, parameters={}):
     """ Update stack using template file
-            :param heat_client: Heat API client connection point
-            :param id:        ID of stack
-            :param template_file: path to stack template file.
-            :param parameters: parameters from template
-            :return: -
+        :param heat_client: Heat API client connection point
+        :param id:        ID of stack
+        :param template_file: path to stack template file.
+        :param parameters: parameters from template
+        :return: -
     """
     heat_client.stacks.update(stack_id=uid, template=template_file,
                               parameters=parameters)
@@ -139,9 +137,9 @@ def update_stack(heat_client, uid, template_file, parameters={}):
 
 def get_resource_id(heat_client, uid):
     """ Get stack resource id
-            :param heat_client: Heat API client connection point
-            :param id:        ID of stack
-            :return: -
+        :param heat_client: Heat API client connection point
+        :param id:        ID of stack
+        :return: -
     """
     stack_resources = heat_client.resources.list(stack_id=uid)
     return stack_resources[0].physical_resource_id
@@ -149,10 +147,10 @@ def get_resource_id(heat_client, uid):
 
 def get_specific_resource_id(heat_client, uid, resource_name):
     """ Get stack resource id by name
-            :param heat_client:   heat API client connection point
-            :param id:            ID of stack
-            :param resource_name: resource name
-            :return: resource id
+        :param heat_client:   heat API client connection point
+        :param id:            ID of stack
+        :param resource_name: resource name
+        :return: resource id
     """
     stack_resources = heat_client.resources.get(uid, resource_name).to_dict()
     return stack_resources['physical_resource_id']
@@ -160,7 +158,6 @@ def get_specific_resource_id(heat_client, uid, resource_name):
 
 def update_template_file(template_file, type_of_changes, **kwargs):
     """ Update template file specific fields.
-
     :param template_file: path to template file.
     :param type_of_changes:
     if changes in format - 'format'
@@ -185,7 +182,6 @@ def update_template_file(template_file, type_of_changes, **kwargs):
 def download_image(image_link_file, where_to_put='/tmp/'):
     """ This function will download image from internet and write it
     if image is not already present on node.
-
     :param image_link_file: Location of file with a link
     :param where_to_put:    Path to output folder on node
     :return: full path to downloaded image. Default: '/tmp/blablablb.bla'
@@ -235,9 +231,9 @@ def download_image(image_link_file, where_to_put='/tmp/'):
 
 def get_inst_id(novaclient, inst_name):
     """ Get instance id for instance with the name
-            :param novaclient: Heat API client connection point
-            :param inst_name: Name of instance
-            :return Instance uid
+        :param novaclient: Heat API client connection point
+        :param inst_name: Name of instance
+        :return Instance uid
     """
     inst_list = novaclient.servers.list()
     if inst_name in [s.name for s in inst_list]:
@@ -248,9 +244,9 @@ def get_inst_id(novaclient, inst_name):
 
 def check_instance(novaclient, uid):
     """ Check the presence of instance id in the list of instances
-            :param novaclient: Nova API client connection point
-            :param uid: UID of instance
-            :return True or False
+        :param novaclient: Nova API client connection point
+        :param uid: UID of instance
+        :return True or False
     """
     if uid in [s.id for s in novaclient.servers.list()]:
         return True
@@ -259,9 +255,9 @@ def check_instance(novaclient, uid):
 
 def check_volume(cinderclient, uid):
     """ Check the presence of volume id in the list of volume
-            :param cinderclient: Cinder API client connection point
-            :param uid: UID of volume
-            :return True or False
+        :param cinderclient: Cinder API client connection point
+        :param uid: UID of volume
+        :return True or False
     """
     if uid in [s.id for s in cinderclient.volumes.list()]:
         return True
@@ -270,11 +266,11 @@ def check_volume(cinderclient, uid):
 
 def check_inst_status(novaclient, uid, status, timeout=5):
     """ Check status of instance
-            :param novaclient: Nova API client connection point
-            :param uid: UID of instance
-            :param status: Expected instance status
-            :param timeout: Timeout for check operation
-            :return True or False
+        :param novaclient: Nova API client connection point
+        :param uid: UID of instance
+        :param status: Expected instance status
+        :param timeout: Timeout for check operation
+        :return True or False
     """
     if check_instance(novaclient, uid):
         start_time = time()
@@ -291,11 +287,11 @@ def check_inst_status(novaclient, uid, status, timeout=5):
 
 def check_ip(novaclient, uid, fip, timeout=1):
     """ Check floating ip address adding to instance
-            :param novaclient: Nova API client connection point
-            :param uid: UID of instance
-            :param fip: Floating ip
-            :param timeout: Timeout for check operation
-            :return True or False
+        :param novaclient: Nova API client connection point
+        :param uid: UID of instance
+        :param fip: Floating ip
+        :param timeout: Timeout for check operation
+        :return True or False
     """
     if check_instance(novaclient, uid):
         start_time = time()
@@ -312,8 +308,8 @@ def check_ip(novaclient, uid, fip, timeout=1):
 
 def delete_instance(novaclient, uid):
     """ Delete instance and check that it is absent in the list
-            :param novaclient: Nova API client connection point
-            :param uid: UID of instance
+        :param novaclient: Nova API client connection point
+        :param uid: UID of instance
     """
     if check_instance(novaclient, uid):
         novaclient.servers.delete(uid)
@@ -323,10 +319,10 @@ def delete_instance(novaclient, uid):
 
 def create_volume(cinderclient, image_id, timeout=5):
     """ Check volume creation
-            :param cinderclient: Cinder API client connection point
-            :param image_id: UID of image
-            :param timeout: Timeout for check operation
-            :return volume
+        :param cinderclient: Cinder API client connection point
+        :param image_id: UID of image
+        :param timeout: Timeout for check operation
+        :return volume
     """
     end_time = time() + 60 * timeout
     volume = cinderclient.volumes.create(1, name='Test_volume',
@@ -344,15 +340,15 @@ def create_volume(cinderclient, image_id, timeout=5):
 def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
                     image_id='', block_device_mapping=None, timeout=5):
     """ Check instance creation
-            :param novaclient: Nova API client connection point
-            :param inst_name: name for instance
-            :param image_id: id of image
-            :param flavor_id: id of flavor
-            :param net_id: id of network
-            :param security_group: corresponding security_group
-            :param block_device_mapping: if volume is used
-            :param timeout: Timeout for check operation
-            :return instance
+        :param novaclient: Nova API client connection point
+        :param inst_name: name for instance
+        :param image_id: id of image
+        :param flavor_id: id of flavor
+        :param net_id: id of network
+        :param security_group: corresponding security_group
+        :param block_device_mapping: if volume is used
+        :param timeout: Timeout for check operation
+        :return instance
     """
     end_time = time() + 60 * timeout
     inst = novaclient.servers.create(name=inst_name, nics=[{"net-id": net_id}],
@@ -374,8 +370,8 @@ def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
 
 def delete_volume(cinderclient, volume):
     """ Delete volume and check that it is absent in the list
-            :param cinderclient: Cinder API client connection point
-            :param volume: volume
+        :param cinderclient: Cinder API client connection point
+        :param volume: volume
     """
     if volume in cinderclient.volumes.list():
         cinderclient.volumes.delete(volume)
@@ -385,8 +381,8 @@ def delete_volume(cinderclient, volume):
 
 def delete_floating_ip(novaclient, floating_ip):
     """ Delete floating ip and check that it is absent in the list
-            :param novaclient: Nova API client connection point
-            :param floating_ip: floating ip
+        :param novaclient: Nova API client connection point
+        :param floating_ip: floating ip
     """
     if floating_ip in novaclient.floating_ips.list():
         novaclient.floating_ips.delete(floating_ip)
@@ -396,11 +392,11 @@ def delete_floating_ip(novaclient, floating_ip):
 
 def check_volume_status(cinderclient, uid, status, timeout=5):
     """ Check status of volume
-            :param cinderclient: Cinder API client connection point
-            :param uid: UID of volume
-            :param status: Expected volume status
-            :param timeout: Timeout for check operation
-            :return True or False
+        :param cinderclient: Cinder API client connection point
+        :param uid: UID of volume
+        :param status: Expected volume status
+        :param timeout: Timeout for check operation
+        :return True or False
     """
     if check_volume(cinderclient, uid):
         start_time = time()
