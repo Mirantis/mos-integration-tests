@@ -24,7 +24,7 @@ class TestFloatingIP(TestBase):
     """Check association and disassociation floating ip"""
 
     @pytest.fixture(autouse=True)
-    def prepare_openstack(self, init):
+    def _prepare_openstack(self, init):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -35,50 +35,56 @@ class TestFloatingIP(TestBase):
         """
         # init variables
         exist_networks = self.os_conn.list_networks()['networks']
-        ext_network = [x for x in exist_networks
-                       if x.get('router:external')][0]
-        self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
-        self.security_group = self.os_conn.create_sec_group_for_ssh()
-        self.hostname = self.zone.hosts.keys()[0]
-        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+        ext_net = [x for x in exist_networks
+                   if x.get('router:external')][0]
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        hostname = zone.hosts.keys()[0]
         cidr = "10.1.1.0/24"
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
         self.os_conn.nova.security_group_rules.create(
-            self.security_group.id,
+            security_group.id,
             ip_protocol='tcp',
             from_port=1,
             to_port=65535,
-            cidr='0.0.0.0/0'
-        )
+            cidr='0.0.0.0/0')
 
+        net, subnet = self.create_internal_network_with_subnet(cidr=cidr)
         # create router
-        self.router = self.os_conn.create_router(name="router01")
-        self.os_conn.router_gateway_add(router_id=self.router['router']['id'],
-                                        network_id=ext_network['id'])
+        self.create_router_between_nets(ext_net, subnet)
 
-        network = self.os_conn.create_network(name='net01')
-        subnet = self.os_conn.create_subnet(
-            network_id=network['network']['id'],
-            name='net01__subnet',
-            cidr=cidr)
-        self.os_conn.router_interface_add(
-            router_id=self.router['router']['id'],
-            subnet_id=subnet['subnet']['id'])
         self.os_conn.create_server(
             name='server01',
-            availability_zone='{}:{}'.format(self.zone.zoneName,
-                                             self.hostname),
+            availability_zone='{}:{}'.format(zone.zoneName,
+                                             hostname),
             key_name=self.instance_keypair.name,
-            nics=[{'net-id': network['network']['id']}],
-            security_groups=[self.security_group.id])
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
 
         # add floating ip to first server
         server = self.os_conn.nova.servers.find(name="server01")
         self.floating_ip = self.os_conn.assign_floating_ip(server,
                                                            use_neutron=True)
+        self.check_vm_is_accessible_with_ssh(
+            vm_ip=self.floating_ip['floating_ip_address'],
+            pkeys=[self.instance_keypair.private_key])
+
+    def check_vm_inaccessible_by_ssh(self, vm_ip, pkeys):
+        """Check that instance is inaccessible with ssh via floating_ip.
+
+        :param vm_ip: floating_ip of instance
+        :param pkeys: ip of instance to ping
+        """
+        with pytest.raises(NoValidConnectionsError) as exc:
+            with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
+                vm_remote.execute("date")
+        assert "Unable to connect to port 22 on  or {}".format(vm_ip) \
+               in exc.value.strerror
 
     def test_ssh_after_deleting_floating(self):
-        """Check ssh-connection by floating ip for vm after deleting floating ip
+        """Check ssh-connection by floating ip for vm after
+        deleting floating ip
 
         Steps:
             1. Create network net01, subnet net01__subnet with CIDR 10.1.1.0/24
@@ -94,42 +100,35 @@ class TestFloatingIP(TestBase):
         Duration 10m
 
         """
-
-        time.sleep(30)
         ip = self.floating_ip["floating_ip_address"]
         server = self.os_conn.nova.servers.find(name="server01")
         pkeys = [self.instance_keypair.private_key]
 
-        with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
-            res = vm_remote.execute("ping -c1 8.8.8.8")
-
-        assert (0 == res['exit_code'],
-                'Instance has no connectivity, exit code {0},'
-                'stdout {1}, stderr {2}'.format(res['exit_code'],
-                res['stdout'], res['stderr']))
-
-        assert self.os_conn.neutron.show_floatingip(
-            self.floating_ip['id'])['floatingip']['status'] == 'ACTIVE', \
-            'Floatingip is not in the ACTIVE state.'
+        res1 = None
+        res2 = None
 
         with pytest.raises(SSHException) as exc:
             with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
-                vm_remote.execute("date")
+                res1 = vm_remote.execute("ping -c1 8.8.8.8")
                 self.os_conn.disassociate_floating_ip(
                     server, self.floating_ip, use_neutron=True)
-                vm_remote.execute("date")
+                res2 = vm_remote.execute("date")
 
-        assert "Timeout openning channel." in exc.value
+        assert (0 == res1['exit_code'],
+                'Instance has no connectivity, exit code {0},'
+                'stdout {1}, stderr {2}'.format(res1['exit_code'],
+                res1['stdout'], res1['stderr']))
+
+        # check that disassociate_floating_ip has been performed
         assert self.os_conn.neutron.show_floatingip(
             self.floating_ip['id'])['floatingip']['status'] == 'DOWN', \
             'Floatingip is not in the DOWN state.' \
             'disassociate_floating_ip has failed.'
 
-        with pytest.raises(NoValidConnectionsError) as exc:
-            with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
-                vm_remote.execute("date")
-        assert "Unable to connect to port 22 on  or {}".format(ip) \
-               in exc.value.strerror
+        assert res2 is None, 'SSH hasn\'t been stopped'
 
-        # for cleanup
+        # check that vm became inaccessible with ssh
+        self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)
+
+        # for cleanup delete floating_ip using neutron
         self.os_conn.delete_floating_ip(self.floating_ip, use_neutron=True)

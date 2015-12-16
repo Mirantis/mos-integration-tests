@@ -25,38 +25,6 @@ from mos_tests import settings
 class TestDHCPAgent(base.TestBase):
     """Check DHCP agents rescheduling."""
 
-    def create_internal_network_with_subnet(self, suffix=1):
-        """Create network with subnet.
-
-        :param suffix: desired integer suffix to names of network, subnet
-        :returns: tuple, network and subnet
-        """
-        network = self.os_conn.create_network(name='net%02d' % suffix)
-        subnet = self.os_conn.create_subnet(
-            network_id=network['network']['id'],
-            name='net%02d__subnet' % suffix,
-            cidr="192.168.%d.0/24" % suffix)
-        return network, subnet
-
-    def create_router_between_nets(self, ext_net, subnet, suffix=1):
-        """Create router between external network and sub network.
-
-        :param ext_net: external network to set gateway
-        :param subnet: subnet which for provide route to external network
-        :param suffix: desired integer suffix to names of router
-
-        :returns: created router
-        """
-        router = self.os_conn.create_router(name='router%02d' % suffix)
-        self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
-            network_id=ext_net['id'])
-
-        self.os_conn.router_interface_add(
-            router_id=router['router']['id'],
-            subnet_id=subnet['subnet']['id'])
-        return router
-
     def create_cirros_instance_with_ssh(self, name='server01',
                                         net_name='net04', **kwargs):
         """Boot instance from cirros image with access by ssh.

@@ -43,6 +43,42 @@ class TestBase(object):
 
         return self.env.find_node_by_fqdn(nodes[0])
 
+    def create_internal_network_with_subnet(self, suffix=1, cidr=None):
+        """Create network with subnet.
+
+        :param suffix: desired integer suffix to names of network, subnet
+        :param cidr: desired cidr of subnet
+        :returns: tuple, network and subnet
+        """
+        if cidr is None:
+            cidr = '192.168.%d.0/24' % suffix
+
+        network = self.os_conn.create_network(name='net%02d' % suffix)
+        subnet = self.os_conn.create_subnet(
+            network_id=network['network']['id'],
+            name='net%02d__subnet' % suffix,
+            cidr=cidr)
+        return network, subnet
+
+    def create_router_between_nets(self, ext_net, subnet, suffix=1):
+        """Create router between external network and sub network.
+
+        :param ext_net: external network to set gateway
+        :param subnet: subnet which for provide route to external network
+        :param suffix: desired integer suffix to names of router
+
+        :returns: created router
+        """
+        router = self.os_conn.create_router(name='router%02d' % suffix)
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=ext_net['id'])
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+        return router
+
     def run_on_vm(self, vm, vm_keypair, command, vm_login="cirros",
                   timeout=3 * 60):
         command = command.replace('"', r'\"')
@@ -140,3 +176,24 @@ class TestBase(object):
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
                  interval=10, timeout=3 * 10,
                  timeout_msg=error_msg)
+
+    def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
+        """Check that instance is accessible with ssh via floating_ip.
+
+        :param vm_ip: floating_ip of instance
+        :param pkeys: ip of instance to ping
+        """
+        error_msg = 'Instance with ip {0} is not accessible with ssh.'\
+            .format(vm_ip)
+
+        def is_accessible():
+            try:
+                with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
+                    vm_remote.execute("date")
+                    return True
+            except Exception:
+                return False
+
+        wait(lambda: is_accessible(),
+             interval=10, timeout=60,
+             timeout_msg=error_msg)
