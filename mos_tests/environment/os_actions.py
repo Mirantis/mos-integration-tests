@@ -242,8 +242,6 @@ class OpenStackActions(object):
             return floating_ip
 
     def disassociate_floating_ip(self, srv, floating_ip, use_neutron=False):
-        """
-        """
         if use_neutron:
             try:
                 self.neutron.update_floatingip(
