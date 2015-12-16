@@ -20,7 +20,7 @@ from devops.helpers.helpers import wait
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from fuelclient import client
-from ssh import SSHClient
+from mos_tests.environment.ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
