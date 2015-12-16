@@ -102,3 +102,10 @@ class DevopsClient(object):
             mac_addresses = [x.mac_address for x in interfaces]
             if mac in mac_addresses:
                 return node
+
+    @classmethod
+    def get_devops_node(cls, node_name='', env_name=''):
+        env = cls.get_env(env_name)
+        for node in env.get_nodes():
+            if node_name == node.name:
+                return node
