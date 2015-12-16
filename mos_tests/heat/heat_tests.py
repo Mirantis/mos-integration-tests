@@ -97,10 +97,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543328_HeatResourceTypeList(self):
         """ This test case checks list of available Heat resources.
-            Steps:
-                1. Get list of Heat resources.
-                2. Check count of resources.
-                3. Check that list of resources contains required resources.
+
+        Steps:
+        1. Get list of Heat resources.
+        2. Check count of resources.
+        3. Check that list of resources contains required resources.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -117,16 +118,17 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543347_HeatCreateStack(self):
         """ This test performs creation of a new stack with
             a help of Heat. And then delete it.
-            Steps:
-                1. Read template from URL
-                2. Create new stack.
-                    + Check that stack became from
-                      'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
-                3. Delete created stack
-                    + Check that stack became from
-                      'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+
+        Steps:
+        1. Read template from URL
+        2. Create new stack. \
+        Check that stack became from \
+        'CREATE_IN_PROGRESS' --> 'CREATE_COMPLETE'
+        3. Delete created stack \
+        Check that stack became from \
+        'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
+
         https://mirantis.testrail.com/index.php?/cases/view/543347
-        [Alexander Koryagin]
         """
         # Be sure that this template file will be put on
         # controller during test preparation
@@ -151,9 +153,9 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543337_HeatStackUpdate(self):
         """ This test case checks stack-update action.
-            Steps:
-            1. Create stack using template file empty_heat_templ.yaml
-            2. Update stack parameter
+        Steps:
+        1. Create stack using template file empty_heat_templ.yaml
+        2. Update stack parameter
         """
         stack_name = 'empty_543337'
         template_content = common_functions.read_template(
@@ -180,10 +182,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543329_HeatResourceTypeShow(self):
         """ This test case checks representation of all Heat resources.
-            Steps:
-                1. Get list of Heat resources.
-                2. Check that all types of resources have correct \
-                    representation.
+
+        Steps:
+        1. Get list of Heat resources.
+        2. Check that all types of resources have correct \
+        representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -195,10 +198,11 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543330_HeatResourceTypeTemplate(self):
         """ This test case checks representation of templates for all Heat
             resources.
-            Steps:
-                1. Get list of Heat resources.
-                2. Check that templates for all resources have correct
-                    representation.
+
+        Steps:
+        1. Get list of Heat resources.
+        2. Check that templates for all resources have correct \
+        representation.
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
@@ -209,11 +213,13 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543335_HeatStackDelete(self):
         """ This test case checks deletion of stack.
-            Steps:
-                1. Create stack using template file empty_heat_templ.yaml.
-                2. Check that the stack is in the list of stacks
-                3. Delete the stack.
-                4. Check that the stack is absent in the list of stacks
+
+        Steps:
+        1. Create stack using template file empty_heat_templ.yaml.
+        2. Check that the stack is in the list of stacks
+        3. Delete the stack.
+        4. Check that the stack is absent in the list of stacks
+
         """
         stack_name = 'empty_543335'
         timeout = 20
@@ -236,11 +242,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543333_HeatStackCreateWithTemplate(self):
         """ This test case checks creation of stack.
-            Steps:
-             1. Create stack using template file empty_heat_templ.yaml.
-             2. Check that the stack is in the list of stacks
-             3. Check that stack status is 'CREATE_COMPLETE'
-             4. Delete stack
+
+        Steps:
+        1. Create stack using template file empty_heat_templ.yaml.
+        2. Check that the stack is in the list of stacks
+        3. Check that stack status is 'CREATE_COMPLETE'
+        4. Delete stack
         """
         stack_name = 'empty__543333'
         parameter = 'some_param_string'
@@ -263,11 +270,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543334_HeatStackCreateWithURL(self):
         """ This test case checks creation of stack using template URL.
-            Steps:
-             1. Create stack using template URL.
-             2. Check that the stack is in the list of stacks
-             3. Check that stack status is 'CREATE_COMPLETE'
-             4. Delete stack
+
+        Steps:
+        1. Create stack using template URL.
+        2. Check that the stack is in the list of stacks
+        3. Check that stack status is 'CREATE_COMPLETE'
+        4. Delete stack
         """
         stack_name = 'empty__543334'
         template_url = 'https://raw.githubusercontent.com/tkuterina/' \
@@ -292,10 +300,10 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
-            Steps:
-             1. Create new stack
-             2. Launch heat action-check stack_name
-             3. Launch heat stack-list and check 'CHECK_COMPLETE' status
+        Steps:
+        1. Create new stack
+        2. Launch heat action-check stack_name
+        3. Launch heat stack-list and check 'CHECK_COMPLETE' status
         """
         stack_name = 'stack_to_check_543339'
         template_content = common_functions.read_template(
@@ -323,9 +331,10 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543341_ShowStackEventList(self):
         """ This test checks list events for a stack
-            Steps:
-             1. Create new stack
-             2. Launch heat event-list stack_name
+
+        Steps:
+        1. Create new stack
+        2. Launch heat event-list stack_name
         """
         stack_name = 'stack_to_show_event_543341'
         template_content = common_functions.read_template(
@@ -343,10 +352,11 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543344_HeatStackTemplateShow(self):
         """ This test case checks representation of template of created stack.
-            Steps:
-                1. Create stack using template file empty_heat_templ.yaml.
-                2. Check that template of created stack has correct
-                    representation.
+
+        Steps:
+        1. Create stack using template file empty_heat_templ.yaml.
+        2. Check that template of created stack has correct \
+        representation.
         """
         stack_name = 'empty_stack'
         timeout = 60
@@ -370,11 +380,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543342_ShowInfoOfSpecifiedStackEvent(self):
         """ This test checks info about stack event
-            Steps:
-             1. Create new stack
-             2. Launch heat event-list stack_name
-             3. Launch heat event-show <NAME or ID> <RESOURCE> <EVENT>
-                for specified event and check result
+
+        Steps:
+        1. Create new stack
+        2. Launch heat event-list stack_name
+        3. Launch heat event-show <NAME or ID> <RESOURCE> <EVENT> \
+        for specified event and check result
         """
         stack_name = 'stack_to_show_event_info_543342'
         template_content = common_functions.read_template(
@@ -399,15 +410,16 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543345_HeatCreateStackAWS(self):
         """ This test creates stack using AWS format template
-            Steps:
-             1. Connect to Neutron and get ID of internal_network
-             2. Get ID of external_network
-             3. Get ID of internal_subnet of internal_network
-             4. Find IP for internal_subnet
-             5. Create stack
-             6. Delete stack
+
+        Steps:
+        1. Connect to Neutron and get ID of internal_network
+        2. Get ID of external_network
+        3. Get ID of internal_subnet of internal_network
+        4. Find IP for internal_subnet
+        5. Create stack
+        6. Delete stack
+
         https://mirantis.testrail.com/index.php?/cases/view/543345
-        [Alexander Koryagin]
         """
         # Prepare new name. Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
@@ -468,9 +480,10 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543332_HeatStackPreview(self):
         """ This test case previews a stack.
-            Steps:
-             1. Execute stack preview.
-             2. Check output result.
+
+        Steps:
+        1. Execute stack preview.
+        2. Check output result.
         """
         stack_name = 'empty__543332'
         parameter = 'some_param_string'
@@ -503,9 +516,10 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543343_HeatStackTemplateValidate(self):
         """ This test case checks representation of template file.
-            Steps:
-                1. Check that selected template file has correct
-                    representation.
+
+        Steps:
+        1. Check that selected template file has correct \
+        representation.
         """
         template_content = common_functions.read_template(
             self.templates_dir, 'heat_create_nova_stack_template.yaml')
@@ -515,11 +529,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543340_StackResumeSuspend(self):
         """ Suspend and resume stack
-            (with its resources for which that feature works)
-            Steps:
-             1. Create new stack
-             2. Launch heat action-suspend stack_name. Check status
-             3. Launch heat action-resume stack_name. Check status
+        (with its resources for which that feature works)
+
+        Steps:
+        1. Create new stack
+        2. Launch heat action-suspend stack_name. Check status
+        3. Launch heat action-resume stack_name. Check status
         """
 
         # Create stack with resource
@@ -573,14 +588,14 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543351_HeatStackUpdateReplace(self):
         """ This test case checks change stack id after stack update.
 
-            Steps:
-                1. Create stack using template.
-                2. Check id of created image.
-                3. Update stack template:
-                    disk_format = 'ami',
-                    container_format = 'ami'
-                4. Update stack.
-                5. Check id of updated image.
+        Steps:
+        1. Create stack using template.
+        2. Check id of created image.
+        3. Update stack template:
+        disk_format = 'ami',
+        container_format = 'ami'
+        4. Update stack.
+        5. Check id of updated image.
         """
         stack_name = 'image_stack'
         template_name = 'cirros_image_tmpl.yaml'
@@ -613,12 +628,12 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543352_HeatStackUpdateInPlace(self):
         """ This test case checks stack id doesn't change after stack update.
 
-            Steps:
-                1. Create stack using template nova_server.yaml.
-                2. Check id of created image.
-                3. Update stack template: flavor = 'm1.small'
-                4. Update stack.
-                5. Check id of updated image.
+        Steps:
+        1. Create stack using template nova_server.yaml.
+        2. Check id of created image.
+        3. Update stack template: flavor = 'm1.small'
+        4. Update stack.
+        5. Check id of updated image.
         """
         stack_name = 'vm_stack'
         template_name = 'nova_server.yaml'
@@ -655,12 +670,13 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543336_HeatStackShow(self):
         """ This test case checks detailed stack's information.
-            Steps:
-             1. Create stack using template file empty_heat_templ.yaml
-             2. Check that the stack is in the list of stacks
-             3. Check that stack status is 'CREATE_COMPLETE'
-             4. Check stack's information
-             5. Delete stack
+
+        Steps:
+        1. Create stack using template file empty_heat_templ.yaml
+        2. Check that the stack is in the list of stacks
+        3. Check that stack status is 'CREATE_COMPLETE'
+        4. Check stack's information
+        5. Delete stack
         """
         stack_name = 'empty__543336'
         parameter = 'some_param_string'
@@ -707,13 +723,13 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543338_StackCancelUpdate(self):
         """ This test check the possibility to cancel update
 
-            Steps:
-                1. Create new stack
-                2. Launch heat action-suspend stack_name
-                3. Launch heat stack-update stack_name
-                4. Launch heat stack-cancel-update stack_name while update
-                   operation is in progress
-                5. Check state of stack after cancel update
+        Steps:
+        1. Create new stack
+        2. Launch heat action-suspend stack_name
+        3. Launch heat stack-update stack_name
+        4. Launch heat stack-cancel-update stack_name while update
+        operation is in progress
+        5. Check state of stack after cancel update
         """
 
         # network ID, image ID, InstanceType
@@ -763,10 +779,10 @@ class HeatIntegrationTests(unittest.TestCase):
     def test_543353_HeatStackOutputList(self):
         """ This test case checks list of all stack attributes.
 
-            Steps:
-             1. Create stack using template.
-             2. Check list of all attributes in format:
-                output_key - description.
+        Steps:
+        1. Create stack using template.
+        2. Check list of all attributes in format:
+        output_key - description.
         """
         stack_name = 'random_str_stack'
         template_name = 'random_str.yaml'
@@ -790,12 +806,12 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543353_HeatStackOutputShow(self):
         """ This test case checks value of specific attribute
-                as well as list of all stack attributes.
+            as well as list of all stack attributes.
 
-            Steps:
-             1. Create stack using template.
-             2. Check value of attribute random_str1.
-             3. Check list of all stack outputs (value, key and description)
+        Steps:
+        1. Create stack using template.
+        2. Check value of attribute random_str1.
+        3. Check list of all stack outputs (value, key and description)
         """
         stack_name = 'random_str_stack'
         template_name = 'random_str.yaml'
@@ -819,3 +835,295 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_attributes = [{k: item[k] for k in item.keys()
                              if k != 'output_value'} for item in outputs]
         self.assertEqual(stack_attributes, correct_attributes)
+
+    def test_543348_HeatCreateStackWaitCondition(self):
+        """ This test creates stack with WaitCondition resources
+
+        Steps:
+        1. Download Cirros image
+        2. Create image with Glance and check that it is 'Active'
+        3. Create new key-pair with Nova
+        4. Find ID of internal network with Neutron
+        5. Create stack with WaitCondition and check that it was \
+        created successfully
+        6. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543348
+        """
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = '543348_Cirros-image' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.:
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Cirros',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Find network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name']]
+
+        # If can't find 'inter' in networks -> get ID of any network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Create stack with Heat
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_WaitCondition_543348.yaml')
+
+        uid = common_functions.create_stack(self.heat,
+                                            'Wait_Condition_Stack_543348',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image': image_name,
+                                             'flavor': 'm1.small',
+                                             'timeout': 600,  # 10 min
+                                             'int_network_id': int_network_id},
+                                            20)
+        # CLEANUP
+        # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
+
+    def test_543349_HeatCreateStackNeutronResources(self):
+        """ This test creates stack with Neutron resources
+
+        Steps:
+        1. Download Cirros image
+        2. Create image with Glance and check that it is 'Active'
+        3. Create new key-pair with Nova
+        4. Find ID of internal network with Neutron
+        5. Find ID of internal sub network with Neutron
+        6. Find ID of public network with Neutron
+        7. Create stack with Neutron resources and check that it was \
+        created successfully
+        8. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543349
+        """
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = '543349_Cirros-image' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.:
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Cirros',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Check if Neutron has more then 1 network. We need intern and extern.
+        if len(networks['networks']) < 2:
+            raise AssertionError("ERROR: Need to have at least 2 networks")
+
+        # Find internal network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'inter' in networks -> get ID of last network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Find private subnet ID
+        int_sub_network_id = [x['subnets'][0] for x in networks['networks']
+                              if int_network_id in x['id'] and
+                              x['status'] == 'ACTIVE']
+        int_sub_network_id = int_sub_network_id[0]
+
+        # Find public network ID
+        pub_network_id = [x['id'] for x in networks['networks']
+                          if 'float' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'float' in networks -> get ID of 0 network
+        if not int_network_id:
+            pub_network_id = networks['networks'][0]['id']
+        else:
+            pub_network_id = pub_network_id[0]
+
+        # Create stack with Heat
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Neutron_resources_543349.yaml')
+
+        uid = common_functions.create_stack(self.heat,
+                                            'Heat_Neutron_resources_543349',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image': image_name,
+                                             'flavor': 'm1.small',
+                                             'public_net_id': pub_network_id,
+                                             'private_net_id': int_network_id,
+                                             'private_subnet_id':
+                                                 int_sub_network_id},
+                                            15)
+        # CLEANUP
+        # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
+
+    def test_543350_HeatCreateStackNovaResources(self):
+        """ This test creates stack with Nova resources
+
+        Steps:
+        1. Download Cirros image
+        2. Create image with Glance and check that it is 'Active'
+        3. Create new key-pair with Nova
+        4. Find network ID
+        5. Prepare template and reference template
+        6. Create stack
+        7. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543350
+        """
+        file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
+        image_name = '543350_Cirros-image' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.:
+        # Like: /root/mos_tests/heat/images/cirros-0.3.4-x86_64-disk.img.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/cirros-0.3.4-x86_64-disk.img
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Cirros',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Find internal network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'inter' in networks -> get ID of last network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Read main template for creation
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Nova_resources_543350.yaml')
+
+        # Read additional reference template for creation
+        template_additional = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Nova_resources_543350_volume_with_attachment.yaml')
+
+        # Create stack
+        uid = common_functions.create_stack(self.heat,
+                                            'Heat_Nova_resources_543350',
+                                            template,
+                                            {'key_name': image_name,
+                                             'image_id': image_name,
+                                             'volume_size': 1,
+                                             'num_volumes': 1,
+                                             'flavor': 'm1.tiny',
+                                             'network_id': int_network_id},
+                                            15,
+                                            {'Heat_Nova_resources_543350'
+                                             '_volume_with_attachment.yaml':
+                                                 template_additional})
+        # CLEANUP
+        # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
