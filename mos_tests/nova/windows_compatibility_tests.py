@@ -132,11 +132,11 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return:
         """
         if self.node_to_boot is not None:
-            self.nova.servers.delete(self.node_to_boot.id)
+            common_functions.delete_instance(self.nova, self.node_to_boot.id)
         if self.image is not None:
-            self.glance.images.delete(self.image.id)
+            common_functions.delete_image(self.glance, self.image.id)
         if self.our_own_flavor_was_created:
-            self.nova.flavors.delete(self.expected_flavor_id)
+            common_functions.delete_flavor(self.nova, self.expected_flavor_id)
         # delete the floating ip
         self.nova.floating_ips.delete(self.floating_ip)
         # delete the security group
@@ -237,7 +237,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.floating_ip.ip))
 
         ping = common_functions.ping_command(self.floating_ip.ip)
-        self.assertEqual(ping, 0, "Instance is not reachable")
+        self.assertTrue(ping, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):

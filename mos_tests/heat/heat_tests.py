@@ -218,7 +218,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty_543335'
         timeout = 20
         parameter = 'some_param_string'
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -245,7 +245,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty__543333'
         parameter = 'some_param_string'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -274,7 +274,7 @@ class HeatIntegrationTests(unittest.TestCase):
                        'mos-integration-tests/master/mos_tests/heat/' \
                        'templates/empty_heat_templ.yaml'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         stack_data = {'stack_name': stack_name, 'template_url': template_url,
@@ -351,7 +351,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty_stack'
         timeout = 60
         parameter = "some_string"
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -482,7 +482,7 @@ class HeatIntegrationTests(unittest.TestCase):
                         'disable_rollback': True,
                         'template_description': 'Sample template',
                         'parameters': parameters}
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -665,7 +665,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty__543336'
         parameter = 'some_param_string'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(

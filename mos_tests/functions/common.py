@@ -5,7 +5,7 @@ import yaml
 import platform
 
 
-def check_stack(stack_name, heat):
+def is_stack_exists(stack_name, heat):
     """ Check the presence of stack_name in stacks list
             :param heat: Heat API client connection point
             :param stack_name: Name of stack
@@ -21,7 +21,7 @@ def get_stack_id(heat_client, stack_name):
             :param stack_name: Name of stack
             :return Stack uid
     """
-    if check_stack(stack_name, heat_client):
+    if is_stack_exists(stack_name, heat_client):
         stack_dict = {s.stack_name: s.id for s in heat_client.stacks.list()}
         return stack_dict[stack_name]
     raise Exception("ERROR: Stack {} is not defined".format(stack_name))
@@ -36,7 +36,7 @@ def check_stack_status(stack_name, heat, status, timeout=60):
             :return True if stack status is equals to expected status
                     False otherwise
     """
-    if check_stack(stack_name, heat):
+    if is_stack_exists(stack_name, heat):
         start_time = time()
         stack_status = [s.stack_status for s in heat.stacks.list()
                         if s.stack_name == stack_name][0]
@@ -229,6 +229,7 @@ def download_image(image_link_file, where_to_put='/tmp/'):
         return image_path_on_node
 
 
+# Instance functions
 def get_inst_id(nova_client, inst_name):
     """ Get instance id for instance with the name
             :param nova_client: Nova API client connection point
@@ -242,22 +243,13 @@ def get_inst_id(nova_client, inst_name):
     raise Exception("ERROR: Instance {} is not defined".format(inst_name))
 
 
-def check_instance(nova_client, uid):
+def is_instance_exists(nova_client, uid):
     """ Check the presence of instance id in the list of instances
             :param nova_client: Nova API client connection point
             :param uid: UID of instance
             :return True or False
     """
     return uid in [s.id for s in nova_client.servers.list()]
-
-
-def check_volume(cinder_client, uid):
-    """ Check the presence of volume id in the list of volume
-            :param cinder_client: Cinder API client connection point
-            :param uid: UID of volume
-            :return True or False
-    """
-    return uid in [s.id for s in cinder_client.volumes.list()]
 
 
 def check_inst_status(nova_client, uid, status, timeout=5):
@@ -268,7 +260,7 @@ def check_inst_status(nova_client, uid, status, timeout=5):
             :param timeout: Timeout for check operation
             :return True or False
     """
-    if check_instance(nova_client, uid):
+    if is_instance_exists(nova_client, uid):
         start_time = time()
         inst_status = [s.status for s in nova_client.servers.list() if s.id ==
                        uid][0]
@@ -280,55 +272,15 @@ def check_inst_status(nova_client, uid, status, timeout=5):
     return False
 
 
-def check_ip(nova_client, uid, fip, timeout=1):
-    """ Check floating ip address adding to instance
-            :param nova_client: Nova API client connection point
-            :param uid: UID of instance
-            :param fip: Floating ip
-            :param timeout: Timeout for check operation
-            :return True or False
-    """
-    if check_instance(nova_client, uid):
-        start_time = time()
-        ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[
-                'admin_internal_net']]
-        while fip not in ips and time() < start_time + 60 * timeout:
-            sleep(1)
-            ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[
-                'admin_internal_net']]
-        return fip in ips
-    return False
-
-
 def delete_instance(nova_client, uid):
     """ Delete instance and check that it is absent in the list
             :param nova_client: Nova API client connection point
             :param uid: UID of instance
     """
-    if check_instance(nova_client, uid):
+    if is_instance_exists(nova_client, uid):
         nova_client.servers.delete(uid)
-        while check_instance(nova_client, uid):
+        while is_instance_exists(nova_client, uid):
             sleep(1)
-
-
-def create_volume(cinder_client, image_id, timeout=5):
-    """ Check volume creation
-            :param cinder_client: Cinder API client connection point
-            :param image_id: UID of image
-            :param timeout: Timeout for check operation
-            :return volume
-    """
-    end_time = time() + 60 * timeout
-    volume = cinder_client.volumes.create(1, name='Test_volume',
-                                          imageRef=image_id)
-    status = cinder_client.volumes.get(volume.id).status
-    while status != 'available':
-        if time() > end_time:
-            raise AssertionError(
-                "Volume status is '{}' instead of 'available".format(status))
-        sleep(1)
-        status = cinder_client.volumes.get(volume.id).status
-    return volume
 
 
 def create_instance(nova_client, inst_name, flavor_id, net_id, security_group,
@@ -362,17 +314,7 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_group,
     return inst
 
 
-def delete_volume(cinder_client, volume):
-    """ Delete volume and check that it is absent in the list
-            :param cinder_client: Cinder API client connection point
-            :param volume: volume
-    """
-    if volume in cinder_client.volumes.list():
-        cinder_client.volumes.delete(volume)
-        while volume in cinder_client.volumes.list():
-            sleep(1)
-
-
+# Floating IP functions
 def delete_floating_ip(nova_client, floating_ip):
     """ Delete floating ip and check that it is absent in the list
             :param nova_client: Nova API client connection point
@@ -384,6 +326,68 @@ def delete_floating_ip(nova_client, floating_ip):
             sleep(1)
 
 
+def check_ip(nova_client, uid, fip, timeout=1):
+    """ Check floating ip address adding to instance
+            :param nova_client: Nova API client connection point
+            :param uid: UID of instance
+            :param fip: Floating ip
+            :param timeout: Timeout for check operation
+            :return True or False
+    """
+    if is_instance_exists(nova_client, uid):
+        start_time = time()
+        ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[
+                'admin_internal_net']]
+        while fip not in ips and time() < start_time + 60 * timeout:
+            sleep(1)
+            ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[
+                'admin_internal_net']]
+        return fip in ips
+    return False
+
+
+# Volume functions
+def is_volume_exists(cinder_client, uid):
+    """ Check the presence of volume id in the list of volume
+            :param cinder_client: Cinder API client connection point
+            :param uid: UID of volume
+            :return True or False
+    """
+    return uid in [s.id for s in cinder_client.volumes.list()]
+
+
+def create_volume(cinder_client, image_id, timeout=5):
+    """ Check volume creation
+            :param cinder_client: Cinder API client connection point
+            :param image_id: UID of image
+            :param timeout: Timeout for check operation
+            :return volume
+    """
+    end_time = time() + 60 * timeout
+    volume = cinder_client.volumes.create(1, name='Test_volume',
+                                          imageRef=image_id)
+    status = cinder_client.volumes.get(volume.id).status
+    while status != 'available':
+        if time() > end_time:
+            raise AssertionError(
+                "Volume status is '{}' instead of 'available".format(status))
+        sleep(1)
+        status = cinder_client.volumes.get(volume.id).status
+    return volume
+
+
+def delete_volume(cinder_client, volume):
+    """ Delete volume and check that it is absent in the list
+            :param cinder_client: Cinder API client connection point
+            :param volume: volume
+    """
+    if volume in cinder_client.volumes.list():
+        cinder_client.volumes.delete(volume)
+        volume_id = volume.id
+        while is_volume_exists(cinder_client, volume_id):
+            sleep(1)
+
+
 def check_volume_status(cinder_client, uid, status, timeout=5):
     """ Check status of volume
             :param cinder_client: Cinder API client connection point
@@ -392,7 +396,7 @@ def check_volume_status(cinder_client, uid, status, timeout=5):
             :param timeout: Timeout for check operation
             :return True or False
     """
-    if check_volume(cinder_client, uid):
+    if is_volume_exists(cinder_client, uid):
         start_time = time()
         inst_status = [s.status for s in cinder_client.volumes.list() if s.id ==
                        uid][0]
@@ -404,21 +408,58 @@ def check_volume_status(cinder_client, uid, status, timeout=5):
     return False
 
 
-def delete_flavor(nova_client, flavor_name):
+# Flavor functions
+def is_flavor_exists(nova_client, flavor_id):
+    """ Check the presence of flavor in the system
+            :param nova_client: Nova API client connection point
+            :param flavor_id: name of the flavor
+            :return True or False
+    """
+    return flavor_id in [f.id for f in nova_client.flavors.list()]
+
+
+def delete_flavor(nova_client, flavor_id):
     """ This function delete the flavor by its name.
-        :param nova_client: Nova API client connection point
-        :param flavor_name: Name of the flavor to delete
-        :return: Nothing
+            :param nova_client: Nova API client connection point
+            :param flavor_id: UID of the flavor to delete
+            :return: Nothing
     """
     for flavor in nova_client.flavors.list():
-        if flavor.name == flavor_name:
+        if flavor.name == flavor_id:
             nova_client.flavors.delete(flavor)
+            break
+    while is_flavor_exists(nova_client, flavor_id):
+        sleep(1)
 
 
+# Images
+def is_image_exists(glance_client, image_id):
+    """ This function check if image with required id presents in the system
+        or not
+            :param glance_client: Glance API client connection point
+            :param image_id: UID of the image to delete
+            :return: True if the image with provided id presents in the system,
+                     False otherwise
+    """
+    return image_id in [image.id for image in glance_client.images.list()]
+
+
+def delete_image(glance_client, image_id):
+    """ This function should delete the image with provided id from the system
+            :param glance_client: Glance API client connection point
+            :param image_id: UID of the image to delete
+            :return: Nothing
+    """
+    glance_client.images.delete(image_id)
+    while is_image_exists(glance_client, image_id):
+        sleep(1)
+
+
+# execution of system commands
 def ping_command(ip_address):
     """ This function executes the ping program and check its results
-        :param ip_address: The IP address to ping
-        :return: True in case of success, False otherwise
+            :param ip_address: The IP address to ping
+            :return: True in case of success, False otherwise
     """
     the_count_key = '-c'
     if platform.system() == 'Windows':
