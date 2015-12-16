@@ -144,38 +144,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.floating_ip = self.nova.floating_ips.create(
                 self.nova.floating_ip_pools.list()[0].name)
 
-    def tearDown(self):
-        """
-
-        :return:
-        """
-        if self.node_to_boot is not None:
-            common_functions.delete_instance(self.nova, self.node_to_boot.id)
-        if self.image is not None:
-            common_functions.delete_image(self.glance, self.image.id)
-        if self.our_own_flavor_was_created:
-            common_functions.delete_flavor(self.nova, self.expected_flavor_id)
-        # delete the floating ip
-        self.nova.floating_ips.delete(self.floating_ip)
-        # delete the security group
-        self.nova.security_group_rules.delete(self.icmp_rule)
-        self.nova.security_group_rules.delete(self.tcp_rule)
-        self.nova.security_groups.delete(self.the_security_group.id)
-        # delete security rules from the 'default' group
-        self.nova.security_group_rules.delete(self.icmp_rule_default)
-        self.nova.security_group_rules.delete(self.tcp_rule_default)
-        self.assertEqual(self.amount_of_images_before,
-                         len(list(self.glance.images.list())),
-                         "Length of list with images should be the same")
-
-    def test_542825_CreateInstanceWithWindowsImage(self):
-        """ This test check that instance with Windows image could be created
-
-        Steps:
-        1. Create image
-        2. Check that VM is reachable
-        :return: Nothing
-        """
         # creating of the image
         self.image = self.glance.images.create(
                 name='MyTestSystem',
@@ -251,6 +219,38 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.node_to_boot.id,
                 self.floating_ip.ip))
 
+    def tearDown(self):
+        """
+
+        :return:
+        """
+        if self.node_to_boot is not None:
+            common_functions.delete_instance(self.nova, self.node_to_boot.id)
+        if self.image is not None:
+            common_functions.delete_image(self.glance, self.image.id)
+        if self.our_own_flavor_was_created:
+            common_functions.delete_flavor(self.nova, self.expected_flavor_id)
+        # delete the floating ip
+        self.nova.floating_ips.delete(self.floating_ip)
+        # delete the security group
+        self.nova.security_group_rules.delete(self.icmp_rule)
+        self.nova.security_group_rules.delete(self.tcp_rule)
+        self.nova.security_groups.delete(self.the_security_group.id)
+        # delete security rules from the 'default' group
+        self.nova.security_group_rules.delete(self.icmp_rule_default)
+        self.nova.security_group_rules.delete(self.tcp_rule_default)
+        self.assertEqual(self.amount_of_images_before,
+                         len(list(self.glance.images.list())),
+                         "Length of list with images should be the same")
+
+    def test_542825_CreateInstanceWithWindowsImage(self):
+        """ This test checks that instance with Windows image could be created
+
+        Steps:
+        1. Create image
+        2. Check that VM is reachable
+        :return: Nothing
+        """
         end_time = time.time() + 120
         ping_result = False
         attempt_id = 1
@@ -264,16 +264,104 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
     @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
-        """
+        """ This test checks that instance with Windows image could be paused
+        and unpaused
 
+        Steps:
+        1. Create image
+        2. Check that VM is reachable
+        3. Put the image on 'Pause' state
+        4. Check that the VM is unreachable
+        5. Put the image on 'Unpause' state
+        6. Check that the VM is reachable again
         :return: Nothing
         """
-        pass
+        # Initial check
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertTrue(ping_result, "Instance is not reachable")
+        # Paused state check
+        self.node_to_boot.pause()
+        # TODO: Make sure that the VM in 'Paused' state
+        end_time = time.time() + 60
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertFalse(ping_result, "Instance is reachable")
+        # Unpaused state check
+        self.node_to_boot.unpause()
+        # TODO: Make sure that the VM in 'Unpaused' state
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertTrue(ping_result, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
-        """
+        """ This test checks that instance with Windows image can be suspended
+        and resumed
 
+        Steps:
+        1. Create image
+        2. Check that VM is reachable
+        3. Put the image on 'Suspend' state
+        4. Check that the VM is unreachable
+        5. Put the image on 'Resume' state
+        6. Check that the VM is reachable again
         :return: Nothing
         """
-        pass
+        # Initial check
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertTrue(ping_result, "Instance is not reachable")
+        # Suspend state check
+        self.node_to_boot.suspend()
+        # TODO: Make sure that the VM in 'Suspended' state
+        end_time = time.time() + 60
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertFalse(ping_result, "Instance is reachable")
+        # Resume state check
+        self.node_to_boot.resume()
+        # TODO: Make sure that the VM in 'Resume' state
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertTrue(ping_result, "Instance is not reachable")

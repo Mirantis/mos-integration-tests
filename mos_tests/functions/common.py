@@ -260,9 +260,7 @@ def check_volume(cinder_client, uid):
         :param uid: UID of volume
         :return True or False
     """
-    if uid in [s.id for s in cinder_client.volumes.list()]:
-        return True
-    return False
+    return uid in [s.id for s in cinder_client.volumes.list()]
 
 
 def check_inst_status(nova_client, uid, status, timeout=5):
