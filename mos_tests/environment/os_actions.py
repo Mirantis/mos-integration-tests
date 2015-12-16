@@ -357,8 +357,7 @@ class OpenStackActions(object):
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info(
-                    'floating_ip {} is not deletable'.format(floating_ip.id))
+                self.delete_floating_ip(floating_ip, use_neutron=True)
 
     def delete_servers(self):
         for server in self.nova.servers.list():

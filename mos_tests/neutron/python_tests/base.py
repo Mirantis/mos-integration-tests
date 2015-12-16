@@ -175,8 +175,8 @@ class TestBase(object):
                          'node with ip {1}.').format(vm_ip, srv_host)
 
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
-                 interval=10, timeout=3 * 10,
-                 timeout_msg=error_msg)
+                 sleep_seconds=10, timeout_seconds=3 * 10,
+                 waiting_for=error_msg)
 
     def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.
@@ -195,9 +195,9 @@ class TestBase(object):
             except Exception:
                 return False
 
-        wait(lambda: is_accessible(),
-             interval=10, timeout=60,
-             timeout_msg=error_msg)
+        wait(is_accessible,
+             sleep_seconds=10, timeout_seconds=60,
+             waiting_for=error_msg)
 
     @staticmethod
     def convert_private_key_for_vm(private_keys):

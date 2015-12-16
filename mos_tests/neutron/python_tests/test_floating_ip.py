@@ -12,9 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
 import pytest
-import time
 
 from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 
@@ -82,11 +80,9 @@ class TestFloatingIP(TestBase):
         :param vm_ip: floating_ip of instance
         :param pkeys: ip of instance to ping
         """
-        with pytest.raises(NoValidConnectionsError) as exc:
+        with pytest.raises(NoValidConnectionsError):
             with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
                 vm_remote.execute("date")
-        assert "Unable to connect to port 22 on  or {}".format(vm_ip) \
-               in exc.value.strerror
 
     def test_ssh_after_deleting_floating(self):
         """Check ssh-connection by floating ip for vm after
@@ -121,10 +117,11 @@ class TestFloatingIP(TestBase):
                     server, self.floating_ip, use_neutron=True)
                 res2 = vm_remote.execute("date")
 
-        assert (0 == res1['exit_code'],
-                'Instance has no connectivity, exit code {0},'
-                'stdout {1}, stderr {2}'.format(res1['exit_code'],
-                res1['stdout'], res1['stderr']))
+        assert 0 == res1['exit_code'], \
+            ('Instance has no connectivity, exit code {0},'
+             'stdout {1}, stderr {2}'.format(res1['exit_code'],
+                                             res1['stdout'],
+                                             res1['stderr']))
 
         # check that disassociate_floating_ip has been performed
         assert self.os_conn.neutron.show_floatingip(
@@ -136,6 +133,3 @@ class TestFloatingIP(TestBase):
 
         # check that vm became inaccessible with ssh
         self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)
-
-        # for cleanup delete floating_ip using neutron
-        self.os_conn.delete_floating_ip(self.floating_ip, use_neutron=True)

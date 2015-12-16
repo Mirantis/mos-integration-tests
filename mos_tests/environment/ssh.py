@@ -8,12 +8,6 @@ import stat
 logger = logging.getLogger(__name__)
 
 
-class SFTPNotApplicableError(ValueError):
-    def __str__(self):
-        message = "SFTP is not applicable for SSHClient."
-        return message
-
-
 class CalledProcessError(Exception):
     def __init__(self, command, returncode, output=None):
         self.returncode = returncode
@@ -29,6 +23,13 @@ class CalledProcessError(Exception):
 
 
 class SSHClient(object):
+
+    @property
+    def _sftp(self):
+        if self._sftp_client is None:
+            self._sftp_client = self._ssh.open_sftp()
+        return self._sftp_client
+
     class get_sudo(object):
         def __init__(self, ssh):
             self.ssh = ssh
@@ -40,23 +41,23 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, use_sftp=True):
+                 private_keys=None):
         self.host = str(host)
         self.port = int(port)
         self.username = username
         self.password = password
         if not private_keys:
-            private_keys = []d
+            private_keys = []
         self.private_keys = private_keys
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
-        self.use_sftp = use_sftp
+        self._sftp_client = None
 
         self.reconnect()
 
     def clear(self):
-        if self.use_sftp:
+        if self._sftp_client is not None:
             try:
                 self._sftp.close()
             except Exception:
@@ -98,8 +99,6 @@ class SSHClient(object):
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.connect()
-        if self.use_sftp:
-            self._sftp = self._ssh.open_sftp()
 
     def check_call(self, command, verbose=False):
         ret = self.execute(command, verbose)
@@ -180,14 +179,9 @@ class SSHClient(object):
         self.execute("rm -rf %s" % path)
 
     def open(self, path, mode='r'):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
         return self._sftp.open(path, mode)
 
     def upload(self, source, target):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
-
         logger.debug("Copying '%s' -> '%s'", source, target)
 
         if self.isdir(target):
@@ -214,9 +208,6 @@ class SSHClient(object):
                 self._sftp.put(local_path, remote_path)
 
     def download(self, destination, target):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
-
         logger.debug(
             "Copying '%s' -> '%s' from remote to local host",
             destination, target
@@ -239,8 +230,6 @@ class SSHClient(object):
         return os.path.exists(target)
 
     def exists(self, path):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
         try:
             self._sftp.lstat(path)
             return True
@@ -248,8 +237,6 @@ class SSHClient(object):
             return False
 
     def isfile(self, path):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
         try:
             attrs = self._sftp.lstat(path)
             return attrs.st_mode & stat.S_IFREG != 0
@@ -257,8 +244,6 @@ class SSHClient(object):
             return False
 
     def isdir(self, path):
-        if not self.use_sftp:
-            raise SFTPNotApplicableError()
         try:
             attrs = self._sftp.lstat(path)
             return attrs.st_mode & stat.S_IFDIR != 0
