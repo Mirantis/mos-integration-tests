@@ -63,8 +63,8 @@ class TestDHCPAgent(TestBase):
 
     def test_to_check_dhcp_agents_work(self):
 
-        tenant_id =\
-            self.os_conn.neutron.get_quotas_tenant()['tenant']['tenant_id']
+        tenant = self.os_conn.neutron.get_quotas_tenant()
+        tenant_id = tenant['tenant']['tenant_id']
         self.os_conn.neutron.update_quota(tenant_id, {'quota':
                                                       {'network': 1000,
                                                        'router': 1000,
@@ -77,10 +77,10 @@ class TestDHCPAgent(TestBase):
             net_id = self.os_conn.add_net(self.router['id'])
             self.networks.append(net_id)
             logger.info(len(self.networks))
-            srv =\
-                self.os_conn.create_server(name='instanseNo{}'.format(x),
-                                           key_name=self.instance_keypair.name,
-                                           nics=[{'net-id': net_id}])
+            srv = self.os_conn.create_server(
+                      name='instanseNo{}'.format(x),
+                      key_name=self.instance_keypair.name,
+                      nics=[{'net-id': net_id}])
             self.os_conn.nova.servers.delete(srv)
         networks_amount_on_each_agt = []
         for agt in self.get_all_dhcp_agents():
