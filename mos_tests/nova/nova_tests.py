@@ -40,13 +40,6 @@ class NovaIntegrationTests(unittest.TestCase):
                                                tenat_name=OS_TENANT_NAME,
                                                project_name=OS_PROJECT_NAME)
 
-        # Neutron connect
-        self.neutron = neutron_client.Client(username=OS_USERNAME,
-                                             password=OS_PASSWORD,
-                                             tenant_name=OS_TENANT_NAME,
-                                             auth_url=OS_AUTH_URL,
-                                             insecure=True)
-
         # Nova connect
         OS_TOKEN = self.keystone.get_token(self.keystone.session)
         RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
@@ -78,6 +71,23 @@ class NovaIntegrationTests(unittest.TestCase):
         self.floating_ips = []
         self.volumes = []
 
+        self.sec_group = self.nova.security_groups.create('security_nova',
+                                                          'Security group, '
+                                                          'created for Nova '
+                                                          'automatic tests')
+        rule = {
+                # ping
+                'ip_protocol': 'icmp',
+                'from_port': -1,
+                'to_port': -1,
+                'cidr': '0.0.0.0/0',
+            }
+        self.nova.security_group_rules.create(self.sec_group.id, **rule)
+
+    @classmethod
+    def tearDownClass(self):
+        self.nova.security_groups.delete(self.sec_group)
+
     def tearDown(self):
         for inst in self.instances:
             common_functions.delete_instance(self.nova, inst)
@@ -107,7 +117,6 @@ class NovaIntegrationTests(unittest.TestCase):
         net = [net['id'] for net in networks
                         if not net['router:external']][0]
         image_id = self.nova.images.list()[0].id
-        security_group = self.nova.security_groups.list()[0].name
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
@@ -117,7 +126,7 @@ class NovaIntegrationTests(unittest.TestCase):
             inst = common_functions.create_instance(self.nova, "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    security_group,
+                                                    self.sec_group,
                                                     image_id=image_id)
             inst_id = inst.id
             self.instances.append(inst_id)
@@ -146,7 +155,6 @@ class NovaIntegrationTests(unittest.TestCase):
 
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks if not net['router:external']][0]
-        security_group = self.nova.security_groups.list()[0].name
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
@@ -159,7 +167,7 @@ class NovaIntegrationTests(unittest.TestCase):
             inst = common_functions.create_instance(self.nova, "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    security_group,
+                                                    self.sec_group,
                                                     block_device_mapping=bdm)
             inst_id = inst.id
             self.instances.append(inst_id)
@@ -194,10 +202,9 @@ class NovaIntegrationTests(unittest.TestCase):
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
-        security_group = self.nova.security_groups.list()[0].name
         instance = common_functions.create_instance(self.nova, name,
                                                     initial_flavor, net,
-                                                    security_group,
+                                                    self.sec_group,
                                                     block_device_mapping=bdm)
         self.instances.append(instance.id)
 
