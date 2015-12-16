@@ -14,9 +14,12 @@
 
 import pytest
 
-from tools.settings import logger
+import logging
+
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests.environment.devops_client import DevopsClient
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
@@ -35,7 +38,6 @@ class TestRestarts(TestBase):
             5. Add rules for ping
             6. Ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
         """
-        # self.os_conn.cleanup_network()
         # init variables
         exist_networks = self.os_conn.list_networks()['networks']
         ext_network = [x for x in exist_networks
@@ -76,7 +78,7 @@ class TestRestarts(TestBase):
                 self.primary_node =\
                     DevopsClient.get_devops_node(
                         node.data['name'].split('_')[0])
-                self.primary_fqdn = node.data['fqdn']
+                self.primary_host = node.data['fqdn']
                 break
 
         # make a list of all l3 agent ids
@@ -86,28 +88,28 @@ class TestRestarts(TestBase):
 
     def test_shutdown_primary_controller_with_l3_agt(self):
 
-        logger.info(self.l3_agent_ids)
         # Get current L3 agent on router01
         router_agt =\
             self.os_conn.neutron.list_l3_agent_hosting_routers(
                 self.router['id'])['agents'][0]
         # Check if the agent is not on the prmary controller
         # Resceduler if needed
-        if router_agt['host'] != self.primary_fqdn:
-            self.os_conn.reshedule_router_on_primary(self.router['id'],
-                                                      self.primary_fqdn)
+        if router_agt['host'] != self.primary_host:
+
+            self.os_conn.reschedule_router_to_primary_host(self.router['id'],
+                                                      self.primary_host)
             router_agt =\
                 self.os_conn.neutron.list_l3_agent_hosting_routers(
                     self.router['id'])['agents'][0]
 
         # virsh destroy of the primary controller
-        self.destroy_nodes([self.primary_node])
+        self.env.destroy_nodes([self.primary_node])
 
         # Excluding the id of the router_agt from the list
         # since it will stay on the destroyed controller
         # and remain disabled
         self.l3_agent_ids.remove(router_agt['id'])
-        logger.info(self.l3_agent_ids)
+
         # Then check that the rest l3 agents are alive
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
@@ -130,22 +132,19 @@ class TestRestarts(TestBase):
                 self.router['id'])['agents'][0]
         # Check if the agent is not on the prmary controller
         # Resceduler if needed
-        if router_agt['host'] != self.primary_fqdn:
-            self.os_conn.reshedule_router_on_primary(self.router['id'],
-                                                      self.primary_fqdn)
+        if router_agt['host'] != self.primary_host:
+            self.os_conn.reschedule_router_to_primary_host(self.router['id'],
+                                                      self.primary_host)
             router_agt =\
                 self.os_conn.neutron.list_l3_agent_hosting_routers(
                     self.router['id'])['agents'][0]
 
         # virsh destroy of the primary controller
-        self.warm_restart_nodes([self.primary_node])
+        self.env.warm_restart_nodes([self.primary_node])
 
         # Check that the all l3 are alive
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
-        logger.info('agts on the router are')
-        logger.info(self.os_conn.neutron.list_routers_on_l3_agent(
-                        router_agt['id']))
         # Check that tere are no routers on the first agent
         assert(not self.os_conn.neutron.list_routers_on_l3_agent(
                         router_agt['id'])['routers'])

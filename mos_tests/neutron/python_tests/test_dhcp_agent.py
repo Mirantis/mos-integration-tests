@@ -14,8 +14,11 @@
 
 import pytest
 
-from tools.settings import logger
+import logging
+
 from mos_tests.neutron.python_tests.base import TestBase
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
@@ -34,7 +37,6 @@ class TestDHCPAgent(TestBase):
             5. Add rules for ping
             6. Ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
         """
-        # self.os_conn.cleanup_network()
         # init variables
         exist_networks = self.os_conn.list_networks()['networks']
         ext_network = [x for x in exist_networks
