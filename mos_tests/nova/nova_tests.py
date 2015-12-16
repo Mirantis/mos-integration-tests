@@ -14,8 +14,8 @@
 
 import os
 import unittest
+from time import time, sleep
 
-import time
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v2_0 import client as keystone_client
@@ -174,6 +174,7 @@ class NovaIntegrationTests(unittest.TestCase):
                 5. Ping the instances by the floating ips
                 6. Delete all created instances
         """
+        initial_instances = self.nova.servers.list()
         primary_name = "testVM_543356"
         count = 10
         image_dict = {im.name: im.id for im in self.nova.images.list()}
@@ -184,8 +185,9 @@ class NovaIntegrationTests(unittest.TestCase):
         net_dict = {net["name"]: net["id"] for net in networks}
         net_internal_id = net_dict["admin_internal_net"]
 
-        floating_ips = [self.nova.floating_ips.create() for i in xrange(count)]
-        fip_new = [fip_info.ip for fip_info in floating_ips]
+        self.floating_ips = [self.nova.floating_ips.create()
+                             for i in xrange(count)]
+        fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
             self.assertIn(fip, fip_all)
@@ -193,31 +195,30 @@ class NovaIntegrationTests(unittest.TestCase):
         self.nova.servers.create(primary_name, image_id, flavor_id,
                                  max_count=count,
                                  nics=[{"net-id": net_internal_id}])
-        time.sleep(5)
-        inst_ids = [inst.id for inst in self.nova.servers.list()]
-        msg = "Count of instances is incorrect"
-        self.assertEqual(len(inst_ids), count, msg)
-        for inst_id in inst_ids:
+        start_time = time()
+        timeout = 5
+        while len(self.nova.servers.list()) < len(initial_instances) + count \
+                and time() < start_time + timeout * 60:
+            sleep(5)
+
+        instances = [inst for inst in self.nova.servers.list()
+                     if inst not in initial_instances]
+        self.instances = [inst.id for inst in instances]
+        for inst_id in self.instances:
             self.assertTrue(common_functions.check_inst_status(self.nova,
                                                                inst_id,
                                                                'ACTIVE'))
         fip_dict = {}
-        for inst in self.nova.servers.list():
+        for inst in instances:
             fip = fip_new.pop()
             inst.add_floating_ip(fip)
             fip_dict[inst.id] = fip
 
-        for inst_id in inst_ids:
+        for inst_id in self.instances:
             self.assertTrue(common_functions.check_ip(
                 self.nova, inst_id, fip_dict[inst_id]))
 
-        for inst_id in inst_ids:
-            ping = os.system("ping -c 3 -W 60 {}".format(fip_dict[inst_id]))
+        for inst_id in self.instances:
+            ping = os.system("ping -c 4 -i 8 {}".format(fip_dict[inst_id]))
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
-
-        for fip in self.nova.floating_ips.list():
-            self.nova.floating_ips.delete(fip)
-
-        for inst in self.nova.servers.list():
-            common_functions.delete_instance(self.nova, inst)
