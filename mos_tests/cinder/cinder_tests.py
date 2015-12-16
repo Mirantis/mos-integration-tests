@@ -120,7 +120,7 @@ class CinderIntegrationTests(unittest.TestCase):
             new_snapshot_lst.append(snapshot_id)
         self.snapshot_list.extend(new_snapshot_lst)
 
-        timeout = time.time() + (new_count + count)*10
+        timeout = time.time() + (new_count + count) * 10
         while [s.status for s in self.cinder.volume_snapshots.list() if
                s in new_snapshot_lst].count('available') != new_count:
             if time.time() < timeout:
