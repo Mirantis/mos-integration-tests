@@ -251,8 +251,16 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.node_to_boot.id,
                 self.floating_ip.ip))
 
-        ping = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping, "Instance is not reachable")
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() > end_time:
+            print "Attempt #{} to ping the instance".format(attempt_id)
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        self.assertTrue(ping_result, "Instance is not reachable")
 
     @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
