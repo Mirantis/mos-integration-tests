@@ -12,13 +12,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 from paramiko import RSAKey
 
 from devops.helpers.helpers import SSHClient
+from devops.helpers.helpers import wait
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from fuelclient import client
+
+logger = logging.getLogger(__name__)
 
 
 class Environment(EnvironmentBase):
@@ -78,6 +82,52 @@ class Environment(EnvironmentBase):
         for controller in controllers:
             if controller.data['fqdn'] in stdout:
                 return controller
+
+    def destroy_nodes(self, devops_nodes):
+        for node in devops_nodes:
+            node.destroy()
+        logger.info('wait untill the nodes get offline state')
+        assert(wait(lambda: self.check_nodes_get_offline_state(
+                                 node_names=[x.name for x in devops_nodes]),
+                    timeout=10 * 60))
+        for node in self.get_all_nodes():
+            logger.info('online state of node {0} now is {1}'.
+                         format(node.data['name'], node.data['online']))
+
+    def warm_shutdown_nodes(self, devops_nodes):
+        for node in devops_nodes:
+            node_ip = node.get_ip_address_by_network_name('admin')
+            logger.info('Shutdown node {0} with ip {1}'.
+                         format(node.name, node_ip))
+            with self.get_ssh_to_node(node_ip) as remote:
+                remote.check_call('/sbin/shutdown -Ph now')
+        self.destroy_nodes(devops_nodes)
+
+    def warm_start_nodes(self, devops_nodes):
+        for node in devops_nodes:
+            logger.info('Starting node {}'.format(node.name))
+            node.create()
+        assert(wait(lambda: self.check_nodes_get_online_state(),
+                    timeout=10 * 60))
+        logger.info('wait untill the nodes get online state')
+        for node in self.get_all_nodes():
+            logger.info('online state of node {0} now is {1}'.
+                         format(node.data['name'], node.data['online']))
+
+    def warm_restart_nodes(self, devops_nodes):
+        logger.info('Reboot (warm restart) nodes %s',
+                    [n.name for n in devops_nodes])
+        self.warm_shutdown_nodes(devops_nodes)
+        self.warm_start_nodes(devops_nodes)
+
+    def check_nodes_get_offline_state(self, node_names=[]):
+        nodes_states = [not x.data['online']
+                        for x in self.get_all_nodes()
+                        if x.data['name'].split('_')[0] in node_names]
+        return all(nodes_states)
+
+    def check_nodes_get_online_state(self):
+        return all([node.data['online'] for node in self.get_all_nodes()])
 
 
 class FuelClient(object):
