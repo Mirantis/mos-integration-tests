@@ -162,6 +162,91 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
 
+    def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
+        """ This test checks that nova allows
+            resize down an instance booted from volume
+
+            Steps:
+            1. Create bootable volume
+            2. Boot instance from newly created volume
+            3. Resize instance from m1.small to m1.tiny
+        """
+
+        # 1. Create bootable volume
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
+
+        volume = common_functions.create_volume(self.cinder, image_id, 60)
+        self.volumes.append(volume)
+
+        # 2. Create instance from newly created volume, associate floating_ip
+        name = 'TestVM_543355_instance_to_resize'
+        networks = self.neutron.list_networks()['networks']
+        net = [net['id'] for net in networks if not net['router:external']][0]
+        flavor_list = {f.name: f.id for f in self.nova.flavors.list()}
+        initial_flavor = flavor_list['m1.small']
+        resize_flavor = flavor_list['m1.tiny']
+        bdm = {'vda': volume.id}
+        security_group = self.nova.security_groups.list()[0].name
+        instance = common_functions.create_instance(self.nova, name,
+                                                    initial_flavor, net,
+                                                    security_group,
+                                                    block_device_mapping=bdm)
+        self.instances.append(instance.id)
+
+        # Assert for attached volumes
+        attached_volumes = self.nova.servers.get(instance).to_dict()[
+            'os-extended-volumes:volumes_attached']
+        self.assertIn({'id': volume.id}, attached_volumes)
+
+        # Assert to flavor size
+        self.assertEqual(self.nova.servers.get(instance).flavor['id'],
+                         initial_flavor,
+                         "Unexpected instance flavor before resize")
+
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip.ip)
+        instance.add_floating_ip(floating_ip.ip)
+
+        # 3. Resize from m1.small to m1.tiny
+        self.nova.servers.resize(instance, resize_flavor)
+        common_functions.check_inst_status(self.nova, instance.id,
+                                           'VERIFY_RESIZE', 60)
+        self.nova.servers.confirm_resize(instance)
+        common_functions.check_inst_status(self.nova, instance.id,
+                                           'ACTIVE', 60)
+        self.assertEqual(self.nova.servers.get(instance).flavor['id'],
+                         resize_flavor,
+                         "Unexpected instance flavor after resize")
+
+        # Check that instance is reachable
+        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+        self.assertEqual(ping, 0, "Instance after resize is not reachable")
+
+    def test_543359_MassivelySpawnVolumes(self):
+        """ This test checks massively spawn volumes
+
+            Steps:
+                1. Create 10 volumes
+                2. Check status of newly created volumes
+                3. Delete all volumes
+        """
+        volume_count = 10
+        volumes = []
+
+        # Creation using Cinder
+        for num in xrange(volume_count):
+            volumes.append(
+                self.cinder.volumes.create(
+                    1, name='Volume_{}'.format(num + 1)))
+        self.volumes.extend(volumes)
+
+        for volume in self.cinder.volumes.list():
+            self.assertTrue(
+                common_functions.check_volume_status(self.cinder, volume.id,
+                                                     'available', 60),
+                "Volume '{0}' is not available".format(volume.id))
+
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.

@@ -16,7 +16,7 @@ import six
 import pytest
 import logging
 
-from devops.helpers.helpers import wait
+from waiting import wait
 
 from mos_tests import settings
 
@@ -75,8 +75,7 @@ class TestBase(object):
                 vm_login=vm_login,
                 vm_ip=vm_ip,
                 command=command)
-            err_msg = ("SSH command:\n{command}\nwas not completed with "
-                       "exit code 0 after 3 attempts with 1 minute timeout.")
+            err_msg = ("SSH command:\n{command}\n completed with exit code 0.")
             results = []
 
             def run(cmd):
@@ -87,8 +86,8 @@ class TestBase(object):
                 cmd=cmd,
                 vm_name=vm.name))
             wait(lambda: run(cmd)['exit_code'] == 0,
-                 interval=60, timeout=timeout,
-                 timeout_msg=err_msg.format(command=cmd))
+                 sleep_seconds=(1, 60, 5), timeout_seconds=timeout,
+                 waiting_for=err_msg.format(command=cmd))
             return results[-1]
 
     def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None,

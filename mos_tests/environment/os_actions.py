@@ -287,6 +287,11 @@ class OpenStackActions(object):
         logger.debug('Try to create key {0}'.format(key_name))
         return self.nova.keypairs.create(key_name)
 
+    @property
+    def ext_network(self):
+        exist_networks = self.list_networks()['networks']
+        return [x for x in exist_networks if x.get('router:external')][0]
+
     def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
         for subnet in self.neutron.list_subnets()['subnets']:
