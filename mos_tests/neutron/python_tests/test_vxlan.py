@@ -65,7 +65,7 @@ def check_all_traffic_has_vni(vni, log_file, tshark):
 
 @pytest.mark.usefixtures("check_vxlan", "setup")
 class TestVxlan(TestBase):
-    """ Vxlan (tun) specific tests"""
+    """Vxlan (tun) specific tests"""
 
     @pytest.fixture
     def variables(self, init):
