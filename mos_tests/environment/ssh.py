@@ -2,7 +2,6 @@ import logging
 import os
 import paramiko
 import posixpath
-import six
 import stat
 
 
@@ -48,9 +47,7 @@ class SSHClient(object):
         self.password = password
         if not private_keys:
             private_keys = []
-        self.private_keys = [
-            paramiko.RSAKey.from_private_key(six.StringIO(str(pkey)))
-            for pkey in private_keys]
+        self.private_keys = private_keys
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)

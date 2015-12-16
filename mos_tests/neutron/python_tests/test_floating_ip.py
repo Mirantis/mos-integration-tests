@@ -12,9 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 import pytest
-import time
+
+from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -66,9 +66,13 @@ class TestFloatingIP(TestBase):
         server = self.os_conn.nova.servers.find(name="server01")
         self.floating_ip = self.os_conn.assign_floating_ip(server,
                                                            use_neutron=True)
+
+        pkeys = self.convert_private_key_for_vm(
+            [self.instance_keypair.private_key])
+
         self.check_vm_is_accessible_with_ssh(
             vm_ip=self.floating_ip['floating_ip_address'],
-            pkeys=[self.instance_keypair.private_key])
+            pkeys=pkeys)
 
     def check_vm_inaccessible_by_ssh(self, vm_ip, pkeys):
         """Check that instance is inaccessible with ssh via floating_ip.
@@ -102,12 +106,13 @@ class TestFloatingIP(TestBase):
         """
         ip = self.floating_ip["floating_ip_address"]
         server = self.os_conn.nova.servers.find(name="server01")
-        pkeys = [self.instance_keypair.private_key]
+        pkeys = self.convert_private_key_for_vm(
+            [self.instance_keypair.private_key])
 
         res1 = None
         res2 = None
 
-        with pytest.raises(SSHException) as exc:
+        with pytest.raises(SSHException):
             with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
                 res1 = vm_remote.execute("ping -c1 8.8.8.8")
                 self.os_conn.disassociate_floating_ip(

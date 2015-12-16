@@ -246,12 +246,12 @@ class OpenStackActions(object):
             try:
                 self.neutron.update_floatingip(
                     floatingip=floating_ip['id'],
-                    body={'floatingip':{}})
+                    body={'floatingip': {}})
 
                 id = floating_ip['id']
                 helpers.wait(
                     lambda: self.neutron.show_floatingip(id)
-                            ['floatingip']['status'] == "DOWN",timeout=60)
+                            ['floatingip']['status'] == "DOWN", timeout=60)
             except NeutronClientException:
                 logger.info('The floatingip {} can not be disassociated.'
                             .format(floating_ip['id']))

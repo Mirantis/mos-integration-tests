@@ -12,9 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import six
-import pytest
 import logging
+import paramiko
+import pytest
+import six
 
 from waiting import wait
 
@@ -197,3 +198,8 @@ class TestBase(object):
         wait(lambda: is_accessible(),
              interval=10, timeout=60,
              timeout_msg=error_msg)
+
+    @staticmethod
+    def convert_private_key_for_vm(private_keys):
+        return [paramiko.RSAKey.from_private_key(six.StringIO(str(pkey)))
+                for pkey in private_keys]
