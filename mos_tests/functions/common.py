@@ -2,7 +2,6 @@ import os
 from time import sleep, time
 import urllib2
 import yaml
-import platform
 
 
 def is_stack_exists(stack_name, heat):
@@ -294,14 +293,14 @@ def delete_instance(nova_client, uid):
             sleep(1)
 
 
-def create_instance(nova_client, inst_name, flavor_id, net_id, security_group,
+def create_instance(nova_client, inst_name, flavor_id, net_id, security_groups,
                     image_id='', block_device_mapping=None, timeout=5):
     """ Check instance creation
         :param nova_client: Nova API client connection point
         :param inst_name: name for instance
         :param flavor_id: id of flavor
         :param net_id: id of network
-        :param security_group: corresponding security_group
+        :param security_groups: list of corresponding security groups
         :param image_id: id of image
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
@@ -313,7 +312,7 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_group,
             nics=[{"net-id": net_id}],
             flavor=flavor_id,
             image=image_id,
-            security_groups=[security_group],
+            security_groups=security_groups,
             block_device_mapping=block_device_mapping)
     inst_status = [s.status for s in nova_client.servers.list()
                    if s.id == inst.id][0]
@@ -370,15 +369,16 @@ def is_volume_exists(cinder_client, uid):
     return uid in [s.id for s in cinder_client.volumes.list()]
 
 
-def create_volume(cinder_client, image_id, timeout=5):
+def create_volume(cinder_client, image_id, size=1, timeout=5):
     """ Check volume creation
         :param cinder_client: Cinder API client connection point
         :param image_id: UID of image
+        :param size: Size of volume in GB
         :param timeout: Timeout for check operation
         :return volume
     """
     end_time = time() + 60 * timeout
-    volume = cinder_client.volumes.create(1, name='Test_volume',
+    volume = cinder_client.volumes.create(size, name='Test_volume',
                                           imageRef=image_id)
     status = cinder_client.volumes.get(volume.id).status
     while status != 'available':
@@ -442,8 +442,6 @@ def get_flavor_id_by_name(nova_client, flavor_name):
     for flavor in nova_client.flavors.list():
         if flavor.name == flavor_name:
             return flavor.id
-    return None
-
 
 def delete_flavor(nova_client, flavor_id):
     """ This function delete the flavor by its name.
@@ -488,9 +486,6 @@ def ping_command(ip_address):
         :param ip_address: The IP address to ping
         :return: True in case of success, False otherwise
     """
-    the_count_key = '-c'
-    if platform.system() == 'Windows':
-        the_count_key = '-n'
-    the_result = os.system("ping {} 4 -i 4 {}".
-                           format(the_count_key, ip_address))
+    the_result = os.system("ping -c 4 -i 4 {}".
+                           format(ip_address))
     return the_result == 0

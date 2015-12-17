@@ -82,7 +82,7 @@ class DevopsClient(object):
         if not env:
             logger.error('Can\'t find the env')
         else:
-            master = env.get_nodes(role='fuel_master')[0]
+            master = env.get_nodes(role__in=('fuel_master', 'admin'))[0]
             admin_ip = master.get_ip_address_by_network_name('admin')
         return admin_ip
 

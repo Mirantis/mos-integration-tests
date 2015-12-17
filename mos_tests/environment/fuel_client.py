@@ -16,11 +16,11 @@ import logging
 import os
 from paramiko import RSAKey
 
-from devops.helpers.helpers import SSHClient
 from devops.helpers.helpers import wait
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from fuelclient import client
+from mos_tests.environment.ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,11 @@ class Environment(EnvironmentBase):
             username='root',
             private_keys=self.admin_ssh_keys
         )
+
+    def get_ssh_to_cirros(self, ip, private_keys):
+        return SSHClient(
+            host=ip, username="cirros", password=None,
+            private_keys=private_keys)
 
     def get_nodes_by_role(self, role):
         """Returns nodes by assigned role"""
@@ -91,14 +96,14 @@ class Environment(EnvironmentBase):
                                  node_names=[x.name for x in devops_nodes]),
                     timeout=10 * 60))
         for node in self.get_all_nodes():
-            logger.info('online state of node {0} now is {1}'.
-                         format(node.data['name'], node.data['online']))
+            logger.info('online state of node {0} now is {1}'
+                        .format(node.data['name'], node.data['online']))
 
     def warm_shutdown_nodes(self, devops_nodes):
         for node in devops_nodes:
             node_ip = node.get_ip_address_by_network_name('admin')
-            logger.info('Shutdown node {0} with ip {1}'.
-                         format(node.name, node_ip))
+            logger.info('Shutdown node {0} with ip {1}'
+                        .format(node.name, node_ip))
             with self.get_ssh_to_node(node_ip) as remote:
                 remote.check_call('/sbin/shutdown -Ph now')
         self.destroy_nodes(devops_nodes)
@@ -109,10 +114,10 @@ class Environment(EnvironmentBase):
             node.create()
         assert(wait(lambda: self.check_nodes_get_online_state(),
                     timeout=10 * 60))
-        logger.info('wait untill the nodes get online state')
+        logger.info('wait until the nodes get online state')
         for node in self.get_all_nodes():
-            logger.info('online state of node {0} now is {1}'.
-                         format(node.data['name'], node.data['online']))
+            logger.info('online state of node {0} now is {1}'
+                        .format(node.data['name'], node.data['online']))
 
     def warm_restart_nodes(self, devops_nodes):
         logger.info('Reboot (warm restart) nodes %s',
