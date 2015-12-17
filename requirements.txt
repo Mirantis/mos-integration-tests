@@ -1,4 +1,4 @@
-git+git://github.com/openstack/fuel-devops.git@2.9.14
+git+git://github.com/openstack/fuel-devops.git@2.9.15
 paramiko>=1.16.0
 pytest
 pytest-xdist
