@@ -63,13 +63,22 @@ class CinderIntegrationTests(unittest.TestCase):
         self.volume_list = []
         self.snapshot_list = []
 
+    def setUp(self):
+        self.tenant_id = [t.id for t in self.keystone.tenants.list() if
+                          t.name == os.environ.get('OS_TENANT_NAME')][0]
+        self.quota = self.cinder.quotas.get(self.tenant_id).snapshots
+        self.cinder.quotas.update(self.tenant_id, snapshots=200)
+
     def tearDown(self):
-        for snapshot in self.snapshot_list:
-            common_functions.delete_volume_snapshot(self.cinder, snapshot)
-        self.snapshot_list = []
-        for volume in self.volume_list:
-            common_functions.delete_volume(self.cinder, volume)
-        self.volume_list = []
+        try:
+            for snapshot in self.snapshot_list:
+                common_functions.delete_volume_snapshot(self.cinder, snapshot)
+            self.snapshot_list = []
+            for volume in self.volume_list:
+                common_functions.delete_volume(self.cinder, volume)
+            self.volume_list = []
+        finally:
+            self.cinder.quotas.update(self.tenant_id, snapshots=self.quota)
 
     def test_543176_CreatingMultipleSnapshots(self):
         """ This test case checks creation of several snapshot at the same time
@@ -81,16 +90,11 @@ class CinderIntegrationTests(unittest.TestCase):
                 4. Launch creation of 50 snapshot without waiting of deletion
         """
 
-        # Precondition: change quota limit for snapshots
-        tenant_id = [t.id for t in self.keystone.tenants.list() if
-                     t.name == os.environ.get('OS_TENANT_NAME')][0]
-        quota = self.cinder.quotas.get(tenant_id).snapshots
-        self.cinder.quotas.update(tenant_id, snapshots=200)
-
         # 1. Create volume
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
-        volume = common_functions.create_volume(self.cinder, image_id, 60)
+        volume = common_functions.create_volume(self.cinder, image_id,
+                                                timeout=60)
         self.volume_list.append(volume)
 
         # 2. Creation of 70 snapshots
@@ -98,7 +102,7 @@ class CinderIntegrationTests(unittest.TestCase):
         initial_snapshot_lst = []
         for num in xrange(count):
             snapshot_id = self.cinder.volume_snapshots \
-                .create(volume.id, name='1st_creation_{0}'.format(num + 1))
+                .create(volume.id, name='1st_creation_{0}'.format(num))
             initial_snapshot_lst.append(snapshot_id)
             self.assertTrue(
                 common_functions.check_volume_snapshot_status(self.cinder,
@@ -116,7 +120,7 @@ class CinderIntegrationTests(unittest.TestCase):
         new_snapshot_lst = []
         for num in xrange(new_count):
             snapshot_id = self.cinder.volume_snapshots \
-                .create(volume.id, name='2nd_creation_{0}'.format(num + 1))
+                .create(volume.id, name='2nd_creation_{0}'.format(num))
             new_snapshot_lst.append(snapshot_id)
         self.snapshot_list.extend(new_snapshot_lst)
 
@@ -126,7 +130,10 @@ class CinderIntegrationTests(unittest.TestCase):
             if time.time() < timeout:
                 time.sleep(10)
             else:
-                raise AssertionError("At least one snapshot is not available")
-
-        # Return defaults
-        self.cinder.quotas.update(tenant_id, snapshots=quota)
+                unavailable = [s.id for s in
+                               self.cinder.volume_snapshots.list() if
+                               s.status != 'available']
+                raise AssertionError(
+                    "All snapshots must be available. "
+                    "List of unavailable snapshots:\n\t{0}".format(
+                        "\n\t".join(unavailable)))

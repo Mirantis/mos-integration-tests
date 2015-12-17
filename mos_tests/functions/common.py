@@ -433,16 +433,13 @@ def check_volume_snapshot_status(cinderclient, uid, status, timeout=5):
     """
     if check_volume_snapshot(cinderclient, uid):
         start_time = time()
-        snapshot_status = [s.status
-                           for s in cinderclient.volume_snapshots.list()
-                           if s.id == uid.id][0]
-        while snapshot_status != status and time() < start_time + 60 * timeout:
+        while time() < start_time + 60 * timeout:
             sleep(1)
             snapshot_status = [s.status
                                for s in cinderclient.volume_snapshots.list()
                                if s.id == uid.id][0]
-        if snapshot_status == status:
-            return True
+            if snapshot_status == status:
+                return True
     return False
 
 
