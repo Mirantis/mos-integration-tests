@@ -16,11 +16,11 @@ import logging
 import os
 from paramiko import RSAKey
 
-from devops.helpers.helpers import SSHClient
 from devops.helpers.helpers import wait
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from fuelclient import client
+from mos_tests.environment.ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,11 @@ class Environment(EnvironmentBase):
             username='root',
             private_keys=self.admin_ssh_keys
         )
+
+    def get_ssh_to_cirros(self, ip, private_keys):
+        return SSHClient(
+            host=ip, username="cirros", password=None,
+            private_keys=private_keys)
 
     def get_nodes_by_role(self, role):
         """Returns nodes by assigned role"""
