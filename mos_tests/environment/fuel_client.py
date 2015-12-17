@@ -48,9 +48,10 @@ class Environment(EnvironmentBase):
             private_keys=self.admin_ssh_keys
         )
 
-    def get_ssh_to_cirros(self, ip, private_keys):
+    def get_ssh_to_vm(self, ip, username=None, password=None,
+                      private_keys=None):
         return SSHClient(
-            host=ip, username="cirros", password=None,
+            host=ip, username=username, password=password,
             private_keys=private_keys)
 
     def get_nodes_by_role(self, role):
@@ -96,14 +97,14 @@ class Environment(EnvironmentBase):
                                  node_names=[x.name for x in devops_nodes]),
                     timeout=10 * 60))
         for node in self.get_all_nodes():
-            logger.info('online state of node {0} now is {1}'.
-                         format(node.data['name'], node.data['online']))
+            logger.info('online state of node {0} now is {1}'
+                        .format(node.data['name'], node.data['online']))
 
     def warm_shutdown_nodes(self, devops_nodes):
         for node in devops_nodes:
             node_ip = node.get_ip_address_by_network_name('admin')
-            logger.info('Shutdown node {0} with ip {1}'.
-                         format(node.name, node_ip))
+            logger.info('Shutdown node {0} with ip {1}'
+                        .format(node.name, node_ip))
             with self.get_ssh_to_node(node_ip) as remote:
                 remote.check_call('/sbin/shutdown -Ph now')
         self.destroy_nodes(devops_nodes)
@@ -114,10 +115,10 @@ class Environment(EnvironmentBase):
             node.create()
         assert(wait(lambda: self.check_nodes_get_online_state(),
                     timeout=10 * 60))
-        logger.info('wait untill the nodes get online state')
+        logger.info('wait until the nodes get online state')
         for node in self.get_all_nodes():
-            logger.info('online state of node {0} now is {1}'.
-                         format(node.data['name'], node.data['online']))
+            logger.info('online state of node {0} now is {1}'
+                        .format(node.data['name'], node.data['online']))
 
     def warm_restart_nodes(self, devops_nodes):
         logger.info('Reboot (warm restart) nodes %s',
@@ -138,6 +139,7 @@ class Environment(EnvironmentBase):
 class FuelClient(object):
     """Fuel API client"""
     def __init__(self, ip, login, password, ssh_login, ssh_password):
+        logger.info('Init fuel client on {0}'.format(ip))
         self.reconfigure_fuelclient(ip, login, password)
         self.admin_ip = ip
         self.ssh_login = ssh_login
@@ -156,7 +158,7 @@ class FuelClient(object):
         client.APIClient.__init__()
 
     def get_last_created_cluster(self):
-        """Returns Environment instance for laset deployed cluster"""
+        """Returns Environment instance for latest deployed cluster"""
         env = Environment.get_all()[-1]
         env.admin_ssh_keys = self.admin_keys
         return env

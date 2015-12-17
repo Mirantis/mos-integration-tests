@@ -54,17 +54,47 @@ def tcpdump_vxlan(ip, env, log_path):
         thread.join(0)
 
 
+def _run_tshark_on_vxlan(tshark, log_file, cond):
+    return subprocess.check_output([
+        tshark, '-d', 'udp.port==4789,vxlan', '-r', log_file,
+        '-Y', '{0}'.format(cond)])
+
+
 def check_all_traffic_has_vni(vni, log_file, tshark):
     __tracebackhide__ = True
-    output = subprocess.check_output([tshark, '-d', 'udp.port==4789,vxlan',
-                                      '-r', log_file, '-Y',
-                                      'vxlan.vni!={0}'.format(vni)])
+    output = _run_tshark_on_vxlan(tshark, log_file,
+                                  'vxlan.vni!={0}'.format(vni))
     if output.strip():
-        pytest.fail("Log contains records with another VNI\n{}".format(output))
+        pytest.fail(
+            "Log contains records with another VNI\n{0}".format(output))
+
+
+def check_no_arp_traffic(src_ip, dst_ip, log_file, tshark):
+    __tracebackhide__ = True
+    cond = ("arp.dst.proto_ipv4=={dst_ip} and "
+            "arp.src.proto_ipv4=={src_ip}".format(dst_ip=dst_ip, src_ip=src_ip)
+    )
+    output = _run_tshark_on_vxlan(tshark, log_file, cond)
+    if output.strip():
+        pytest.fail("Log contains ARP traffic\n{0}".format(output))
+
+
+def check_icmp_traffic(src_ip, dst_ip, log_file, tshark):
+    __tracebackhide__ = True
+    cond = "icmp and ip.src=={src_ip} and ip.dst=={dst_ip}".format(
+        src_ip=src_ip,
+        dst_ip=dst_ip
+    )
+    output = _run_tshark_on_vxlan(tshark, log_file, cond)
+    if not output.strip():
+        pytest.fail(
+            "Log not contains ICMP traffic from {src_ip} to {dst_ip}".format(
+                src_ip=src_ip,
+                dst_ip=dst_ip))
 
 
 @pytest.mark.usefixtures("check_vxlan", "setup")
-class TestVxlan(TestBase):
+class TestVxlanBase(TestBase):
     """Vxlan (tun) specific tests"""
 
     @pytest.fixture
@@ -82,6 +112,10 @@ class TestVxlan(TestBase):
             router_id=router['router']['id'],
             network_id=self.os_conn.ext_network['id'])
         return router
+
+
+class TestVxlan(TestVxlanBase):
+    """Simple Vxlan tests"""
 
     def test_tunnel_established(self, router, tshark):
         """Check that VxLAN is established on nodes and VNI matching
@@ -195,7 +229,8 @@ class TestVxlan(TestBase):
                 net2['provider:segmentation_id'])
 
         # Check ping from server1 to server2
-        server1, server2 = self.os_conn.get_servers()
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2).values()[0]
         self.check_ping_from_vm(server1, self.instance_keypair, server2_ip)
 
@@ -219,3 +254,83 @@ class TestVxlan(TestBase):
                                   '/tmp/vxlan1.log', tshark)
         check_all_traffic_has_vni(net2['provider:segmentation_id'],
                                   '/tmp/vxlan2.log', tshark)
+
+
+@pytest.mark.usefixtures("check_l2pop")
+class TestVxlanL2pop(TestVxlanBase):
+    """Vxlan (tun) with enabled L2 population specific tests"""
+
+    def test_broadcast_traffic_propagation(self, router, tshark):
+        """Check broadcast traffic propagation for network segments
+
+        Scenario:
+            1. Create private network net01, subnet 10.1.1.0/24
+            2. Create private network net02, subnet 10.1.2.0/24
+            3. Create router01_02 and connect net01 and net02 with it
+            4. Boot instances vm1 in net01 and vm2 in net02
+                on different computes
+            5. Check that net02 got a new segmentation_id, different from net1
+            6. Go to the vm1's console and initiate broadcast traffic to vm2
+            7. On the compute where vm2 is hosted start listen vxlan port 4789
+            8. Check that no ARP traffic associated with vm1-vm2 pair
+                appears on compute node's console
+            9. Go to the vm1's console, stop arping and initiate
+                unicast traffic to vm2
+            10. Check that ICMP unicast traffic associated with vm1-vm2 pair
+                was captured on compute node's console
+        """
+        # Create network and instance
+        compute_nodes = self.zone.hosts.keys()[:2]
+        for i, compute_node in enumerate(compute_nodes, 1):
+            network = self.os_conn.create_network(name='net%02d' % i)
+            subnet = self.os_conn.create_subnet(
+                network_id=network['network']['id'],
+                name='net%02d__subnet' % i,
+                cidr="10.1.%d.0/24" % i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_node),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': network['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        net1, net2 = [x for x in self.os_conn.list_networks()['networks']
+                      if x['name'] in ("net01", "net02")]
+
+        # Check that networks has different segmentation_id
+        assert (net1['provider:segmentation_id'] !=
+                net2['provider:segmentation_id'])
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server1_ip = self.os_conn.get_nova_instance_ips(server1)['fixed']
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['fixed']
+        compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+
+        # Initiate broadcast traffic from server1 to server2
+        broadcast_log = '/tmp/vxlan_broadcast.log'
+        with tcpdump_vxlan(
+                ip=compute2.data['ip'], env=self.env,
+                log_path=broadcast_log
+            ):
+            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            self.run_on_vm(server1, self.instance_keypair, cmd)
+
+        check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
+                             log_file=broadcast_log, tshark=tshark)
+
+        # Initiate unicast traffic from server1 to server2
+        unicast_log = '/tmp/vxlan_unicast.log'
+        with tcpdump_vxlan(
+                ip=compute2.data['ip'], env=self.env,
+                log_path=unicast_log
+            ):
+            cmd = 'ping -c 4 {0}; true'.format(server2_ip)
+            self.run_on_vm(server1, self.instance_keypair, cmd)
+
+        check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
+                           log_file=unicast_log, tshark=tshark)

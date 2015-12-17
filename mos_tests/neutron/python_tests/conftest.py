@@ -12,9 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import pytest
 from distutils.spawn import find_executable
-from devops.helpers.helpers import wait
+from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
@@ -23,6 +24,8 @@ from mos_tests.settings import SERVER_ADDRESS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import KEYSTONE_PASS
 from mos_tests.settings import SSH_CREDENTIALS
+
+logger = logging.getLogger(__name__)
 
 
 def pytest_runtest_makereport(item, call):
@@ -89,13 +92,15 @@ def os_conn(env):
         controller_ip=env.get_primary_controller_ip(),
         cert=env.certificate)
 
-    def is_alive():
-        try:
-            os_conn.get_servers()
-            return True
-        except Exception:
-            return False
-    wait(is_alive, timeout=60 * 5, timeout_msg="OpenStack nova isn't alive")
+    def nova_ready():
+        hosts = os_conn.nova.availability_zones.find(zoneName="nova").hosts
+        return all(x['available'] for y in hosts.values()
+                   for x in y.values() if x['active'])
+
+    wait(nova_ready,
+         timeout_seconds=60 * 5,
+         expected_exceptions=Exception,
+         waiting_for="OpenStack nova computes is ready")
     return os_conn
 
 
@@ -164,3 +169,14 @@ def check_vxlan(env):
     """Check that env has vxlan network segmentation"""
     if env.network_segmentation_type != 'tun':
         pytest.skip('requires vxlan segmentation')
+
+
+@pytest.fixture
+def check_l2pop(env, check_vxlan):
+    """Check that env has vxlan segmentation woth l2 population"""
+    cmd = 'grep -q ^l2_population=True /etc/neutron/plugin.ini'
+    controller = env.get_nodes_by_role('controller')[0]
+    with env.get_ssh_to_node(controller.data['ip']) as remote:
+        result = remote.execute(cmd)
+    if result['exit_code'] != 0:
+        pytest.skip('requires vxlan with l2 population')

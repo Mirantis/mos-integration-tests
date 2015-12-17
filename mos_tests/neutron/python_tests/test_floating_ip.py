@@ -72,7 +72,7 @@ class TestFloatingIP(TestBase):
 
         self.check_vm_is_accessible_with_ssh(
             vm_ip=self.floating_ip['floating_ip_address'],
-            pkeys=pkeys)
+            pkeys=pkeys, **self.cirros_creds)
 
     def check_vm_inaccessible_by_ssh(self, vm_ip, pkeys):
         """Check that instance is inaccessible with ssh via floating_ip.
@@ -81,7 +81,8 @@ class TestFloatingIP(TestBase):
         :param pkeys: ip of instance to ping
         """
         with pytest.raises(NoValidConnectionsError):
-            with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
+            with self.env.get_ssh_to_vm(vm_ip, private_keys=pkeys,
+                                        **self.cirros_creds) as vm_remote:
                 vm_remote.execute("date")
 
     def test_ssh_after_deleting_floating(self):
@@ -111,7 +112,8 @@ class TestFloatingIP(TestBase):
         res2 = None
 
         with pytest.raises(SSHException):
-            with self.env.get_ssh_to_cirros(ip, pkeys) as vm_remote:
+            with self.env.get_ssh_to_vm(ip, private_keys=pkeys,
+                                        **self.cirros_creds) as vm_remote:
                 res1 = vm_remote.execute("ping -c1 8.8.8.8")
                 self.os_conn.disassociate_floating_ip(
                     server, self.floating_ip, use_neutron=True)
