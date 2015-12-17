@@ -13,9 +13,9 @@
 #    under the License.
 
 import logging
+import time
 import random
 from tempfile import NamedTemporaryFile
-import time
 from waiting import wait
 
 from cinderclient import client as cinderclient

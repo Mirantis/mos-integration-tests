@@ -122,7 +122,7 @@ class TestBase(object):
                 results.append(remote.execute(cmd))
                 return results[-1]
 
-            logger.info('Executing {cmd} on {vm_name}'.format(
+            logger.info('Executing {command} on {vm_name}'.format(
                 cmd=cmd,
                 vm_name=vm.name))
             wait(lambda: run(cmd)['exit_code'] == 0,
