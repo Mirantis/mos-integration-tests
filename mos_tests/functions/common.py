@@ -189,7 +189,7 @@ def download_image(image_link_file, where_to_put='/tmp/'):
     # Get URL from file
     try:
         with open(image_link_file, 'r') as file_with_link:
-            image_url = file_with_link.read()
+            image_url = file_with_link.readline().rstrip('\n')
     except Exception:
         raise Exception("Can not find or read from file on node:"
                         "\n\t{0}".format(image_link_file))
