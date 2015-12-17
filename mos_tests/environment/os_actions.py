@@ -16,10 +16,9 @@ import logging
 import random
 from tempfile import NamedTemporaryFile
 import time
+from waiting import wait
 
 from cinderclient import client as cinderclient
-from devops.error import TimeoutError
-from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
@@ -36,6 +35,7 @@ class OpenStackActions(object):
 
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None):
+        logger.info('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
         if cert is None:
@@ -145,19 +145,14 @@ class OpenStackActions(object):
                                        files=files,
                                        key_name=key_name,
                                        **kwargs)
-        try:
-            helpers.wait(
-                lambda: self.get_instance_detail(srv).status == "ACTIVE",
-                timeout=timeout)
-            logger.info('the server {0} is {1}'.
-                         format(srv.name,
-                                self.get_instance_detail(srv).status))
-            return self.get_instance_detail(srv.id)
-        except TimeoutError:
-            logger.debug("Create server failed by timeout")
-            assert self.get_instance_detail(srv).status == "ACTIVE", (
-                "Instance doesn't reach active state, current state"
-                " is {0}".format(self.get_instance_detail(srv).status))
+
+        wait(
+            lambda: self.get_instance_detail(srv).status == "ACTIVE",
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} status change to ACTIVE'.format(
+                name))
+        logger.info('the server {0} is "ACTIVE"'.format(srv.name))
+        return self.get_instance_detail(srv.id)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -246,7 +241,7 @@ class OpenStackActions(object):
             #   Wait active state for port
             port_id = flip['floatingip']['port_id']
             state = lambda: self.neutron.show_port(port_id)['port']['status']
-            helpers.wait(lambda: state() == "ACTIVE")
+            wait(lambda: state() == "ACTIVE")
             return flip['floatingip']
 
         fl_ips_pool = self.nova.floating_ip_pools.list()
@@ -503,10 +498,10 @@ class OpenStackActions(object):
 
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
-        helpers.wait(lambda: all([agt['alive'] for agt in
+        wait(lambda: all([agt['alive'] for agt in
                                   self.neutron.list_agents()['agents']
                                   if agt['id'] in agt_ids_to_check]),
-                     timeout=5 * 60)
+                     timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
@@ -560,6 +555,6 @@ class OpenStackActions(object):
                                                  router_id)
         self.neutron.add_router_to_l3_agent(new_l3_agt_id,
                                             {"router_id": router_id})
-        assert(helpers.wait(
+        assert(wait(
             lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
-            timeout=5 * 60))
+            timeout_seconds=5 * 60))
