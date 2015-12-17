@@ -443,6 +443,7 @@ def get_flavor_id_by_name(nova_client, flavor_name):
         if flavor.name == flavor_name:
             return flavor.id
 
+
 def delete_flavor(nova_client, flavor_id):
     """ This function delete the flavor by its name.
         :param nova_client: Nova API client connection point
