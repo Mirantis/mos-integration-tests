@@ -339,7 +339,7 @@ def create_volume(cinderclient, image_id, timeout=5):
 
 def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
                     security_group, image_id='', block_device_mapping=None,
-                    timeout=5):
+                    timeout=5, key_name=None):
     """ Check instance creation
         :param novaclient: Nova API client connection point
         :param instances_list: list of instances fot cleaning
@@ -350,13 +350,16 @@ def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
         :param security_group: corresponding security_group
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
+        :param key_name: name of previously created keypair to inject into
+                         the instance
         :return instance
     """
     end_time = time() + 60 * timeout
     inst = novaclient.servers.create(name=inst_name, nics=[{"net-id": net_id}],
                                      flavor=flavor_id, image=image_id,
                                      security_groups=[security_group],
-                                     block_device_mapping=block_device_mapping)
+                                     block_device_mapping=block_device_mapping,
+                                     key_name=key_name)
     instances_list.append(inst.id)
     inst_status = [s.status for s in novaclient.servers.list() if s.id ==
                    inst.id][0]
@@ -390,6 +393,17 @@ def delete_floating_ip(novaclient, floating_ip):
     if floating_ip in novaclient.floating_ips.list():
         novaclient.floating_ips.delete(floating_ip)
         while floating_ip in novaclient.floating_ips.list():
+            sleep(1)
+
+
+def delete_flavor(novaclient, flavor):
+    """ Delete flavor and check that it is absent in the list
+        :param novaclient: Nova API client connection point
+        :param flavor: flavor
+    """
+    if flavor in novaclient.flavors.list():
+        novaclient.flavors.delete(flavor)
+        while flavor in novaclient.flavors.list():
             sleep(1)
 
 

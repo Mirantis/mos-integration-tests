@@ -72,6 +72,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.instances = []
         self.floating_ips = []
         self.volumes = []
+        self.flavors = []
 
         self.sec_group = self.nova.security_groups.create('security_nova',
                                                           'Security group, '
@@ -110,7 +111,12 @@ class NovaIntegrationTests(unittest.TestCase):
         for volume in self.volumes:
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
+        for flavor in self.flavors:
+            common_functions.delete_flavor(self.nova, flavor)
+        self.flavors = []
 
+
+    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -148,6 +154,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
 
+    @unittest.skip
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -189,6 +196,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
             self.assertEqual(ping, 0, "Instance is not reachable")
 
+    @unittest.skip
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
@@ -248,6 +256,7 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
+    @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
 
@@ -272,6 +281,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
 
+    @unittest.skip
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
@@ -333,8 +343,9 @@ class NovaIntegrationTests(unittest.TestCase):
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
+    @unittest.skip
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
-        """ This test checks
+        """ This test checks network connectivity to VM during Live Migration
 
             Steps:
              1. Create a floating ip
@@ -344,7 +355,6 @@ class NovaIntegrationTests(unittest.TestCase):
              5. Execute live migration
              6. Check current hypervisor and status of instance
              7. Check that packets loss was minimal
-
         """
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks if not net['router:external']][0]
@@ -362,6 +372,76 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 self.sec_group.name,
                                                 image_id=image_id)
         inst.add_floating_ip(floating_ip.ip)
+        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+        self.assertEqual(ping, 0, "Instance is not reachable")
+        hypervisors = {h.hypervisor_hostname: h for h
+                       in self.nova.hypervisors.list()}
+        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
+                                stdout=subprocess.PIPE)
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
+                                       disk_over_commit=False)
+        inst = self.nova.servers.get(inst.id)
+        timeout = 5
+        end_time = time() + 60 * timeout
+        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
+                new_hyper:
+            if time() > end_time:
+                raise AssertionError(
+                    "Hypervisor is not changed after live migration")
+            sleep(1)
+            inst = self.nova.servers.get(inst.id)
+        self.assertEqual(inst.status, 'ACTIVE')
+        ping.wait()
+        output = ping.stdout.read().split('\n')[-3].split()
+        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
+        loss = packets['transmitted'] - packets['received']
+        if loss > 5:
+            raise AssertionError(
+                "Packets loss exceeds the limit, {} packets were lost".format(
+                    loss))
+
+    def test_2238777_LiveMigrationOfVMsWithDataOnRootAndEphemeralDisk(self):
+        """ This test checks Live Migration of VMs with data on root and
+        ephemeral disk
+
+            Steps:
+             1. Create flavor with ephemeral disk
+             2. Create a floating ip
+             3. Create an instance from an image with 'm1.ephemeral' flavor
+             4. Add the floating ip to the instance
+             5. Ssh to instance and create timestamp on root and ephemeral
+                disks
+             6. Ping the instance by the floating ip
+             7. Execute live migration
+             8. Check current hypervisor and status of instance
+             9. Check that packets loss was minimal
+             10. Ssh to instance and check timestamp on root and ephemeral
+                 disks
+        """
+        networks = self.neutron.list_networks()['networks']
+        net = [net['id'] for net in networks if not net['router:external']][0]
+        image_id = self.nova.images.list()[0].id
+        flavor = self.nova.flavors.create("m1.ephemer", 64, 1, 1,
+                                          ephemeral=1, is_public=True)
+        self.flavors.append(flavor)
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip)
+        self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                       self.nova.floating_ips.list()])
+        inst = common_functions.create_instance(self.nova, self.instances,
+                                                "inst_2238776_{}"
+                                                .format(flavor.name),
+                                                flavor.id, net,
+                                                self.sec_group.name,
+                                                image_id=image_id)
+        inst.add_floating_ip(floating_ip.ip)
+        import ipdb; ipdb.set_trace()
+        sshProcess = subprocess.Popen(['ssh', '-T', '-o StrictHostKeyChecking=no', 'cirros@{}'.format(floating_ip.ip)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        sshProcess.communicate('cubswin:)')
+
+
         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance is not reachable")
         hypervisors = {h.hypervisor_hostname: h for h in self.nova.hypervisors.
@@ -391,3 +471,9 @@ class NovaIntegrationTests(unittest.TestCase):
             raise AssertionError(
                 "Packets loss exceeds the limit, {} packets were lost".format(
                     loss))
+
+
+
+
+        # if len([k for k in self.nova.keypairs.list() if k.name == 'test']) == 0:
+        #     key = self.nova.keypairs.create('test')
