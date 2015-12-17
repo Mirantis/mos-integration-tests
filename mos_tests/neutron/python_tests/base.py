@@ -15,6 +15,7 @@
 import logging
 
 import paramiko
+from paramiko import ssh_exception
 import pytest
 import six
 from waiting import wait
@@ -155,13 +156,11 @@ class TestBase(object):
             self.check_ping_from_vm(server1, self.instance_keypair,
                                     ips_to_ping, timeout=timeout)
 
-    def check_vm_is_connectable(self, vm):
-        """Check that instance is pingable from hypervisor.
+    def check_vm_is_connectible(self, vm, pkeys=None):
+        """Check that instance is connectible from controller.
 
         :param vm: instance to ping from it compute node.
         """
-        # TODO(rpromyshlennikov): check ssh, not only ping,
-        # vm needs keys for it
         vm = self.os_conn.get_instance_detail(vm)
         srv_host = self.env.find_node_by_fqdn(
             self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
@@ -178,6 +177,7 @@ class TestBase(object):
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
                  sleep_seconds=10, timeout_seconds=3 * 10,
                  waiting_for=waiting_for_msg)
+        return self.check_vm_is_accessible_with_ssh(vm_ip, pkeys=pkeys)
 
     def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.
@@ -193,7 +193,9 @@ class TestBase(object):
                 with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
                     vm_remote.execute("date")
                     return True
-            except Exception:
+            except ssh_exception.SSHException:
+                return False
+            except ssh_exception.NoValidConnectionsError:
                 return False
 
         wait(is_accessible,

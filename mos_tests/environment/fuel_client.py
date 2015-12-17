@@ -48,9 +48,10 @@ class Environment(EnvironmentBase):
             private_keys=self.admin_ssh_keys
         )
 
-    def get_ssh_to_cirros(self, ip, private_keys):
+    def get_ssh_to_cirros(self, ip, private_keys=None,
+                          creds=('cirros', 'cubswin:)')):
         return SSHClient(
-            host=ip, username="cirros", password=None,
+            host=ip, username=creds[0], password=creds[1],
             private_keys=private_keys)
 
     def get_nodes_by_role(self, role):

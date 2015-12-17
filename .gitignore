@@ -49,7 +49,7 @@ local_settings.py
 doc/_build/
 
 # Logs
-sys_test.log
+*.log
 
 # Certs
 /ca.crt

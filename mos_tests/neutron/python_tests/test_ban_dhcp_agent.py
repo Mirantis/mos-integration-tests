@@ -213,7 +213,7 @@ class TestBanDHCPAgent(base.TestBase):
         self.os_conn.assign_floating_ip(self.instance)
 
         # check ping from instance and dhcp client on instance
-        self.check_vm_is_connectable(self.instance)
+        self.check_vm_is_connectible(self.instance)
         self.check_ping_from_cirros(vm=self.instance)
         self.check_dhcp_on_cirros_instance(vm=self.instance)
 
