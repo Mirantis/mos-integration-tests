@@ -337,7 +337,7 @@ def create_volume(cinderclient, image_id, timeout=5):
     return volume
 
 
-def create_instance(novaclient,instances_list, inst_name, flavor_id, net_id,
+def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
                     security_group, image_id='', block_device_mapping=None,
                     timeout=5):
     """ Check instance creation
