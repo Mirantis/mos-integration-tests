@@ -148,6 +148,9 @@ class OpenStackActions(object):
             helpers.wait(
                 lambda: self.get_instance_detail(srv).status == "ACTIVE",
                 timeout=timeout)
+            logger.info('the server {0} is {1}'.
+                         format(srv.name,
+                                self.get_instance_detail(srv).status))
             return self.get_instance_detail(srv.id)
         except TimeoutError:
             logger.debug("Create server failed by timeout")
@@ -448,3 +451,66 @@ class OpenStackActions(object):
         channel.close()
 
         return result
+
+    def wait_agents_alive(self, agt_ids_to_check):
+        logger.info('going to check if the agents alive')
+        helpers.wait(lambda: all([agt['alive'] for agt in
+                                  self.neutron.list_agents()['agents']
+                                  if agt['id'] in agt_ids_to_check]),
+                     timeout=5 * 60)
+
+    def add_net(self, router_id):
+        i = len(self.neutron.list_networks()['networks']) + 1
+        network = self.create_network(name='net%02d' % i)['network']
+        logger.info('network with id {} is created'.
+                    format(network['id']))
+        subnet = self.create_subnet(
+            network_id=network['id'],
+            name='net%02d__subnet' % i,
+            cidr="192.168.%d.0/24" % i)
+        logger.info('subnet with id {} is created'.
+                    format(subnet['subnet']['id']))
+        self.router_interface_add(
+            router_id=router_id,
+            subnet_id=subnet['subnet']['id'])
+        return network['id']
+
+    def add_server(self, network_id, key_name, hostname, sg_id):
+        i = len(self.nova.servers.list()) + 1
+        zone = self.nova.availability_zones.find(zoneName="nova")
+        self.create_server(
+            name='server%02d' % i,
+            availability_zone='{}:{}'.format(zone.zoneName, hostname),
+            key_name=key_name,
+            nics=[{'net-id': network_id}],
+            security_groups=[sg_id])
+
+    def reshedule_router_on_primary(self, router_id, primary_fqdn):
+        agent_list = self.neutron.list_agents(
+                          binary='neutron-l3-agent')['agents']
+        agt_id_to_move_on = [agt['id'] for agt in agent_list
+                             if agt['host'] == primary_fqdn][0]
+        self.force_l3_reshedule(router_id,
+                                 agt_id_to_move_on)
+
+    def force_l3_reshedule(self, router_id, new_l3_agt_id=''):
+        logger.info('going to reshedule the router on new agent')
+        current_l3_agt_id = self.neutron.list_l3_agent_hosting_routers(
+                                 router_id)['agents'][0]['id']
+        if not new_l3_agt_id:
+            all_l3_agts = self.neutron.list_agents(
+                              binary='neutron-l3-agent')['agents']
+            for agt in all_l3_agts:
+                logger.info(agt['id'])
+            availabe_l3_agts = [agt for agt in all_l3_agts
+                                if agt['id'] != current_l3_agt_id]
+            for agt in availabe_l3_agts:
+                logger.info(agt['id'])
+            new_l3_agt_id = availabe_l3_agts[0]['id']
+        self.neutron.remove_router_from_l3_agent(current_l3_agt_id,
+                                                 router_id)
+        self.neutron.add_router_to_l3_agent(new_l3_agt_id,
+                                            {"router_id": router_id})
+        assert(helpers.wait(
+            lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
+            timeout=5 * 60))
