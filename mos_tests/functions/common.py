@@ -351,8 +351,7 @@ def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
         :param security_group: corresponding security_group
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
-        :param key_name: name of previously created keypair to inject into
-                         the instance
+        :param key_name: Name of key to inject into the instance
         :return instance
     """
     end_time = time() + 60 * timeout
