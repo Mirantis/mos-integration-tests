@@ -337,10 +337,12 @@ def create_volume(cinderclient, image_id, timeout=5):
     return volume
 
 
-def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
-                    image_id='', block_device_mapping=None, timeout=5):
+def create_instance(novaclient,instances_list, inst_name, flavor_id, net_id,
+                    security_group, image_id='', block_device_mapping=None,
+                    timeout=5):
     """ Check instance creation
         :param novaclient: Nova API client connection point
+        :param instances_list: list of instances fot cleaning
         :param inst_name: name for instance
         :param image_id: id of image
         :param flavor_id: id of flavor
@@ -355,6 +357,7 @@ def create_instance(novaclient, inst_name, flavor_id, net_id, security_group,
                                      flavor=flavor_id, image=image_id,
                                      security_groups=[security_group],
                                      block_device_mapping=block_device_mapping)
+    instances_list.append(inst.id)
     inst_status = [s.status for s in novaclient.servers.list() if s.id ==
                    inst.id][0]
     while inst_status != 'ACTIVE':
