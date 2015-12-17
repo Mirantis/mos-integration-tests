@@ -36,6 +36,8 @@ class TestBase(object):
         self.fuel = fuel
         self.env = env
         self.os_conn = os_conn
+        self.cirros_creds = {'username': 'cirros',
+                             'password': 'cubswin:)'}
 
     def get_node_with_dhcp(self, net_id):
         nodes = self.os_conn.get_node_with_dhcp_for_network(net_id)
@@ -156,10 +158,14 @@ class TestBase(object):
             self.check_ping_from_vm(server1, self.instance_keypair,
                                     ips_to_ping, timeout=timeout)
 
-    def check_vm_is_connectible(self, vm, pkeys=None):
-        """Check that instance is connectible from controller.
+    def check_vm_is_available(self, vm,
+                              username=None, password=None, pkeys=None):
+        """Check that instance is available for connect from controller.
 
-        :param vm: instance to ping from it compute node.
+        :param vm: instance to ping from it compute node
+        :param username: username to login to instance
+        :param password: password to connect to instance
+        :param pkeys: private keys to connect to instance
         """
         vm = self.os_conn.get_instance_detail(vm)
         srv_host = self.env.find_node_by_fqdn(
@@ -177,20 +183,25 @@ class TestBase(object):
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
                  sleep_seconds=10, timeout_seconds=3 * 10,
                  waiting_for=waiting_for_msg)
-        return self.check_vm_is_accessible_with_ssh(vm_ip, pkeys=pkeys)
+        return self.check_vm_is_accessible_with_ssh(
+            vm_ip, username=username, password=password, pkeys=pkeys)
 
-    def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
+    def check_vm_is_accessible_with_ssh(self, vm_ip, username=None,
+                                        password=None, pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.
 
         :param vm_ip: floating_ip of instance
-        :param pkeys: ip of instance to ping
+        :param username: username to login to instance
+        :param password: password to connect to instance
+        :param pkeys: private keys to connect to instance
         """
         error_msg = 'Instance with ip {0} is not accessible with ssh.'\
             .format(vm_ip)
 
         def is_accessible():
             try:
-                with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
+                with self.env.get_ssh_to_vm(
+                        vm_ip, username, password, pkeys) as vm_remote:
                     vm_remote.execute("date")
                     return True
             except ssh_exception.SSHException:

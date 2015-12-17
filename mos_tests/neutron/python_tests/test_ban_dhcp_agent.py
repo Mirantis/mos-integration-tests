@@ -122,7 +122,8 @@ class TestBanDHCPAgent(base.TestBase):
 
         # Wait to reschedule dhcp agent
         if wait_for_rescheduling:
-            err_msg = "Wait for DHCP agent ({0}) rescheduling after clear"
+            err_msg = (
+                "Wait for DHCP agent ({0}) rescheduling after clear from ban")
             wait(
                 lambda: (
                     node_to_clear in
@@ -213,7 +214,7 @@ class TestBanDHCPAgent(base.TestBase):
         self.os_conn.assign_floating_ip(self.instance)
 
         # check ping from instance and dhcp client on instance
-        self.check_vm_is_connectible(self.instance)
+        self.check_vm_is_available(self.instance, **self.cirros_creds)
         self.check_ping_from_cirros(vm=self.instance)
         self.check_dhcp_on_cirros_instance(vm=self.instance)
 
