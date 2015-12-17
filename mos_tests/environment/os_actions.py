@@ -13,9 +13,9 @@
 #    under the License.
 
 import logging
-import time
 import random
 from tempfile import NamedTemporaryFile
+import time
 
 from cinderclient import client as cinderclient
 from devops.error import TimeoutError
@@ -23,7 +23,7 @@ from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
-from novaclient.v2 import Client as NovaClient
+from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
@@ -49,11 +49,12 @@ class OpenStackActions(object):
             path_to_cert = f.name
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        self.nova = NovaClient(username=user,
-                               api_key=password,
-                               project_id=tenant,
-                               auth_url=auth_url,
-                               cacert=path_to_cert)
+        self.nova = nova_client.Client(version=2,
+                                       username=user,
+                                       api_key=password,
+                                       project_id=tenant,
+                                       auth_url=auth_url,
+                                       cacert=path_to_cert)
 
         self.cinder = cinderclient.Client(1, user, password,
                                           tenant, auth_url,
@@ -173,13 +174,27 @@ class OpenStackActions(object):
                 for y in srv.addresses.values()
                 for x in y}
 
-    def get_node_with_dhcp_for_network(self, net_id):
+    def get_node_with_dhcp_for_network(self, net_id, filter_attr='host',
+                                       is_alive=True):
+        filter_fn = lambda x: x[filter_attr] if filter_attr else x
         result = self.list_dhcp_agents_for_network(net_id)
-        nodes = [i['host'] for i in result['agents'] if i['alive']]
+        nodes = [filter_fn(node) for node in result['agents']
+                 if node['alive'] == is_alive]
+        return nodes
+
+    def get_node_with_dhcp_for_network_by_host(self, net_id, hostname):
+        result = self.list_dhcp_agents_for_network(net_id)
+        nodes = [node for node in result['agents'] if node['host'] == hostname]
         return nodes
 
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
+
+    def get_networks_on_dhcp_agent(self, agent_id):
+        return self.list_networks_on_dhcp_agent(agent_id)['networks']
+
+    def list_networks_on_dhcp_agent(self, agent_id):
+        return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
     def list_l3_agents(self):
         return [x for x in self.neutron.list_agents()['agents']
