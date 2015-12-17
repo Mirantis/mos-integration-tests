@@ -16,6 +16,7 @@
 import os
 import unittest
 import time
+import logging
 
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.v2_0 import client as keystone_client
@@ -24,6 +25,8 @@ from novaclient import client as nova_client
 from glanceclient.v2 import client as glance_client
 
 from mos_tests.functions import common as common_functions
+
+logger = logging.getLogger(__name__)
 
 
 class WindowCompatibilityIntegrationTests(unittest.TestCase):
@@ -38,17 +41,14 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
-        cls.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                              username=OS_USERNAME,
-                                              password=OS_PASSWORD,
-                                              tenat_name=OS_TENANT_NAME,
-                                              project_name=OS_PROJECT_NAME)
-        services = cls.keystone.service_catalog
-        heat_endpoint = services.url_for(service_type='orchestration',
-                                         endpoint_type='internalURL')
+        cls.keystone = keystone_client.Client(
+                auth_url=OS_AUTH_URL,
+                username=OS_USERNAME,
+                password=OS_PASSWORD,
+                tenat_name=OS_TENANT_NAME,
+                project_name=OS_PROJECT_NAME)
 
-        cls.heat = heat_client(endpoint=heat_endpoint,
-                               token=cls.keystone.auth_token)
+        services = cls.keystone.service_catalog
 
         # Get path on node to 'templates' dir
         cls.templates_dir = os.path.join(
@@ -60,11 +60,12 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 'images')
 
         # Neutron connect
-        cls.neutron = neutron_client.Client(username=OS_USERNAME,
-                                            password=OS_PASSWORD,
-                                            tenant_name=OS_TENANT_NAME,
-                                            auth_url=OS_AUTH_URL,
-                                            insecure=True)
+        cls.neutron = neutron_client.Client(
+                username=OS_USERNAME,
+                password=OS_PASSWORD,
+                tenant_name=OS_TENANT_NAME,
+                auth_url=OS_AUTH_URL,
+                insecure=True)
 
         # Nova connect
         OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
@@ -75,19 +76,24 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 tenant_name=OS_TENANT_NAME)
         OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
 
-        cls.nova = nova_client.Client('2',
-                                      auth_url=OS_AUTH_URL,
-                                      username=OS_USERNAME,
-                                      auth_token=OS_TOKEN,
-                                      tenant_id=OS_TENANT_ID,
-                                      insecure=True)
+        cls.nova = nova_client.Client(
+                '2',
+                auth_url=OS_AUTH_URL,
+                username=OS_USERNAME,
+                auth_token=OS_TOKEN,
+                tenant_id=OS_TENANT_ID,
+                insecure=True)
 
         # Glance connect
-        glance_endpoint = services.url_for(service_type='image',
-                                           endpoint_type='publicURL')
-        cls.glance = glance_client.Client(endpoint=glance_endpoint,
-                                          token=OS_TOKEN,
-                                          insecure=True)
+        glance_endpoint = services.url_for(
+                service_type='image',
+                endpoint_type='publicURL')
+
+        cls.glance = glance_client.Client(
+                endpoint=glance_endpoint,
+                token=OS_TOKEN,
+                insecure=True)
+
         cls.uid_list = []
 
     def setUp(self):
@@ -158,7 +164,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             for image_object in self.glance.images.list():
                 if image_object.id == self.image.id:
                     self.image = image_object
-                    print "Image in the {} state".format(self.image.status)
+                    logger.debug("Image in the {} state".
+                                 format(self.image.status))
                     if self.image.status == 'active':
                         is_activated = True
                         break
@@ -170,7 +177,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         for network in self.nova.networks.list():
             if 'internal' in network.label:
                 network_id = network.id
-        print "Starting with network interface id {}".format(network_id)
+        logger.debug("Starting with network interface id {}".
+                     format(network_id))
 
         # TODO: add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and create a copy of it
@@ -195,8 +203,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.expected_flavor_id = expected_flavor.id
                 self.our_own_flavor_was_created = True
                 break
-        print "Starting with flavor {}".format(
-                self.nova.flavors.get(self.expected_flavor_id))
+        logger.debug("Starting with flavor {}".format(
+                self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
         self.node_to_boot = common_functions.create_instance(
                     nova_client=self.nova,
@@ -209,8 +217,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertEqual(self.node_to_boot.status, 'ACTIVE',
                          "The node not in active state!")
 
-        print "Using following floating ip {}".format(
-                self.floating_ip.ip)
+        logger.debug("Using following floating ip {}".format(
+                self.floating_ip.ip))
 
         self.node_to_boot.add_floating_ip(self.floating_ip)
 
@@ -255,14 +263,13 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
                 break
         self.assertTrue(ping_result, "Instance is not reachable")
 
-    @unittest.skip("Not Implemented")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image could be paused
         and unpaused
@@ -281,7 +288,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -294,7 +301,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -307,7 +314,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -333,7 +340,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -346,7 +353,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -359,7 +366,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            print "Attempt #{} to ping the instance".format(attempt_id)
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:

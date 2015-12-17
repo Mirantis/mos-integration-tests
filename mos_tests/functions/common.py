@@ -2,7 +2,6 @@ import os
 from time import sleep, time
 import urllib2
 import yaml
-import platform
 
 
 def is_stack_exists(stack_name, heat):
@@ -370,15 +369,16 @@ def is_volume_exists(cinder_client, uid):
     return uid in [s.id for s in cinder_client.volumes.list()]
 
 
-def create_volume(cinder_client, image_id, timeout=5):
+def create_volume(cinder_client, image_id, size=1, timeout=5):
     """ Check volume creation
         :param cinder_client: Cinder API client connection point
         :param image_id: UID of image
+        :param size: Size of volume in GB
         :param timeout: Timeout for check operation
         :return volume
     """
     end_time = time() + 60 * timeout
-    volume = cinder_client.volumes.create(1, name='Test_volume',
+    volume = cinder_client.volumes.create(size, name='Test_volume',
                                           imageRef=image_id)
     status = cinder_client.volumes.get(volume.id).status
     while status != 'available':
@@ -442,8 +442,6 @@ def get_flavor_id_by_name(nova_client, flavor_name):
     for flavor in nova_client.flavors.list():
         if flavor.name == flavor_name:
             return flavor.id
-    return None
-
 
 def delete_flavor(nova_client, flavor_id):
     """ This function delete the flavor by its name.
@@ -488,9 +486,6 @@ def ping_command(ip_address):
         :param ip_address: The IP address to ping
         :return: True in case of success, False otherwise
     """
-    the_count_key = '-c'
-    if platform.system() == 'Windows':
-        the_count_key = '-n'
-    the_result = os.system("ping {} 4 -i 4 {}".
-                           format(the_count_key, ip_address))
+    the_result = os.system("ping -c 4 -i 4 {}".
+                           format(ip_address))
     return the_result == 0
