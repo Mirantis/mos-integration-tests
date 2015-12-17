@@ -97,7 +97,7 @@ class TestFloatingIP(TestBase):
             6. Go to vm1 with ssh and floating IP
             7. Without stopping ssh-connection dissociate floating ip from vm
             8. Check that connection is stopped
-            9.Try to go to vm1 with ssh and floating IP
+            9. Try to go to vm1 with ssh and floating IP
 
         Duration 10m
 
