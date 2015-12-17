@@ -288,8 +288,8 @@ class OpenStackActions(object):
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info('floating_ip {} is not deletable'.
-                             format(floating_ip))
+                logger.info('floating_ip {} is not deletable'
+                            .format(floating_ip))
 
     def create_router(self, name, tenant_id=None):
         router = {'name': name}

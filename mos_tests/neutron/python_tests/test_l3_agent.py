@@ -121,12 +121,13 @@ class TestL3Agent(TestBase):
     def clear_l3_agent(self, _ip, router_name, node, wait_for_alive=False):
         """Clear L3 agent ban and wait until router moved to this node
 
-        Clear previously banned L3 agent on node wait until ruter moved to this
-        node
+        Clear previously banned L3 agent on node wait until router moved
+        to this node
 
         :param _ip: ip of server to to execute clear command
         :param router_name: name of router to wait until it move to node
         :param node: name of node to clear
+        :param wait_for_alive:
         """
         router = self.os_conn.neutron.list_routers(
             name=router_name)['routers'][0]
@@ -451,7 +452,7 @@ class TestL3Agent(TestBase):
             9. If agent on primary controller move it to any other controller
             10. Destroy non primary controller
             11. Wait for L3 agent dies
-            12. Check that all routers reshedule from non primary controller
+            12. Check that all routers reschedule from non primary controller
             13. Boot one more VM (VM3) in network1
             14. Boot vm3 in network1
             15. ping 8.8.8.8, vm1 (both ip), vm2 (fixed ip) and vm3 (fixed ip)
