@@ -20,8 +20,7 @@ def get_stack_id(heat_client, stack_name):
         :return Stack uid
     """
     if is_stack_exists(stack_name, heat_client):
-        stack_dict = {s.stack_name: s.id for s in heat_client.stacks.list()}
-        return stack_dict[stack_name]
+        return heat_client.stacks.list(filter={'name': stack_name}).id
     raise Exception("ERROR: Stack {} is not defined".format(stack_name))
 
 
