@@ -1,0 +1,81 @@
+heat_template_version: 2013-05-23
+
+description: >
+  This template creates docker host server
+
+parameters:
+  key:
+    type: string
+    description: >
+      Name of a KeyPair to enable SSH access to the instance. Note that the
+      default user is ec2-user.
+    default: key1
+  flavor:
+    type: string
+    description: Instance type for the docker server.
+    default: m1.medium
+  image:
+    type: string
+    description: >
+      Name or ID of the image to use for the Docker server.  This needs to be
+      built with os-collect-config tools from a fedora base image.
+    default: fedora-software-config
+  public_net:
+    type: string
+    description: name of public network for which floating IP addresses will be allocated.
+    default: nova
+  int_network_id:
+    type: string
+    description: UUID of an existing internal network
+    default: nope
+  timeout:
+    type: number
+    description: Timeout for WaitCondition, depends on your image and environment
+    default: 300
+
+resources:
+  wait_condition:
+    type: OS::Heat::WaitCondition
+    properties:
+      handle: {get_resource: wait_handle}
+      count: 1
+      timeout: {get_param: timeout}
+
+  wait_handle:
+    type: OS::Heat::WaitConditionHandle
+
+  docker_server:
+    type: OS::Nova::Server
+    properties:
+      networks: [{network: {get_param: int_network_id}}]
+      key_name: {get_param: key}
+      image: { get_param: image }
+      flavor: { get_param: flavor}
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/bash -v
+            set -x
+            # echo '- INSTALL DOCKER -'
+            # sudo dnf -y install docker   # suppose it is installed
+            # sudo systemctl start docker  # fedora hangs here
+            echo '- NOTIFY -'
+            wc_notify --data-binary '{"status": "SUCCESS"}'  # wait untill OS will finish booting
+            echo '- RUN DOCKER BIND -'
+            sudo /usr/bin/docker -D --tls=false -d --host=tcp://0.0.0.0:2376
+          params:
+            wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
+
+  server_floating_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: { get_param: public_net}
+
+  associate_floating_ip:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: server_floating_ip}
+      server_id: { get_resource: docker_server}
+
+outputs:
