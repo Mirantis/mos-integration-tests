@@ -317,15 +317,16 @@ def delete_instance(novaclient, uid):
             sleep(1)
 
 
-def create_volume(cinderclient, image_id, timeout=5):
+def create_volume(cinderclient, image_id, size=1, timeout=5):
     """ Check volume creation
-        :param cinderclient: Cinder API client connection point
-        :param image_id: UID of image
-        :param timeout: Timeout for check operation
-        :return volume
+            :param cinderclient: Cinder API client connection point
+            :param image_id: UID of image
+            :param size: Size of volume in GB
+            :param timeout: Timeout for check operation
+            :return volume
     """
     end_time = time() + 60 * timeout
-    volume = cinderclient.volumes.create(1, name='Test_volume',
+    volume = cinderclient.volumes.create(size, name='Test_volume',
                                          imageRef=image_id)
     status = cinderclient.volumes.get(volume.id).status
     while status != 'available':

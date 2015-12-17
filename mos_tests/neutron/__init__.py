@@ -13,7 +13,58 @@
 #    under the License.
 
 import logging
+import logging.config
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [%(levelname)s] %(module)s - %(message)s')
+
+# suppress iso8601 and paramiko debug logging
+class NoDebugMessageFilter(logging.Filter):
+    def filter(self, record):
+        return not record.levelno <= logging.DEBUG
+
+logging.getLogger('paramiko.transport').addFilter(NoDebugMessageFilter())
+logging.getLogger('paramiko.hostkeys').addFilter(NoDebugMessageFilter())
+logging.getLogger('iso8601.iso8601').addFilter(NoDebugMessageFilter())
+
+
+logging.config.dictConfig({
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    'formatters': {
+        'standart': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        },
+    },
+    'filters': {
+        'mos_tests': {
+            'class': 'logging.Filter',
+            'name': 'mos_tests',
+        }
+    },
+    'handlers': {
+        'console_mos': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'standart',
+            'filters': ['mos_tests']
+        },
+        'console_warn': {
+            'level': 'WARNING',
+            'class': 'logging.StreamHandler',
+            'formatter': 'standart',
+        },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': 'neutron.log',
+            'formatter': 'standart',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['file', 'console_warn', 'console_mos'],
+            'level': 'DEBUG',
+            'propagate': True,
+        }
+    }
+})

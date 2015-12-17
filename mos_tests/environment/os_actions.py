@@ -13,9 +13,9 @@
 #    under the License.
 
 import logging
-import time
 import random
 from tempfile import NamedTemporaryFile
+import time
 
 from cinderclient import client as cinderclient
 from devops.error import TimeoutError
@@ -23,7 +23,7 @@ from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
-from novaclient.v2 import Client as NovaClient
+from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
@@ -49,11 +49,12 @@ class OpenStackActions(object):
             path_to_cert = f.name
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        self.nova = NovaClient(username=user,
-                               api_key=password,
-                               project_id=tenant,
-                               auth_url=auth_url,
-                               cacert=path_to_cert)
+        self.nova = nova_client.Client(version=2,
+                                       username=user,
+                                       api_key=password,
+                                       project_id=tenant,
+                                       auth_url=auth_url,
+                                       cacert=path_to_cert)
 
         self.cinder = cinderclient.Client(1, user, password,
                                           tenant, auth_url,
@@ -173,13 +174,27 @@ class OpenStackActions(object):
                 for y in srv.addresses.values()
                 for x in y}
 
-    def get_node_with_dhcp_for_network(self, net_id):
+    def get_node_with_dhcp_for_network(self, net_id, filter_attr='host',
+                                       is_alive=True):
+        filter_fn = lambda x: x[filter_attr] if filter_attr else x
         result = self.list_dhcp_agents_for_network(net_id)
-        nodes = [i['host'] for i in result['agents'] if i['alive']]
+        nodes = [filter_fn(node) for node in result['agents']
+                 if node['alive'] == is_alive]
+        return nodes
+
+    def get_node_with_dhcp_for_network_by_host(self, net_id, hostname):
+        result = self.list_dhcp_agents_for_network(net_id)
+        nodes = [node for node in result['agents'] if node['host'] == hostname]
         return nodes
 
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
+
+    def get_networks_on_dhcp_agent(self, agent_id):
+        return self.list_networks_on_dhcp_agent(agent_id)['networks']
+
+    def list_networks_on_dhcp_agent(self, agent_id):
+        return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
     def list_l3_agents(self):
         return [x for x in self.neutron.list_agents()['agents']
@@ -240,6 +255,41 @@ class OpenStackActions(object):
                 pool=fl_ips_pool[0].name)
             self.nova.servers.add_floating_ip(srv, floating_ip)
             return floating_ip
+
+    def disassociate_floating_ip(self, srv, floating_ip, use_neutron=False):
+        if use_neutron:
+            try:
+                self.neutron.update_floatingip(
+                    floatingip=floating_ip['id'],
+                    body={'floatingip': {}})
+
+                id = floating_ip['id']
+                helpers.wait(
+                    lambda: self.neutron.show_floatingip(id)
+                            ['floatingip']['status'] == "DOWN", timeout=60)
+            except NeutronClientException:
+                logger.info('The floatingip {} can not be disassociated.'
+                            .format(floating_ip['id']))
+        else:
+            try:
+                self.nova.servers.remove_floating_ip(srv, floating_ip)
+            except NovaClientException:
+                logger.info('The floatingip {} can not be disassociated.'
+                            .format(floating_ip))
+
+    def delete_floating_ip(self, floating_ip, use_neutron=False):
+        if use_neutron:
+            try:
+                self.neutron.delete_floatingip(floating_ip['id'])
+            except NeutronClientException:
+                logger.info('floating_ip {} is not deletable'
+                            .format(floating_ip['id']))
+        else:
+            try:
+                self.nova.floating_ips.delete(floating_ip)
+            except NovaClientException:
+                logger.info('floating_ip {} is not deletable'.
+                             format(floating_ip))
 
     def create_router(self, name, tenant_id=None):
         router = {'name': name}
@@ -322,8 +372,7 @@ class OpenStackActions(object):
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info(
-                    'floating_ip {} is not deletable'.format(floating_ip.id))
+                self.delete_floating_ip(floating_ip, use_neutron=True)
 
     def delete_servers(self):
         for server in self.nova.servers.list():

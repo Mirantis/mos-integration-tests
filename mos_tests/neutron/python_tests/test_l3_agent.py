@@ -12,10 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import pytest
 import logging
-from neutronclient.common.exceptions import NeutronClientException
 
+from neutronclient.common.exceptions import NeutronClientException
+import pytest
 from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient

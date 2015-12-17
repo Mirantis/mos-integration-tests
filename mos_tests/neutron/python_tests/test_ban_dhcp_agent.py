@@ -12,50 +12,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+
 import pytest
+from waiting import wait
 
-from devops.helpers.helpers import wait
-
-from tools.settings import logger
 from mos_tests.neutron.python_tests import base
 from mos_tests import settings
 
 
+logger = logging.getLogger(__name__)
+
+
 @pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
-class TestDHCPAgent(base.TestBase):
+class TestBanDHCPAgent(base.TestBase):
     """Check DHCP agents rescheduling."""
-
-    def create_internal_network_with_subnet(self, suffix=1):
-        """Create network with subnet.
-
-        :param suffix: desired integer suffix to names of network, subnet
-        :returns: tuple, network and subnet
-        """
-        network = self.os_conn.create_network(name='net%02d' % suffix)
-        subnet = self.os_conn.create_subnet(
-            network_id=network['network']['id'],
-            name='net%02d__subnet' % suffix,
-            cidr="192.168.%d.0/24" % suffix)
-        return network, subnet
-
-    def create_router_between_nets(self, ext_net, subnet, suffix=1):
-        """Create router between external network and sub network.
-
-        :param ext_net: external network to set gateway
-        :param subnet: subnet which for provide route to external network
-        :param suffix: desired integer suffix to names of router
-
-        :returns: created router
-        """
-        router = self.os_conn.create_router(name='router%02d' % suffix)
-        self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
-            network_id=ext_net['id'])
-
-        self.os_conn.router_interface_add(
-            router_id=router['router']['id'],
-            subnet_id=subnet['subnet']['id'])
-        return router
 
     def create_cirros_instance_with_ssh(self, name='server01',
                                         net_name='net04', **kwargs):
@@ -78,42 +49,90 @@ class TestDHCPAgent(base.TestBase):
             name=name, **kwargs)
         return instance
 
-    def ban_dhcp_agent(self, host, network_name, wait_for_migrate=True):
+    def ban_dhcp_agent(self, node_to_ban, host, network_name,
+                       wait_for_die=True, wait_for_rescheduling=True):
         """Ban DHCP agent and wait until agents rescheduling.
 
         Ban dhcp agent on same node as network placed and wait until agents
-        rescheduling
+        rescheduling.
 
+        :param node_to_ban: dhcp-agent host to ban
         :param host: host or ip of controller onto execute ban command
         :param network_name: name of network to determine node with dhcp agents
-        :param wait_for_migrate:
-            wait until dhcp-agent migrate to new controller
+        :param wait_for_die: wait until dhcp-agent die
+        :param wait_for_rescheduling: wait new dhcp-agent starts
         :returns: str, name of banned node
         """
         network = self.os_conn.neutron.list_networks(
             name=network_name)['networks'][0]
-        node_with_dhcp = self.os_conn.get_node_with_dhcp_for_network(
-            network['id'])[0]
+        current_agents = self.os_conn.get_node_with_dhcp_for_network(
+            network['id'])
 
-        # ban dhcp agent on this node
+        # ban dhcp agent on provided node
         with self.env.get_ssh_to_node(host) as remote:
             remote.execute(
                 "pcs resource ban p_neutron-dhcp-agent {0}".format(
-                    node_with_dhcp))
+                    node_to_ban))
 
-        logger.info("Ban DHCP agent on node {0}".format(node_with_dhcp))
+        logger.info("Ban DHCP agent on node {0}".format(node_to_ban))
 
-        # Wait to migrate dhcp agent on new controller
-        if wait_for_migrate:
-            err_msg = "DHCP agent wasn't banned, it is still on {0}"
+        # Wait to die banned dhcp agent
+        if wait_for_die:
+            err_msg = "Awainting ban of DHCP agent: {0}"
             wait(
                 lambda: (
-                    node_with_dhcp not in
+                    node_to_ban not in
                     self.os_conn.get_node_with_dhcp_for_network(
                         network['id'])),
-                timeout=60 * 3,
-                timeout_msg=err_msg.format(node_with_dhcp))
-        return node_with_dhcp
+                timeout_seconds=60 * 3,
+                sleep_seconds=(1, 60, 5),
+                waiting_for=err_msg.format(node_to_ban))
+        # Wait to reschedule dhcp agent
+        if wait_for_rescheduling:
+            err_msg = "New DHCP agent wasn't rescheduled"
+            wait(
+                lambda: (
+                    set(self.os_conn.get_node_with_dhcp_for_network(
+                        network['id'])) - set(current_agents)),
+                timeout_seconds=60 * 3,
+                sleep_seconds=(1, 60, 5),
+                waiting_for=err_msg)
+        return node_to_ban
+
+    def clear_dhcp_agent(self, node_to_clear, host, network_name,
+                         wait_for_rescheduling=True):
+        """Clear DHCP agent after ban and wait until agents rescheduling.
+
+        :param node_to_clear: dhcp-agent host to clear
+        :param host: host or ip of controller onto execute ban command
+        :param network_name: name of network to determine node with dhcp agents
+        :param wait_for_rescheduling: wait until dhcp-agent reschedule
+        :returns: str, name of cleared node
+        """
+        network = self.os_conn.neutron.list_networks(
+            name=network_name)['networks'][0]
+
+        # clear dhcp agent on provided node
+        with self.env.get_ssh_to_node(host) as remote:
+            remote.execute(
+                "pcs resource clear p_neutron-dhcp-agent {0}".format(
+                    node_to_clear))
+
+        logger.info("Clear DHCP agent on node {0}".format(node_to_clear))
+
+        # Wait to reschedule dhcp agent
+        if wait_for_rescheduling:
+            err_msg = (
+                "Wait for DHCP agent ({0}) rescheduling after clear from ban")
+            wait(
+                lambda: (
+                    node_to_clear in
+                    self.os_conn.get_node_with_dhcp_for_network(
+                        network['id'])),
+                timeout_seconds=60 * 3,
+                sleep_seconds=(1, 60, 5),
+                waiting_for=err_msg.format(node_to_clear))
+        return node_to_clear
 
     def run_on_cirros_through_host(self, vm, cmd):
         """Run command on Cirros VM, connected through some host.
@@ -195,12 +214,12 @@ class TestDHCPAgent(base.TestBase):
         self.os_conn.assign_floating_ip(self.instance)
 
         # check ping from instance and dhcp client on instance
-        self.check_vm_is_connectable(self.instance)
+        self.check_vm_is_available(self.instance, **self.cirros_creds)
         self.check_ping_from_cirros(vm=self.instance)
         self.check_dhcp_on_cirros_instance(vm=self.instance)
 
     @pytest.mark.parametrize('ban_count', [1, 2])
-    def test_ban_one_dhcp_agent(self, ban_count):
+    def test_ban_some_dhcp_agents(self, ban_count):
         """Check dhcp-agent rescheduling after dhcp-agent dies.
 
         :param ban_count: count of banned dhcp-agents
@@ -221,7 +240,7 @@ class TestDHCPAgent(base.TestBase):
                other health dhcp-agent:
                neutron dhcp-agent-list-hosting-net <network_name>
 
-        Duration 30m
+        Duration 15m
 
         """
         # Fixture init from method self._prepare_openstack_state
@@ -230,8 +249,12 @@ class TestDHCPAgent(base.TestBase):
         controller_host = self.env.find_node_by_fqdn(
             agents_hosts[0]).data['ip']
 
-        for _ in range(ban_count):
-            self.ban_dhcp_agent(host=controller_host, network_name='net01')
+        for identifier in range(ban_count):
+            host_to_ban = agents_hosts[identifier]
+            self.ban_dhcp_agent(node_to_ban=host_to_ban,
+                                host=controller_host,
+                                network_name='net01',
+                                wait_for_rescheduling=(not identifier))
 
         # check dhcp client on instance
         self.check_dhcp_on_cirros_instance(vm=self.instance)
@@ -245,3 +268,97 @@ class TestDHCPAgent(base.TestBase):
                    'new agents hosts - {1}'.format(agents_hosts,
                                                    new_agents_hosts))
         assert sorted(agents_hosts) != sorted(new_agents_hosts), err_msg
+
+    def test_ban_all_dhcp_agents_and_restart_one(self):
+        """Check dhcp-agent state after ban all agents and restart one of them.
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network net01, subnet net01_subnet
+            3. Create router with gateway to external net and
+               interface with net01
+            4. Launch instance and associate floating IP
+            5. Run dhcp-client in instance's console: sudo cirros-dhcpc up eth0
+            6. Look on what DHCP-agents chosen network is:
+               neutron dhcp-agent-list-hosting-net <network_name>
+            7. Ban both DHCP-agent on what chosen network is:
+               pcs resource ban p_neutron-dhcp-agent <node1>
+               pcs resource ban p_neutron-dhcp-agent <node2>
+            8. Check that network is on other DHCP-agent(s)
+            9. Ban other DHCP-agent(s)
+            10. Clear last banned DHCP-agent
+            11. Run dhcp-client in instance's console:
+                sudo cirros-dhcpc up eth0
+            12. Check that this network is on cleared dhcp-agent:
+                neutron dhcp-agent-list-hosting-net <network_name>
+            13. Check that all networks is on cleared dhcp-agent:
+                neutron net-list-on-dhcp-agent <id_clr_agnt> | grep net | wc -l
+
+        Duration 15m
+
+        """
+        # Fixture init from method self._prepare_openstack_state
+        # Get dhcp agents and ban all of it
+        agents = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id, filter_attr=None)
+
+        # collect all networks on dhcp agents
+        agents_ids = [agent['id'] for agent in agents]
+        agents_networks = [net['id'] for agent_id in agents_ids for net in
+                           self.os_conn.get_networks_on_dhcp_agent(agent_id)]
+        # ban first part of agents
+        agents_hosts = [agent['host'] for agent in agents]
+        controller_host = self.env.find_node_by_fqdn(
+            agents_hosts[0]).data['ip']
+
+        for index, host_to_ban in enumerate(agents_hosts):
+            self.ban_dhcp_agent(node_to_ban=host_to_ban,
+                                host=controller_host,
+                                network_name='net01',
+                                wait_for_rescheduling=(not index))
+
+        # ban rescheduled dhcp agents
+        new_agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id)
+        last_banned = None
+        for host_to_ban in new_agents_hosts:
+            last_banned = self.ban_dhcp_agent(node_to_ban=host_to_ban,
+                                              host=controller_host,
+                                              network_name='net01',
+                                              wait_for_rescheduling=False)
+        # check that it was other rescheduled agent after ban presented agents
+        assert (
+            last_banned is not None), (
+            "First step DHCP agent rescheduling failed")
+        # clear last banned
+        cleared_agent = self.clear_dhcp_agent(node_to_clear=last_banned,
+                                              host=controller_host,
+                                              network_name='net01')
+        # check dhcp client on instance after agent clearing and rescheduling
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check dhcp agent behaviour after clearing
+        actual_agents = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id)
+        err_msg = ('We have to much dhcp-agent alive:'
+                   'last banned - {0}, '
+                   'last cleared - {1},'
+                   'current actual - {2}'.format(last_banned,
+                                                 cleared_agent,
+                                                 actual_agents))
+        # check that network of instance on last cleared agent
+        assert len(actual_agents) == 1, err_msg
+        assert actual_agents[0] == cleared_agent, err_msg
+
+        # check that all networks are on last cleared agent
+        cleared_agent_id = self.os_conn.get_node_with_dhcp_for_network_by_host(
+            self.net_id, cleared_agent)[0]['id']
+        nets_on_dhcp_agent = [net['id'] for net in
+                              self.os_conn.get_networks_on_dhcp_agent(
+                                  cleared_agent_id)]
+        err_msg = (
+            'There is not all networks on cleared agent: '
+            'all existing networks - {0}, '
+            'networks on cleared agent - {1}'.format(agents_networks,
+                                                     nets_on_dhcp_agent))
+        assert set(agents_networks) == set(nets_on_dhcp_agent), err_msg
