@@ -428,12 +428,13 @@ class NovaIntegrationTests(unittest.TestCase):
         self.floating_ips.append(floating_ip)
         self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                        self.nova.floating_ips.list()])
-        inst = common_functions.create_instance(self.nova, self.instances,
+        inst = common_functions.create_instance(self.nova,
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
                                                 self.sec_group.name,
                                                 image_id=image_id)
+        self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
         ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
         self.assertEqual(ping, 0, "Instance is not reachable")
