@@ -506,7 +506,8 @@ def ping_command(ip_address, c=4, i=4, timeout=3):
     while time() < end_time:
         the_result = os.system("ping -c {} -i {} {}".
                                format(c, i, ip_address))
-        ping_result = the_result[1] == 0
+        ping_result = the_result == 0
+        print "Result: '{}'".format(the_result)
         if ping_result:
             break
     return ping_result
