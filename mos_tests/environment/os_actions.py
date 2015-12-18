@@ -16,17 +16,17 @@ import logging
 import random
 from tempfile import NamedTemporaryFile
 import time
-from waiting import wait
 
 from cinderclient import client as cinderclient
 from glanceclient.v1 import Client as GlanceClient
-from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
+from keystoneclient.v2_0 import Client as KeystoneClient
+from neutronclient.common.exceptions import NeutronClientException
+import neutronclient.v2_0.client as neutronclient
 from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
-import neutronclient.v2_0.client as neutronclient
-from neutronclient.common.exceptions import NeutronClientException
 import paramiko
+from waiting import wait
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class OpenStackActions(object):
 
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None):
-        logger.info('Init OpenStack clients on {0}'.format(controller_ip))
+        logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
         if cert is None:
@@ -151,7 +151,7 @@ class OpenStackActions(object):
             timeout_seconds=timeout, sleep_seconds=5,
             waiting_for='instance {0} status change to ACTIVE'.format(
                 name))
-        logger.info('the server {0} is "ACTIVE"'.format(srv.name))
+        logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
 
     def get_nova_instance_ips(self, srv):

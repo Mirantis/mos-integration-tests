@@ -12,13 +12,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import pytest
+from contextlib import contextmanager
+from distutils.spawn import find_executable
+import logging
 import subprocess
 import threading
-import logging
-from contextlib import contextmanager
+
+import pytest
 
 from mos_tests.neutron.python_tests.base import TestBase
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ def tcpdump_vxlan(ip, env, log_path):
     Log will download to log_path argument
     """
     def tcpdump(ip):
-        logger.info('Start tcpdump')
+        logger.info('Start tcpdump on {0}'.format(ip))
         with env.get_ssh_to_node(ip) as remote:
             result = remote.execute(
                 'tcpdump -U -vvni any port 4789 -w /tmp/vxlan.log')
@@ -41,7 +44,7 @@ def tcpdump_vxlan(ip, env, log_path):
         # Start tcpdump
         thread.start()
         yield
-    except:
+    except Exception:
         raise
     else:
         # Download log
@@ -54,38 +57,38 @@ def tcpdump_vxlan(ip, env, log_path):
         thread.join(0)
 
 
-def _run_tshark_on_vxlan(tshark, log_file, cond):
+def _run_tshark_on_vxlan(log_file, cond):
+    tshark = find_executable('tshark')
     return subprocess.check_output([
         tshark, '-d', 'udp.port==4789,vxlan', '-r', log_file,
         '-Y', '{0}'.format(cond)])
 
 
-def check_all_traffic_has_vni(vni, log_file, tshark):
+def check_all_traffic_has_vni(vni, log_file):
     __tracebackhide__ = True
-    output = _run_tshark_on_vxlan(tshark, log_file,
-                                  'vxlan.vni!={0}'.format(vni))
+    output = _run_tshark_on_vxlan(log_file, 'vxlan.vni!={0}'.format(vni))
     if output.strip():
         pytest.fail(
             "Log contains records with another VNI\n{0}".format(output))
 
 
-def check_no_arp_traffic(src_ip, dst_ip, log_file, tshark):
+def check_no_arp_traffic(src_ip, dst_ip, log_file):
     __tracebackhide__ = True
     cond = ("arp.dst.proto_ipv4=={dst_ip} and "
             "arp.src.proto_ipv4=={src_ip}".format(dst_ip=dst_ip, src_ip=src_ip)
     )
-    output = _run_tshark_on_vxlan(tshark, log_file, cond)
+    output = _run_tshark_on_vxlan(log_file, cond)
     if output.strip():
         pytest.fail("Log contains ARP traffic\n{0}".format(output))
 
 
-def check_icmp_traffic(src_ip, dst_ip, log_file, tshark):
+def check_icmp_traffic(src_ip, dst_ip, log_file):
     __tracebackhide__ = True
     cond = "icmp and ip.src=={src_ip} and ip.dst=={dst_ip}".format(
         src_ip=src_ip,
         dst_ip=dst_ip
     )
-    output = _run_tshark_on_vxlan(tshark, log_file, cond)
+    output = _run_tshark_on_vxlan(log_file, cond)
     if not output.strip():
         pytest.fail(
             "Log not contains ICMP traffic from {src_ip} to {dst_ip}".format(
@@ -93,7 +96,8 @@ def check_icmp_traffic(src_ip, dst_ip, log_file, tshark):
                 dst_ip=dst_ip))
 
 
-@pytest.mark.usefixtures("check_vxlan", "setup")
+@pytest.mark.check_env_('is_vxlan')
+@pytest.mark.usefixtures("setup")
 class TestVxlanBase(TestBase):
     """Vxlan (tun) specific tests"""
 
@@ -114,10 +118,11 @@ class TestVxlanBase(TestBase):
         return router
 
 
+@pytest.mark.need_tshark
 class TestVxlan(TestVxlanBase):
     """Simple Vxlan tests"""
 
-    def test_tunnel_established(self, router, tshark):
+    def test_tunnel_established(self, router):
         """Check that VxLAN is established on nodes and VNI matching
            the segmentation_id of a network
 
@@ -177,13 +182,10 @@ class TestVxlan(TestVxlanBase):
 
         # Check log
         vni = network['network']['provider:segmentation_id']
-        output = subprocess.check_output([tshark, '-d', 'udp.port==4789,vxlan',
-                                          '-r', '/tmp/vxlan.log', '-Y',
-                                          'vxlan.vni!={0}'.format(vni)])
-        assert not output.strip(), 'Log contains records with another VNI'
+        check_all_traffic_has_vni(vni, '/tmp/vxlan1.log')
 
-    @pytest.mark.usefixtures('check_several_computes')
-    def test_vni_for_icmp_between_instances(self, router, tshark):
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    def test_vni_for_icmp_between_instances(self, router):
         """Check VNI and segmention_id for icmp traffic between instances
         on different computers
 
@@ -251,16 +253,18 @@ class TestVxlan(TestVxlanBase):
 
         # Check traffic
         check_all_traffic_has_vni(net1['provider:segmentation_id'],
-                                  '/tmp/vxlan1.log', tshark)
+                                  '/tmp/vxlan1.log')
         check_all_traffic_has_vni(net2['provider:segmentation_id'],
-                                  '/tmp/vxlan2.log', tshark)
+                                  '/tmp/vxlan2.log')
 
 
-@pytest.mark.usefixtures("check_l2pop")
+@pytest.mark.check_env_('is_l2pop')
 class TestVxlanL2pop(TestVxlanBase):
     """Vxlan (tun) with enabled L2 population specific tests"""
 
-    def test_broadcast_traffic_propagation(self, router, tshark):
+    @pytest.mark.need_tshark
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    def test_broadcast_traffic_propagation(self, router):
         """Check broadcast traffic propagation for network segments
 
         Scenario:
@@ -321,7 +325,7 @@ class TestVxlanL2pop(TestVxlanBase):
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                             log_file=broadcast_log, tshark=tshark)
+                             log_file=broadcast_log)
 
         # Initiate unicast traffic from server1 to server2
         unicast_log = '/tmp/vxlan_unicast.log'
@@ -333,4 +337,130 @@ class TestVxlanL2pop(TestVxlanBase):
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                           log_file=unicast_log, tshark=tshark)
+                           log_file=unicast_log)
+
+    @pytest.mark.check_env_('has_3_or_more_computes')
+    def test_establishing_tunnels_between_computes(self, variables):
+        """Check the tunnels established between computes
+
+        Scenario:
+            1. Create net01, net01__subnet, 192.168.1.0/24
+            2. Launch vm1 in net01 network on compute1
+            3. Go to compute1's console and check that only tunnels
+                to controllers appear and no tunnels are to compute2
+                and compute3
+            4. Go to compute2 and compute3 consoles and check that
+                no tunnels appear on them
+            5. Launch vm2 in net01 network on compute2
+            6. Go to compute2's console and check that tunnels
+                to controllers and compute1 appear
+            7. Go to compute1's console and check that tunnel
+                to compute2 is added
+            8. Go to compute3's console and check that no tunnels appear on it
+            9. Launch vm3 in net01 network on compute3
+            10. Go to compute3's console and check that tunnels to controllers,
+                compute1 and compute2 appear
+            11. Go to compute1 and compute2 consoles and check that tunnels
+                to compute3 are added on them
+        """
+        # Create net, subnet and server01
+        compute_nodes = self.zone.hosts.keys()[:3]
+
+        network = self.os_conn.create_network(name='net01')
+        self.os_conn.create_subnet(
+            network_id=network['network']['id'],
+            name='net01__subnet',
+            cidr="192.168.1.0/24")
+        self.os_conn.create_server(
+            name='server01',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[0]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
+        compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+        compute3 = self.env.find_node_by_fqdn(compute_nodes[2])
+        controllers = self.env.get_nodes_by_role('controller')
+        # Check that compute1 tunnels only to controller
+        with compute1.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert not any([x in stdout for x in compute2.ip_list])
+            assert not any([x in stdout for x in compute3.ip_list])
+
+        # Check that compute2 and compute3 have not tunnels
+        for node in (compute2, compute3):
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'ovs-vsctl show')
+                assert result['exit_code'] == 0
+                stdout = ''.join(result['stdout'])
+                assert not any([x in stdout for x
+                               in ('local_ip', 'remote_ip')])
+
+        # Create server02
+        self.os_conn.create_server(
+            name='server02',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[1]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        # Check that compute2 have tunnels to controller abd compute1
+        with compute2.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert any([x in stdout for x in compute1.ip_list])
+
+        # Check that compute1 have tunnel to compute2
+        with compute2.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for x in compute2.ip_list])
+
+        # Check that compute3 haven't tunnels
+        with compute3.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert not any([x in stdout for x in ('local_ip', 'remote_ip')])
+
+        # Create server03
+        self.os_conn.create_server(
+            name='server03',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[2]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        # Check that compute3 have tunnels to controller, compute1 and compute2
+        with compute3.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert any([x in stdout for x in compute2.ip_list])
+            assert any([x in stdout for x in compute3.ip_list])
+
+        # Check compute2 and compute3 have tunnels to compute3
+        for node in (compute1, compute2):
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'ovs-vsctl show')
+                assert result['exit_code'] == 0
+                stdout = ''.join(result['stdout'])
+                assert any([x in stdout for x in compute3.ip_list])

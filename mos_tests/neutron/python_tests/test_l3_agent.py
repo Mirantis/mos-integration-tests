@@ -21,10 +21,12 @@ from waiting import wait
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase
 
+
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
+@pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
+@pytest.mark.usefixtures("setup")
 class TestL3Agent(TestBase):
 
     @pytest.fixture(autouse=True)
@@ -183,7 +185,7 @@ class TestL3Agent(TestBase):
              waiting_for=waiting_for.format(node_with_l3),
              sleep_seconds=(1, 60))
 
-    @pytest.mark.parametrize('ban_count', [1, 2], ids=['single', 'twice'])
+    @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
     def test_ban_one_l3_agent(self, ban_count):
         """Check l3-agent rescheduling after l3-agent dies on vlan
 
@@ -436,7 +438,8 @@ class TestL3Agent(TestBase):
         # check pings
         self.check_vm_connectivity()
 
-    def test_shutdown_not_primary_controller(self, check_devops, env_name):
+    @pytest.mark.need_devops
+    def test_shutdown_not_primary_controller(self, env_name):
         """Shut down non-primary controller and check l3-agent work
 
         Scenario:

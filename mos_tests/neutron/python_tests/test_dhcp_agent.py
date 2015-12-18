@@ -12,16 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import pytest
-
 import logging
 
+import pytest
+
 from mos_tests.neutron.python_tests.base import TestBase
+
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
+@pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
+@pytest.mark.usefixtures("setup")
 class TestDHCPAgent(TestBase):
 
     @pytest.fixture(autouse=True)
