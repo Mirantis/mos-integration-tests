@@ -263,13 +263,11 @@ def check_volume(cinder_client, uid):
 
 def check_volume_snapshot(cinder_client, uid):
     """ Check the presence of volume status id in the list of volume status
-        :param cinderclient: Cinder API client connection point
+        :param cinder_client: Cinder API client connection point
         :param uid: UID of volume status
         :return True or False
     """
-    if uid in [s for s in cinder_client.volume_snapshots.list()]:
-        return True
-    return False
+    return uid in [s for s in cinder_client.volume_snapshots.list()]
 
 
 def check_inst_status(nova_client, uid, status, timeout=5):
@@ -507,7 +505,6 @@ def ping_command(ip_address, c=4, i=4, timeout=3):
         the_result = os.system("ping -c {} -i {} {}".
                                format(c, i, ip_address))
         ping_result = the_result == 0
-        print "Result: '{}'".format(the_result)
         if ping_result:
             break
     return ping_result

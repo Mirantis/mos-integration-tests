@@ -324,6 +324,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.node_to_boot.suspend()
         # TODO: Make sure that the VM in 'Suspended' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertFalse(ping_result, "Instance is reachable")
         # Resume state check
         self.node_to_boot.resume()
         # TODO: Make sure that the VM in 'Resume' state
@@ -384,15 +385,17 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM
         self.node_to_boot.reboot(reboot_type='HARD')
-        end_time = time.time() + 60 * self.ping_timeout
-        while self.node_to_boot.status != 'ACTIVE':
-            if time.time() > end_time:
-                raise AssertionError(
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
                     "Instance status is '{0}' instead of 'ACTIVE".format(
                         self.node_to_boot.status))
-            time.sleep(1)
-            self.node_to_boot = [s for s in nova_client.servers.list()
-                                 if s.id == self.node_to_boot.id][0]
+
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
