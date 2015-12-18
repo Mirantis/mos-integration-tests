@@ -138,6 +138,16 @@ class TestBanDHCPAgent(base.TestBase):
                 waiting_for=err_msg.format(node_to_clear))
         return node_to_clear
 
+    def kill_dnsmasq(self, host):
+        """Kill dnsmasq on host.
+
+        :param host: host onto kill dnsmasq
+        """
+        with self.env.get_ssh_to_node(host) as remote:
+            remote.execute("killall dnsmasq")
+
+        logger.info("Kill dnsmasq on node {0}".format(host))
+
     def run_on_cirros_through_host(self, vm, cmd):
         """Run command on Cirros VM, connected through some host.
 
@@ -367,3 +377,120 @@ class TestBanDHCPAgent(base.TestBase):
             'networks on cleared agent - {1}'.format(agents_networks,
                                                      nets_on_dhcp_agent))
         assert set(agents_networks) == set(nets_on_dhcp_agent), err_msg
+
+    def test_multiple_ban_dhcp_agents_and_restart_first(self, ban_count=18):
+        """Check dhcp-agent state after ban all agents and restart one of them.
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network net01, subnet net01_subnet
+            3. Create router with gateway to external net and
+               interface with net01
+            4. Launch instance and associate floating IP
+            5. Run dhcp-client in instance's console:
+               ``sudo cirros-dhcpc up eth0``
+            6. Look on what DHCP-agents chosen network is:
+               ``neutron dhcp-agent-list-hosting-net <network_name>``
+            7. Clear all DHCP-agents on all controllers:
+               ``pcs resource clear p_neutron-dhcp-agent node-1``
+               ``pcs resource clear p_neutron-dhcp-agent node-2``
+               ``pcs resource clear p_neutron-dhcp-agent node-3``
+            8. Ban DHCP-agent on what chosen network is NOT and wait it dies:
+               from primary controller:
+               ``pcs resource ban p_neutron-dhcp-agent node-3``
+               from node-3:
+               ``killall dnsmasq``
+            9. Kill other DHCP-agents on which instance's net is
+               without waiting from primary controller:
+               ``pcs resource ban p_neutron-dhcp-agent node-1``
+               ``pcs resource ban p_neutron-dhcp-agent node-2``
+               from node-1 and node-2:
+               ``killall dnsmasq``
+            10. Unban(clear) first banned DHCP-agent and wait it get up:
+                ``pcs resource clear p_neutron-dhcp-agent node-3``
+            11. Repeat 7-11 steps for 18 times
+            12. Run dhcp-client in instance's console:
+                ``sudo cirros-dhcpc up eth0``
+            13. Check that this network is on cleared dhcp-agent:
+                ``neutron dhcp-agent-list-hosting-net <network_name>``
+            14. Check that all networks is on cleared dhcp-agent:
+                ``neutron net-list-on-dhcp-agent <id_clr_agnt>|grep net|wc -l``
+
+        Duration 45m
+
+        """
+        def _killing_cycle(
+                controller, agent_first, agent_second, agent_free):
+            # clear all agents and wait that they up
+            self.clear_dhcp_agent(node_to_clear=agent_first['agent']['host'],
+                                  host=controller)
+            self.clear_dhcp_agent(node_to_clear=agent_second['agent']['host'],
+                                  host=controller)
+            self.clear_dhcp_agent(node_to_clear=agent_free['agent']['host'],
+                                  host=controller)
+            # ban agent without current network
+            self.ban_dhcp_agent(node_to_ban=agent_free['agent']['host'],
+                                host=controller, wait_for_die=False,
+                                wait_for_rescheduling=False)
+            self.kill_dnsmasq(agent_free['node'].data['ip'])
+            self.ban_dhcp_agent(node_to_ban=agent_free['agent']['host'],
+                                host=controller,
+                                wait_for_rescheduling=False)
+            # ban agent with current network without awaiting
+            for curr_agent in (agent_first, agent_second):
+                self.ban_dhcp_agent(node_to_ban=curr_agent['agent']['host'],
+                                    host=controller, wait_for_die=False,
+                                    wait_for_rescheduling=False)
+                self.kill_dnsmasq(curr_agent['node'].data['ip'])
+            # clear free dhcp agent
+            self.clear_dhcp_agent(node_to_clear=agent_free['agent']['host'],
+                                  host=controller)
+        # Fixture init from method self._prepare_openstack_state
+        # Get all dhcp agents
+        all_agents = self.os_conn.list_all_neutron_agents(agent_type='dhcp')
+        agents_mapping = {
+            agent['host']:
+                {'agent': agent,
+                 'node': self.env.find_node_by_fqdn(agent['host'])}
+            for agent in all_agents}
+        curr_agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=self.net_id)
+        # determine free of current network dhcp agent
+        all_agents_hosts = agents_mapping.keys()
+        free_agent = (set(all_agents_hosts) - set(curr_agents)).pop()
+
+        # collect all networks on dhcp agents
+        agents_ids = [agent['id'] for agent in all_agents]
+        agents_networks = [net['id'] for agent_id in agents_ids for net in
+                           self.os_conn.get_networks_on_dhcp_agent(agent_id)]
+        # determine primary controller
+        leader_node = self.env.leader_controller.data['ip']
+        for i in range(ban_count):
+            _killing_cycle(leader_node,
+                           agents_mapping[curr_agents[0]],
+                           agents_mapping[curr_agents[1]],
+                           agents_mapping[free_agent])
+
+        # check dhcp client on instance after dhcp agents killing cycle
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check dhcp agent behaviour after clearing
+        actual_agents = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id)
+        err_msg = ('We have to much dhcp-agent alive: '
+                   'current actual - {0}'.format(actual_agents))
+        # check that network of instance on last cleared agent
+        assert len(actual_agents) == 1, err_msg
+        assert actual_agents[0] == free_agent, err_msg
+
+        # check that all networks are on free agent
+        free_agent_id = agents_mapping[free_agent]['agent']['id']
+        nets_on_free_dhcp_agent = [
+            net['id'] for net in self.os_conn.get_networks_on_dhcp_agent(
+                free_agent_id)]
+        err_msg = (
+            'There is not all networks on free agent: '
+            'all existing networks - {0}, '
+            'networks on free agent - {1}'.format(agents_networks,
+                                                  nets_on_free_dhcp_agent))
+        assert set(agents_networks) == set(nets_on_free_dhcp_agent), err_msg
