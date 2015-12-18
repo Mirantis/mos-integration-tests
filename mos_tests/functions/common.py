@@ -261,6 +261,17 @@ def check_volume(cinder_client, uid):
     return uid in [s.id for s in cinder_client.volumes.list()]
 
 
+def check_volume_snapshot(cinder_client, uid):
+    """ Check the presence of volume status id in the list of volume status
+        :param cinderclient: Cinder API client connection point
+        :param uid: UID of volume status
+        :return True or False
+    """
+    if uid in [s for s in cinder_client.volume_snapshots.list()]:
+        return True
+    return False
+
+
 def check_inst_status(nova_client, uid, status, timeout=5):
     """ Check status of instance
         :param nova_client: Nova API client connection point
@@ -489,3 +500,34 @@ def ping_command(ip_address):
     the_result = os.system("ping -c 4 -i 4 {}".
                            format(ip_address))
     return the_result == 0
+
+
+def check_volume_snapshot_status(cinder_client, uid, status, timeout=5):
+    """ Check status of volume
+            :param cinder_client: Cinder API client connection point
+            :param uid: UID of volume snapshot
+            :param status: Expected volume snapshot status
+            :param timeout: Timeout for check operation
+            :return True or False
+    """
+    if check_volume_snapshot(cinder_client, uid):
+        start_time = time()
+        while time() < start_time + 60 * timeout:
+            sleep(1)
+            snapshot_status = [s.status
+                               for s in cinder_client.volume_snapshots.list()
+                               if s.id == uid.id][0]
+            if snapshot_status == status:
+                return True
+    return False
+
+
+def delete_volume_snapshot(cinder_client, snapshot):
+    """ Delete volume snapshot and check that it is absent in the list
+        :param cinder_client: Cinder API client connection point
+        :param volume: volume snapshot
+    """
+    if snapshot in cinder_client.volume_snapshots.list():
+        cinder_client.volume_snapshots.delete(snapshot)
+        while snapshot in cinder_client.volume_snapshots.list():
+            sleep(1)
