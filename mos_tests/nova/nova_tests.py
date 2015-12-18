@@ -436,7 +436,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 image_id=image_id)
         self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
-        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+        ping = common_functions.ping_command(floating_ip.ip)
         self.assertEqual(ping, 0, "Instance is not reachable")
         hypervisors = {h.hypervisor_hostname: h for h
                        in self.nova.hypervisors.list()}

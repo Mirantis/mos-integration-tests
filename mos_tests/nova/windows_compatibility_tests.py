@@ -254,8 +254,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """ This test checks that instance with Windows image could be created
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
         :return: Nothing
         """
         end_time = time.time() + 120
@@ -274,12 +276,15 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         and unpaused
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
-        3. Put the image on 'Pause' state
-        4. Check that the VM is unreachable
-        5. Put the image on 'Unpause' state
-        6. Check that the VM is reachable again
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Pause this VM
+        6. Verify that we can't ping it
+        7. Unpause it and verify that we can ping it again
+        8. Reboot VM
+        9. Verify that we can ping this VM after reboot.
         :return: Nothing
         """
         # Initial check
@@ -319,18 +324,22 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             if ping_result:
                 break
         self.assertTrue(ping_result, "Instance is not reachable")
+        # TODO: Reboot the VM and make sure that we can ping it
 
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image can be suspended
         and resumed
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
-        3. Put the image on 'Suspend' state
-        4. Check that the VM is unreachable
-        5. Put the image on 'Resume' state
-        6. Check that the VM is reachable again
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Suspend VM
+        6. Verify that we can't ping it
+        7. Resume and verify that we can ping it again.
+        8. Reboot VM
+        9. Verify that we can ping this VM after reboot.
         :return: Nothing
         """
         # Initial check
@@ -370,3 +379,54 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             if ping_result:
                 break
         self.assertTrue(ping_result, "Instance is not reachable")
+        # TODO: Reboot the VM and make sure that we can ping it
+
+    def test_542827_LiveMigrationForWindowsInstance(self):
+        """ This test checks that instance with Windows Image could be
+        migrated without any issues
+
+        Steps:
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Migrate this VM to another compute node
+        6. Verify that live Migration works fine for Windows VMs
+        and we can successfully ping this VM
+        7. Reboot VM and verify that
+        we can successfully ping this VM after reboot.
+
+        :return: Nothing
+        """
+        # 1. 2. 3. -> Into setUp function
+        # 4. Ping this VM and verify that we can ping it
+        hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
+        end_time = time.time() + 120
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        # self.assertTrue(ping_result, "Instance is not reachable")
+        hypervisors = {h.hypervisor_hostname: h for h
+                       in self.nova.hypervisors.list()}
+        old_hyper = getattr(self.node_to_boot,
+                            hypervisor_hostname_attribute)
+        logger.debug("Old hypervisor is: {}".format(old_hyper))
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        logger.debug("New hypervisor is: {}".format(new_hyper))
+
+        self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        end_time = time.time() + 60 * 5
+        while getattr(self.node_to_boot,
+                      hypervisor_hostname_attribute) != new_hyper:
+            if time.time() > end_time:
+                raise AssertionError(
+                        "Hypervisor is not changed after live migration")
+            time.sleep(5)
+            self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        self.assertEqual(self.node_to_boot.status, 'ACTIVE')
+        pass
