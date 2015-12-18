@@ -327,7 +327,7 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_groups,
     while inst_status != 'ACTIVE':
         if time() > end_time:
             raise AssertionError(
-                "Instance status is '{0}' instead of 'ACTIVE".format(
+                "Instance status is '{}' instead of 'ACTIVE'".format(
                     inst_status))
         sleep(1)
         inst_status = [s.status for s in nova_client.servers.list()
