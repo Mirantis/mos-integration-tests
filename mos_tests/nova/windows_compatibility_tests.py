@@ -265,15 +265,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         4. Ping this VM and verify that we can ping it
         :return: Nothing
         """
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
     @unittest.skip("Temporary ignoring of the test cause of 542827")
@@ -294,41 +286,17 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Paused state check
         self.node_to_boot.pause()
         # TODO: Make sure that the VM in 'Paused' state
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertFalse(ping_result, "Instance is reachable")
         # Unpaused state check
         self.node_to_boot.unpause()
         # TODO: Make sure that the VM in 'Unpaused' state
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM and make sure that we can ping it
 
@@ -350,41 +318,16 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Suspend state check
         self.node_to_boot.suspend()
         # TODO: Make sure that the VM in 'Suspended' state
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        self.assertFalse(ping_result, "Instance is reachable")
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         # Resume state check
         self.node_to_boot.resume()
         # TODO: Make sure that the VM in 'Resume' state
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM and make sure that we can ping it
 
@@ -408,16 +351,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # 1. 2. 3. -> Into setUp function
         # 4. Ping this VM and verify that we can ping it
         hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        # self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
         hypervisors = {h.hypervisor_hostname: h for h
                        in self.nova.hypervisors.list()}
         old_hyper = getattr(self.node_to_boot,
@@ -425,7 +360,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         logger.info("Old hypervisor is: {}".format(old_hyper))
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.info("New hypervisor is: {}".format(new_hyper))
-
+        # Execute the live migrate
         self.node_to_boot.live_migrate(new_hyper)
 
         self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
@@ -445,16 +380,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                         "Hypervisor is not changed after live migration")
         self.assertEqual(self.node_to_boot.status, 'ACTIVE')
         # Ping the Virtual Machine
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        # self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM
         self.node_to_boot.reboot(reboot_type='HARD')
         end_time = time.time() + 60 * self.ping_timeout
@@ -467,16 +394,8 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             self.node_to_boot = [s for s in nova_client.servers.list()
                                  if s.id == self.node_to_boot.id][0]
         # Waiting for up-and-run of Virtual Machine after reboot
-        end_time = time.time() + 60 * self.ping_timeout
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.info("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        # self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
 
     @unittest.skip("Not implemented")
     def test_542828_AttachDetachVolumesForWindowsInstance(self):

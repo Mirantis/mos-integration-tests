@@ -492,14 +492,24 @@ def delete_image(glance_client, image_id):
 
 
 # execution of system commands
-def ping_command(ip_address):
+def ping_command(ip_address, c=4, i=4, timeout=3):
     """ This function executes the ping program and check its results
         :param ip_address: The IP address to ping
+        :param c: value of the [-c count] parameter of the ping command
+        :param i: value of the [-i interval] parameter of the ping command
+        :param timeout: timeout in minutes that we are waiting for successful
+        result of the ping operation
         :return: True in case of success, False otherwise
     """
-    the_result = os.system("ping -c 4 -i 4 {}".
-                           format(ip_address))
-    return the_result == 0
+    end_time = time() + 60 * timeout
+    ping_result = False
+    while time() < end_time:
+        the_result = os.system("ping -c {} -i {} {}".
+                               format(c, i, ip_address))
+        ping_result = the_result[1] == 0
+        if ping_result:
+            break
+    return ping_result
 
 
 def check_volume_snapshot_status(cinder_client, uid, status, timeout=5):
