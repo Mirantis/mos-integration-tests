@@ -504,7 +504,31 @@ def ping_command(ip_address, c=4, i=4, timeout=3):
     while time() < end_time:
         the_result = os.system("ping -c {} -i {} {}".
                                format(c, i, ip_address))
+        # TODO: Make sure that all packages has been received
         ping_result = the_result == 0
+        if ping_result:
+            break
+    return ping_result
+
+
+def unreachable_ping_command(ip_address, c=4, i=4, timeout=3):
+    """ This function executes the ping program and check its results.
+        The main purpose of this function is to check that the instance
+        with required IP address is not reachable
+        :param ip_address: The IP address to ping
+        :param c: value of the [-c count] parameter of the ping command
+        :param i: value of the [-i interval] parameter of the ping command
+        :param timeout: timeout in minutes that we are waiting for successful
+        result of the ping operation
+        :return: True in case of success, False otherwise
+    """
+    end_time = time() + 60 * timeout
+    ping_result = False
+    while time() < end_time:
+        the_result = os.system("ping -c {} -i {} {}".
+                               format(c, i, ip_address))
+        # TODO: Make sure that all packages has been received
+        ping_result = the_result != 0
         if ping_result:
             break
     return ping_result

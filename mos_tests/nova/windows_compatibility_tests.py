@@ -254,7 +254,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
 
-    @unittest.skip("Temporary ignoring of the test cause of 542827")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image could be created
 
@@ -268,7 +267,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-    @unittest.skip("Temporary ignoring of the test cause of 542827")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image could be paused
         and unpaused
@@ -290,17 +288,32 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
         # Paused state check
         self.node_to_boot.pause()
-        # TODO: Make sure that the VM in 'Paused' state
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertFalse(ping_result, "Instance is reachable")
+        # Make sure that the VM in 'Paused' state
+        ping_result = common_functions.unreachable_ping_command(
+                self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is reachable")
         # Unpaused state check
         self.node_to_boot.unpause()
-        # TODO: Make sure that the VM in 'Unpaused' state
+        # Make sure that the VM in 'Unpaused' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
-        # TODO: Reboot the VM and make sure that we can ping it
+        # Reboot the VM and make sure that we can ping it
+        self.node_to_boot.reboot(reboot_type='HARD')
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
 
-    @unittest.skip("Temporary ignoring of the test cause of 542827")
+        # Waiting for up-and-run of Virtual Machine after reboot
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image can be suspended
         and resumed
@@ -322,15 +335,31 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
         # Suspend state check
         self.node_to_boot.suspend()
-        # TODO: Make sure that the VM in 'Suspended' state
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertFalse(ping_result, "Instance is reachable")
+        # Make sure that the VM in 'Suspended' state
+        ping_result = common_functions.unreachable_ping_command(
+                self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is reachable")
         # Resume state check
         self.node_to_boot.resume()
-        # TODO: Make sure that the VM in 'Resume' state
+        # Make sure that the VM in 'Resume' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
-        # TODO: Reboot the VM and make sure that we can ping it
+        # Reboot the VM and make sure that we can ping it
+        self.node_to_boot.reboot(reboot_type='HARD')
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
+
+        # Waiting for up-and-run of Virtual Machine after reboot
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542827_LiveMigrationForWindowsInstance(self):
         """ This test checks that instance with Windows Image could be
@@ -383,7 +412,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Ping the Virtual Machine
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
-        # TODO: Reboot the VM
+        # Reboot the VM and make sure that we can ping it
         self.node_to_boot.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
                 self.nova,
@@ -399,43 +428,3 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
-
-    @unittest.skip("Not implemented")
-    def test_542828_AttachDetachVolumesForWindowsInstance(self):
-        """ This test verify that volume could be attached to windows
-        instance and user is able to store information on it.
-
-        Steps:
-        1. Upload Windows 2012 Server image to Glance
-        2. Create VM with this Windows image
-        3. Assign floating IP to this VM
-        4. Ping this VM and verify that we can ping it
-        5. Attach volume to this VM.
-        Verify that we can see new disk in windows at least after reboot of VM.
-        6. Mound new volume to Windows and format it.
-        7. Copy some files to this disk and verify that
-        it is possible to store something on this disk.
-        8. Unmount volume and verify that Windows works fine and
-        we can ping this VM.
-        :return: Nothing
-        """
-        pass
-
-    @unittest.skip("Not implemented")
-    def test_542829_AttachDetachNetworksForWindowsInstance(self):
-        """ This test verify that additional network can be attached to
-        windows instance and user is able to ping the instance with
-        new network.
-
-        Steps:
-        1. Upload Windows 2012 Server image to Glance
-        2. Create VM with this Windows image
-        3. Assign floating IP to this VM
-        4. Ping this VM and verify that we can ping it
-        5. Attach new internal network to this VM.
-        Verify that we can see new network interface in windows,
-        at least after reboot of VM.
-        6. Ping VM via new IP address and verify that it works.
-        :return: Nothing
-        """
-        pass
