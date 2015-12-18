@@ -119,12 +119,25 @@ class Environment(EnvironmentBase):
             if controller.data['fqdn'] in stdout:
                 return controller
 
+    @property
+    def primary_controller(self):
+        controllers = self.get_nodes_by_role('controller')
+        for controller in controllers:
+            ip = controller.data['ip']
+            with self.get_ssh_to_node(ip) as remote:
+                response = remote.execute('hiera role')
+                stdout = ' '.join(response['stdout'])
+                if 'primary-controller' in stdout:
+                    return controller
+
     def destroy_nodes(self, devops_nodes):
+        logger.info('wait untill the nodes get offline state')
+        node_ips = [node.get_ip_address_by_network_name('admin')
+                    for node in devops_nodes]
         for node in devops_nodes:
             node.destroy()
-        logger.info('wait untill the nodes get offline state')
         assert(wait(lambda: self.check_nodes_get_offline_state(
-                                 node_names=[x.name for x in devops_nodes]),
+                                 node_ips),
                     timeout=10 * 60))
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'
@@ -156,14 +169,22 @@ class Environment(EnvironmentBase):
         self.warm_shutdown_nodes(devops_nodes)
         self.warm_start_nodes(devops_nodes)
 
-    def check_nodes_get_offline_state(self, node_names=()):
+    def check_nodes_get_offline_state(self, node_ips=[]):
         nodes_states = [not x.data['online']
                         for x in self.get_all_nodes()
-                        if x.data['name'].split('_')[0] in node_names]
+                        if x.data['ip'] in node_ips]
         return all(nodes_states)
 
     def check_nodes_get_online_state(self):
         return all([node.data['online'] for node in self.get_all_nodes()])
+
+    def get_node_ip_by_host_name(self, hostname):
+        controller_ip = ''
+        for node in self.get_all_nodes():
+            if node.data['fqdn'] == hostname:
+                controller_ip = node.data['ip']
+                break
+        return controller_ip
 
 
 class FuelClient(object):
