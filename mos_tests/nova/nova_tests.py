@@ -126,7 +126,7 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_flavor(self.nova, flavor.id)
         self.flavors = []
         for key in self.keys:
-            common_functions.delete_keys(self.nova, key)
+            common_functions.delete_keys(self.nova, key.name)
         self.keys = []
 
     @unittest.skip
@@ -525,7 +525,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
-                                                self.sec_group.name,
+                                                [self.sec_group.name],
                                                 image_id=image_id,
                                                 key_name='key_2238776')
         inst.add_floating_ip(floating_ip.ip)
@@ -534,7 +534,7 @@ class NovaIntegrationTests(unittest.TestCase):
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
                        private_keys=[private_key]) as vm_remote:
-            out.append(vm_remote.execute("sudo -i date > /timestamp.txt"))
+            out.append(vm_remote.execute("sudo su && date > /timestamp.txt"))
             out.append(vm_remote.execute("sudo -i blkid; sudo -i date > "
                                          "/mnt/timestamp.txt"))
             out.append(vm_remote.execute("sudo -i cat /timestamp.txt"))
