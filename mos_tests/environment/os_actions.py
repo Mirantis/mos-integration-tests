@@ -420,9 +420,6 @@ class OpenStackActions(object):
                             }
                         )
                     )
-                logger.debug(
-                    self.neutron.delete_port(port['id'])
-                )
             except NeutronClientException:
                 logger.info('the port {} is not deletable'
                             .format(port['id']))
@@ -498,11 +495,18 @@ class OpenStackActions(object):
         return result
 
     def wait_agents_alive(self, agt_ids_to_check):
-        logger.info('going to check if the agents alive')
-        wait(lambda: all([agt['alive'] for agt in
+        logger.info('waiting until the agents get alive')
+        assert(wait(lambda: all([agt['alive'] for agt in
                                   self.neutron.list_agents()['agents']
                                   if agt['id'] in agt_ids_to_check]),
-                     timeout_seconds=5 * 60)
+                    timeout_seconds=5 * 60))
+
+    def wait_agents_down(self, agt_ids_to_check):
+        logger.info('waiting until the agents go down')
+        assert(wait(lambda: all([not agt['alive'] for agt in
+                                  self.neutron.list_agents()['agents']
+                                  if agt['id'] in agt_ids_to_check]),
+                    timeout_seconds=5 * 60))
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
@@ -523,18 +527,19 @@ class OpenStackActions(object):
     def add_server(self, network_id, key_name, hostname, sg_id):
         i = len(self.nova.servers.list()) + 1
         zone = self.nova.availability_zones.find(zoneName="nova")
-        self.create_server(
-            name='server%02d' % i,
-            availability_zone='{}:{}'.format(zone.zoneName, hostname),
-            key_name=key_name,
-            nics=[{'net-id': network_id}],
-            security_groups=[sg_id])
+        srv = self.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(zone.zoneName, hostname),
+                key_name=key_name,
+                nics=[{'net-id': network_id}],
+                security_groups=[sg_id])
+        return srv
 
-    def reshedule_router_on_primary(self, router_id, primary_fqdn):
+    def reschedule_router_to_primary_host(self, router_id, primary_host):
         agent_list = self.neutron.list_agents(
                           binary='neutron-l3-agent')['agents']
         agt_id_to_move_on = [agt['id'] for agt in agent_list
-                             if agt['host'] == primary_fqdn][0]
+                             if agt['host'] == primary_host][0]
         self.force_l3_reshedule(router_id,
                                  agt_id_to_move_on)
 
