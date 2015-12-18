@@ -250,6 +250,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
 
+    @unittest.skip("Temporary ignoring of the test cause of 542827")
     def test_542825_CreateInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image could be created
 
@@ -260,7 +261,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         4. Ping this VM and verify that we can ping it
         :return: Nothing
         """
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -271,6 +272,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 break
         self.assertTrue(ping_result, "Instance is not reachable")
 
+    @unittest.skip("Temporary ignoring of the test cause of 542827")
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image could be paused
         and unpaused
@@ -288,7 +290,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -301,7 +303,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Paused state check
         self.node_to_boot.pause()
         # TODO: Make sure that the VM in 'Paused' state
-        end_time = time.time() + 60
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -314,7 +316,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Unpaused state check
         self.node_to_boot.unpause()
         # TODO: Make sure that the VM in 'Unpaused' state
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -326,6 +328,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM and make sure that we can ping it
 
+    @unittest.skip("Temporary ignoring of the test cause of 542827")
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
         """ This test checks that instance with Windows image can be suspended
         and resumed
@@ -343,7 +346,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -356,7 +359,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Suspend state check
         self.node_to_boot.suspend()
         # TODO: Make sure that the VM in 'Suspended' state
-        end_time = time.time() + 60
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -369,7 +372,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Resume state check
         self.node_to_boot.resume()
         # TODO: Make sure that the VM in 'Resume' state
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -401,7 +404,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # 1. 2. 3. -> Into setUp function
         # 4. Ping this VM and verify that we can ping it
         hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
-        end_time = time.time() + 120
+        end_time = time.time() + 60 * 2
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -420,13 +423,16 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         logger.debug("New hypervisor is: {}".format(new_hyper))
 
         self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
-        end_time = time.time() + 60 * 5
+        end_time = time.time() + 60 * 10
+        debug_string = "Waiting for changes."
         while getattr(self.node_to_boot,
                       hypervisor_hostname_attribute) != new_hyper:
             if time.time() > end_time:
                 raise AssertionError(
                         "Hypervisor is not changed after live migration")
-            time.sleep(5)
+            time.sleep(30)
+            debug_string += "."
             self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        logger.debug(debug_string)
         self.assertEqual(self.node_to_boot.status, 'ACTIVE')
         pass
