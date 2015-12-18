@@ -139,7 +139,7 @@ class Environment(EnvironmentBase):
 class FuelClient(object):
     """Fuel API client"""
     def __init__(self, ip, login, password, ssh_login, ssh_password):
-        logger.info('Init fuel client on {0}'.format(ip))
+        logger.debug('Init fuel client on {0}'.format(ip))
         self.reconfigure_fuelclient(ip, login, password)
         self.admin_ip = ip
         self.ssh_login = ssh_login

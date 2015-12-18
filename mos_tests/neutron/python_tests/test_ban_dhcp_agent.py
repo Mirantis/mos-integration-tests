@@ -24,7 +24,8 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.usefixtures("check_ha_env", "check_several_computes", "setup")
+@pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
+@pytest.mark.usefixtures("setup")
 class TestBanDHCPAgent(base.TestBase):
     """Check DHCP agents rescheduling."""
 
