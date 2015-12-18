@@ -14,6 +14,7 @@
 
 import os
 import unittest
+import subprocess
 from time import time, sleep
 
 from novaclient import client as nova_client
@@ -117,12 +118,10 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
 
-    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-
             Steps:
              1. Create a floating ip
              2. Create an instance from an image with some flavor
@@ -155,12 +154,10 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertEqual(ping, 0, "Instance is not reachable")
 
-    @unittest.skip
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-
             Steps:
              1. Create bootable volume
              1. Create a floating ip
@@ -197,11 +194,9 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertEqual(ping, 0, "Instance is not reachable")
 
-    @unittest.skip
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
-
             Steps:
             1. Create bootable volume
             2. Boot instance from newly created volume
@@ -258,10 +253,8 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
-    @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
-
             Steps:
                 1. Create 10 volumes
                 2. Check status of newly created volumes
@@ -286,7 +279,6 @@ class NovaIntegrationTests(unittest.TestCase):
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
-
             Steps:
                 1. Boot 10-100 instances from image.
                 2. Check that list of instances contains created VMs.
@@ -347,7 +339,6 @@ class NovaIntegrationTests(unittest.TestCase):
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
-
             Steps:
                 1. Create 10-100 volumes.
                 2. Boot 10-100 instances from volumes.
@@ -415,3 +406,62 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(fip_dict[inst_id])
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
+
+    def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
+        """ This test checks network connectivity to VM during Live Migration
+
+            Steps:
+             1. Create a floating ip
+             2. Create an instance from an image with 'm1.micro' flavor
+             3. Add the floating ip to the instance
+             4. Ping the instance by the floating ip
+             5. Execute live migration
+             6. Check current hypervisor and status of instance
+             7. Check that packets loss was minimal
+        """
+        networks = self.neutron.list_networks()['networks']
+        net = [net['id'] for net in networks if not net['router:external']][0]
+        image_id = self.nova.images.list()[0].id
+        flavor = [flavor for flavor in self.nova.flavors.list() if
+                  flavor.name == 'm1.micro'][0]
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip)
+        self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                       self.nova.floating_ips.list()])
+        inst = common_functions.create_instance(self.nova,
+                                                "inst_2238776_{}"
+                                                .format(flavor.name),
+                                                flavor.id, net,
+                                                self.sec_group.name,
+                                                image_id=image_id)
+        self.instances.append(inst.id)
+        inst.add_floating_ip(floating_ip.ip)
+        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+        self.assertEqual(ping, 0, "Instance is not reachable")
+        hypervisors = {h.hypervisor_hostname: h for h
+                       in self.nova.hypervisors.list()}
+        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
+                                stdout=subprocess.PIPE)
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
+                                       disk_over_commit=False)
+        inst = self.nova.servers.get(inst.id)
+        timeout = 5
+        end_time = time() + 60 * timeout
+        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
+                new_hyper:
+            if time() > end_time:
+                raise AssertionError(
+                    "Hypervisor is not changed after live migration")
+            sleep(1)
+            inst = self.nova.servers.get(inst.id)
+        self.assertEqual(inst.status, 'ACTIVE')
+        ping.wait()
+        output = ping.stdout.read().split('\n')[-3].split()
+        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
+        loss = packets['transmitted'] - packets['received']
+        if loss > 5:
+            raise AssertionError(
+                "Packets loss exceeds the limit, {} packets were lost".format(
+                    loss))
