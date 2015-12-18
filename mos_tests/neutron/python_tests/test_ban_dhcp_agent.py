@@ -50,7 +50,7 @@ class TestBanDHCPAgent(base.TestBase):
             name=name, **kwargs)
         return instance
 
-    def ban_dhcp_agent(self, node_to_ban, host, network_name,
+    def ban_dhcp_agent(self, node_to_ban, host, network_name=None,
                        wait_for_die=True, wait_for_rescheduling=True):
         """Ban DHCP agent and wait until agents rescheduling.
 
@@ -64,10 +64,15 @@ class TestBanDHCPAgent(base.TestBase):
         :param wait_for_rescheduling: wait new dhcp-agent starts
         :returns: str, name of banned node
         """
-        network = self.os_conn.neutron.list_networks(
-            name=network_name)['networks'][0]
-        current_agents = self.os_conn.get_node_with_dhcp_for_network(
-            network['id'])
+        list_dhcp_agents = lambda: self.os_conn.list_all_neutron_agents(
+            agent_type='dhcp', filter_attr='host')
+        if network_name:
+            network = self.os_conn.neutron.list_networks(
+                name=network_name)['networks'][0]
+            list_dhcp_agents = (
+                lambda: self.os_conn.get_node_with_dhcp_for_network(
+                    network['id']))
+        current_agents = list_dhcp_agents()
 
         # ban dhcp agent on provided node
         with self.env.get_ssh_to_node(host) as remote:
@@ -81,10 +86,7 @@ class TestBanDHCPAgent(base.TestBase):
         if wait_for_die:
             err_msg = "Awainting ban of DHCP agent: {0}"
             wait(
-                lambda: (
-                    node_to_ban not in
-                    self.os_conn.get_node_with_dhcp_for_network(
-                        network['id'])),
+                lambda: (node_to_ban not in list_dhcp_agents()),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
                 waiting_for=err_msg.format(node_to_ban))
@@ -92,15 +94,13 @@ class TestBanDHCPAgent(base.TestBase):
         if wait_for_rescheduling:
             err_msg = "New DHCP agent wasn't rescheduled"
             wait(
-                lambda: (
-                    set(self.os_conn.get_node_with_dhcp_for_network(
-                        network['id'])) - set(current_agents)),
+                lambda: (set(list_dhcp_agents()) - set(current_agents)),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
                 waiting_for=err_msg)
         return node_to_ban
 
-    def clear_dhcp_agent(self, node_to_clear, host, network_name,
+    def clear_dhcp_agent(self, node_to_clear, host, network_name=None,
                          wait_for_rescheduling=True):
         """Clear DHCP agent after ban and wait until agents rescheduling.
 
@@ -110,8 +110,14 @@ class TestBanDHCPAgent(base.TestBase):
         :param wait_for_rescheduling: wait until dhcp-agent reschedule
         :returns: str, name of cleared node
         """
-        network = self.os_conn.neutron.list_networks(
-            name=network_name)['networks'][0]
+        list_dhcp_agents = lambda: self.os_conn.list_all_neutron_agents(
+            agent_type='dhcp', filter_attr='host')
+        if network_name:
+            network = self.os_conn.neutron.list_networks(
+                name=network_name)['networks'][0]
+            list_dhcp_agents = (
+                lambda: self.os_conn.get_node_with_dhcp_for_network(
+                    network['id']))
 
         # clear dhcp agent on provided node
         with self.env.get_ssh_to_node(host) as remote:
@@ -126,10 +132,7 @@ class TestBanDHCPAgent(base.TestBase):
             err_msg = (
                 "Wait for DHCP agent ({0}) rescheduling after clear from ban")
             wait(
-                lambda: (
-                    node_to_clear in
-                    self.os_conn.get_node_with_dhcp_for_network(
-                        network['id'])),
+                lambda: (node_to_clear in list_dhcp_agents()),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
                 waiting_for=err_msg.format(node_to_clear))
