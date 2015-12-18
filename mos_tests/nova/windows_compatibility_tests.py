@@ -422,17 +422,65 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.debug("New hypervisor is: {}".format(new_hyper))
 
+        self.nova.servers.live_migrate(self.node_to_boot,
+                                       new_hyper,
+                                       block_migration=True,
+                                       disk_over_commit=False)
+
         self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
         end_time = time.time() + 60 * 10
         debug_string = "Waiting for changes."
+        is_timeout = False
         while getattr(self.node_to_boot,
                       hypervisor_hostname_attribute) != new_hyper:
             if time.time() > end_time:
-                raise AssertionError(
-                        "Hypervisor is not changed after live migration")
+                is_timeout = True
             time.sleep(30)
             debug_string += "."
             self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
         logger.debug(debug_string)
+        if is_timeout:
+            raise AssertionError(
+                        "Hypervisor is not changed after live migration")
         self.assertEqual(self.node_to_boot.status, 'ACTIVE')
+        pass
+
+    @unittest.skip("Not implemented")
+    def test_542828_AttachDetachVolumesForWindowsInstance(self):
+        """ This test verify that volume could be attached to windows
+        instance and user is able to store information on it.
+
+        Steps:
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Attach volume to this VM.
+        Verify that we can see new disk in windows at least after reboot of VM.
+        6. Mound new volume to Windows and format it.
+        7. Copy some files to this disk and verify that
+        it is possible to store something on this disk.
+        8. Unmount volume and verify that Windows works fine and
+        we can ping this VM.
+        :return: Nothing
+        """
+        pass
+
+    @unittest.skip("Not implemented")
+    def test_542829_AttachDetachNetworksForWindowsInstance(self):
+        """ This test verify that additional network can be attached to
+        windows instance and user is able to ping the instance with
+        new network.
+
+        Steps:
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Attach new internal network to this VM.
+        Verify that we can see new network interface in windows,
+        at least after reboot of VM.
+        6. Ping VM via new IP address and verify that it works.
+        :return: Nothing
+        """
         pass
