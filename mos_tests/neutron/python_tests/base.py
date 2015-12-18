@@ -22,6 +22,7 @@ from waiting import wait
 
 from mos_tests import settings
 
+
 logger = logging.getLogger(__name__)
 
 

@@ -12,12 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import pytest
-
 import logging
 
-from mos_tests.neutron.python_tests.base import TestBase
+import pytest
+
 from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.neutron.python_tests.base import TestBase
+
 
 logger = logging.getLogger(__name__)
 

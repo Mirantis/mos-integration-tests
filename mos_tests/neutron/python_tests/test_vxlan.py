@@ -15,11 +15,13 @@
 from contextlib import contextmanager
 from distutils.spawn import find_executable
 import logging
-import pytest
 import subprocess
 import threading
 
+import pytest
+
 from mos_tests.neutron.python_tests.base import TestBase
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ def tcpdump_vxlan(ip, env, log_path):
         # Start tcpdump
         thread.start()
         yield
-    except:
+    except Exception:
         raise
     else:
         # Download log
