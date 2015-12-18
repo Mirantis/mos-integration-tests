@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextmanager
-def tcpdump_vxlan(ip, env, log_path):
+def tcpdump(ip, env, log_path, tcpdump_args):
     """Start tcpdump on vxlan port before enter and stop it after
 
     Log will download to log_path argument
@@ -36,7 +36,7 @@ def tcpdump_vxlan(ip, env, log_path):
         logger.info('Start tcpdump on {0}'.format(ip))
         with env.get_ssh_to_node(ip) as remote:
             result = remote.execute(
-                'tcpdump -U -vvni any port 4789 -w /tmp/vxlan.log')
+                'tcpdump -U {0} -w /tmp/vxlan.log'.format(tcpdump_args))
             assert result['exit_code'] == 0
 
     thread = threading.Thread(target=tcpdump, args=(ip,))
@@ -55,6 +55,14 @@ def tcpdump_vxlan(ip, env, log_path):
         with env.get_ssh_to_node(ip) as remote:
             remote.execute('killall tcpdump')
         thread.join(0)
+
+
+def tcpdump_vxlan(ip, env, log_path):
+    """Start tcpdump on vxlan port before enter and stop it after
+
+    Log will download to log_path argument
+    """
+    return tcpdump(ip, env, log_path, '-U -vvni any port 4789')
 
 
 def _run_tshark_on_vxlan(log_file, cond):
@@ -264,7 +272,11 @@ class TestVxlanL2pop(TestVxlanBase):
 
     @pytest.mark.need_tshark
     @pytest.mark.check_env_('has_2_or_more_computes')
-    def test_broadcast_traffic_propagation(self, router):
+    @pytest.mark.parametrize('tcpdump_args', [
+        '-vvni any port 4789',
+        '-n src host {source_ip} -i any'
+    ], ids=['filter by vxlan port', 'filter by source_ip'])
+    def test_broadcast_traffic_propagation(self, router, tcpdump_args):
         """Check broadcast traffic propagation for network segments
 
         Scenario:
@@ -317,9 +329,10 @@ class TestVxlanL2pop(TestVxlanBase):
 
         # Initiate broadcast traffic from server1 to server2
         broadcast_log = '/tmp/vxlan_broadcast.log'
-        with tcpdump_vxlan(
+        with tcpdump(
                 ip=compute2.data['ip'], env=self.env,
-                log_path=broadcast_log
+                log_path=broadcast_log,
+                tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
             ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
@@ -329,9 +342,10 @@ class TestVxlanL2pop(TestVxlanBase):
 
         # Initiate unicast traffic from server1 to server2
         unicast_log = '/tmp/vxlan_unicast.log'
-        with tcpdump_vxlan(
+        with tcpdump(
                 ip=compute2.data['ip'], env=self.env,
-                log_path=unicast_log
+                log_path=unicast_log,
+                tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
             ):
             cmd = 'ping -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
