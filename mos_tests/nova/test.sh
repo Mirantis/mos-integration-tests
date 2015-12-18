@@ -13,4 +13,5 @@ scp node-$CONTR_ID:~/windows_compatibility_tests_report.xml ~/
 ssh node-$CONTR_ID "\rm -rf ~/mos_tests"
 
 # Show command to view results
-echo -e "For test results see:\n\t# less ~/nova_tests_report.xml\n\t# xmllint --format ~/nova_tests_report.xml"
+echo -e "For Nova test results see:\n\t# less ~/nova_tests_report.xml\n\t# xmllint --format ~/nova_tests_report.xml"
+echo -e "For Windows Compatibility test results see:\n\t# less ~/windows_compatibility_tests_report.xml\n\t# xmllint --format ~/windows_compatibility_tests_report.xml"

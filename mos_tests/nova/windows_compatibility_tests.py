@@ -167,7 +167,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             for image_object in self.glance.images.list():
                 if image_object.id == self.image.id:
                     self.image = image_object
-                    logger.debug("Image in the {} state".
+                    logger.info("Image in the {} state".
                                  format(self.image.status))
                     if self.image.status == 'active':
                         is_activated = True
@@ -180,7 +180,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         for network in self.nova.networks.list():
             if 'internal' in network.label:
                 network_id = network.id
-        logger.debug("Starting with network interface id {}".
+        logger.info("Starting with network interface id {}".
                      format(network_id))
 
         # TODO: add check flavor parameters vs. vm parameters
@@ -206,7 +206,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.expected_flavor_id = expected_flavor.id
                 self.our_own_flavor_was_created = True
                 break
-        logger.debug("Starting with flavor {}".format(
+        logger.info("Starting with flavor {}".format(
                 self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
         self.node_to_boot = common_functions.create_instance(
@@ -220,7 +220,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertEqual(self.node_to_boot.status, 'ACTIVE',
                          "The node not in active state!")
 
-        logger.debug("Using following floating ip {}".format(
+        logger.info("Using following floating ip {}".format(
                 self.floating_ip.ip))
 
         self.node_to_boot.add_floating_ip(self.floating_ip)
@@ -269,7 +269,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -298,7 +298,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -311,7 +311,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -324,7 +324,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -354,7 +354,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -367,7 +367,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -380,7 +380,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -412,7 +412,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
             ping_result = common_functions.ping_command(self.floating_ip.ip)
             attempt_id += 1
             if ping_result:
@@ -422,9 +422,9 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                        in self.nova.hypervisors.list()}
         old_hyper = getattr(self.node_to_boot,
                             hypervisor_hostname_attribute)
-        logger.debug("Old hypervisor is: {}".format(old_hyper))
+        logger.info("Old hypervisor is: {}".format(old_hyper))
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
-        logger.debug("New hypervisor is: {}".format(new_hyper))
+        logger.info("New hypervisor is: {}".format(new_hyper))
 
         self.node_to_boot.live_migrate(new_hyper)
 
@@ -439,12 +439,44 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             time.sleep(30)
             debug_string += "."
             self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
-        logger.debug(debug_string)
+        logger.info(debug_string)
         if is_timeout:
             raise AssertionError(
                         "Hypervisor is not changed after live migration")
         self.assertEqual(self.node_to_boot.status, 'ACTIVE')
-        pass
+        # Ping the Virtual Machine
+        end_time = time.time() + 60 * self.ping_timeout
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        # self.assertTrue(ping_result, "Instance is not reachable")
+        # TODO: Reboot the VM
+        self.node_to_boot.reboot(reboot_type='REBOOT_HARD')
+        end_time = time.time() + 60 * self.ping_timeout
+        while self.node_to_boot.status != 'ACTIVE':
+            if time.time() > end_time:
+                raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
+            time.sleep(1)
+            self.node_to_boot = [s for s in nova_client.servers.list()
+                                 if s.id == self.node_to_boot.id][0]
+        # Waiting for up-and-run of Virtual Machine after reboot
+        end_time = time.time() + 60 * self.ping_timeout
+        ping_result = False
+        attempt_id = 1
+        while time.time() < end_time:
+            logger.info("Attempt #{} to ping the instance".format(attempt_id))
+            ping_result = common_functions.ping_command(self.floating_ip.ip)
+            attempt_id += 1
+            if ping_result:
+                break
+        # self.assertTrue(ping_result, "Instance is not reachable")
 
     @unittest.skip("Not implemented")
     def test_542828_AttachDetachVolumesForWindowsInstance(self):
