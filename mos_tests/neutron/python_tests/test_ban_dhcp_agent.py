@@ -203,6 +203,7 @@ class TestBanDHCPAgent(base.TestBase):
         # create network with subnet and router
         int_net, sub_net = self.create_internal_network_with_subnet()
         self.net_id = int_net['network']['id']
+        self.net_name = int_net['network']['name']
         router = self.create_router_between_nets(ext_net, sub_net)
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
@@ -254,7 +255,7 @@ class TestBanDHCPAgent(base.TestBase):
             host_to_ban = agents_hosts[identifier]
             self.ban_dhcp_agent(node_to_ban=host_to_ban,
                                 host=controller_host,
-                                network_name='net01',
+                                network_name=self.net_name,
                                 wait_for_rescheduling=(not identifier))
 
         # check dhcp client on instance
@@ -315,7 +316,7 @@ class TestBanDHCPAgent(base.TestBase):
         for index, host_to_ban in enumerate(agents_hosts):
             self.ban_dhcp_agent(node_to_ban=host_to_ban,
                                 host=controller_host,
-                                network_name='net01',
+                                network_name=self.net_name,
                                 wait_for_rescheduling=(not index))
 
         # ban rescheduled dhcp agents
@@ -325,7 +326,7 @@ class TestBanDHCPAgent(base.TestBase):
         for host_to_ban in new_agents_hosts:
             last_banned = self.ban_dhcp_agent(node_to_ban=host_to_ban,
                                               host=controller_host,
-                                              network_name='net01',
+                                              network_name=self.net_name,
                                               wait_for_rescheduling=False)
         # check that it was other rescheduled agent after ban presented agents
         assert (
@@ -334,7 +335,7 @@ class TestBanDHCPAgent(base.TestBase):
         # clear last banned
         cleared_agent = self.clear_dhcp_agent(node_to_clear=last_banned,
                                               host=controller_host,
-                                              network_name='net01')
+                                              network_name=self.net_name)
         # check dhcp client on instance after agent clearing and rescheduling
         self.check_dhcp_on_cirros_instance(vm=self.instance)
 
