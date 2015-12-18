@@ -95,6 +95,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         cls.uid_list = []
 
+        # timeouts (in minutes)
+        cls.ping_timeout = 2
+        cls.hypervisor_timeout = 10
+
     def setUp(self):
         """
 
@@ -261,7 +265,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         4. Ping this VM and verify that we can ping it
         :return: Nothing
         """
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -290,7 +294,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -303,7 +307,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Paused state check
         self.node_to_boot.pause()
         # TODO: Make sure that the VM in 'Paused' state
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -316,7 +320,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Unpaused state check
         self.node_to_boot.unpause()
         # TODO: Make sure that the VM in 'Unpaused' state
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -346,7 +350,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -359,7 +363,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Suspend state check
         self.node_to_boot.suspend()
         # TODO: Make sure that the VM in 'Suspended' state
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -372,7 +376,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Resume state check
         self.node_to_boot.resume()
         # TODO: Make sure that the VM in 'Resume' state
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -404,7 +408,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # 1. 2. 3. -> Into setUp function
         # 4. Ping this VM and verify that we can ping it
         hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
-        end_time = time.time() + 60 * 2
+        end_time = time.time() + 60 * self.ping_timeout
         ping_result = False
         attempt_id = 1
         while time.time() < end_time:
@@ -422,13 +426,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.debug("New hypervisor is: {}".format(new_hyper))
 
-        self.nova.servers.live_migrate(self.node_to_boot,
-                                       new_hyper,
-                                       block_migration=True,
-                                       disk_over_commit=False)
+        self.node_to_boot.live_migrate(new_hyper)
 
         self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
-        end_time = time.time() + 60 * 10
+        end_time = time.time() + 60 * self.hypervisor_timeout
         debug_string = "Waiting for changes."
         is_timeout = False
         while getattr(self.node_to_boot,
