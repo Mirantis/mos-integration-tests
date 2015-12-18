@@ -298,7 +298,7 @@ class NovaIntegrationTests(unittest.TestCase):
         net_internal_id = net_dict["admin_internal_net"]
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -367,7 +367,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.volumes), 10, msg)
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
