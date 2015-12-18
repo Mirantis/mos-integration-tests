@@ -31,64 +31,64 @@ class HeatIntegrationTests(unittest.TestCase):
     """ Basic automated tests for OpenStack Heat verification. """
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
         OS_USERNAME = os.environ.get('OS_USERNAME')
         OS_PASSWORD = os.environ.get('OS_PASSWORD')
         OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
-        self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                               username=OS_USERNAME,
-                                               password=OS_PASSWORD,
-                                               tenat_name=OS_TENANT_NAME,
-                                               project_name=OS_PROJECT_NAME)
-        services = self.keystone.service_catalog
+        cls.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
+                                              username=OS_USERNAME,
+                                              password=OS_PASSWORD,
+                                              tenat_name=OS_TENANT_NAME,
+                                              project_name=OS_PROJECT_NAME)
+        services = cls.keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
                                          endpoint_type='internalURL')
 
-        self.heat = heat_client(endpoint=heat_endpoint,
-                                token=self.keystone.auth_token)
+        cls.heat = heat_client(endpoint=heat_endpoint,
+                               token=cls.keystone.auth_token)
 
         # Get path on node to 'templates' dir
-        self.templates_dir = os.path.join(
+        cls.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
         # Get path on node to 'images' dir
-        self.images_dir = os.path.join(
+        cls.images_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'images')
 
         # Neutron connect
-        self.neutron = neutron_client.Client(username=OS_USERNAME,
-                                             password=OS_PASSWORD,
-                                             tenant_name=OS_TENANT_NAME,
-                                             auth_url=OS_AUTH_URL,
-                                             insecure=True)
+        cls.neutron = neutron_client.Client(username=OS_USERNAME,
+                                            password=OS_PASSWORD,
+                                            tenant_name=OS_TENANT_NAME,
+                                            auth_url=OS_AUTH_URL,
+                                            insecure=True)
 
         # Nova connect
-        OS_TOKEN = self.keystone.get_token(self.keystone.session)
-        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
+        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
+        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
             auth_url=OS_AUTH_URL,
             username=OS_USERNAME,
             password=OS_PASSWORD,
             tenant_name=OS_TENANT_NAME)
         OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
 
-        self.nova = nova_client.Client('2',
-                                       auth_url=OS_AUTH_URL,
-                                       username=OS_USERNAME,
-                                       auth_token=OS_TOKEN,
-                                       tenant_id=OS_TENANT_ID,
-                                       insecure=True)
+        cls.nova = nova_client.Client('2',
+                                      auth_url=OS_AUTH_URL,
+                                      username=OS_USERNAME,
+                                      auth_token=OS_TOKEN,
+                                      tenant_id=OS_TENANT_ID,
+                                      insecure=True)
 
         # Glance connect
         glance_endpoint = services.url_for(service_type='image',
                                            endpoint_type='publicURL')
-        self.glance = glance_client.Client(endpoint=glance_endpoint,
-                                           token=OS_TOKEN,
-                                           insecure=True)
-        self.uid_list = []
+        cls.glance = glance_client.Client(endpoint=glance_endpoint,
+                                          token=OS_TOKEN,
+                                          insecure=True)
+        cls.uid_list = []
 
     def tearDown(self):
         for stack_uid in self.uid_list:
@@ -132,12 +132,10 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         # Be sure that this template file will be put on
         # controller during test preparation
-
         # File with template for stack creation
         file_name = './mos_tests/heat/templates/empty_heat_template_v2.yaml'
         # Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
-
         # - 1 -
         # Read Heat stack-create template from file
         try:
@@ -146,7 +144,6 @@ class HeatIntegrationTests(unittest.TestCase):
         except IOError:
             raise Exception("ERROR: can not find template-file [{0}]"
                             "on controller or read data".format(file_name))
-
         # - 2 -
         # Create new stack
         uid_of_new_stack = common_functions.create_stack(self.heat,
@@ -193,7 +190,6 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
-
         for resource in resource_types:
             resource_schema = self.heat.resource_types.get(resource)
             msg = "Schema of resource {0} is incorrect!"
@@ -210,7 +206,6 @@ class HeatIntegrationTests(unittest.TestCase):
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
-
         for resource in resource_types:
             schema = self.heat.resource_types.generate_template(resource)
             msg = "Schema of resource template {0} is incorrect!"
@@ -224,11 +219,12 @@ class HeatIntegrationTests(unittest.TestCase):
         2. Check that the stack is in the list of stacks
         3. Delete the stack.
         4. Check that the stack is absent in the list of stacks
+
         """
         stack_name = 'empty_543335'
         timeout = 20
         parameter = 'some_param_string'
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -256,7 +252,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty__543333'
         parameter = 'some_param_string'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -286,7 +282,7 @@ class HeatIntegrationTests(unittest.TestCase):
                        'mos-integration-tests/master/mos_tests/heat/' \
                        'templates/empty_heat_templ.yaml'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         stack_data = {'stack_name': stack_name, 'template_url': template_url,
@@ -304,7 +300,6 @@ class HeatIntegrationTests(unittest.TestCase):
 
     def test_543339_CheckStackResourcesStatuses(self):
         """ This test case checks that stack resources are in expected states
-
         Steps:
         1. Create new stack
         2. Launch heat action-check stack_name
@@ -366,7 +361,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty_stack'
         timeout = 60
         parameter = "some_string"
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -500,7 +495,7 @@ class HeatIntegrationTests(unittest.TestCase):
                         'disable_rollback': True,
                         'template_description': 'Sample template',
                         'parameters': parameters}
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -686,7 +681,7 @@ class HeatIntegrationTests(unittest.TestCase):
         stack_name = 'empty__543336'
         parameter = 'some_param_string'
         timeout = 20
-        if common_functions.check_stack(stack_name, self.heat):
+        if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
         template = common_functions.read_template(
@@ -1127,6 +1122,151 @@ class HeatIntegrationTests(unittest.TestCase):
                                                  template_additional})
         # CLEANUP
         # Delete stack with tearDown:
+        self.uid_list.append(uid)
+        # Delete image:
+        self.glance.images.delete(image.id)
+        # Delete keypair:
+        keypair.delete()
+
+    def test_543346_HeatCreateStackDockerResources(self):
+        """ This test creates stack with Docker resource
+
+        Steps:
+        1. Download custom Fedora image
+        2. Create image in Glance and check status
+        3. With Nova create new key-pair
+        4. Find internal network ID
+        5. Find name of public network
+        6. Create stack with Docker host
+        7. Get public floating IP of Docker host instance
+        8. Prepare docker endpoint URL
+        9. Create Docker stack
+        10. CleanUp
+
+        https://mirantis.testrail.com/index.php?/cases/view/543346
+        """
+        # At first we need to check that heat has Docker resources
+        # but it was already verified in "test_543328_HeatResourceTypeList".
+        # So nothing to do here.
+
+        file_name = 'fedora_22-docker-image.qcow2.txt'
+        image_name = '543346_Fedora-docker' + '_' + str(randint(100, 10000))
+
+        # Prepare full path to image file. Return e.g.
+        # like: /root/mos_tests/heat/images/fedora_22-docker-image.qcow2.txt
+        image_link_location = os.path.join(self.images_dir, file_name)
+
+        # Download image on node. Like: /tmp/fedora-software-config.qcow2
+        image_path = common_functions.download_image(image_link_location)
+
+        # Create image in Glance
+        image = self.glance.images.create(name=image_name,
+                                          os_distro='Fedora',
+                                          disk_format='qcow2',
+                                          visibility='public',
+                                          container_format='bare')
+        # Check that status is 'queued'
+        if image.status != 'queued':
+            raise AssertionError("ERROR: Image status after creation is:"
+                                 "[{0}]. "
+                                 "Expected [queued]".format(image.status))
+
+        # Put image-file in created Image
+        with open(image_path, 'rb') as image_content:
+            self.glance.images.upload(image.id, image_content)
+
+        # Check that status of image is 'active'
+        self.assertEqual(
+            self.glance.images.get(image.id)['status'],
+            'active',
+            'After creation in Glance image status is [{0}]. '
+            'Expected is [active]'
+                .format(self.glance.images.get(image.id)['status']))
+
+        # Create new keypair
+        keypair = self.nova.keypairs.create(name=image_name)
+
+        # Get list of networks
+        networks = self.neutron.list_networks()
+
+        # Find internal network ID if network name contains 'inter'
+        int_network_id = [x['id'] for x in networks['networks']
+                          if 'intern' in x['name'] and
+                          x['status'] == 'ACTIVE']
+        # If can't find 'inter' in networks -> get ID of last network
+        if not int_network_id:
+            int_network_id = networks['networks'][-1]['id']
+        else:
+            int_network_id = int_network_id[0]
+
+        # Find name of public network
+        pub_network_name = [x['name'] for x in networks['networks']
+                            if 'float' in x['name'] or
+                            'public' in x['name'] and
+                            x['status'] == 'ACTIVE']
+        # If can't find 'float/public' in networks -> get ID of first network
+        if not pub_network_name:
+            pub_network_name = pub_network_name['networks'][0]['name']
+        else:
+            pub_network_name = pub_network_name[0]
+
+        # Read template for Docker host creation
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Docker_Resources_543346_Host.yaml')
+
+        # Create stack for Docker host
+        uid = common_functions.create_stack(self.heat,
+                                            'Heat_Docker_543346_Host',
+                                            template,
+                                            {'key': image_name,
+                                             'flavor': 'm1.small',
+                                             'image': image_name,
+                                             'public_net': pub_network_name,
+                                             'int_network_id': int_network_id,
+                                             'timeout': 600},
+                                            15)
+
+        # Get resource ID of 'docker_server'. We know this name from template
+        instance_id = self.heat.resources.get(uid, 'docker_server').to_dict()
+        instance_id = instance_id['physical_resource_id']
+
+        # Get public floating IP of created server instance in stack
+        floating_ip_list = self.nova.floating_ips.list()
+        floating_ip = [x.ip for x in floating_ip_list
+                       if x.instance_id == instance_id]
+        floating_ip = floating_ip[0]
+
+        # Check that floating IP is not empty
+        self.assertIsNotNone(
+            floating_ip,
+            'ERROR: Floating IP of Docker host instance is empty')
+
+        # Read template for Docker stack creation
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Docker_Resources_543346_docker.yaml')
+
+        # Before creating new docker stack give a few second too start
+        # Docker bind in first stack. We have a WaitCondition in it, but
+        # anyway there may be a need to wait several seconds.
+        time.sleep(5)
+
+        # Prepare docker endpoint. Like: 'tcp://172.16.0.161:2376'
+        # Where IP is a floating IP of host instance. And port# is in template.
+        docker_endpoint = 'tcp://{0}:2376'.format(floating_ip)
+
+        # Create Docker stack
+        docker_uid = \
+            common_functions.create_stack(self.heat,
+                                          'Heat_Docker_543346_docker',
+                                          template,
+                                          {'docker_endpoint': docker_endpoint},
+                                          15)
+        # CLEANUP
+        # First we need to delete second docker stack
+        common_functions.delete_stack(self.heat, docker_uid)
+        # Delete host stack with tearDown:
         self.uid_list.append(uid)
         # Delete image:
         self.glance.images.delete(image.id)

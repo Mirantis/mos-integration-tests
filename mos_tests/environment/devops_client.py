@@ -90,7 +90,9 @@ class DevopsClient(object):
     def sync_tyme(cls, env):
         with env.get_admin_remote() as remote:
             slaves_count = len(env.nodes().all) - 1
+            logger.info("sync time on master")
             remote.execute('hwclock --hctosys')
+            logger.info("sync time on {} slaves".format(slaves_count))
             remote.execute('for i in {{1..{0}}}; do ssh node-$i '
                            '"hwclock --hctosys"; done'.format(slaves_count))
 

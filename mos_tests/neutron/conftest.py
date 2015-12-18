@@ -15,8 +15,8 @@
 
 def pytest_addoption(parser):
     parser.addoption("--fuel-ip", '-I', action="store",
-        help="Fuel master server ip address")
+                     help="Fuel master server ip address")
     parser.addoption("--env", '-E', action="store",
-        help="Fuel devops env name")
+                     help="Fuel devops env name")
     parser.addoption("--snapshot", '-S', action="store",
-        help="Fuel devops snapshot name")
+                     help="Fuel devops snapshot name")

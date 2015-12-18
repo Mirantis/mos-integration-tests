@@ -13,17 +13,16 @@
 #    under the License.
 
 import logging
-import time
 import random
 from tempfile import NamedTemporaryFile
+import time
+from waiting import wait
 
 from cinderclient import client as cinderclient
-from devops.error import TimeoutError
-from devops.helpers import helpers
 from glanceclient.v1 import Client as GlanceClient
 from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
-from novaclient.v2 import Client as NovaClient
+from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import neutronclient.v2_0.client as neutronclient
 from neutronclient.common.exceptions import NeutronClientException
@@ -36,6 +35,7 @@ class OpenStackActions(object):
 
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None):
+        logger.info('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
         if cert is None:
@@ -49,11 +49,12 @@ class OpenStackActions(object):
             path_to_cert = f.name
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        self.nova = NovaClient(username=user,
-                               api_key=password,
-                               project_id=tenant,
-                               auth_url=auth_url,
-                               cacert=path_to_cert)
+        self.nova = nova_client.Client(version=2,
+                                       username=user,
+                                       api_key=password,
+                                       project_id=tenant,
+                                       auth_url=auth_url,
+                                       cacert=path_to_cert)
 
         self.cinder = cinderclient.Client(1, user, password,
                                           tenant, auth_url,
@@ -144,19 +145,14 @@ class OpenStackActions(object):
                                        files=files,
                                        key_name=key_name,
                                        **kwargs)
-        try:
-            helpers.wait(
-                lambda: self.get_instance_detail(srv).status == "ACTIVE",
-                timeout=timeout)
-            logger.info('the server {0} is {1}'.
-                         format(srv.name,
-                                self.get_instance_detail(srv).status))
-            return self.get_instance_detail(srv.id)
-        except TimeoutError:
-            logger.debug("Create server failed by timeout")
-            assert self.get_instance_detail(srv).status == "ACTIVE", (
-                "Instance doesn't reach active state, current state"
-                " is {0}".format(self.get_instance_detail(srv).status))
+
+        wait(
+            lambda: self.get_instance_detail(srv).status == "ACTIVE",
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} status change to ACTIVE'.format(
+                name))
+        logger.info('the server {0} is "ACTIVE"'.format(srv.name))
+        return self.get_instance_detail(srv.id)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -173,13 +169,27 @@ class OpenStackActions(object):
                 for y in srv.addresses.values()
                 for x in y}
 
-    def get_node_with_dhcp_for_network(self, net_id):
+    def get_node_with_dhcp_for_network(self, net_id, filter_attr='host',
+                                       is_alive=True):
+        filter_fn = lambda x: x[filter_attr] if filter_attr else x
         result = self.list_dhcp_agents_for_network(net_id)
-        nodes = [i['host'] for i in result['agents'] if i['alive']]
+        nodes = [filter_fn(node) for node in result['agents']
+                 if node['alive'] == is_alive]
+        return nodes
+
+    def get_node_with_dhcp_for_network_by_host(self, net_id, hostname):
+        result = self.list_dhcp_agents_for_network(net_id)
+        nodes = [node for node in result['agents'] if node['host'] == hostname]
         return nodes
 
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
+
+    def get_networks_on_dhcp_agent(self, agent_id):
+        return self.list_networks_on_dhcp_agent(agent_id)['networks']
+
+    def list_networks_on_dhcp_agent(self, agent_id):
+        return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
     def list_l3_agents(self):
         return [x for x in self.neutron.list_agents()['agents']
@@ -231,7 +241,7 @@ class OpenStackActions(object):
             #   Wait active state for port
             port_id = flip['floatingip']['port_id']
             state = lambda: self.neutron.show_port(port_id)['port']['status']
-            helpers.wait(lambda: state() == "ACTIVE")
+            wait(lambda: state() == "ACTIVE")
             return flip['floatingip']
 
         fl_ips_pool = self.nova.floating_ip_pools.list()
@@ -249,9 +259,10 @@ class OpenStackActions(object):
                     body={'floatingip': {}})
 
                 id = floating_ip['id']
-                helpers.wait(
+                wait(
                     lambda: self.neutron.show_floatingip(id)
-                            ['floatingip']['status'] == "DOWN", timeout=60)
+                            ['floatingip']['status'] == "DOWN",
+                    timeout_seconds=60)
             except NeutronClientException:
                 logger.info('The floatingip {} can not be disassociated.'
                             .format(floating_ip['id']))
@@ -273,8 +284,8 @@ class OpenStackActions(object):
             try:
                 self.nova.floating_ips.delete(floating_ip)
             except NovaClientException:
-                logger.info('floating_ip {} is not deletable'.
-                             format(floating_ip))
+                logger.info('floating_ip {} is not deletable'
+                            .format(floating_ip))
 
     def create_router(self, name, tenant_id=None):
         router = {'name': name}
@@ -488,10 +499,10 @@ class OpenStackActions(object):
 
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
-        helpers.wait(lambda: all([agt['alive'] for agt in
+        wait(lambda: all([agt['alive'] for agt in
                                   self.neutron.list_agents()['agents']
                                   if agt['id'] in agt_ids_to_check]),
-                     timeout=5 * 60)
+                     timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
@@ -545,6 +556,6 @@ class OpenStackActions(object):
                                                  router_id)
         self.neutron.add_router_to_l3_agent(new_l3_agt_id,
                                             {"router_id": router_id})
-        assert(helpers.wait(
+        assert(wait(
             lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
-            timeout=5 * 60))
+            timeout_seconds=5 * 60))

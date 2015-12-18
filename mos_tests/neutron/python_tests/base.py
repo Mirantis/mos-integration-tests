@@ -13,10 +13,11 @@
 #    under the License.
 
 import logging
+
 import paramiko
+from paramiko import ssh_exception
 import pytest
 import six
-
 from waiting import wait
 
 from mos_tests import settings
@@ -35,6 +36,8 @@ class TestBase(object):
         self.fuel = fuel
         self.env = env
         self.os_conn = os_conn
+        self.cirros_creds = {'username': 'cirros',
+                             'password': 'cubswin:)'}
 
     def get_node_with_dhcp(self, net_id):
         nodes = self.os_conn.get_node_with_dhcp_for_network(net_id)
@@ -155,13 +158,15 @@ class TestBase(object):
             self.check_ping_from_vm(server1, self.instance_keypair,
                                     ips_to_ping, timeout=timeout)
 
-    def check_vm_is_connectable(self, vm):
-        """Check that instance is pingable from hypervisor.
+    def check_vm_is_available(self, vm,
+                              username=None, password=None, pkeys=None):
+        """Check that instance is available for connect from controller.
 
-        :param vm: instance to ping from it compute node.
+        :param vm: instance to ping from it compute node
+        :param username: username to login to instance
+        :param password: password to connect to instance
+        :param pkeys: private keys to connect to instance
         """
-        # TODO(rpromyshlennikov): check ssh, not only ping,
-        # vm needs keys for it
         vm = self.os_conn.get_instance_detail(vm)
         srv_host = self.env.find_node_by_fqdn(
             self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
@@ -171,28 +176,37 @@ class TestBase(object):
         with self.env.get_ssh_to_node(srv_host) as remote:
             cmd = "ping -c1 {0}".format(vm_ip)
 
-            error_msg = ('Instance with ip {0} has no connectivity from '
-                         'node with ip {1}.').format(vm_ip, srv_host)
+            waiting_for_msg = (
+                'Waiting for instance with ip {0} has '
+                'connectivity from node with ip {1}.').format(vm_ip, srv_host)
 
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
                  sleep_seconds=10, timeout_seconds=3 * 10,
-                 waiting_for=error_msg)
+                 waiting_for=waiting_for_msg)
+        return self.check_vm_is_accessible_with_ssh(
+            vm_ip, username=username, password=password, pkeys=pkeys)
 
-    def check_vm_is_accessible_with_ssh(self, vm_ip, pkeys=None):
+    def check_vm_is_accessible_with_ssh(self, vm_ip, username=None,
+                                        password=None, pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.
 
         :param vm_ip: floating_ip of instance
-        :param pkeys: ip of instance to ping
+        :param username: username to login to instance
+        :param password: password to connect to instance
+        :param pkeys: private keys to connect to instance
         """
         error_msg = 'Instance with ip {0} is not accessible with ssh.'\
             .format(vm_ip)
 
         def is_accessible():
             try:
-                with self.env.get_ssh_to_cirros(vm_ip, pkeys) as vm_remote:
+                with self.env.get_ssh_to_vm(
+                        vm_ip, username, password, pkeys) as vm_remote:
                     vm_remote.execute("date")
                     return True
-            except Exception:
+            except ssh_exception.SSHException:
+                return False
+            except ssh_exception.NoValidConnectionsError:
                 return False
 
         wait(is_accessible,

@@ -26,59 +26,64 @@ from mos_tests.functions import common as common_functions
 
 
 class NovaIntegrationTests(unittest.TestCase):
-    """ Basic automated tests for OpenStack Heat verification. """
+    """ Basic automated tests for OpenStack Nova verification. """
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
         OS_USERNAME = os.environ.get('OS_USERNAME')
         OS_PASSWORD = os.environ.get('OS_PASSWORD')
         OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
         OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
-        self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                               username=OS_USERNAME,
-                                               password=OS_PASSWORD,
-                                               tenat_name=OS_TENANT_NAME,
-                                               project_name=OS_PROJECT_NAME)
+        cls.keystone = keystone_client.Client(
+                auth_url=OS_AUTH_URL,
+                username=OS_USERNAME,
+                password=OS_PASSWORD,
+                tenat_name=OS_TENANT_NAME,
+                project_name=OS_PROJECT_NAME)
 
         # Nova connect
-        OS_TOKEN = self.keystone.get_token(self.keystone.session)
-        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
+        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
+        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
             auth_url=OS_AUTH_URL,
             username=OS_USERNAME,
             password=OS_PASSWORD,
             tenant_name=OS_TENANT_NAME)
         OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
 
-        self.nova = nova_client.Client('2',
-                                       auth_url=OS_AUTH_URL,
-                                       username=OS_USERNAME,
-                                       auth_token=OS_TOKEN,
-                                       tenant_id=OS_TENANT_ID,
-                                       insecure=True)
+        cls.nova = nova_client.Client(
+                '2',
+                auth_url=OS_AUTH_URL,
+                username=OS_USERNAME,
+                auth_token=OS_TOKEN,
+                tenant_id=OS_TENANT_ID,
+                insecure=True)
 
         # Neutron connect
-        self.neutron = neutron_client.Client(username=OS_USERNAME,
-                                             password=OS_PASSWORD,
-                                             tenant_name=OS_TENANT_NAME,
-                                             auth_url=OS_AUTH_URL,
-                                             insecure=True)
+        cls.neutron = neutron_client.Client(
+                username=OS_USERNAME,
+                password=OS_PASSWORD,
+                tenant_name=OS_TENANT_NAME,
+                auth_url=OS_AUTH_URL,
+                insecure=True)
 
         # Cinder endpoint
-        self.cinder = cinder_client.Client('2', OS_USERNAME, OS_PASSWORD,
-                                           OS_TENANT_NAME,
-                                           auth_url=OS_AUTH_URL)
-        self.instances = []
-        self.floating_ips = []
-        self.volumes = []
-        self.flavors = []
-        self.keys = []
+        cls.cinder = cinder_client.Client(
+                '2',
+                OS_USERNAME,
+                OS_PASSWORD,
+                OS_TENANT_NAME,
+                auth_url=OS_AUTH_URL)
 
-        self.sec_group = self.nova.security_groups.create('security_nova',
-                                                          'Security group, '
-                                                          'created for Nova '
-                                                          'automatic tests')
+        cls.instances = []
+        cls.floating_ips = []
+        cls.volumes = []
+
+        cls.sec_group = cls.nova.security_groups.create('security_nova',
+                                                        'Security group, '
+                                                        'created for Nova '
+                                                        'automatic tests')
         rules = [
             {
                 # ssh
@@ -96,11 +101,11 @@ class NovaIntegrationTests(unittest.TestCase):
             }
         ]
         for rule in rules:
-            self.nova.security_group_rules.create(self.sec_group.id, **rule)
+            cls.nova.security_group_rules.create(cls.sec_group.id, **rule)
 
     @classmethod
-    def tearDownClass(self):
-        self.nova.security_groups.delete(self.sec_group)
+    def tearDownClass(cls):
+        cls.nova.security_groups.delete(cls.sec_group)
 
     def tearDown(self):
         for inst in self.instances:
@@ -112,19 +117,11 @@ class NovaIntegrationTests(unittest.TestCase):
         for volume in self.volumes:
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
-        for flavor in self.flavors:
-            common_functions.delete_flavor(self.nova, flavor)
-        self.flavors = []
-        for key in self.keys:
-            common_functions.delete_key(self.nova, key)
-        self.keys = []
 
-    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-
             Steps:
              1. Create a floating ip
              2. Create an instance from an image with some flavor
@@ -136,7 +133,7 @@ class NovaIntegrationTests(unittest.TestCase):
         """
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks
-                        if not net['router:external']][0]
+               if not net['router:external']][0]
         image_id = self.nova.images.list()[0].id
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
@@ -144,24 +141,23 @@ class NovaIntegrationTests(unittest.TestCase):
             self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
-            inst = common_functions.create_instance(self.nova, self.instances,
-                                                    "inst_543358_{}"
+            inst = common_functions.create_instance(self.nova, "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    self.sec_group.name,
+                                                    [self.sec_group.name],
                                                     image_id=image_id)
             inst_id = inst.id
+            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
-            ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+            ping = common_functions.ping_command(floating_ip.ip)
             self.assertEqual(ping, 0, "Instance is not reachable")
 
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-
             Steps:
              1. Create bootable volume
              1. Create a floating ip
@@ -185,23 +181,22 @@ class NovaIntegrationTests(unittest.TestCase):
             volume = common_functions.create_volume(self.cinder, image_id)
             self.volumes.append(volume)
             bdm = {'vda': volume.id}
-            inst = common_functions.create_instance(self.nova, self.instances,
-                                                    "inst_543360_{}"
+            inst = common_functions.create_instance(self.nova, "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    self.sec_group.name,
+                                                    [self.sec_group.name],
                                                     block_device_mapping=bdm)
             inst_id = inst.id
+            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
-            ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+            ping = common_functions.ping_command(floating_ip.ip)
             self.assertEqual(ping, 0, "Instance is not reachable")
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
-
             Steps:
             1. Create bootable volume
             2. Boot instance from newly created volume
@@ -223,10 +218,11 @@ class NovaIntegrationTests(unittest.TestCase):
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
-        instance = common_functions.create_instance(self.nova, self.instances,
-                                                    name, initial_flavor, net,
-                                                    self.sec_group.name,
+        instance = common_functions.create_instance(self.nova, name,
+                                                    initial_flavor, net,
+                                                    [self.sec_group.name],
                                                     block_device_mapping=bdm)
+        self.instances.append(instance.id)
 
         # Assert for attached volumes
         attached_volumes = self.nova.servers.get(instance).to_dict()[
@@ -254,12 +250,11 @@ class NovaIntegrationTests(unittest.TestCase):
                          "Unexpected instance flavor after resize")
 
         # Check that instance is reachable
-        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
+        ping = common_functions.ping_command(floating_ip.ip)
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
-
             Steps:
                 1. Create 10 volumes
                 2. Check status of newly created volumes
@@ -284,7 +279,6 @@ class NovaIntegrationTests(unittest.TestCase):
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
-
             Steps:
                 1. Boot 10-100 instances from image.
                 2. Check that list of instances contains created VMs.
@@ -338,14 +332,13 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = os.system("ping -c 4 -i 8 {}".format(fip_dict[inst_id]))
+            ping = common_functions.ping_command(fip_dict[inst_id])
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
-
             Steps:
                 1. Create 10-100 volumes.
                 2. Boot 10-100 instances from volumes.
@@ -410,7 +403,7 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = os.system("ping -c 4 -i 8 {}".format(fip_dict[inst_id]))
+            ping = common_functions.ping_command(fip_dict[inst_id])
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
