@@ -14,21 +14,51 @@
 
 import logging
 import os
-from paramiko import RSAKey
 
 from devops.helpers.helpers import wait
+from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
-from fuelclient import client
+from paramiko import RSAKey
+
 from mos_tests.environment.ssh import SSHClient
 
+
 logger = logging.getLogger(__name__)
+
+
+class NodeProxy(object):
+    """Fuelclient Node proxy model with some helpful methods"""
+
+    def __init__(self, orig_node, env):
+        self._orig_node = orig_node
+        self._env = env
+
+    def __getattr__(self, name):
+        return getattr(self._orig_node, name)
+
+    @property
+    def ip_list(self):
+        """Returns node ip addresses list"""
+        return [x['ip'].split('/')[0] for x in self.data['network_data']
+                if 'ip' in x]
+
+    def ssh(self):
+        return SSHClient(
+            host=self.data['ip'],
+            username='root',
+            private_keys=self._env.admin_ssh_keys
+        )
 
 
 class Environment(EnvironmentBase):
     """Extended fuelclient Environment model with some helpful methods"""
 
     admin_ssh_keys = None
+
+    def get_all_nodes(self):
+        nodes = super(Environment, self).get_all_nodes()
+        return [NodeProxy(x, self) for x in nodes]
 
     def get_primary_controller_ip(self):
         """Return public ip of primary controller"""

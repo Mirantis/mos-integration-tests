@@ -12,9 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from paramiko.ssh_exception import NoValidConnectionsError
+from paramiko.ssh_exception import SSHException
 import pytest
-
-from paramiko.ssh_exception import SSHException, NoValidConnectionsError
 
 from mos_tests.neutron.python_tests.base import TestBase
 

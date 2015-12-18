@@ -15,11 +15,13 @@
 from contextlib import contextmanager
 from distutils.spawn import find_executable
 import logging
-import pytest
 import subprocess
 import threading
 
+import pytest
+
 from mos_tests.neutron.python_tests.base import TestBase
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ def tcpdump_vxlan(ip, env, log_path):
         # Start tcpdump
         thread.start()
         yield
-    except:
+    except Exception:
         raise
     else:
         # Download log
@@ -336,3 +338,129 @@ class TestVxlanL2pop(TestVxlanBase):
 
         check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                            log_file=unicast_log)
+
+    @pytest.mark.check_env_('has_3_or_more_computes')
+    def test_establishing_tunnels_between_computes(self, variables):
+        """Check the tunnels established between computes
+
+        Scenario:
+            1. Create net01, net01__subnet, 192.168.1.0/24
+            2. Launch vm1 in net01 network on compute1
+            3. Go to compute1's console and check that only tunnels
+                to controllers appear and no tunnels are to compute2
+                and compute3
+            4. Go to compute2 and compute3 consoles and check that
+                no tunnels appear on them
+            5. Launch vm2 in net01 network on compute2
+            6. Go to compute2's console and check that tunnels
+                to controllers and compute1 appear
+            7. Go to compute1's console and check that tunnel
+                to compute2 is added
+            8. Go to compute3's console and check that no tunnels appear on it
+            9. Launch vm3 in net01 network on compute3
+            10. Go to compute3's console and check that tunnels to controllers,
+                compute1 and compute2 appear
+            11. Go to compute1 and compute2 consoles and check that tunnels
+                to compute3 are added on them
+        """
+        # Create net, subnet and server01
+        compute_nodes = self.zone.hosts.keys()[:3]
+
+        network = self.os_conn.create_network(name='net01')
+        self.os_conn.create_subnet(
+            network_id=network['network']['id'],
+            name='net01__subnet',
+            cidr="192.168.1.0/24")
+        self.os_conn.create_server(
+            name='server01',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[0]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
+        compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+        compute3 = self.env.find_node_by_fqdn(compute_nodes[2])
+        controllers = self.env.get_nodes_by_role('controller')
+        # Check that compute1 tunnels only to controller
+        with compute1.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert not any([x in stdout for x in compute2.ip_list])
+            assert not any([x in stdout for x in compute3.ip_list])
+
+        # Check that compute2 and compute3 have not tunnels
+        for node in (compute2, compute3):
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'ovs-vsctl show')
+                assert result['exit_code'] == 0
+                stdout = ''.join(result['stdout'])
+                assert not any([x in stdout for x
+                               in ('local_ip', 'remote_ip')])
+
+        # Create server02
+        self.os_conn.create_server(
+            name='server02',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[1]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        # Check that compute2 have tunnels to controller abd compute1
+        with compute2.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert any([x in stdout for x in compute1.ip_list])
+
+        # Check that compute1 have tunnel to compute2
+        with compute2.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for x in compute2.ip_list])
+
+        # Check that compute3 haven't tunnels
+        with compute3.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert not any([x in stdout for x in ('local_ip', 'remote_ip')])
+
+        # Create server03
+        self.os_conn.create_server(
+            name='server03',
+            availability_zone='{}:{}'.format(self.zone.zoneName,
+                                             compute_nodes[2]),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[self.security_group.id])
+
+        # Check that compute3 have tunnels to controller, compute1 and compute2
+        with compute3.ssh() as remote:
+            result = remote.execute(
+                'ovs-vsctl show')
+            assert result['exit_code'] == 0
+            stdout = ''.join(result['stdout'])
+            assert any([x in stdout for c in controllers for x in c.ip_list])
+            assert any([x in stdout for x in compute2.ip_list])
+            assert any([x in stdout for x in compute3.ip_list])
+
+        # Check compute2 and compute3 have tunnels to compute3
+        for node in (compute1, compute2):
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'ovs-vsctl show')
+                assert result['exit_code'] == 0
+                stdout = ''.join(result['stdout'])
+                assert any([x in stdout for x in compute3.ip_list])

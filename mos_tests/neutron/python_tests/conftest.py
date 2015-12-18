@@ -13,15 +13,17 @@
 #    under the License.
 
 import logging
+
 import pytest
 from waiting import wait
 
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.environment.os_actions import OpenStackActions
-from mos_tests.settings import KEYSTONE_USER
-from mos_tests.settings import KEYSTONE_PASS
-from mos_tests.settings import SSH_CREDENTIALS
 from mos_tests.neutron.conftest import revert_snapshot
+from mos_tests.settings import KEYSTONE_PASS
+from mos_tests.settings import KEYSTONE_USER
+from mos_tests.settings import SSH_CREDENTIALS
+
 
 logger = logging.getLogger(__name__)
 

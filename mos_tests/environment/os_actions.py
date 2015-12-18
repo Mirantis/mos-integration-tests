@@ -16,17 +16,17 @@ import logging
 import random
 from tempfile import NamedTemporaryFile
 import time
-from waiting import wait
 
 from cinderclient import client as cinderclient
 from glanceclient.v1 import Client as GlanceClient
-from keystoneclient.v2_0 import Client as KeystoneClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
+from keystoneclient.v2_0 import Client as KeystoneClient
+from neutronclient.common.exceptions import NeutronClientException
+import neutronclient.v2_0.client as neutronclient
 from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
-import neutronclient.v2_0.client as neutronclient
-from neutronclient.common.exceptions import NeutronClientException
 import paramiko
+from waiting import wait
 
 logger = logging.getLogger(__name__)
 
