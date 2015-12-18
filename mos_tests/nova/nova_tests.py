@@ -73,6 +73,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.floating_ips = []
         self.volumes = []
         self.flavors = []
+        self.keys = []
 
         self.sec_group = self.nova.security_groups.create('security_nova',
                                                           'Security group, '
@@ -114,7 +115,11 @@ class NovaIntegrationTests(unittest.TestCase):
         for flavor in self.flavors:
             common_functions.delete_flavor(self.nova, flavor)
         self.flavors = []
+        for key in self.keys:
+            common_functions.delete_key(self.nova, key)
+        self.keys = []
 
+    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:

@@ -343,7 +343,7 @@ def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
                     timeout=5, key_name=None):
     """ Check instance creation
         :param novaclient: Nova API client connection point
-        :param instances_list: list of instances fot cleaning
+        :param instances_list: List of instance for cleaning
         :param inst_name: name for instance
         :param image_id: id of image
         :param flavor_id: id of flavor
@@ -351,7 +351,7 @@ def create_instance(novaclient, instances_list, inst_name, flavor_id, net_id,
         :param security_group: corresponding security_group
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
-        :param key_name: Name of key to inject into the instance
+        :param key_name: Name of key pair
         :return instance
     """
     end_time = time() + 60 * timeout
@@ -404,6 +404,17 @@ def delete_flavor(novaclient, flavor):
     if flavor in novaclient.flavors.list():
         novaclient.flavors.delete(flavor)
         while flavor in novaclient.flavors.list():
+            sleep(1)
+
+
+def delete_key(novaclient, key):
+    """ Delete key and check that it is absent in the list
+        :param novaclient: Nova API client connection point
+        :param key: keypair
+    """
+    if key in novaclient.keypairs.list():
+        novaclient.keypairs.delete(key)
+        while key in novaclient.keypairs.list():
             sleep(1)
 
 
