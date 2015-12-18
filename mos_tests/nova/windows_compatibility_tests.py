@@ -96,7 +96,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         cls.uid_list = []
 
         # timeouts (in minutes)
-        cls.ping_timeout = 2
+        cls.ping_timeout = 3
         cls.hypervisor_timeout = 10
 
     def setUp(self):
@@ -456,7 +456,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 break
         # self.assertTrue(ping_result, "Instance is not reachable")
         # TODO: Reboot the VM
-        self.node_to_boot.reboot(reboot_type='REBOOT_HARD')
+        self.node_to_boot.reboot(reboot_type='HARD')
         end_time = time.time() + 60 * self.ping_timeout
         while self.node_to_boot.status != 'ACTIVE':
             if time.time() > end_time:
