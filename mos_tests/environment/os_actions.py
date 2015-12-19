@@ -336,6 +336,13 @@ class OpenStackActions(object):
         logger.debug('Try to create key {0}'.format(key_name))
         return self.nova.keypairs.create(key_name)
 
+    def get_port_by_fixed_ip(self, ip):
+        """Returns neutron port by instance fixed ip"""
+        for port in self.neutron.list_ports()['ports']:
+            for ips in port['fixed_ips']:
+                if ip == ips['ip_address']:
+                    return port
+
     @property
     def ext_network(self):
         exist_networks = self.list_networks()['networks']
