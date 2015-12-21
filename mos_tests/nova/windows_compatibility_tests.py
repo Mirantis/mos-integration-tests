@@ -289,8 +289,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Paused state check
         self.node_to_boot.pause()
         # Make sure that the VM in 'Paused' state
-        ping_result = common_functions.unreachable_ping_command(
-                self.floating_ip.ip)
+        ping_result = common_functions.ping_command(
+                self.floating_ip.ip,
+                should_be_available=False
+        )
         self.assertTrue(ping_result, "Instance is reachable")
         # Unpaused state check
         self.node_to_boot.unpause()
@@ -336,8 +338,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         # Suspend state check
         self.node_to_boot.suspend()
         # Make sure that the VM in 'Suspended' state
-        ping_result = common_functions.unreachable_ping_command(
-                self.floating_ip.ip)
+        ping_result = common_functions.ping_command(
+                self.floating_ip.ip,
+                should_be_available=False
+        )
         self.assertTrue(ping_result, "Instance is reachable")
         # Resume state check
         self.node_to_boot.resume()
