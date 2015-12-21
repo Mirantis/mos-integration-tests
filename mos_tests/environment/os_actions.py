@@ -26,7 +26,10 @@ import neutronclient.v2_0.client as neutronclient
 from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
+import six
 from waiting import wait
+
+from mos_tests.environment.ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -496,6 +499,38 @@ class OpenStackActions(object):
         channel.close()
 
         return result
+
+    def ssh_to_instance(self, env, vm, vm_keypair, username='cirros',
+                        password=None):
+        """Returns direct ssh client to instance via proxy"""
+        net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
+        vm_ip = vm.addresses[net_name][0]['addr']
+        net_id = self.neutron.list_networks(
+            name=net_name)['networks'][0]['id']
+        dhcp_namespace = "qdhcp-{0}".format(net_id)
+        devops_nodes = self.get_node_with_dhcp_for_network(net_id)
+        if not devops_nodes:
+            raise Exception("Nodes with dhcp for network with id:{}"
+                            " not found.".format(net_id))
+        ip = env.find_node_by_fqdn(devops_nodes[0]).data['ip']
+        key_paths = []
+        for i, key in enumerate(env.admin_ssh_keys):
+            path = '/tmp/fuel_key{0}.rsa'.format(i)
+            key.write_private_key_file(path)
+            key_paths.append(path)
+        proxy_command = ("ssh {keys} -o 'StrictHostKeyChecking no' "
+                         "root@{node_ip} ip netns exec {ns} "
+                         "nc {vm_ip} 22".format(
+                            keys=' '.join('-i {}'.format(k)
+                                          for k in key_paths),
+                            ns=dhcp_namespace,
+                            node_ip=ip,
+                            vm_ip=vm_ip))
+        instance_key = paramiko.RSAKey.from_private_key(
+            six.StringIO(vm_keypair.private_key))
+        return SSHClient(vm_ip, port=22, username=username, password=password,
+                         private_keys=[instance_key],
+                         proxy_command=proxy_command)
 
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
