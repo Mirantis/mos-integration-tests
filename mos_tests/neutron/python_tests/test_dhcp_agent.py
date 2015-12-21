@@ -50,8 +50,8 @@ class TestDHCPAgent(TestBase):
         logger.info('router {} was created'.format(self.router['id']))
 
         self.dhcp_agent_ids = [agt['id'] for agt in
-                                self.os_conn.neutron.list_agents(
-                                    binary='neutron-dhcp-agent')['agents']]
+                               self.os_conn.neutron.list_agents(
+                                   binary='neutron-dhcp-agent')['agents']]
 
     def run_udhcpc_on_vm(self, vm):
         command = 'sudo -i cirros-dhcpc up eth0'
