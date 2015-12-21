@@ -492,13 +492,14 @@ def delete_image(glance_client, image_id):
 
 
 # execution of system commands
-def ping_command(ip_address):
+def ping_command(ip_address, interval=4):
     """ This function executes the ping program and check its results
         :param ip_address: The IP address to ping
+        :param interval: The interval between successive transmissions
         :return: True in case of success, False otherwise
     """
-    the_result = os.system("ping -c 4 -i 4 {}".
-                           format(ip_address))
+    the_result = os.system("ping -c 4 -i {0} {1}".
+                           format(interval, ip_address))
     return the_result == 0
 
 
