@@ -80,14 +80,25 @@ def check_all_traffic_has_vni(vni, log_file):
             "Log contains records with another VNI\n{0}".format(output))
 
 
-def check_no_arp_traffic(src_ip, dst_ip, log_file):
-    __tracebackhide__ = True
+def get_arp_traffic(src_ip, dst_ip, log_file):
     cond = ("arp.dst.proto_ipv4=={dst_ip} and "
             "arp.src.proto_ipv4=={src_ip}".format(dst_ip=dst_ip, src_ip=src_ip)
     )
-    output = _run_tshark_on_vxlan(log_file, cond)
+    return _run_tshark_on_vxlan(log_file, cond)
+
+
+def check_no_arp_traffic(src_ip, dst_ip, log_file):
+    __tracebackhide__ = True
+    output = get_arp_traffic(src_ip, dst_ip, log_file)
     if output.strip():
         pytest.fail("Log contains ARP traffic\n{0}".format(output))
+
+
+def check_arp_traffic(src_ip, dst_ip, log_file):
+    __tracebackhide__ = True
+    output = get_arp_traffic(src_ip, dst_ip, log_file)
+    if not output.strip():
+        pytest.fail("Log not contains ARP traffic")
 
 
 def check_icmp_traffic(src_ip, dst_ip, log_file):
@@ -269,6 +280,13 @@ class TestVxlan(TestVxlanBase):
 @pytest.mark.check_env_('is_l2pop')
 class TestVxlanL2pop(TestVxlanBase):
     """Vxlan (tun) with enabled L2 population specific tests"""
+
+    def get_server_tap(self, server):
+        """Returns name of instance related tap device
+
+        :param server: nova server
+        :returns str: name of tap device
+        """
 
     @pytest.mark.need_tshark
     @pytest.mark.check_env_('has_2_or_more_computes')
@@ -478,3 +496,88 @@ class TestVxlanL2pop(TestVxlanBase):
                 assert result['exit_code'] == 0
                 stdout = ''.join(result['stdout'])
                 assert any([x in stdout for x in compute3.ip_list])
+
+    @pytest.mark.need_tshark
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    def test_broadcast_traffic_propagation_single_net(self, router):
+        """Check broadcast traffic between instances placed in a single
+        private network and hosted on different nodes
+
+        Scenario:
+            1. Create private network net01, subnet 10.1.1.0/24
+            2. Create private network net02, subnet 10.1.2.0/24
+            3. Create router01_02 and connect net01 and net02 with it
+            4. Boot instances vm1 in net01 and compute1
+            5. Boot instances vm2 in net01 and compute2
+            6. Boot instances vm3 in net02 and compute2
+            7. On the compute2 start listen traffic from vm1 fixed ip on
+                tap interface of vm3
+            8. Go to the vm1's console and initiate broadcast traffic to vm3
+            9. Check that ARP traffic appears on listened interface
+            10. On the compute2 start listen traffic from vm1 fixed ip om
+                tap interface of vm2
+            11. Go to the vm1's console and initiate broadcast traffic to vm3
+            12. Check that ARP traffic is absent on listened interface
+        """
+        # Create networks
+        compute_nodes = self.zone.hosts.keys()[:2]
+        net1, subnet1 = self.create_internal_network_with_subnet(suffix=1)
+        net2, subnet2 = self.create_internal_network_with_subnet(suffix=2)
+        for subnet in (subnet1, subnet2):
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+        # Create instances:
+        for i, (node, net) in enumerate(((compute_nodes[0], net1),
+                                         (compute_nodes[1], net1),
+                                         (compute_nodes[1], net2)), 1):
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName, node),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server1_ip = self.os_conn.get_nova_instance_ips(server1)['fixed']
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['fixed']
+        server3 = self.os_conn.nova.servers.find(name="server03")
+        server3_ip = self.os_conn.get_nova_instance_ips(server3)['fixed']
+        compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+
+        server2_port = self.os_conn.get_port_by_fixed_ip(server2_ip)
+        server2_tap = 'tap{}'.format(server2_port['id'][:11])
+        # Initiate broadcast traffic from server1 to server2
+        broadcast_log = '/tmp/vxlan_broadcast1.log'
+        with tcpdump(
+                ip=compute2.data['ip'], env=self.env,
+                log_path=broadcast_log,
+                tcpdump_args=' -n src host {ip} -i {interface}'.format(
+                    ip=server1_ip,
+                    interface=server2_tap,
+                )
+            ):
+            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            self.run_on_vm(server1, self.instance_keypair, cmd)
+
+        check_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
+                          log_file=broadcast_log)
+
+        server3_port = self.os_conn.get_port_by_fixed_ip(server3_ip)
+        server3_tap = 'tap{}'.format(server3_port['id'][:11])
+        # Initiate broadcast traffic from server1 to server3
+        broadcast_log = '/tmp/vxlan_broadcast1.log'
+        with tcpdump(
+                ip=compute2.data['ip'], env=self.env,
+                log_path=broadcast_log,
+                tcpdump_args=' -n src host {ip} -i {interface}'.format(
+                    ip=server1_ip,
+                    interface=server3_tap,
+                )
+            ):
+            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            self.run_on_vm(server1, self.instance_keypair, cmd)
+
+        check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
+                             log_file=broadcast_log)
