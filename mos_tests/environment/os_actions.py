@@ -182,6 +182,22 @@ class OpenStackActions(object):
         nodes = [node for node in result['agents'] if node['host'] == hostname]
         return nodes
 
+    def list_all_neutron_agents(self, agent_type=None,
+                                filter_attr=None, is_alive=True):
+        agents_type_map = {
+            'dhcp': 'neutron-dhcp-agent',
+            'ovs': 'neutron-openvswitch-agent',
+            'metadata': 'neutron-metadata-agent',
+            'l3': 'neutron-l3-agent',
+            None: ''
+            }
+        filter_fn = lambda x: x[filter_attr] if filter_attr else x
+        agents = [
+            filter_fn(agent) for agent in self.neutron.list_agents(
+                binary=agents_type_map[agent_type])['agents']
+            if agent['alive'] == is_alive]
+        return agents
+
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
 
@@ -192,8 +208,7 @@ class OpenStackActions(object):
         return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
     def list_l3_agents(self):
-        return [x for x in self.neutron.list_agents()['agents']
-                if x['agent_type'] == "L3 agent"]
+        return self.list_all_neutron_agents('l3')
 
     def get_l3_agent_hosts(self, router_id):
         result = self.get_l3_for_router(router_id)
