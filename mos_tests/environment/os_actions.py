@@ -515,9 +515,9 @@ class OpenStackActions(object):
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
         wait(lambda: all([agt['alive'] for agt in
-                                  self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check]),
-                     timeout_seconds=5 * 60)
+                          self.neutron.list_agents()['agents']
+                          if agt['id'] in agt_ids_to_check]),
+             timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
