@@ -81,12 +81,12 @@ class TestRestarts(TestBase):
 
         # make a list of all l3 agent ids
         self.l3_agent_ids = [agt['id'] for agt in
-                                self.os_conn.neutron.list_agents(
-                                    binary='neutron-l3-agent')['agents']]
+                             self.os_conn.neutron.list_agents(
+                                binary='neutron-l3-agent')['agents']]
 
         self.dhcp_agent_ids = [agt['id'] for agt in
-                                self.os_conn.neutron.list_agents(
-                                    binary='neutron-dhcp-agent')['agents']]
+                               self.os_conn.neutron.list_agents(
+                                   binary='neutron-dhcp-agent')['agents']]
 
     def test_shutdown_primary_controller_with_l3_agt(self):
         """[Neutron VLAN and VXLAN] Shut down primary controller
