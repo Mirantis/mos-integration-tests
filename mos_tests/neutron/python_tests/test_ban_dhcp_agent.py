@@ -416,7 +416,7 @@ class TestBanDHCPAgent(base.TestBase):
             14. Check that all networks is on cleared dhcp-agent:
                 ``neutron net-list-on-dhcp-agent <id_clr_agnt>|grep net|wc -l``
 
-        Duration 45m
+        Duration 30m
 
         """
         def _killing_cycle(
