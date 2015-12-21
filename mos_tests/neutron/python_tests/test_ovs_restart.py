@@ -19,6 +19,7 @@ import pytest
 from mos_tests.neutron.python_tests.base import TestBase
 
 
+@pytest.mark.check_env_("has_2_or_more_computes")
 class OvsBase(TestBase):
     """ Common fuctions for ovs tests"""
 
@@ -50,9 +51,8 @@ class OvsBase(TestBase):
     def disable_ovs_agents_on_controller(self):
         """Disable openvswitch-agents on all controllers."""
         controller = self.env.get_nodes_by_role('controller')[0]
-        assert controller is not None, 'No controllers have been found.'
 
-        with self.env.get_ssh_to_node(controller.data['ip']) as remote:
+        with controller.ssh() as remote:
             result = remote.execute(
                 '. openrc && pcs resource disable '
                 'p_neutron-plugin-openvswitch-agent --wait')
@@ -61,25 +61,22 @@ class OvsBase(TestBase):
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
         computes = self.env.get_nodes_by_role('compute')
-        assert len(computes) > 0, 'No computes have been found.'
 
         for node in computes:
-            with self.env.get_ssh_to_node(node.data['ip']) as remote:
+            with node.ssh() as remote:
                 result = remote.execute(
                     'service neutron-plugin-openvswitch-agent restart')
                 assert result['exit_code'] == 0
 
     def enable_ovs_agents_on_controllers(self):
         """Disable openvswitch-agents on all controllers."""
-        controllers = self.env.get_nodes_by_role('controller')
-        assert len(controllers) > 0, 'No controllers have been found.'
+        controller = self.env.get_nodes_by_role('controller')[0]
 
-        for node in controllers:
-            with self.env.get_ssh_to_node(node.data['ip']) as remote:
-                result = remote.execute(
-                    '. openrc && pcs resource enable '
-                    'p_neutron-plugin-openvswitch-agent --wait')
-                assert result['exit_code'] == 0
+        with controller.ssh() as remote:
+            result = remote.execute(
+                '. openrc && pcs resource enable '
+                'p_neutron-plugin-openvswitch-agent --wait')
+            assert result['exit_code'] == 0
 
 
 @pytest.mark.usefixtures("setup")
