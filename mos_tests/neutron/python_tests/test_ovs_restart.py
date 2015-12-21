@@ -19,7 +19,7 @@ import pytest
 from mos_tests.neutron.python_tests.base import TestBase
 
 
-@pytest.mark.check_env_("has_2_or_more_computes")
+@pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
     """ Common fuctions for ovs tests"""
 
@@ -69,7 +69,7 @@ class OvsBase(TestBase):
                 assert result['exit_code'] == 0
 
     def enable_ovs_agents_on_controllers(self):
-        """Disable openvswitch-agents on all controllers."""
+        """Enable openvswitch-agents on all controllers."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
@@ -79,8 +79,9 @@ class OvsBase(TestBase):
             assert result['exit_code'] == 0
 
 
+@pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
-class TestOVSRestart(OvsBase):
+class TestOVSRestartTwoVms(OvsBase):
     """Check restarts of openvswitch-agents."""
 
     @pytest.fixture(autouse=True)
