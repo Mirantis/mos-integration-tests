@@ -103,7 +103,7 @@ class TestOVSRestart(TestBase):
         for node in controllers:
             with self.env.get_ssh_to_node(node.data['ip']) as remote:
                 result = remote.execute(
-                    '. openrc && pcs resource enable '
+                    '. openrc && pcs resource disable '
                     'p_neutron-plugin-openvswitch-agent --wait')
                 assert result['exit_code'] == 0
 
@@ -118,8 +118,21 @@ class TestOVSRestart(TestBase):
                     'service neutron-plugin-openvswitch-agent restart')
                 assert result['exit_code'] == 0
 
+    def enable_ovs_agents_on_controllers(self):
+        """Disable openvswitch-agents on all controllers."""
+        controllers = self.env.get_nodes_by_role('controller')
+        assert len(controllers) > 0, 'No controllers have been found.'
+
+        for node in controllers:
+            with self.env.get_ssh_to_node(node.data['ip']) as remote:
+                result = remote.execute(
+                    '. openrc && pcs resource enable '
+                    'p_neutron-plugin-openvswitch-agent --wait')
+                assert result['exit_code'] == 0
+
     @contextmanager
-    def start_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None):
+    def start_ping_from_vm(self, vm, vm_keypair, log_filename,
+                           vm_login, ip_to_ping=None):
         """Start ping second vm from the first before enter and stop it after.
         Log will be copied to /tmp/ovs_restart_ping.log path."""
         def check_ping_from_vm(vm, vm_keypair, ip_to_ping):
@@ -141,23 +154,40 @@ class TestOVSRestart(TestBase):
             yield
         finally:
             cmd = 'killall -sigint ping'
-            res = self.run_on_vm(vm, vm_keypair, cmd, vm_login="cirros",
+            res = self.run_on_vm(vm, vm_keypair, cmd, vm_login=vm_login,
                                  timeout=3 * 60)
             assert res['exit_code'] == 0, \
                 'Can\'t kill ping process with pid {}.'.format(res)
 
-            cmd = 'cat /tmp/ovs_restart_ping.log'
-            res = self.run_on_vm(vm, vm_keypair, cmd, vm_login="cirros",
+            cmd = 'cat {}'.format(log_filename)
+            res = self.run_on_vm(vm, vm_keypair, cmd, vm_login=vm_login,
                                  timeout=3 * 60)
             assert res['exit_code'] == 0, \
-                'Can\'t get log file /tmp/ovs_restart_ping.log ' \
-                'on vm {}.'.format(vm.name)
+                'Can\'t get log file {} ' \
+                'on vm {}.'.format(log_filename, vm.name)
 
-            with open('/tmp/ovs_restart_ping.log', 'w') as log_file:
-                for line in res['stdout']:
-                    log_file.write(line)
+            with open(log_filename, 'w') as log_file:
+                log_file.writelines(res['stdout'])
 
             process.join(0)
+
+    @staticmethod
+    def parse_ping_info_from_file(filename):
+        with open(filename) as f:
+            logs = f.readlines()
+
+        ping_template = r'(\d+) packets transmitted, (\d+) packets received'
+        for line in logs:
+            packets_data = re.search(ping_template, line)
+            if packets_data:
+                sent_count, recieved_count = packets_data.groups()
+                break
+        else:
+            pytest.fail(
+                'File with pings don\'t contains info '
+                'about transmitted and received packets.')
+
+        return sent_count, recieved_count
 
     def test_ovs_restart_pcs_disable_enable(self):
         """Restart openvswitch-agents with pcs disable/enable on controllers
@@ -179,29 +209,23 @@ class TestOVSRestart(TestBase):
         Duration 10m
 
         """
-        with self.start_ping_from_vm(self.server1, self.instance_keypair,
-                                     self.server2_ip):
+        logfile = "/tmp/ovs_restart_ping.log"
+
+        with self.start_ping_from_vm(
+                vm=self.server1,
+                vm_keypair=self.instance_keypair,
+                log_filename=logfile,
+                vm_login="cirros",
+                ip_to_ping=self.server2_ip):
             self.disable_ovs_agents_on_controllers()
             self.restart_ovs_agents_on_computes()
+            self.enable_ovs_agents_on_controllers()
 
             # sleep is used to check that system will be stable for some time
             # after restarting service
             time.sleep(30)
 
-        with open('/tmp/ovs_restart_ping.log') as f:
-            logs = f.readlines()
-
-        ping_template = r'(\d+) packets transmitted, (\d+) packets received'
-        for line in logs:
-            packets_data = re.search(ping_template, line)
-            if packets_data:
-                sent_count, recieved_count = packets_data.groups()
-                break
-
-        assert packets_data is not None, (
-            'File with pings don\'t contains info '
-            'about transmitted and received packets.'
-        )
+        sent_count, recieved_count = self.parse_ping_info_from_file(logfile)
 
         assert int(sent_count) - int(recieved_count) <= 2, \
             ('More than 2 packets have been lost: {} packets transmitted, '
