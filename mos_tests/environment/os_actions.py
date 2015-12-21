@@ -207,6 +207,17 @@ class OpenStackActions(object):
     def list_networks_on_dhcp_agent(self, agent_id):
         return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
+    def add_network_to_dhcp_agent(self, agent_id, network_id):
+        self.neutron.add_network_to_dhcp_agent(
+            agent_id, body={'network_id': network_id})
+
+    def remove_network_from_dhcp_agent(self, agent_id, network_id):
+        self.neutron.remove_network_from_dhcp_agent(agent_id, network_id)
+
+    def list_ports_for_network(self, network_id, device_owner):
+        return self.neutron.list_ports(
+            network_id=network_id, device_owner=device_owner)['ports']
+
     def list_l3_agents(self):
         return self.list_all_neutron_agents('l3')
 
@@ -515,9 +526,9 @@ class OpenStackActions(object):
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
         wait(lambda: all([agt['alive'] for agt in
-                                  self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check]),
-                     timeout_seconds=5 * 60)
+                          self.neutron.list_agents()['agents']
+                          if agt['id'] in agt_ids_to_check]),
+             timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1

@@ -166,6 +166,21 @@ class TestBanDHCPAgent(base.TestBase):
                 remote, _floating_ip, cmd)
         return res
 
+    def run_on_cirros(self, vm, cmd):
+        """Run command on Cirros VM, connected by floating ip.
+
+        :param vm: instance with cirros
+        :param cmd: command to execute
+        :returns: dict, result of command with code, stdout, stderr.
+        """
+        vm = self.os_conn.get_instance_detail(vm)
+        _floating_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
+
+        with self.env.get_ssh_to_vm(_floating_ip,
+                                    **self.cirros_creds) as remote:
+            res = remote.execute(cmd)
+        return res
+
     def check_ping_from_cirros(self, vm, ip_to_ping=None):
         """Run ping some ip from Cirros instance.
 
@@ -174,7 +189,7 @@ class TestBanDHCPAgent(base.TestBase):
         """
         ip_to_ping = ip_to_ping or settings.PUBLIC_TEST_IP
         cmd = "ping -c1 {0}".format(ip_to_ping)
-        res = self.run_on_cirros_through_host(vm, cmd)
+        res = self.run_on_cirros(vm, cmd)
         error_msg = (
             'Instance has no connectivity, '
             'exit code {exit_code},'
@@ -187,7 +202,7 @@ class TestBanDHCPAgent(base.TestBase):
         :param vm: instance with cirros
         """
         cmd = 'sudo -i cirros-dhcpc up eth0'
-        res = self.run_on_cirros_through_host(vm, cmd)
+        res = self.run_on_cirros(vm, cmd)
         err_msg = (
             'DHCP client can\'t get ip, '
             'exit code {exit_code}, '
@@ -416,7 +431,7 @@ class TestBanDHCPAgent(base.TestBase):
             14. Check that all networks is on cleared dhcp-agent:
                 ``neutron net-list-on-dhcp-agent <id_clr_agnt>|grep net|wc -l``
 
-        Duration 45m
+        Duration 30m
 
         """
         def _killing_cycle(
@@ -494,3 +509,82 @@ class TestBanDHCPAgent(base.TestBase):
             'networks on free agent - {1}'.format(agents_networks,
                                                   nets_on_free_dhcp_agent))
         assert set(agents_networks) == set(nets_on_free_dhcp_agent), err_msg
+
+    def test_reschedule_dhcp_agents(self):
+        """Check dhcp-agent manual rescheduling.
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network net01, subnet net01_subnet
+            3. Create router with gateway to external net and
+               interface with net01
+            4. Launch instance and associate floating IP
+            5. Check ports on net
+            6. Run dhcp-client in instance's console: sudo cirros-dhcpc up eth0
+            7. Look on what DHCP-agents chosen network is:
+               neutron dhcp-agent-list-hosting-net <network_name>
+            8. Remove network from one of dhcp-agents:
+               neutron dhcp-agent-network-remove <agent_id> <network>
+            9. Check removing:
+               neutron dhcp-agent-list-hosting-net <network_name>
+            10. Set network to other dhcp-agent:
+                neutron dhcp-agent-network-add <agent_id> <network>
+            11. Run dhcp-client in instance's console:
+                sudo cirros-dhcpc up eth0
+            12. Check that ports on net wasn't affected
+
+
+        Duration 10m
+
+        """
+        # Fixture init from method self._prepare_openstack_state
+        # Get all dhcp agents and ports on network
+        ports_ids = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=self.net_id, device_owner='network:dhcp')]
+        all_agents = self.os_conn.list_all_neutron_agents(agent_type='dhcp')
+        agents_mapping = {agent['host']: agent for agent in all_agents}
+        curr_agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=self.net_id)
+        # determine free of current network dhcp agent
+        all_agents_hosts = agents_mapping.keys()
+        free_agent = (set(all_agents_hosts) - set(curr_agents)).pop()
+
+        # remove net from one of dhcp-agents
+        id_agent_to_remove = agents_mapping[curr_agents[0]]['id']
+        self.os_conn.remove_network_from_dhcp_agent(id_agent_to_remove,
+                                                    self.net_id)
+
+        # check that network removed
+        err_msg = 'Manual remove net: {0} from agent: {0} failed.'.format(
+            self.net_id, id_agent_to_remove
+        )
+        new_agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=self.net_id)
+        assert curr_agents[0] not in new_agents, err_msg
+
+        # add network to other dhcp-agent
+        id_agent_to_add = agents_mapping[free_agent]['id']
+        self.os_conn.add_network_to_dhcp_agent(id_agent_to_add, self.net_id)
+
+        # check that network is on third agent
+        err_msg = 'Manual add net: {0} to agent: {0} failed.'.format(
+            self.net_id, free_agent
+        )
+        new_agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=self.net_id)
+        assert free_agent in new_agents, err_msg
+
+        # check dhcp client on instance
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check, that ports was not affected
+        new_ports_ids = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=self.net_id, device_owner='network:dhcp')]
+        err_msg = ('Rescheduling failed, ports list after and '
+                   'before rescheduling are not same: '
+                   'old ports - {0}, '
+                   'new ports - {1}'.format(ports_ids,
+                                            new_ports_ids))
+        assert sorted(ports_ids) == sorted(new_ports_ids), err_msg
