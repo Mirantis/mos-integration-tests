@@ -95,17 +95,16 @@ class TestOVSRestart(TestBase):
             to_port=65535,
             cidr='0.0.0.0/0')
 
-    def disable_ovs_agents_on_controllers(self):
+    def disable_ovs_agents_on_controller(self):
         """Disable openvswitch-agents on all controllers."""
-        controllers = self.env.get_nodes_by_role('controller')
-        assert len(controllers) > 0, 'No controllers have been found.'
+        controller = self.env.get_nodes_by_role('controller')[0]
+        assert controller is not None, 'No controllers have been found.'
 
-        for node in controllers:
-            with self.env.get_ssh_to_node(node.data['ip']) as remote:
-                result = remote.execute(
-                    '. openrc && pcs resource disable '
-                    'p_neutron-plugin-openvswitch-agent --wait')
-                assert result['exit_code'] == 0
+        with self.env.get_ssh_to_node(controller.data['ip']) as remote:
+            result = remote.execute(
+                '. openrc && pcs resource disable '
+                'p_neutron-plugin-openvswitch-agent --wait')
+            assert result['exit_code'] == 0
 
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
@@ -217,7 +216,7 @@ class TestOVSRestart(TestBase):
                 log_filename=logfile,
                 vm_login="cirros",
                 ip_to_ping=self.server2_ip):
-            self.disable_ovs_agents_on_controllers()
+            self.disable_ovs_agents_on_controller()
             self.restart_ovs_agents_on_computes()
             self.enable_ovs_agents_on_controllers()
 
