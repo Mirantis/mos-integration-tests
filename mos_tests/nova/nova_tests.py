@@ -334,7 +334,7 @@ class NovaIntegrationTests(unittest.TestCase):
         for inst_id in self.instances:
             ping = common_functions.ping_command(fip_dict[inst_id], interval=8)
             msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertEqual(ping, 0, msg)
+            self.assertTrue(ping, msg)
 
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
@@ -405,7 +405,7 @@ class NovaIntegrationTests(unittest.TestCase):
         for inst_id in self.instances:
             ping = common_functions.ping_command(fip_dict[inst_id], interval=8)
             msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertEqual(ping, 0, msg)
+            self.assertTrue(ping, msg)
 
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
         """ This test checks network connectivity to VM during Live Migration
