@@ -114,10 +114,10 @@ class TestOVSRestartTwoVms(OvsBase):
         Steps:
             1. Update default security group
             2. Create router01, create networks net01: net01__subnet,
-            192.168.1.0/24, net02: net02__subnet, 192.168.2.0/24 and
-            attach them to router01.
+                192.168.1.0/24, net02: net02__subnet, 192.168.2.0/24 and
+                attach them to router01.
             3. Launch vm1 in net01 network and vm2 in net02 network
-            on different computes
+                on different computes
             4. Go to vm1 console and send pings to vm2
         """
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
@@ -167,7 +167,7 @@ class TestOVSRestartTwoVms(OvsBase):
             3. Launch vm1 in net01 network and vm2 in net02 network
                 on different computes
             4. Go to vm1 console and send pings to vm2
-            5. Disable ovs-agents on all controllers, restart service
+            5. Disable ovs-agents on a controller, restart service
                 neutron-plugin-openvswitch-agent on all computes, and enable
                 them back. To do this, launch the script against master node.
             6. Wait 30 seconds, send pings from vm1 to vm2 and check that
@@ -214,12 +214,13 @@ class TestOVSRestartTwoVms(OvsBase):
             1. Update default security group
             2. Create router01, create networks.
             3. Launch vm1 in net01 network and vm2 in net02 network
-            on different computes.
+                on different computes.
             4. Go to vm1 console and send pings to vm2
             5. Ban ovs-agents on all controllers, clear them and restart
-            service neutron-plugin-openvswitch-agent on all computes.
-            To do this, launch the script against master node.
-            6. Wait 30 seconds, send pings from vm1 to vm2 and check that it is successful.
+                service neutron-plugin-openvswitch-agent on all computes.
+                To do this, launch the script against master node.
+            6. Wait 30 seconds, send pings from vm1 to vm2 and
+                check that it is successful.
 
         Duration 10m
 
