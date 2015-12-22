@@ -1,3 +1,17 @@
+#    Copyright 2015 Mirantis, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 import logging
 import os
 import paramiko
@@ -41,7 +55,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None):
+                 private_keys=None, proxy_command=None):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -53,6 +67,9 @@ class SSHClient(object):
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
         self._sftp_client = None
+        self.proxy = None
+        if proxy_command is not None:
+            self.proxy = paramiko.ProxyCommand(proxy_command)
 
         self.reconnect()
 
@@ -81,19 +98,23 @@ class SSHClient(object):
         logging.debug(
             "Connect to '%s:%s' as '%s:%s'" % (
                 self.host, self.port, self.username, self.password))
+        base_kwargs = dict(
+            port=self.port, username=self.username,
+            password=self.password
+        )
+        if self.proxy is not None:
+            base_kwargs['sock'] = self.proxy
         for private_key in self.private_keys:
+            kwargs = base_kwargs.copy()
+            kwargs['pkey'] = private_key
             try:
-                return self._ssh.connect(
-                    self.host, port=self.port, username=self.username,
-                    password=self.password, pkey=private_key)
+                return self._ssh.connect(self.host, **kwargs)
             except paramiko.AuthenticationException:
                 continue
         if self.private_keys:
             logging.error("Authentication with keys failed")
 
-        return self._ssh.connect(
-            self.host, port=self.port, username=self.username,
-            password=self.password)
+        return self._ssh.connect(self.host, **base_kwargs)
 
     def reconnect(self):
         self._ssh = paramiko.SSHClient()

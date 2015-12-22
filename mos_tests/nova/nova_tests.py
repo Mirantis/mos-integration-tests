@@ -152,7 +152,7 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
             ping = common_functions.ping_command(floating_ip.ip)
-            self.assertEqual(ping, 0, "Instance is not reachable")
+            self.assertTrue(ping, "Instance is not reachable")
 
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
@@ -192,7 +192,8 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
             ping = common_functions.ping_command(floating_ip.ip)
-            self.assertEqual(ping, 0, "Instance is not reachable")
+            self.assertTrue(ping,
+                            "Instance is not reachable")
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
@@ -251,7 +252,7 @@ class NovaIntegrationTests(unittest.TestCase):
 
         # Check that instance is reachable
         ping = common_functions.ping_command(floating_ip.ip)
-        self.assertEqual(ping, 0, "Instance after resize is not reachable")
+        self.assertTrue(ping, "Instance after resize is not reachable")
 
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
@@ -298,7 +299,7 @@ class NovaIntegrationTests(unittest.TestCase):
         net_internal_id = net_dict["admin_internal_net"]
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -332,9 +333,9 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = common_functions.ping_command(fip_dict[inst_id], interval=8)
-            msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertTrue(ping, msg)
+            ping = common_functions.ping_command(fip_dict[inst_id], i=8)
+            self.assertTrue(ping,
+                            "Instance {} is not reachable".format(inst_id))
 
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
@@ -367,7 +368,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.volumes), 10, msg)
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -403,9 +404,9 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = common_functions.ping_command(fip_dict[inst_id], interval=8)
-            msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertTrue(ping, msg)
+            ping = common_functions.ping_command(fip_dict[inst_id], i=8)
+            self.assertTrue(ping,
+                            "Instance {} is not reachable".format(inst_id))
 
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
         """ This test checks network connectivity to VM during Live Migration
@@ -432,12 +433,12 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
-                                                self.sec_group.name,
+                                                [self.sec_group.name],
                                                 image_id=image_id)
         self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
-        ping = os.system("ping -c 4 -i 4 {}".format(floating_ip.ip))
-        self.assertEqual(ping, 0, "Instance is not reachable")
+        ping = common_functions.ping_command(floating_ip.ip)
+        self.assertTrue(ping, "Instance is not reachable")
         hypervisors = {h.hypervisor_hostname: h for h
                        in self.nova.hypervisors.list()}
         old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")

@@ -26,7 +26,10 @@ import neutronclient.v2_0.client as neutronclient
 from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
+import six
 from waiting import wait
+
+from mos_tests.environment.ssh import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +185,22 @@ class OpenStackActions(object):
         nodes = [node for node in result['agents'] if node['host'] == hostname]
         return nodes
 
+    def list_all_neutron_agents(self, agent_type=None,
+                                filter_attr=None, is_alive=True):
+        agents_type_map = {
+            'dhcp': 'neutron-dhcp-agent',
+            'ovs': 'neutron-openvswitch-agent',
+            'metadata': 'neutron-metadata-agent',
+            'l3': 'neutron-l3-agent',
+            None: ''
+            }
+        filter_fn = lambda x: x[filter_attr] if filter_attr else x
+        agents = [
+            filter_fn(agent) for agent in self.neutron.list_agents(
+                binary=agents_type_map[agent_type])['agents']
+            if agent['alive'] == is_alive]
+        return agents
+
     def list_dhcp_agents_for_network(self, net_id):
         return self.neutron.list_dhcp_agent_hosting_networks(net_id)
 
@@ -191,9 +210,19 @@ class OpenStackActions(object):
     def list_networks_on_dhcp_agent(self, agent_id):
         return self.neutron.list_networks_on_dhcp_agent(agent_id)
 
+    def add_network_to_dhcp_agent(self, agent_id, network_id):
+        self.neutron.add_network_to_dhcp_agent(
+            agent_id, body={'network_id': network_id})
+
+    def remove_network_from_dhcp_agent(self, agent_id, network_id):
+        self.neutron.remove_network_from_dhcp_agent(agent_id, network_id)
+
+    def list_ports_for_network(self, network_id, device_owner):
+        return self.neutron.list_ports(
+            network_id=network_id, device_owner=device_owner)['ports']
+
     def list_l3_agents(self):
-        return [x for x in self.neutron.list_agents()['agents']
-                if x['agent_type'] == "L3 agent"]
+        return self.list_all_neutron_agents('l3')
 
     def get_l3_agent_hosts(self, router_id):
         result = self.get_l3_for_router(router_id)
@@ -335,6 +364,13 @@ class OpenStackActions(object):
     def create_key(self, key_name):
         logger.debug('Try to create key {0}'.format(key_name))
         return self.nova.keypairs.create(key_name)
+
+    def get_port_by_fixed_ip(self, ip):
+        """Returns neutron port by instance fixed ip"""
+        for port in self.neutron.list_ports()['ports']:
+            for ips in port['fixed_ips']:
+                if ip == ips['ip_address']:
+                    return port
 
     @property
     def ext_network(self):
@@ -497,12 +533,44 @@ class OpenStackActions(object):
 
         return result
 
+    def ssh_to_instance(self, env, vm, vm_keypair, username='cirros',
+                        password=None):
+        """Returns direct ssh client to instance via proxy"""
+        net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
+        vm_ip = vm.addresses[net_name][0]['addr']
+        net_id = self.neutron.list_networks(
+            name=net_name)['networks'][0]['id']
+        dhcp_namespace = "qdhcp-{0}".format(net_id)
+        devops_nodes = self.get_node_with_dhcp_for_network(net_id)
+        if not devops_nodes:
+            raise Exception("Nodes with dhcp for network with id:{}"
+                            " not found.".format(net_id))
+        ip = env.find_node_by_fqdn(devops_nodes[0]).data['ip']
+        key_paths = []
+        for i, key in enumerate(env.admin_ssh_keys):
+            path = '/tmp/fuel_key{0}.rsa'.format(i)
+            key.write_private_key_file(path)
+            key_paths.append(path)
+        proxy_command = ("ssh {keys} -o 'StrictHostKeyChecking no' "
+                         "root@{node_ip} ip netns exec {ns} "
+                         "nc {vm_ip} 22".format(
+                            keys=' '.join('-i {}'.format(k)
+                                          for k in key_paths),
+                            ns=dhcp_namespace,
+                            node_ip=ip,
+                            vm_ip=vm_ip))
+        instance_key = paramiko.RSAKey.from_private_key(
+            six.StringIO(vm_keypair.private_key))
+        return SSHClient(vm_ip, port=22, username=username, password=password,
+                         private_keys=[instance_key],
+                         proxy_command=proxy_command)
+
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('going to check if the agents alive')
         wait(lambda: all([agt['alive'] for agt in
-                                  self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check]),
-                     timeout_seconds=5 * 60)
+                          self.neutron.list_agents()['agents']
+                          if agt['id'] in agt_ids_to_check]),
+             timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1

@@ -12,5 +12,8 @@ scp node-$CONTR_ID:~/nova_tests_report.xml ~/
 # CleanUp
 ssh node-$CONTR_ID "\rm -rf ~/mos_tests"
 
-# Show command to view results
-echo -e "For test results see:\n\t# less ~/nova_tests_report.xml\n\t# xmllint --format ~/nova_tests_report.xml"
+# Show command(s) to view results
+# For nova tests
+echo -e "For Nova test results see:\n\t# less ~/nova_tests_report.xml\n\t# xmllint --format ~/nova_tests_report.xml"
+# For windows compatibility tests
+echo -e "For Windows Compatibility test results see:\n\t# less ~/windows_compatibility_tests_report.xml\n\t# xmllint --format ~/windows_compatibility_tests_report.xml"
