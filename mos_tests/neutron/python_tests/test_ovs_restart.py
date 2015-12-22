@@ -130,7 +130,8 @@ class TestOVSRestartTwoVms(OvsBase):
         self.check_ping_from_vm(self.server1, self.instance_keypair,
                                 self.server2_ip, timeout=2 * 60)
 
-    def test_ovs_restart_pcs_disable_enable(self):
+    @pytest.mark.parametrize('count', [1, 40], ids=['1x', '40x'])
+    def test_ovs_restart_pcs_disable_enable(self, count):
         """Restart openvswitch-agents with pcs disable/enable on controllers
 
         Steps:
@@ -146,20 +147,22 @@ class TestOVSRestartTwoVms(OvsBase):
             them back. To do this, launch the script against master node.
             6. Wait 30 seconds, send pings from vm1 to vm2 and check that
             it is successful.
+            7. Repeat steps 6-7 'count' argument times
 
         Duration 10m
 
         """
-        self.disable_ovs_agents_on_controller()
-        self.restart_ovs_agents_on_computes()
-        self.enable_ovs_agents_on_controllers()
+        for _ in range(count):
+            self.disable_ovs_agents_on_controller()
+            self.restart_ovs_agents_on_computes()
+            self.enable_ovs_agents_on_controllers()
 
-        # sleep is used to check that system will be stable for some time
-        # after restarting service
-        time.sleep(30)
+            # sleep is used to check that system will be stable for some time
+            # after restarting service
+            time.sleep(30)
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+            self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                    self.server2_ip, timeout=2 * 60)
 
 
 @pytest.mark.check_env_('is_vlan')
