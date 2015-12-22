@@ -301,9 +301,9 @@ def delete_instance(nova_client, uid):
             sleep(1)
 
 
-def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id, security_groups,
-                    image_id='', block_device_mapping=None, timeout=5,
-                    key_name=None):
+def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id,
+                    security_groups, image_id='', block_device_mapping=None,
+                    timeout=5, key_name=None):
     """ Check instance creation
         :param nova_client: Nova API client connection point
         :param inst_list: instances list for cleaning
