@@ -129,7 +129,6 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_keys(self.nova, key.name)
         self.keys = []
 
-    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -168,7 +167,6 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
-    @unittest.skip
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -210,7 +208,6 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
-    @unittest.skip
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
@@ -270,7 +267,6 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after resize is not reachable")
 
-    @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
             Steps:
@@ -294,7 +290,6 @@ class NovaIntegrationTests(unittest.TestCase):
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
 
-    @unittest.skip
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
@@ -355,7 +350,6 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
-    @unittest.skip
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
@@ -427,7 +421,6 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
-    @unittest.skip
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
         """ This test checks network connectivity to VM during Live Migration
 
@@ -510,7 +503,7 @@ class NovaIntegrationTests(unittest.TestCase):
         net = [net['id'] for net in networks if not net['router:external']][0]
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
-        flavor = self.nova.flavors.create("m1.ephemer", 64, 1, 1,
+        flavor = self.nova.flavors.create("m1.ephemeral", 64, 1, 1,
                                           ephemeral=1, is_public=True)
         self.flavors.append(flavor)
         floating_ip = self.nova.floating_ips.create()
@@ -529,34 +522,34 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 image_id=image_id,
                                                 key_name='key_2238776')
         inst.add_floating_ip(floating_ip.ip)
-        ping = common_functions.ping_command(floating_ip.ip)
+        ping = common_functions.ping_command(floating_ip.ip, i=10)
         self.assertTrue(ping, "Instance is not reachable")
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
-                       private_keys=[private_key]) as vm_remote:
-            out.append(vm_remote.execute("sudo su && date > /timestamp.txt"))
-            out.append(vm_remote.execute("sudo -i blkid; sudo -i date > "
-                                         "/mnt/timestamp.txt"))
-            out.append(vm_remote.execute("sudo -i cat /timestamp.txt"))
-            out.append(vm_remote.execute("sudo -i cat /mnt/timestamp.txt"))
+                       private_keys=[private_key]) as vm_r:
+            out.append(vm_r.execute("sudo sh -c 'date > /timestamp.txt'"))
+            out.append(vm_r.execute("sudo sh -c 'date > /mnt/timestamp.txt'"))
+            out.append(vm_r.execute("sudo -i cat /timestamp.txt"))
+            out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
 
         for i in out:
             if i['stderr'] != []:
                 raise Exception("ssh commands were executed with errors")
 
-        root_data = out[3]['stdout']
-        ephem_data = out[4]['stdout']
+        root_data = out[-2]['stdout'][0]
+        ephem_data = out[-1]['stdout'][0]
 
+        # live migration
         hypervisors = {h.hypervisor_hostname: h for h in
                        self.nova.hypervisors.list()}
         old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
                                 stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=False,
                                        disk_over_commit=False)
         inst = self.nova.servers.get(inst.id)
-        timeout = 5
+        timeout = 10
         end_time = time() + 60 * timeout
         while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
                 new_hyper:
@@ -576,16 +569,16 @@ class NovaIntegrationTests(unittest.TestCase):
                      loss))
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
-                       private_keys=[private_key]) as vm_remote:
-            out.append(vm_remote.execute("sudo -i cat /timestamp.txt"))
-            out.append(vm_remote.execute("sudo -i cat /mnt/timestamp.txt"))
+                       private_keys=[private_key]) as vm_r:
+            out.append(vm_r.execute("sudo -i cat /timestamp.txt"))
+            out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
 
         for i in out:
             if i['stderr'] != []:
                 raise Exception("ssh commands were executed with errors")
 
-        r_data = out[0]['stdout']
-        ep_data = out[1]['stdout']
+        r_data = out[0]['stdout'][0]
+        ep_data = out[1]['stdout'][0]
         self.assertEqual(root_data, r_data, "Data on root disk is changed")
         self.assertEqual(ephem_data, ep_data, "Data on ephemeral disk is "
                                               "changed")
