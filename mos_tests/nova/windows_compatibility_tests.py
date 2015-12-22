@@ -95,6 +95,10 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
 
         cls.uid_list = []
 
+        # timeouts (in minutes)
+        cls.ping_timeout = 3
+        cls.hypervisor_timeout = 10
+
     def setUp(self):
         """
 
@@ -163,7 +167,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
             for image_object in self.glance.images.list():
                 if image_object.id == self.image.id:
                     self.image = image_object
-                    logger.debug("Image in the {} state".
+                    logger.info("Image in the {} state".
                                  format(self.image.status))
                     if self.image.status == 'active':
                         is_activated = True
@@ -176,7 +180,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         for network in self.nova.networks.list():
             if 'internal' in network.label:
                 network_id = network.id
-        logger.debug("Starting with network interface id {}".
+        logger.info("Starting with network interface id {}".
                      format(network_id))
 
         # TODO: add check flavor parameters vs. vm parameters
@@ -202,7 +206,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.expected_flavor_id = expected_flavor.id
                 self.our_own_flavor_was_created = True
                 break
-        logger.debug("Starting with flavor {}".format(
+        logger.info("Starting with flavor {}".format(
                 self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
         self.node_to_boot = common_functions.create_instance(
@@ -216,7 +220,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertEqual(self.node_to_boot.status, 'ACTIVE',
                          "The node not in active state!")
 
-        logger.debug("Using following floating ip {}".format(
+        logger.info("Using following floating ip {}".format(
                 self.floating_ip.ip))
 
         self.node_to_boot.add_floating_ip(self.floating_ip)
@@ -254,19 +258,13 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         """ This test checks that instance with Windows image could be created
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
         :return: Nothing
         """
-        end_time = time.time() + 120
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
@@ -274,50 +272,48 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         and unpaused
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
-        3. Put the image on 'Pause' state
-        4. Check that the VM is unreachable
-        5. Put the image on 'Unpause' state
-        6. Check that the VM is reachable again
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Pause this VM
+        6. Verify that we can't ping it
+        7. Unpause it and verify that we can ping it again
+        8. Reboot VM
+        9. Verify that we can ping this VM after reboot.
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 120
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Paused state check
         self.node_to_boot.pause()
-        # TODO: Make sure that the VM in 'Paused' state
-        end_time = time.time() + 60
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        self.assertFalse(ping_result, "Instance is reachable")
+        # Make sure that the VM in 'Paused' state
+        ping_result = common_functions.ping_command(
+                self.floating_ip.ip,
+                should_be_available=False
+        )
+        self.assertTrue(ping_result, "Instance is reachable")
         # Unpaused state check
         self.node_to_boot.unpause()
-        # TODO: Make sure that the VM in 'Unpaused' state
-        end_time = time.time() + 120
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        # Make sure that the VM in 'Unpaused' state
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+        # Reboot the VM and make sure that we can ping it
+        self.node_to_boot.reboot(reboot_type='HARD')
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
+
+        # Waiting for up-and-run of Virtual Machine after reboot
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
@@ -325,48 +321,114 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         and resumed
 
         Steps:
-        1. Create image
-        2. Check that VM is reachable
-        3. Put the image on 'Suspend' state
-        4. Check that the VM is unreachable
-        5. Put the image on 'Resume' state
-        6. Check that the VM is reachable again
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Suspend VM
+        6. Verify that we can't ping it
+        7. Resume and verify that we can ping it again.
+        8. Reboot VM
+        9. Verify that we can ping this VM after reboot.
         :return: Nothing
         """
         # Initial check
-        end_time = time.time() + 120
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Suspend state check
         self.node_to_boot.suspend()
-        # TODO: Make sure that the VM in 'Suspended' state
-        end_time = time.time() + 60
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
-        self.assertFalse(ping_result, "Instance is reachable")
+        # Make sure that the VM in 'Suspended' state
+        ping_result = common_functions.ping_command(
+                self.floating_ip.ip,
+                should_be_available=False
+        )
+        self.assertTrue(ping_result, "Instance is reachable")
         # Resume state check
         self.node_to_boot.resume()
-        # TODO: Make sure that the VM in 'Resume' state
-        end_time = time.time() + 120
-        ping_result = False
-        attempt_id = 1
-        while time.time() < end_time:
-            logger.debug("Attempt #{} to ping the instance".format(attempt_id))
-            ping_result = common_functions.ping_command(self.floating_ip.ip)
-            attempt_id += 1
-            if ping_result:
-                break
+        # Make sure that the VM in 'Resume' state
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+        # Reboot the VM and make sure that we can ping it
+        self.node_to_boot.reboot(reboot_type='HARD')
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
+
+        # Waiting for up-and-run of Virtual Machine after reboot
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+
+    def test_542827_LiveMigrationForWindowsInstance(self):
+        """ This test checks that instance with Windows Image could be
+        migrated without any issues
+
+        Steps:
+        1. Upload Windows 2012 Server image to Glance
+        2. Create VM with this Windows image
+        3. Assign floating IP to this VM
+        4. Ping this VM and verify that we can ping it
+        5. Migrate this VM to another compute node
+        6. Verify that live Migration works fine for Windows VMs
+        and we can successfully ping this VM
+        7. Reboot VM and verify that
+        we can successfully ping this VM after reboot.
+
+        :return: Nothing
+        """
+        # 1. 2. 3. -> Into setUp function
+        # 4. Ping this VM and verify that we can ping it
+        hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+        hypervisors = {h.hypervisor_hostname: h for h
+                       in self.nova.hypervisors.list()}
+        old_hyper = getattr(self.node_to_boot,
+                            hypervisor_hostname_attribute)
+        logger.info("Old hypervisor is: {}".format(old_hyper))
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        logger.info("New hypervisor is: {}".format(new_hyper))
+        # Execute the live migrate
+        self.node_to_boot.live_migrate(new_hyper)
+
+        self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        end_time = time.time() + 60 * self.hypervisor_timeout
+        debug_string = "Waiting for changes."
+        is_timeout = False
+        while getattr(self.node_to_boot,
+                      hypervisor_hostname_attribute) != new_hyper:
+            if time.time() > end_time:
+                is_timeout = True
+            time.sleep(30)
+            debug_string += "."
+            self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        logger.info(debug_string)
+        if is_timeout:
+            raise AssertionError(
+                        "Hypervisor is not changed after live migration")
+        self.assertEqual(self.node_to_boot.status, 'ACTIVE')
+        # Ping the Virtual Machine
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping_result, "Instance is not reachable")
+        # Reboot the VM and make sure that we can ping it
+        self.node_to_boot.reboot(reboot_type='HARD')
+        instance_status = common_functions.check_inst_status(
+                self.nova,
+                self.node_to_boot.id,
+                'ACTIVE')
+        self.node_to_boot = [s for s in self.nova.servers.list()
+                             if s.id == self.node_to_boot.id][0]
+        if not instance_status:
+            raise AssertionError(
+                    "Instance status is '{0}' instead of 'ACTIVE".format(
+                        self.node_to_boot.status))
+
+        # Waiting for up-and-run of Virtual Machine after reboot
+        ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")

@@ -268,7 +268,7 @@ class NovaIntegrationTests(unittest.TestCase):
 
         # Check that instance is reachable
         ping = common_functions.ping_command(floating_ip.ip)
-        self.assertEqual(ping, 0, "Instance after resize is not reachable")
+        self.assertTrue(ping, "Instance after resize is not reachable")
 
     @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
@@ -317,7 +317,7 @@ class NovaIntegrationTests(unittest.TestCase):
         net_internal_id = net_dict["admin_internal_net"]
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -352,8 +352,8 @@ class NovaIntegrationTests(unittest.TestCase):
 
         for inst_id in self.instances:
             ping = common_functions.ping_command(fip_dict[inst_id])
-            msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertEqual(ping, 0, msg)
+            self.assertTrue(ping,
+                            "Instance {} is not reachable".format(inst_id))
 
     @unittest.skip
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
@@ -387,7 +387,7 @@ class NovaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.volumes), 10, msg)
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for i in xrange(count)]
+                             for _ in xrange(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -424,8 +424,8 @@ class NovaIntegrationTests(unittest.TestCase):
 
         for inst_id in self.instances:
             ping = common_functions.ping_command(fip_dict[inst_id])
-            msg = "Instance {0} is not reachable".format(inst_id)
-            self.assertEqual(ping, 0, msg)
+            self.assertTrue(ping,
+                            "Instance {} is not reachable".format(inst_id))
 
     @unittest.skip
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):

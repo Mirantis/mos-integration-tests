@@ -263,13 +263,11 @@ def check_volume(cinder_client, uid):
 
 def check_volume_snapshot(cinder_client, uid):
     """ Check the presence of volume status id in the list of volume status
-        :param cinderclient: Cinder API client connection point
+        :param cinder_client: Cinder API client connection point
         :param uid: UID of volume status
         :return True or False
     """
-    if uid in [s for s in cinder_client.volume_snapshots.list()]:
-        return True
-    return False
+    return uid in [s for s in cinder_client.volume_snapshots.list()]
 
 
 def check_inst_status(nova_client, uid, status, timeout=5):
@@ -334,7 +332,7 @@ def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id, securi
     while inst_status != 'ACTIVE':
         if time() > end_time:
             raise AssertionError(
-                "Instance status is '{0}' instead of 'ACTIVE".format(
+                "Instance status is '{}' instead of 'ACTIVE'".format(
                     inst_status))
         sleep(1)
         inst_status = [s.status for s in nova_client.servers.list()
@@ -497,14 +495,28 @@ def delete_image(glance_client, image_id):
 
 
 # execution of system commands
-def ping_command(ip_address):
+def ping_command(ip_address, c=4, i=4, timeout=3, should_be_available=True):
     """ This function executes the ping program and check its results
         :param ip_address: The IP address to ping
+        :param c: value of the [-c count] parameter of the ping command
+        :param i: value of the [-i interval] parameter of the ping command
+        :param timeout: timeout in minutes that we are waiting for successful
+        result of the ping operation
+        :param should_be_available: this parameter described should we check
+        successful result of the ping command or not.
         :return: True in case of success, False otherwise
     """
-    the_result = os.system("ping -c 4 -i 4 {}".
-                           format(ip_address))
-    return the_result == 0
+    end_time = time() + 60 * timeout
+    ping_result = False
+    while time() < end_time:
+        the_result = os.system("ping -c {} -i {} {}".
+                               format(c, i, ip_address))
+        # TODO: Make sure that all packages has been received
+        ping_result = \
+            the_result == 0 if should_be_available else the_result != 0
+        if ping_result:
+            break
+    return ping_result
 
 
 def check_volume_snapshot_status(cinder_client, uid, status, timeout=5):
