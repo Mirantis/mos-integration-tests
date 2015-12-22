@@ -132,14 +132,15 @@ class TestBase(object):
             return results[-1]
 
     def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None,
-                           timeout=3 * 60):
+                           vm_login='cirros', timeout=3 * 60):
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
         if isinstance(ip_to_ping, six.string_types):
             ip_to_ping = [ip_to_ping]
         cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
         cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout)
+        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
+                             vm_login=vm_login)
         error_msg = (
             'Instance has no connectivity, exit code {exit_code},'
             'stdout {stdout}, stderr {stderr}'
