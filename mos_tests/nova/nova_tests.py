@@ -129,6 +129,7 @@ class NovaIntegrationTests(unittest.TestCase):
             common_functions.delete_keys(self.nova, key.name)
         self.keys = []
 
+    @unittest.skip
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -167,6 +168,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
+    @unittest.skip
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
         """ This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -208,6 +210,7 @@ class NovaIntegrationTests(unittest.TestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
+    @unittest.skip
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
             resize down an instance booted from volume
@@ -267,6 +270,7 @@ class NovaIntegrationTests(unittest.TestCase):
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertEqual(ping, 0, "Instance after resize is not reachable")
 
+    @unittest.skip
     def test_543359_MassivelySpawnVolumes(self):
         """ This test checks massively spawn volumes
             Steps:
@@ -290,6 +294,7 @@ class NovaIntegrationTests(unittest.TestCase):
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
 
+    @unittest.skip
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """ This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
@@ -350,6 +355,7 @@ class NovaIntegrationTests(unittest.TestCase):
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
+    @unittest.skip
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """ This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
@@ -421,6 +427,7 @@ class NovaIntegrationTests(unittest.TestCase):
             msg = "Instance {0} is not reachable".format(inst_id)
             self.assertEqual(ping, 0, msg)
 
+    @unittest.skip
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
         """ This test checks network connectivity to VM during Live Migration
 
