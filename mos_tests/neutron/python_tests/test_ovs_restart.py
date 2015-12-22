@@ -52,7 +52,7 @@ class OvsBase(TestBase):
             cidr='0.0.0.0/0')
 
     def disable_ovs_agents_on_controller(self):
-        """Disable openvswitch-agents on all controllers."""
+        """Disable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
@@ -72,7 +72,7 @@ class OvsBase(TestBase):
                 assert result['exit_code'] == 0
 
     def enable_ovs_agents_on_controllers(self):
-        """Enable openvswitch-agents on all controllers."""
+        """Enable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
@@ -181,7 +181,7 @@ class TestOVSRestartTwoVms(OvsBase):
             # Check that all ovs agents are alive
             self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
-            # Disable ovs agent on all controllers
+            # Disable ovs agent on a controller
             self.disable_ovs_agents_on_controller()
 
             # Then check that all ovs went down
@@ -190,7 +190,7 @@ class TestOVSRestartTwoVms(OvsBase):
             # Restart ovs agent service on all computes
             self.restart_ovs_agents_on_computes()
 
-            # Enable ovs agent on all controllers
+            # Enable ovs agent on a controller
             self.enable_ovs_agents_on_controllers()
 
             # Then check that all ovs agents are alive
