@@ -153,12 +153,13 @@ class NovaIntegrationTests(unittest.TestCase):
             self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
-            inst = common_functions.create_instance(self.nova, self.instances,
+            inst = common_functions.create_instance(self.nova,
                                                     "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
                                                     [self.sec_group.name],
-                                                    image_id=image_id)
+                                                    image_id=image_id,
+                                                    inst_list=self.instances)
             inst_id = inst.id
             self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
@@ -194,12 +195,13 @@ class NovaIntegrationTests(unittest.TestCase):
             volume = common_functions.create_volume(self.cinder, image_id)
             self.volumes.append(volume)
             bdm = {'vda': volume.id}
-            inst = common_functions.create_instance(self.nova, self.instances,
+            inst = common_functions.create_instance(self.nova,
                                                     "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
                                                     [self.sec_group.name],
-                                                    block_device_mapping=bdm)
+                                                    block_device_mapping=bdm,
+                                                    inst_list=self.instances)
             inst_id = inst.id
             self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
@@ -232,10 +234,11 @@ class NovaIntegrationTests(unittest.TestCase):
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
-        instance = common_functions.create_instance(self.nova, self.instances,
+        instance = common_functions.create_instance(self.nova,
                                                     name, initial_flavor, net,
                                                     [self.sec_group.name],
-                                                    block_device_mapping=bdm)
+                                                    block_device_mapping=bdm,
+                                                    inst_list=self.instances)
         self.instances.append(instance.id)
 
         # Assert for attached volumes
@@ -443,12 +446,13 @@ class NovaIntegrationTests(unittest.TestCase):
         self.floating_ips.append(floating_ip)
         self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                        self.nova.floating_ips.list()])
-        inst = common_functions.create_instance(self.nova, self.instances,
+        inst = common_functions.create_instance(self.nova,
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
                                                 [self.sec_group.name],
-                                                image_id=image_id)
+                                                image_id=image_id,
+                                                inst_list=self.instances)
         self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip)
@@ -514,13 +518,14 @@ class NovaIntegrationTests(unittest.TestCase):
         self.keys.append(keys)
         private_key = paramiko.RSAKey.from_private_key(six.StringIO(str(
             keys.private_key)))
-        inst = common_functions.create_instance(self.nova, self.instances,
+        inst = common_functions.create_instance(self.nova,
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
                                                 [self.sec_group.name],
                                                 image_id=image_id,
-                                                key_name='key_2238776')
+                                                key_name='key_2238776',
+                                                inst_list=self.instances)
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip, i=10)
         self.assertTrue(ping, "Instance is not reachable")

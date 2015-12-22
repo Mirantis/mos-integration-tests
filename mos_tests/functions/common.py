@@ -301,12 +301,11 @@ def delete_instance(nova_client, uid):
             sleep(1)
 
 
-def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id,
+def create_instance(nova_client, inst_name, flavor_id, net_id,
                     security_groups, image_id='', block_device_mapping=None,
-                    timeout=5, key_name=None):
+                    timeout=5, key_name=None, inst_list=None):
     """ Check instance creation
         :param nova_client: Nova API client connection point
-        :param inst_list: instances list for cleaning
         :param inst_name: name for instance
         :param flavor_id: id of flavor
         :param net_id: id of network
@@ -315,6 +314,7 @@ def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id,
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
         :param key_name: Keypair name
+        :param inst_list: instances list for cleaning
         :return instance
     """
     end_time = time() + 60 * timeout
@@ -326,7 +326,8 @@ def create_instance(nova_client, inst_list, inst_name, flavor_id, net_id,
             security_groups=security_groups,
             block_device_mapping=block_device_mapping,
             key_name=key_name)
-    inst_list.append(inst.id)
+    if inst_list:
+        inst_list.append(inst.id)
     inst_status = [s.status for s in nova_client.servers.list()
                    if s.id == inst.id][0]
     while inst_status != 'ACTIVE':
