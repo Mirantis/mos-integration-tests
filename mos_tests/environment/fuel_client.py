@@ -14,6 +14,7 @@
 
 import logging
 import os
+import re
 
 from devops.helpers.helpers import wait
 from fuelclient import client
@@ -88,6 +89,54 @@ class Environment(EnvironmentBase):
         """Returns nodes by assigned role"""
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
+
+    def is_ready(self):
+        """Check for all OpenStack services is normally wake up"""
+        return self.controllers_is_ready and self.computes_is_ready
+
+    @property
+    def controllers_is_ready(self):
+        for node in self.get_nodes_by_role('controller'):
+            logger.debug('Check controller {} is alive'.format(
+                node.data['fqdn']))
+            with node.ssh() as remote:
+                for cmd in ('glance image-list', 'nova list',
+                            'openstack project list'):
+                    result = remote.execute('. openrc && {}'.format(cmd))
+                    if result['exit_code'] != 0:
+                        output = ''.join(result['stdout'] + result['stderr'])
+                        logger.debug(
+                            '{} return {} exit_code. Output:\n{}'.format(
+                            cmd, result['exit_code'], output))
+                        return False
+        return True
+
+    @property
+    def computes_is_ready(self):
+        for node in self.get_nodes_by_role('compute'):
+            logger.debug('Check compute {} is alive'.format(
+                node.data['fqdn']))
+            with node.ssh() as remote:
+                result = remote.execute('status nova-compute')
+                if result['exit_code'] != 0:
+                    logger.debug(
+                        "'status nova-compute' exit with {} exit_code".format(
+                            result['exit_code']))
+                    return False
+                if 'start/running' not in ''.join(result['stdout']):
+                    logger.debug(
+                        "'status nova-compute' return {}".format(
+                            ''.join(result['stdout'])))
+                    return False
+                result = remote.execute(
+                    'grep AMQP /var/log/nova/nova-compute.log | tail')
+                if re.search(r'INFO .+? (Rec)|(C)onnected to AMQP server',
+                             result['stdout'][-1]) is None:
+                    logger.debug(
+                        "Nova not connected to AMPQ".format(
+                            result['stdout'][-1].strip()))
+                    return False
+        return True
 
     @property
     def is_operational(self):

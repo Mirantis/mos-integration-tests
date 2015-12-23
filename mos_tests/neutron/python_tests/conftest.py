@@ -47,19 +47,12 @@ def env(fuel):
 @pytest.fixture
 def os_conn(env):
     """Openstack common actions"""
+    logger.info("Wait for OpenStack is waking up")
+    wait(env.is_ready, timeout_seconds=60 * 5,
+        waiting_for="OpenStack is ready")
     os_conn = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
         cert=env.certificate)
-
-    def nova_ready():
-        hosts = os_conn.nova.availability_zones.find(zoneName="nova").hosts
-        return all(x['available'] for y in hosts.values()
-                   for x in y.values() if x['active'])
-
-    wait(nova_ready,
-         timeout_seconds=60 * 5,
-         expected_exceptions=Exception,
-         waiting_for="OpenStack nova computes is ready")
     return os_conn
 
 
