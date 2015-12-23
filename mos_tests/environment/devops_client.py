@@ -97,7 +97,7 @@ class DevopsClient(object):
             remote.execute(
                 'for i in {{1..{0}}}; do ('
                     'ssh node-$i "hwclock --hctosys"'
-                ') & done; wait'.format(slaves_count))
+                ') done'.format(slaves_count))
 
     @classmethod
     def restore_cluster(cls, env):
@@ -105,10 +105,10 @@ class DevopsClient(object):
             out = remote.execute(
                 "for i in $(fuel node | grep controller | awk '{print $1}'); "
                 "do (ssh node-$i '"
-                    "service nova-conductor restart; "
                     "crm_resource -P"
                 "') & done; wait")
             logger.debug(out)
+            assert out['exit_code'] == 0
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac):

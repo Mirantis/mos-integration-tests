@@ -53,6 +53,17 @@ def os_conn(env):
     os_conn = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
         cert=env.certificate)
+
+    def nova_ready():
+        hosts = os_conn.nova.availability_zones.find(zoneName="nova").hosts
+        return all(x['available'] for y in hosts.values()
+                   for x in y.values() if x['active'])
+
+    wait(nova_ready,
+         timeout_seconds=60 * 5,
+         expected_exceptions=Exception,
+         waiting_for="OpenStack nova computes is ready")
+    logger.info("OpenStack is ready")
     return os_conn
 
 

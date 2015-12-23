@@ -34,20 +34,27 @@ class TestDVR(base.TestBase):
         self.security_group = self.os_conn.create_sec_group_for_ssh()
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
-    def test_vm_connectivity_wo_floating(self, variables):
-        """Check North-South connectivity (without floating IP)
+    @pytest.mark.parametrize('floating_ip', (True, False),
+                             ids=('with floating', 'without floating'))
+    @pytest.mark.parametrize('dvr_router', (True, False),
+                             ids=('distributed router', 'centralized_router'))
+    def test_north_south_connectivity(self, variables, floating_ip,
+                                         dvr_router):
+        """Check North-South connectivity
 
         Scenario:
             1. Create net01, subnet net01__subnet for it
             2. Create router01 with external network and
-                router type Distributed
+                router type `dvr_router`
             3. Add interfaces to the router01 with net01__subnet
             4. Boot vm_1 in the net01
-            5. Go to the vm_1
-            6. Ping 8.8.8.8
+            5. Add floationg ip if case of `floating_ip` arg is True
+            6. Go to the vm_1
+            7. Ping 8.8.8.8
         """
         net, subnet = self.create_internal_network_with_subnet(1)
-        router = self.os_conn.create_router(name='router01', distributed=True)
+        router = self.os_conn.create_router(name='router01',
+                                            distributed=dvr_router)
         self.os_conn.router_gateway_add(
             router_id=router['router']['id'],
             network_id=self.os_conn.ext_network['id'])
@@ -62,5 +69,8 @@ class TestDVR(base.TestBase):
             key_name=self.instance_keypair.name,
             nics=[{'net-id': net['network']['id']}],
             security_groups=[self.security_group.id])
+
+        if floating_ip:
+            self.os_conn.assign_floating_ip(server)
 
         self.check_ping_from_vm(server, vm_keypair=self.instance_keypair)
