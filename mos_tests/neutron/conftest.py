@@ -65,6 +65,7 @@ def revert_snapshot(request, env_name, snapshot_name):
     if getattr(request.node, 'do_revert', True):
         DevopsClient.revert_snapshot(env_name=env_name,
                                      snapshot_name=snapshot_name)
+        setattr(request.node, 'do_revert', False)
 
 
 @pytest.fixture
@@ -117,6 +118,15 @@ def is_l2pop(env):
     with env.get_ssh_to_node(controller.data['ip']) as remote:
         result = remote.execute(cmd)
     return is_vxlan(env) and result['exit_code'] == 0
+
+
+def is_dvr(env):
+    """Env deployed with enabled distributed routers support"""
+    cmd = 'grep -q ^enable_distributed_routing=True /etc/neutron/plugin.ini'
+    controller = env.get_nodes_by_role('controller')[0]
+    with env.get_ssh_to_node(controller.data['ip']) as remote:
+        result = remote.execute(cmd)
+    return result['exit_code'] == 0
 
 
 @pytest.fixture(autouse=True)

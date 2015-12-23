@@ -31,6 +31,7 @@ class NotFound(Exception):
 
 
 class TestBase(object):
+    """Class contains common methods for neutron tests"""
 
     @pytest.fixture(autouse=True)
     def init(self, fuel, env, os_conn):
@@ -84,72 +85,61 @@ class TestBase(object):
             subnet_id=subnet['subnet']['id'])
         return router
 
-    def run_on_vm(self, vm, vm_keypair, command, vm_login="cirros",
-                  timeout=3 * 60):
-        command = command.replace('"', r'\"')
-        net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
-        vm_ip = vm.addresses[net_name][0]['addr']
-        net_id = self.os_conn.neutron.list_networks(
-            name=net_name)['networks'][0]['id']
-        dhcp_namespace = "qdhcp-{0}".format(net_id)
-        devops_node = self.get_node_with_dhcp(net_id)
-        _ip = devops_node.data['ip']
-        logger.info('Connect to {ip}'.format(ip=_ip))
-        with self.env.get_ssh_to_node(_ip) as remote:
-            res = remote.execute(
-                'ip netns list | grep -q {0}'.format(dhcp_namespace)
-            )
-            if res['exit_code'] != 0:
-                raise Exception("Network namespace '{0}' doesn't exist on "
-                                "remote slave!".format(dhcp_namespace))
-            key_path = '/tmp/instancekey_rsa'
-            res = remote.execute(
-                'echo "{0}" > {1} ''&& chmod 400 {1}'.format(
-                    vm_keypair.private_key, key_path))
-            cmd = (
-                ". openrc; ip netns exec {ns} ssh -i {key_path}"
-                " -o 'StrictHostKeyChecking no'"
-                " {vm_login}@{vm_ip} \"{command}\""
-            ).format(
-                ns=dhcp_namespace,
-                key_path=key_path,
-                vm_login=vm_login,
-                vm_ip=vm_ip,
-                command=command)
+    def run_on_vm(self, vm, vm_keypair=None, command='uname',
+                  vm_login="cirros", timeout=3 * 60, vm_password='cubswin:)'):
+        """Execute command on vm and return dict with results
+
+        :param vm: server to execute command on
+        :param vm_keypair: keypair used dduring vm creating
+        :param command: command to execute
+        :param vm_login: username to login to vm via ssh
+        :param vm_password: password to login to vm via ssh
+        :param timeout: type - int or None
+            - if None - execite command and return results
+            - if int - wait `timeout` seconds until command exit_code will be 0
+        :returns: Dictionary with `exit_code`, `stdout`, `stderr` keys.
+            `Stdout` and `stderr` are list of strings
+        """
+        results = []
+
+        def execute():
+            with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair,
+                                              username=vm_login,
+                                              password=vm_password) as remote:
+                result = remote.execute(command)
+                results.append(result)
+                return result
+
+        logger.info('Executing `{cmd}` on {vm_name}'.format(
+            cmd=command,
+            vm_name=vm.name))
+
+        if timeout is None:
+            execute()
+        else:
             err_msg = ("SSH command:\n{command}\n completed with exit code 0.")
-            results = []
-
-            def run(cmd):
-                results.append(remote.execute(cmd))
-                return results[-1]
-
-            logger.info('Executing `{cmd}` on {vm_name}'.format(
-                cmd=command,
-                vm_name=vm.name))
-            wait(lambda: run(cmd)['exit_code'] == 0,
+            wait(lambda: execute()['exit_code'] == 0,
                  sleep_seconds=(1, 60, 5), timeout_seconds=timeout,
-                 waiting_for=err_msg.format(command=cmd))
-            return results[-1]
+                 expected_exceptions=(Exception,),
+                 waiting_for=err_msg.format(command=command))
+        return results[-1]
 
-    def check_ping_from_vm(self, vm, vm_keypair, ip_to_ping=None,
-                           timeout=3 * 60, should_be_available=True):
+    def check_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
+                           timeout=3 * 60, vm_login='cirros',
+                           vm_password='cubswin:)'):
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
         if isinstance(ip_to_ping, six.string_types):
             ip_to_ping = [ip_to_ping]
         cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
         cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout)
+        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
+                             vm_login=vm_login, vm_password=vm_password)
         error_msg = (
             'Instance has no connectivity, exit code {exit_code},'
             'stdout {stdout}, stderr {stderr}'
         ).format(**res)
-        # If ping should not pass
-        if should_be_available:
-            expected_exit_code = 0
-        else:
-            expected_exit_code = 1
-        assert expected_exit_code == res['exit_code'], error_msg
+        assert 0 == res['exit_code'], error_msg
 
     def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""
