@@ -58,7 +58,7 @@ class OvsBase(TestBase):
             cidr='0.0.0.0/0')
 
     def disable_ovs_agents_on_controller(self):
-        """Disable openvswitch-agents on all controllers."""
+        """Disable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
@@ -78,7 +78,7 @@ class OvsBase(TestBase):
                 assert result['exit_code'] == 0
 
     def enable_ovs_agents_on_controllers(self):
-        """Enable openvswitch-agents on all controllers."""
+        """Enable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
@@ -86,6 +86,26 @@ class OvsBase(TestBase):
                 '. openrc && pcs resource enable '
                 'p_neutron-plugin-openvswitch-agent --wait')
             assert result['exit_code'] == 0
+
+    def ban_ovs_agents_controllers(self):
+        """Ban openvswitch-agents on all controllers."""
+        controllers = self.env.get_nodes_by_role('controller')
+
+        for node in controllers:
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'pcs resource ban p_neutron-plugin-openvswitch-agent')
+                assert result['exit_code'] == 0
+
+    def clear_ovs_agents_controllers(self):
+        """Clear openvswitch-agents on all controllers."""
+        controllers = self.env.get_nodes_by_role('controller')
+
+        for node in controllers:
+            with node.ssh() as remote:
+                result = remote.execute(
+                    'pcs resource clear p_neutron-plugin-openvswitch-agent')
+                assert result['exit_code'] == 0
 
 
 @pytest.mark.check_env_("has_2_or_more_computes")
@@ -100,15 +120,15 @@ class TestOVSRestartTwoVms(OvsBase):
         Steps:
             1. Update default security group
             2. Create router01, create networks net01: net01__subnet,
-            192.168.1.0/24, net02: net02__subnet, 192.168.2.0/24 and
-            attach them to router01.
+                192.168.1.0/24, net02: net02__subnet, 192.168.2.0/24 and
+                attach them to router01.
             3. Launch vm1 in net01 network and vm2 in net02 network
-            on different computes
+                on different computes
             4. Go to vm1 console and send pings to vm2
         """
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
         zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
-        hosts = zone.hosts.keys()[:2]
+        vm_hosts = zone.hosts.keys()[:2]
 
         self.setup_rules_for_default_sec_group()
 
@@ -116,7 +136,7 @@ class TestOVSRestartTwoVms(OvsBase):
         router = self.os_conn.create_router(name="router01")
 
         # create 2 networks and 2 instances
-        for i, hostname in enumerate(hosts, 1):
+        for i, hostname in enumerate(vm_hosts, 1):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             self.os_conn.router_interface_add(
                 router_id=router['router']['id'],
@@ -136,6 +156,19 @@ class TestOVSRestartTwoVms(OvsBase):
         self.check_ping_from_vm(self.server1, self.instance_keypair,
                                 self.server2_ip, timeout=2 * 60)
 
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [
+            agt['id'] for agt in
+            self.os_conn.neutron.list_agents(
+                binary='neutron-openvswitch-agent')['agents']]
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
+
     @pytest.mark.parametrize('count', [1, 40], ids=['1x', '40x'])
     def test_ovs_restart_pcs_disable_enable(self, count):
         """Restart openvswitch-agents with pcs disable/enable on controllers
@@ -148,7 +181,7 @@ class TestOVSRestartTwoVms(OvsBase):
             3. Launch vm1 in net01 network and vm2 in net02 network
                 on different computes
             4. Go to vm1 console and send pings to vm2
-            5. Disable ovs-agents on all controllers, restart service
+            5. Disable ovs-agents on a controller, restart service
                 neutron-plugin-openvswitch-agent on all computes, and enable
                 them back. To do this, launch the script against master node.
             6. Wait 30 seconds, send pings from vm1 to vm2 and check that
@@ -159,9 +192,23 @@ class TestOVSRestartTwoVms(OvsBase):
 
         """
         for _ in range(count):
+            # Check that all ovs agents are alive
+            self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+            # Disable ovs agent on a controller
             self.disable_ovs_agents_on_controller()
+
+            # Then check that all ovs went down
+            self.os_conn.wait_agents_down(self.ovs_conroller_agents)
+
+            # Restart ovs agent service on all computes
             self.restart_ovs_agents_on_computes()
+
+            # Enable ovs agent on a controller
             self.enable_ovs_agents_on_controllers()
+
+            # Then check that all ovs agents are alive
+            self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
             # sleep is used to check that system will be stable for some time
             # after restarting service
@@ -169,6 +216,57 @@ class TestOVSRestartTwoVms(OvsBase):
 
             self.check_ping_from_vm(self.server1, self.instance_keypair,
                                     self.server2_ip, timeout=2 * 60)
+
+            # check all agents are alive
+            assert all([agt['alive'] for agt in
+                        self.os_conn.neutron.list_agents()['agents']])
+
+    def test_ovs_restart_pcs_ban_clear(self):
+        """Restart openvswitch-agents with pcs ban/clear on controllers
+
+        Steps:
+            1. Update default security group
+            2. Create router01, create networks.
+            3. Launch vm1 in net01 network and vm2 in net02 network
+                on different computes.
+            4. Go to vm1 console and send pings to vm2
+            5. Ban ovs-agents on all controllers, clear them and restart
+                service neutron-plugin-openvswitch-agent on all computes.
+                To do this, launch the script against master node.
+            6. Wait 30 seconds, send pings from vm1 to vm2 and
+                check that it is successful.
+
+        Duration 10m
+
+        """
+        # Check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # Ban ovs agents on all controllers
+        self.ban_ovs_agents_controllers()
+
+        # Then check that all ovs went down
+        self.os_conn.wait_agents_down(self.ovs_agent_ids)
+
+        # Cleat ovs agent on all controllers
+        self.clear_ovs_agents_controllers()
+
+        # Restart ovs agent service on all computes
+        self.restart_ovs_agents_on_computes()
+
+        # Then check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # sleep is used to check that system will be stable for some time
+        # after restarting service
+        time.sleep(30)
+
+        self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                self.server2_ip, timeout=2 * 60)
+
+        # check all agents are alive
+        assert all([agt['alive'] for agt in
+                    self.os_conn.neutron.list_agents()['agents']])
 
 
 @pytest.mark.check_env_('is_vlan')
