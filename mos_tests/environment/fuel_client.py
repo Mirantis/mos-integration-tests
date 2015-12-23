@@ -180,7 +180,7 @@ class Environment(EnvironmentBase):
                     return controller
 
     def destroy_nodes(self, devops_nodes):
-        logger.info('wait untill the nodes get offline state')
+        logger.info('wait until the nodes get offline state')
         node_ips = [node.get_ip_address_by_network_name('admin')
                     for node in devops_nodes]
         for node in devops_nodes:

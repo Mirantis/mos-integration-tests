@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
 @pytest.mark.usefixtures("setup")
-class TestBanDHCPAgent(base.TestBase):
-    """Check DHCP agents rescheduling."""
+class TestBaseDHCPAgent(base.TestBase):
+    """Base DHCP agents tests."""
 
     def create_cirros_instance_with_ssh(self, name='server01',
                                         net_name='net04', **kwargs):
@@ -209,8 +209,7 @@ class TestBanDHCPAgent(base.TestBase):
             'stdout {stdout}, stderr {stderr}'.format(**res))
         assert 0 == res['exit_code'], err_msg
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack_state(self, init):
+    def _prepare_openstack_state(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -247,6 +246,14 @@ class TestBanDHCPAgent(base.TestBase):
         self.check_vm_is_available(self.instance, **self.cirros_creds)
         self.check_ping_from_cirros(vm=self.instance)
         self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+
+class TestBanDHCPAgent(TestBaseDHCPAgent):
+    """Check DHCP agents rescheduling."""
+
+    @pytest.fixture(autouse=True)
+    def prepare_openstack_state(self, init):
+        self._prepare_openstack_state()
 
     @pytest.mark.parametrize('ban_count', [1, 2])
     def test_ban_some_dhcp_agents(self, ban_count):
@@ -481,6 +488,7 @@ class TestBanDHCPAgent(base.TestBase):
         # determine primary controller
         leader_node_ip = self.env.leader_controller.data['ip']
         for i in range(ban_count):
+            logger.info('Ban iteration #{}'.format(i + 1))
             _killing_cycle(leader_node_ip,
                            agents_mapping[curr_agents[0]],
                            agents_mapping[curr_agents[1]],
@@ -557,6 +565,7 @@ class TestBanDHCPAgent(base.TestBase):
                             wait_for_rescheduling=False)
 
         for i in range(ban_count):
+            logger.info('Ban iteration #{}'.format(i + 1))
             # ban agent was on current network
             self.ban_dhcp_agent(node_to_ban=curr_agents[0],
                                 host=leader_node_ip, wait_for_die=True,
