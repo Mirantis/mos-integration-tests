@@ -251,8 +251,8 @@ class TestPortTags(TestBase):
 @pytest.mark.usefixtures("setup")
 class TestOVSRestartsOneNetwork(OvsBase):
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    @pytest.fixture
+    def prepare_openstack(self, init):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -270,7 +270,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
         ext_network = [x for x in exist_networks
                        if x.get('router:external')][0]
         self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
-        self.hosts = self.zone.hosts.keys()[:2]
+        self.hosts = self.zone.hosts.keys()
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
         self.setup_rules_for_default_sec_group()
 
@@ -298,9 +298,16 @@ class TestOVSRestartsOneNetwork(OvsBase):
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [agt['id'] for agt in
                               self.os_conn.neutron.list_agents(
-                                    binary='neutron-ovs-agent')['agents']]
+                                 binary='neutron-openvswitch-agent')['agents']]
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+                       binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
 
-    def test_restart_openvswitch_agent_under_bat(self):
+    def test_restart_openvswitch_agent_under_bat(self, prepare_openstack):
         """[Networking: OVS graceful restart] Create automated test
            Restart openvswitch-agents with broadcast traffic background
 
@@ -339,7 +346,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self.disable_ovs_agents_on_controller()
 
         # Then check that all ovs went down
-        self.os_conn.wait_agents_down(self.ovs_agent_ids)
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
         self.restart_ovs_agents_on_computes()
