@@ -66,6 +66,7 @@ class DevopsClient(object):
             env.revert(snapshot_name, flag=False)
             env.resume(verbose=False)
             cls.sync_tyme(env)
+            cls.restore_cluster(env)
         except Exception as e:
             logger.error('Can\'t revert snapshot due to error: {}'.
                          format(e))
@@ -93,8 +94,21 @@ class DevopsClient(object):
             logger.info("sync time on master")
             remote.execute('hwclock --hctosys')
             logger.info("sync time on {} slaves".format(slaves_count))
-            remote.execute('for i in {{1..{0}}}; do ssh node-$i '
-                           '"hwclock --hctosys"; done'.format(slaves_count))
+            remote.execute(
+                'for i in {{1..{0}}}; do ('
+                    'ssh node-$i "hwclock --hctosys"'
+                ') & done; wait'.format(slaves_count))
+
+    @classmethod
+    def restore_cluster(cls, env):
+        with env.get_admin_remote() as remote:
+            out = remote.execute(
+                "for i in $(fuel node | grep controller | awk '{print $1}'); "
+                "do (ssh node-$i '"
+                    "service nova-conductor restart; "
+                    "crm_resource -P"
+                "') & done; wait")
+            logger.debug(out)
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac):

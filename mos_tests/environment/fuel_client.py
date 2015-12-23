@@ -96,19 +96,19 @@ class Environment(EnvironmentBase):
 
     @property
     def controllers_is_ready(self):
-        for node in self.get_nodes_by_role('controller'):
-            logger.debug('Check controller {} is alive'.format(
-                node.data['fqdn']))
-            with node.ssh() as remote:
-                for cmd in ('glance image-list', 'nova list',
-                            'openstack project list'):
-                    result = remote.execute('. openrc && {}'.format(cmd))
-                    if result['exit_code'] != 0:
-                        output = ''.join(result['stdout'] + result['stderr'])
-                        logger.debug(
-                            '{} return {} exit_code. Output:\n{}'.format(
-                            cmd, result['exit_code'], output))
-                        return False
+        node = self.get_nodes_by_role('controller')[0]
+        logger.debug('Check controller {} is alive'.format(
+            node.data['fqdn']))
+        with node.ssh() as remote:
+            for cmd in ('glance image-list', 'nova list',
+                        'openstack project list'):
+                result = remote.execute('. openrc && {}'.format(cmd))
+                if result['exit_code'] != 0:
+                    output = ''.join(result['stdout'] + result['stderr'])
+                    logger.debug(
+                        '{} return {} exit_code. Output:\n{}'.format(
+                        cmd, result['exit_code'], output))
+                    return False
         return True
 
     @property
