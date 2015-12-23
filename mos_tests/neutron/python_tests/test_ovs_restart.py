@@ -14,6 +14,7 @@
 
 import logging
 import time
+from random import randint
 
 import pytest
 
@@ -90,6 +91,25 @@ class OvsBase(TestBase):
             if cmd_exit_code != 0:
                 logger.error(result['stderr'])
             assert cmd_exit_code == 0
+
+    # TODO: remove when fixed
+    # WA - delete when it'll be fixed
+    def wa_for_bug_with_ovs(self):
+        """ BUG: Neutron agents flapping after the issues with rabbitmq
+        https://bugs.launchpad.net/mos/+bug/1528563
+        """
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            result = remote.execute(
+                'service neutron-server restart && '
+                'service nova-conductor restart')
+            assert result['exit_code'] == 0
+            cmd_exit_code = result['exit_code']
+            if cmd_exit_code != 0:
+                logger.error(result['stderr'])
+            assert cmd_exit_code == 0
+        time.sleep(60)
+
 
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
@@ -248,3 +268,129 @@ class TestPortTags(TestBase):
 
         # Compare
         assert ovs_after_port_tags == ovs_before_port_tags
+
+@pytest.mark.check_env_("has_2_or_more_computes")
+@pytest.mark.check_env_("is_vlan")
+@pytest.mark.usefixtures("setup")
+class TestOVSRestartTwoSeparateVms(OvsBase):
+    """Check restarts of openvswitch-agents."""
+
+    @pytest.fixture(autouse=True)
+    def _prepare_openstack(self, init):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+        1. Update default security group if needed
+        2. Create CONFIG 1:
+            Network: test_net_05
+            SubNetw: test_net_05__subnet, 192.168.5.0/24
+            Router:  test_router_05
+        3. Create CONFIG 2:
+            Network: test_net_06
+            SubNetw: test_net_06__subnet, 192.168.6.0/24
+            Router:  test_router_06
+        3. Launch 'test_vm_05' in 'config 1'
+        4. Launch 'test_vm_05' in 'config 2'
+        5. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+            Pings should NOT go between VMs.
+        """
+        # Create new key-pair with random name
+        keypair_name = 'instancekey_{0}'.format(randint(100, 1000))
+        self.instance_keypair = self.os_conn.create_key(key_name=keypair_name)
+        logger.info('New keypair "{0}" was created'.format(keypair_name))
+
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        hosts = zone.hosts.keys()[:2]
+
+        # Try to add sec groups if they were not added before
+        logger.info('Try to add sec groups if they were not added before')
+        try:
+            self.setup_rules_for_default_sec_group()
+        except Exception as e:
+            logger.warning('Warning during security rule update:'
+                           '\n{0}'.format(e))
+
+        # Create two routers for two configs
+        logger.info('Create two routers')
+        router_05 = self.os_conn.create_router(name="test_router_05")
+        router_06 = self.os_conn.create_router(name="test_router_06")
+
+        # WA for Bug: https://bugs.launchpad.net/mos/+bug/1528563
+        # restart service neutron-server on all controllers
+        # self.wa_for_bug_with_ovs()
+
+        # Create 2 separate networks and 2 vm instances
+        # and associate each element to their router (06net+06sub-> 06 router)
+        for i, hostname in enumerate(hosts, 5):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            if i == 5:
+                self.os_conn.router_interface_add(
+                    router_id=router_05['router']['id'],
+                    subnet_id=subnet['subnet']['id'])
+            else:
+                self.os_conn.router_interface_add(
+                    router_id=router_06['router']['id'],
+                    subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='test_vm_%02d' % i,  # 'test_vm_05' OR 'test_vm_06'
+                availability_zone='{}:{}'.format(zone.zoneName, hostname),
+                key_name=self.instance_keypair.name,
+                timeout=200,
+                nics=[{'net-id': net['network']['id']}])
+
+        # Check pings with alive ovs-agents,
+        # and before restart 'neutron-plugin-openvswitch-agent'
+        self.server1 = self.os_conn.nova.servers.find(name="test_vm_06")
+        self.server2_ip = self.os_conn.get_nova_instance_ips(
+            self.os_conn.nova.servers.find(name="test_vm_05")
+        ).values()[0]
+
+        # Ping should NOT go between VMs
+        self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                self.server2_ip, timeout=2 * 60,
+                                should_be_available=False)
+
+    def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
+        """Restart openvswitch-agents with pcs disable/enable on controllers
+        [VLAN only] Check connectivity between private networks on different
+        routers
+
+        Steps:
+        1. Update default security group if needed
+        2. Create CONFIG 1:
+            Network: test_net_05
+            SubNetw: test_net_05__subnet, 192.168.5.0/24
+            Router:  test_router_05
+        3. Create CONFIG 2:
+            Network: test_net_06
+            SubNetw: test_net_06__subnet, 192.168.6.0/24
+            Router:  test_router_06
+        3. Launch 'test_vm_05' inside 'config 1'
+        4. Launch 'test_vm_06' inside 'config 2'
+        5. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+            Pings should NOT go between VMs.
+        5. Disable ovs-agents on all controllers, restart service
+            neutron-plugin-openvswitch-agent on all computes, and enable
+            them back. To do this, launch the script against master node.
+        6. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
+            and check that they are still NOT successful.
+
+        Duration 10m
+
+        https://mirantis.testrail.com/index.php?/cases/view/542666
+        https://mirantis.jira.com/browse/QA-375
+        """
+        self.disable_ovs_agents_on_controller()
+        self.restart_ovs_agents_on_computes()
+        self.enable_ovs_agents_on_controllers()
+
+        # sleep is used to check that system will be stable for some time
+        # after restarting service
+        time.sleep(30)
+
+        # Check pings after anable/disable ovs-agents,
+        # and after restart 'neutron-plugin-openvswitch-agent'.
+        # Ping should NOT go between VMs
+        self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                self.server2_ip, timeout=2 * 60,
+                                should_be_available=False)
