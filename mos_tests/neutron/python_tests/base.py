@@ -146,9 +146,9 @@ class TestBase(object):
         ).format(**res)
         # If ping should not pass
         if should_be_available:
-            expected_exit_code = 1
-        else:
             expected_exit_code = 0
+        else:
+            expected_exit_code = 1
         assert expected_exit_code == res['exit_code'], error_msg
 
     def check_vm_connectivity(self, timeout=3 * 60):
