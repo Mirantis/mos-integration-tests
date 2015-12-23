@@ -282,6 +282,12 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         self.check_ping_from_vm(self.server1, self.instance_keypair,
                                 self.server2_ip, timeout=2 * 60)
 
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [agt['id'] for agt in
+                              self.os_conn.neutron.list_agents(
+                                  binary='neutron-openvswitch-agent')[
+                                  'agents']]
+
     def test_ovs_restart_pcs_vms_on_single_compute_in_single_network(self):
         """Check connectivity for instances scheduled on a single compute in
          a single private network
@@ -300,9 +306,23 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         Duration 10m
 
         """
+        # Check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # Disable ovs agent on all controllers
         self.disable_ovs_agents_on_controller()
+
+        # Then check that all ovs went down
+        self.os_conn.wait_agents_down(self.ovs_agent_ids)
+
+        # Restart ovs agent service on all computes
         self.restart_ovs_agents_on_computes()
+
+        # Enable ovs agent on all controllers
         self.enable_ovs_agents_on_controllers()
+
+        # Then check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # sleep is used to check that system will be stable for some time
         # after restarting service
@@ -310,3 +330,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
                                 self.server2_ip, timeout=2 * 60)
+
+        # check all agents are alive
+        assert all([agt['alive'] for agt in
+                    self.os_conn.neutron.list_agents()['agents']])
