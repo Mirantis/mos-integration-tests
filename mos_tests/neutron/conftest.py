@@ -100,6 +100,11 @@ def has_3_or_more_computes(env):
     return len(env.get_nodes_by_role('compute')) >= 3
 
 
+def is_vlan(env):
+    """Env deployed with vlan segmentation"""
+    return env.network_segmentation_type == 'vlan'
+
+
 def is_vxlan(env):
     """Env deployed with vxlan segmentation"""
     return env.network_segmentation_type == 'tun'

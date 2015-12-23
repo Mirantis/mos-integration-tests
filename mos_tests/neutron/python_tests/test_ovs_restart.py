@@ -11,17 +11,20 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
+import logging
 import os
 import re
 import time
 import pytest
-
 from mos_tests.neutron.python_tests.base import TestBase
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
-    """ Common fuctions for ovs tests"""
+    """Common fuctions for ovs tests"""
 
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
@@ -159,12 +162,97 @@ class TestOVSRestartTwoVms(OvsBase):
                                 self.server2_ip, timeout=2 * 60)
 
 
+@pytest.mark.check_env_('is_vlan')
+class TestPortTags(TestBase):
+    """Chect that port tags arent't change after ovs-agent restart"""
+
+    def get_ports_tags_data(self, lines):
+        """Returns dict with ports as keys and tags as values"""
+        port_tags = {}
+        last_offset = 0
+        port = None
+        for line in lines[1:]:
+            line = line.rstrip()
+            key, val = line.split(None, 1)
+            offset = len(line) - len(line.lstrip())
+            if port is None:
+                if key.lower() == 'port':
+                    port = val.strip('"')
+                    last_offset = offset
+                    continue
+            elif offset <= last_offset:
+                port = None
+            elif key.lower() == 'tag:':
+                port_tags[port] = val
+                port = None
+        return port_tags
+
+    def test_port_tags_immutable(self):
+        """Check that ports tags don't change their values after
+            ovs-agents restart
+
+        Scenario:
+            1. Collect ovs-vsctl tags before test
+            2. Disable ovs-agents on all controllers,
+                restart service 'neutron-plugin-openvswitch-agent'
+                on all computes, and enable them back
+            3. Check that all ovs-agents are in alive state
+            4. Collect ovs-vsctl tags after test
+            5. Check that values of the tag parameter for every port
+                remain the same
+        """
+
+        def get_ovs_port_tags(nodes):
+            ovs_cfg = {}
+            for node in nodes:
+                with node.ssh() as remote:
+                    result = remote.execute('ovs-vsctl show')
+                    assert result['exit_code'] == 0
+                    ports_tags = self.get_ports_tags_data(result['stdout'])
+                    ovs_cfg[node.data['fqdn']] = ports_tags
+            return ovs_cfg
+
+        nodes = self.env.get_all_nodes()
+
+        # Collect ovs-vsctl data before test
+        ovs_before_port_tags = get_ovs_port_tags(nodes)
+
+        # ban and clear ovs-agents on controllers
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            cmd = "pcs resource disable p_neutron-plugin-openvswitch-agent"
+            assert remote.execute(cmd)['exit_code'] == 0
+            cmd = "pcs resource enable p_neutron-plugin-openvswitch-agent"
+            assert remote.execute(cmd)['exit_code'] == 0
+
+        # restart ovs-agents on computes
+        for node in self.env.get_nodes_by_role('compute'):
+            with node.ssh() as remote:
+                cmd = 'service neutron-plugin-openvswitch-agent restart'
+                assert remote.execute(cmd)['exit_code'] == 0
+
+        # wait for 30 seconds
+        time.sleep(30)
+
+        # Collect ovs-vsctl data after test
+        ovs_after_port_tags = get_ovs_port_tags(nodes)
+
+        # Compare
+        assert ovs_after_port_tags == ovs_before_port_tags
+
+
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
 class TestOVSRestartWithIperfTraffic(OvsBase):
     """Restart ovs-agents with iperf traffic background"""
 
     def create_image(self, path, name):
+        """
+
+        :param path: path to folder where image_file located
+        :param name: name of file
+        :return: image object for Glance
+        """
         full_path = os.path.join(path, name)
         with open(full_path, 'rb') as image_file:
             image = self.os_conn.glance.images \
@@ -175,6 +263,11 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         return image
 
     def get_lost_percentage(self, output):
+        """
+
+        :param output: list of lines (output of iperf client)
+        :return: percentage of lost datagrams
+        """
         lost_datagrams_rate_pattern = re.compile('\d+/\d+ \((\d+)%\)')
         server_report_flag = False
         for line in output:
@@ -184,7 +277,25 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                     return result.group(1)
             elif line.endswith("Server Report:\n"):
                 server_report_flag = True
-        return None
+        return False
+
+    def launch_iperf_server(self, vm, keypair, vm_login):
+        """Launch iperf server"""
+        server_cmd = 'iperf -u -s -p 5002 </dev/null > ~/iperf.log 2>&1 &'
+        res_srv = self.run_on_vm(vm, keypair, server_cmd, vm_login=vm_login)
+        return res_srv
+
+    def launch_iperf_client(self, client, server, keypair, vm_login,
+                            background=False):
+        """Launch iperf client"""
+        client_cmd = 'iperf --port 5002 -u --client {0} --len 64' \
+                     ' --bandwidth 1M --time 60 -i 10' \
+            .format(self.os_conn.get_nova_instance_ips(server)['fixed'])
+        if background:
+            client_cmd = ' '.join(
+                (client_cmd, '< /dev/null > ~/iperf_client.log 2>&1 &'))
+        res = self.run_on_vm(client, keypair, client_cmd, vm_login=vm_login)
+        return res
 
     @pytest.fixture(autouse=True)
     def _prepare_openstack(self, init):
@@ -225,6 +336,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                 availability_zone='{}:{}'.format(zone.zoneName, hostname),
                 image_id=vm_image.id,
                 flavor=2,
+                timeout=300,
                 key_name=self.instance_keypair.name,
                 nics=[{'net-id': net['network']['id']}])
 
@@ -240,22 +352,42 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [agt['id'] for agt in
                               self.os_conn.neutron.list_agents(
-                                  binary='neutron-ovs-agent')['agents']]
+                                  binary='neutron-openvswitch-agent')[
+                                  'agents']]
+
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
 
     def test_ovs_restart_with_iperf_traffic(self):
+        """Checks that iperf traffic is interrupted during ovs restart
+
+        Steps:
+            1. Run iperf server on server2
+            2. Run iperf client on server 1
+            3. Check that  packet losses < 1%
+            4. Disable ovs-agents on all controllers,
+                restart service neutron-plugin-openvswitch-agent
+                on all computes, and enable them back.
+            5. Check that all ovs-agents are in alive state
+            6. Check that iperf traffic wasn't interrupted during ovs restart,
+                and not more than 10% datagrams are lost
+        """
+
         # Launch iperf server on server2
-        server_cmd = 'iperf -u -s -p 5002 </dev/null > ~/iperf.log 2>&1 &'
-        res_srv = self.run_on_vm(self.server2, self.instance_keypair,
-                                 server_cmd, vm_login='ubuntu')
+        res = self.launch_iperf_server(self.server2, self.instance_keypair,
+                                       'ubuntu')
         err_msg = 'Failed to start the iperf server on vm result: {}'.format(
-            res_srv)
-        assert not res_srv['exit_code'], err_msg
+            res)
+        assert not res['exit_code'], err_msg
 
         # Launch iperf client on server1
-        client_cmd = 'iperf --port 5002 -u --client {0} --len 64 --bandwidth 1M --time 60 -i 10' \
-            .format(self.os_conn.get_nova_instance_ips(self.server2)['fixed'])
-        res = self.run_on_vm(self.server1, self.instance_keypair, client_cmd,
-                             vm_login='ubuntu')
+        res = self.launch_iperf_client(self.server1, self.server2,
+                                       self.instance_keypair, 'ubuntu')
         err_msg = 'Failed to start the iperf client on vm result: {}'.format(
             res)
         assert not res['exit_code'], err_msg
@@ -266,30 +398,34 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
             lost)
         assert not int(lost), err_msg
 
-        # Check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
-        # Disable ovs agent on a controller
+        # Launch client in background and restart agents
+        res = self.launch_iperf_client(self.server1, self.server2,
+                                       self.instance_keypair, 'ubuntu',
+                                       background=True)
+        err_msg = 'Failed to start the iperf client on vm result: {}'.format(
+            res)
+        assert not res['exit_code'], err_msg
+
         self.disable_ovs_agents_on_controller()
-
-        # Then check that all ovs went down
-        self.os_conn.wait_agents_down(self.ovs_agent_ids)
-
-        # Restart ovs agent service on all computes
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
         self.restart_ovs_agents_on_computes()
-
-        # Enable ovs agent on a controller
         self.enable_ovs_agents_on_controllers()
-
-        # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
-        # sleep is used to check that system will be stable for some time
-        # after restarting service
-        time.sleep(30)
+        cmd = 'cat ~/iperf_client.log'
+        result = self.run_on_vm(self.server1, self.instance_keypair, cmd,
+                                vm_login='ubuntu')
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+        while self.get_lost_percentage(result) is False:
+            time.sleep(5)
+            result = self.run_on_vm(self.server1, self.instance_keypair,
+                                    cmd, vm_login='ubuntu')
+
+        lost = self.get_lost_percentage(result)
+        err_msg = "{0}% datagrams lost".format(lost)
+        assert int(lost) < 10, err_msg
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
