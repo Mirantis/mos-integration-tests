@@ -59,7 +59,10 @@ class OvsBase(TestBase):
             result = remote.execute(
                 '. openrc && pcs resource disable '
                 'p_neutron-plugin-openvswitch-agent --wait')
-            assert result['exit_code'] == 0
+            cmd_exit_code = result['exit_code']
+            if cmd_exit_code != 0:
+                logger.error(result['stderr'])
+            assert cmd_exit_code == 0
 
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
@@ -69,7 +72,10 @@ class OvsBase(TestBase):
             with node.ssh() as remote:
                 result = remote.execute(
                     'service neutron-plugin-openvswitch-agent restart')
-                assert result['exit_code'] == 0
+                cmd_exit_code = result['exit_code']
+                if cmd_exit_code != 0:
+                    logger.error(result['stderr'])
+                assert cmd_exit_code == 0
 
     def enable_ovs_agents_on_controllers(self):
         """Enable openvswitch-agents on all controllers."""
@@ -80,7 +86,10 @@ class OvsBase(TestBase):
                 '. openrc && pcs resource enable '
                 'p_neutron-plugin-openvswitch-agent --wait')
             assert result['exit_code'] == 0
-
+            cmd_exit_code = result['exit_code']
+            if cmd_exit_code != 0:
+                logger.error(result['stderr'])
+            assert cmd_exit_code == 0
 
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
