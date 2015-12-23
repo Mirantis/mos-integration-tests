@@ -536,8 +536,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                      ' --bandwidth 1M --time 60 -i 10' \
             .format(self.os_conn.get_nova_instance_ips(server)['fixed'])
         if background:
-            client_cmd = ' '.join(
-                (client_cmd, '< /dev/null > ~/iperf_client.log 2>&1 &'))
+            client_cmd += ' < /dev/null > ~/iperf_client.log 2>&1 &'
         res = self.run_on_vm(client, keypair, client_cmd, vm_login=vm_login,
                              vm_password=vm_pwd)
         return res
