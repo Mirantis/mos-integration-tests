@@ -12,16 +12,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import time
 
 import pytest
 
 from mos_tests.neutron.python_tests.base import TestBase
 
+logger = logging.getLogger(__name__)
+
 
 @pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
-    """ Common fuctions for ovs tests"""
+    """Common fuctions for ovs tests"""
 
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
@@ -157,6 +160,86 @@ class TestOVSRestartTwoVms(OvsBase):
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
                                 self.server2_ip, timeout=2 * 60)
+
+
+
+@pytest.mark.check_env_('is_vlan')
+class TestPortTags(TestBase):
+    """Chect that port tags arent't change after ovs-agent restart"""
+
+    def get_ports_tags_data(self, lines):
+        """Returns dict with ports as keys and tags as values"""
+        port_tags = {}
+        last_offset = 0
+        port = None
+        for line in lines[1:]:
+            line = line.rstrip()
+            key, val = line.split(None, 1)
+            offset = len(line) - len(line.lstrip())
+            if port is None:
+                if key.lower() == 'port':
+                    port = val.strip('"')
+                    last_offset = offset
+                    continue
+            elif offset <= last_offset:
+                port = None
+            elif key.lower() == 'tag:':
+                port_tags[port] = val
+                port = None
+        return port_tags
+
+    def test_port_tags_immutable(self):
+        """Check that ports tags don't change their values after
+            ovs-agents restart
+
+        Scenario:
+            1. Collect ovs-vsctl tags before test
+            2. Disable ovs-agents on all controllers,
+                restart service 'neutron-plugin-openvswitch-agent'
+                on all computes, and enable them back
+            3. Check that all ovs-agents are in alive state
+            4. Collect ovs-vsctl tags after test
+            5. Check that values of the tag parameter for every port
+                remain the same
+        """
+
+        def get_ovs_port_tags(nodes):
+            ovs_cfg = {}
+            for node in nodes:
+                with node.ssh() as remote:
+                    result = remote.execute('ovs-vsctl show')
+                    assert result['exit_code'] == 0
+                    ports_tags = self.get_ports_tags_data(result['stdout'])
+                    ovs_cfg[node.data['fqdn']] = ports_tags
+            return ovs_cfg
+
+        nodes = self.env.get_all_nodes()
+
+        # Collect ovs-vsctl data before test
+        ovs_before_port_tags = get_ovs_port_tags(nodes)
+
+        # ban and clear ovs-agents on controllers
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            cmd = "pcs resource disable p_neutron-plugin-openvswitch-agent"
+            assert remote.execute(cmd)['exit_code'] == 0
+            cmd = "pcs resource enable p_neutron-plugin-openvswitch-agent"
+            assert remote.execute(cmd)['exit_code'] == 0
+
+        # restart ovs-agents on computes
+        for node in self.env.get_nodes_by_role('compute'):
+            with node.ssh() as remote:
+                cmd = 'service neutron-plugin-openvswitch-agent restart'
+                assert remote.execute(cmd)['exit_code'] == 0
+
+        # wait for 30 seconds
+        time.sleep(30)
+
+        # Collect ovs-vsctl data after test
+        ovs_after_port_tags = get_ovs_port_tags(nodes)
+
+        # Compare
+        assert ovs_after_port_tags == ovs_before_port_tags
 
 
 @pytest.mark.check_env_("has_1_or_more_computes")
