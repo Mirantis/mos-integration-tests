@@ -558,7 +558,7 @@ def is_key_exists(nova_client, key_name):
         :param key_name: name of the keypair
         :return True or False
     """
-    return key_name in [k.name for k in nova_client.keypairs.list()]
+    return len(nova_client.keypairs.findall(name=key_name)) > 0
 
 
 def delete_keys(nova_client, key_name):
