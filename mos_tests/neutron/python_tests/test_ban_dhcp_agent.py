@@ -664,3 +664,150 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
                    'new ports - {1}'.format(ports_ids,
                                             new_ports_ids))
         assert sorted(ports_ids) == sorted(new_ports_ids), err_msg
+
+
+class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
+    """Test with preparation of neutron service."""
+    @staticmethod
+    def _apply_new_neutron_param_value(remote, value, param=None, path=None):
+        """Change some parameter in neutron config to new value
+        and restart the service.
+        Changing dhcp_agents_per_network by default.
+
+        :param remote: ssh connection to controller
+        :param value: new value for param
+        :param param: parameter to change in config file
+        :param path: path to config file
+        :returns: result of command execution
+        """
+        param = param or 'dhcp_agents_per_network'
+        path = path or '/etc/neutron/neutron.conf'
+        param_change_value = (
+            r"sed -i 's/^\({param} *= *\).*/\1{value}/' {path}".format(
+                param=param, value=value, path=path)
+        )
+        restart_service = "service neutron-server restart"
+        res = remote.execute(
+            '{} && {}'.format(param_change_value, restart_service))
+        return res
+
+    def _prepare_neutron_server_and_env(self, net_count):
+        """ Prepares neutron service network count on dhcp agent
+            and prepares env.
+
+        :param net_count: how many networks musth dhcp agent handle
+        """
+        def _check_neutron_restart():
+            try:
+                self.os_conn.list_networks()['networks']
+            except Exception as e:
+                logger.debug(e)
+                return False
+            return True
+
+        all_controllers = self.env.get_nodes_by_role('controller')
+        for controller in all_controllers:
+            with controller.ssh() as remote:
+                res = self._apply_new_neutron_param_value(remote, net_count)
+                error_msg = (
+                    'Neutron service restart with new value failed, '
+                    'exit code {exit_code},'
+                    'stdout {stdout}, stderr {stderr}').format(**res)
+                assert 0 == res['exit_code'], error_msg
+
+        wait_msg = "Waiting for neutron is up"
+        wait(
+            lambda: _check_neutron_restart(),
+            timeout_seconds=60 * 3,
+            sleep_seconds=(1, 60, 5),
+            waiting_for=wait_msg)
+
+        self._prepare_openstack_state()
+
+    @pytest.mark.parametrize('net_on_dhcp_count', [1, 3])
+    def test_rescheduling_with_one_or_three_dhcp_agents(self,
+                                                        net_on_dhcp_count):
+        """Check dhcp-agent rescheduling with
+           net on dhcp-agent count not equal two.
+
+        :param net_on_dhcp_count: count of dhcp-agents for network
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Apply new config for neutron on all controllers:
+               set dhcp_agents_per_network property to 1 and restart service
+            3. Create network net01, subnet net01_subnet
+            4. Create router with gateway to external net and
+               interface with net01
+            5. Launch instance and associate floating IP
+            6. Run dhcp-client in instance's console: sudo cirros-dhcpc up eth0
+            7. Look on what DHCP-agents chosen network is:
+               ``neutron dhcp-agent-list-hosting-net <network_name>``
+            8. Ban DHCP-agent on which instance's net is:
+               ``pcs resource ban p_neutron-dhcp-agent node-x``
+            9. Run dhcp-client in instance's console:
+               ``sudo cirros-dhcpc up eth0``
+            10. Repeat previous 3 steps two times.
+            11. Check that all networks is on last dhcp-agent:
+                ``neutron net-list-on-dhcp-agent <id_clr_agnt>``
+            12. Ban last DHCP-agent on which instance's net is:
+                ``pcs resource ban p_neutron-dhcp-agent node-3``
+            13. Clear first banned DHCP-agent
+                ``pcs resource clear p_neutron-dhcp-agent node-1``
+            14. Check that all networks is on cleared dhcp-agent:
+                ``neutron net-list-on-dhcp-agent <id_clr_agnt>|grep net|wc -l``
+            15. Run dhcp-client in instance's console:
+                ``sudo cirros-dhcpc up eth0``
+
+        Duration 15m
+
+        """
+        self._prepare_neutron_server_and_env(net_on_dhcp_count)
+        # Collect all networks on dhcp-agents
+        all_agents = self.os_conn.list_all_neutron_agents(agent_type='dhcp')
+        agents_mapping = {agent['host']: agent for agent in all_agents}
+        agents_networks = [net['id'] for agent in all_agents
+                           for net in self.os_conn.get_networks_on_dhcp_agent(
+                               agent['id'])]
+        # Ban first two agents
+        leader_node_ip = self.env.leader_controller.data['ip']
+        banned_agents = []
+        for ban_counter in range(2):
+            curr_agents = self.os_conn.get_node_with_dhcp_for_network(
+                net_id=self.net_id)
+            assert len(curr_agents) <= len(all_agents) - ban_counter
+            self.ban_dhcp_agent(curr_agents[0], leader_node_ip, self.net_name,
+                                wait_for_rescheduling=(net_on_dhcp_count == 1))
+            banned_agents.append(curr_agents[0])
+            self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check that all networks are on free agent
+        last_agent = (set(agents_mapping.keys()) - set(banned_agents)).pop()
+        last_agent_id = agents_mapping[last_agent]['id']
+        nets_on_last_dhcp_agent = [
+            net['id'] for net in self.os_conn.get_networks_on_dhcp_agent(
+                last_agent_id)]
+        err_msg = (
+            'There is not all networks on last agent: '
+            'all existing networks - {0}, '
+            'networks on free agent - {1}'.format(agents_networks,
+                                                  nets_on_last_dhcp_agent))
+        assert set(agents_networks) == set(nets_on_last_dhcp_agent), err_msg
+
+        # Ban last agent and unban first agent
+        self.ban_dhcp_agent(last_agent, leader_node_ip, self.net_name,
+                            wait_for_rescheduling=False)
+        cleared_agent = self.clear_dhcp_agent(
+            banned_agents[0], leader_node_ip, self.net_name)
+        cleared_agent_id = agents_mapping[cleared_agent]['id']
+        nets_on_cleared_dhcp_agent = [
+            net['id'] for net in self.os_conn.get_networks_on_dhcp_agent(
+                cleared_agent_id)]
+        err_msg = (
+            'There is not all networks on last agent: '
+            'all existing networks - {0}, '
+            'networks on free agent - {1}'.format(agents_networks,
+                                                  nets_on_cleared_dhcp_agent))
+        assert set(agents_networks) == set(nets_on_cleared_dhcp_agent), err_msg
+
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
