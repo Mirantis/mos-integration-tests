@@ -560,7 +560,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         self.disable_ovs_agents_on_controller()
 
         # Then check that all ovs went down
-        self.os_conn.wait_agents_down(self.ovs_agent_ids)
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
         self.restart_ovs_agents_on_computes()
