@@ -523,10 +523,17 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
                                 self.server2_ip, timeout=2 * 60)
 
         # make a list of all ovs agent ids
-        self.ovs_agent_ids = [agt['id'] for agt in
-                              self.os_conn.neutron.list_agents(
-                                  binary='neutron-openvswitch-agent')[
-                                  'agents']]
+        self.ovs_agent_ids = [
+            agt['id'] for agt in
+            self.os_conn.neutron.list_agents(
+                binary='neutron-openvswitch-agent')['agents']]
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
 
     def test_ovs_restart_pcs_vms_on_single_compute_in_single_network(self):
         """Check connectivity for instances scheduled on a single compute in
@@ -538,10 +545,10 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
             3. Launch vm1 and vm2 in net01 network on a single compute compute
             4. Go to vm1 console and send pings to vm2
             5. Disable ovs-agents on all controllers, restart service
-            neutron-plugin-openvswitch-agent on all computes, and enable
-            them back. To do this, launch the script against master node.
+                neutron-plugin-openvswitch-agent on all computes, and enable
+                them back. To do this, launch the script against master node.
             6. Wait 30 seconds, send pings from vm1 to vm2 and check that
-            it is successful.
+                it is successful.
 
         Duration 10m
 
