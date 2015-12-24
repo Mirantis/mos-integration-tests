@@ -183,25 +183,20 @@ class TestBaseDHCPAgent(base.TestBase):
         """Prepare OpenStack for scenarios run
 
         Steps:
-            1. Revert snapshot with neutron cluster
-            2. Create network net01, subnet net01_subnet
-            3. Create router with gateway to external net and
+            1. Create network net01, subnet net01_subnet
+            2. Create router with gateway to external net and
                interface with net01
-            4. Launch instance and associate floating IP
+            3. Launch instance and associate floating IP
             4. Check ping from instance google DNS
-            6. Check run dhcp-client in instance's console:
+            5. Check run dhcp-client in instance's console:
                sudo cirros-dhcpc up eth0
         """
-        # init variables
-        exist_networks = self.os_conn.list_networks()['networks']
-        ext_net = [net for net in exist_networks
-                   if net.get('router:external')][0]
-
         # create network with subnet and router
         int_net, sub_net = self.create_internal_network_with_subnet()
         self.net_id = int_net['network']['id']
         self.net_name = int_net['network']['name']
-        router = self.create_router_between_nets(ext_net, sub_net)
+        router = self.create_router_between_nets(self.os_conn.ext_network,
+                                                 sub_net)
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
         # create instance and assign floating ip to it
