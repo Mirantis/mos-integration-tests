@@ -316,8 +316,8 @@ class OpenStackActions(object):
                 logger.info('floating_ip {} is not deletable'
                             .format(floating_ip))
 
-    def create_router(self, name, tenant_id=None):
-        router = {'name': name}
+    def create_router(self, name, tenant_id=None, distributed=False):
+        router = {'name': name, 'distributed': distributed}
         if tenant_id is not None:
             router['tenant_id'] = tenant_id
         return self.neutron.create_router({'router': router})
@@ -533,6 +533,7 @@ class OpenStackActions(object):
     def ssh_to_instance(self, env, vm, vm_keypair, username='cirros',
                         password=None):
         """Returns direct ssh client to instance via proxy"""
+        logger.debug('Try to connect to vm {0}'.format(vm.name))
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
         vm_ip = vm.addresses[net_name][0]['addr']
         net_id = self.neutron.list_networks(
@@ -542,7 +543,8 @@ class OpenStackActions(object):
         if not devops_nodes:
             raise Exception("Nodes with dhcp for network with id:{}"
                             " not found.".format(net_id))
-        ip = env.find_node_by_fqdn(devops_nodes[0]).data['ip']
+        devops_node = random.choice(devops_nodes)
+        ip = env.find_node_by_fqdn(devops_node).data['ip']
         key_paths = []
         for i, key in enumerate(env.admin_ssh_keys):
             path = '/tmp/fuel_key{0}.rsa'.format(i)
@@ -556,6 +558,7 @@ class OpenStackActions(object):
                             ns=dhcp_namespace,
                             node_ip=ip,
                             vm_ip=vm_ip))
+        logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
         instance_key = paramiko.RSAKey.from_private_key(
             six.StringIO(vm_keypair.private_key))
         return SSHClient(vm_ip, port=22, username=username, password=password,
