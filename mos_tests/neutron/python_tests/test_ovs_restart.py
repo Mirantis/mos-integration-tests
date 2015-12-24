@@ -19,6 +19,7 @@ import time
 
 import pytest
 
+from mos_tests import settings
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
@@ -489,14 +490,12 @@ class TestOVSRestartsOneNetwork(OvsBase):
 class TestOVSRestartWithIperfTraffic(OvsBase):
     """Restart ovs-agents with iperf traffic background"""
 
-    def create_image(self, path, name):
+    def create_image(self, full_path):
         """
 
-        :param path: path to folder where image_file located
-        :param name: name of file
+        :param full_path: full path to image file
         :return: image object for Glance
         """
-        full_path = os.path.join(path, name)
         with open(full_path, 'rb') as image_file:
             image = self.os_conn.glance.images \
                 .create(name="image_ubuntu",
@@ -517,10 +516,10 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
             if server_report_flag:
                 result = lost_datagrams_rate_pattern.search(line)
                 if result:
-                    return result.group(1)
+                    return int(result.group(1))
             elif line.endswith("Server Report:\n"):
                 server_report_flag = True
-        return False
+        return None
 
     def launch_iperf_server(self, vm, keypair, vm_login, vm_pwd):
         """Launch iperf server"""
@@ -541,7 +540,21 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                              vm_password=vm_pwd)
         return res
 
+    @pytest.fixture
+    def ubuntu_iperf_image(self):
+        image_path = os.path.join(settings.TEST_IMAGE_PATH,
+                                  settings.UBUNTU_IPERF_QCOW2)
+        if os.path.exists(image_path):
+            return image_path
+        return None
+
     @pytest.fixture(autouse=True)
+    def skip_if_no_ubuntu_iperf_image(self, request, ubuntu_iperf_image):
+        if request.node.get_marker('require_QCOW2_ubuntu_image_with_iperf') \
+                and ubuntu_iperf_image is None:
+            pytest.skip("Unable to find QCOW2 ubuntu image with iperf")
+
+    @pytest.fixture
     def _prepare_openstack(self, init):
         """Prepare OpenStack for scenarios run
 
@@ -558,8 +571,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         """
 
         self.setup_rules_for_default_sec_group()
-        vm_image = self.create_image('/home/aallakhverdieva/images/',
-                                     'ubuntu-iperf.qcow2')
+        vm_image = self.create_image(self.ubuntu_iperf_image())
 
         self.instance_keypair = self.os_conn.create_key(
             key_name='instancekey')
@@ -593,22 +605,20 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                                 self.server2_ip, vm_login='ubuntu',
                                 vm_password='ubuntu', timeout=4 * 60)
 
-        # make a list of all ovs agent ids
-        self.ovs_agent_ids = [agt['id'] for agt in
-                              self.os_conn.neutron.list_agents(
-                                  binary='neutron-openvswitch-agent')[
-                                  'agents']]
-
         # make a list of ovs agents that resides only on controllers
         controllers = [node.data['fqdn']
                        for node in self.env.get_nodes_by_role('controller')]
         ovs_agts = self.os_conn.neutron.list_agents(
             binary='neutron-openvswitch-agent')['agents']
+
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [agt['id'] for agt in ovs_agts]
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
-    def test_ovs_restart_with_iperf_traffic(self):
-        """Checks that iperf traffic is interrupted during ovs restart
+    @pytest.mark.require_QCOW2_ubuntu_image_with_iperf
+    def test_ovs_restart_with_iperf_traffic(self, _prepare_openstack):
+        """Checks that iperf traffic is not interrupted during ovs restart
 
         Steps:
             1. Run iperf server on server2
@@ -639,9 +649,9 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
 
         # Check iperf traffic before restart
         lost = self.get_lost_percentage(res['stdout'])
-        err_msg = "Packet losses more than 1%. Actual value is {0}%".format(
+        err_msg = "Packet losses more than 0%. Actual value is {0}%".format(
             lost)
-        assert not int(lost), err_msg
+        assert lost == 0, err_msg
 
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
@@ -661,17 +671,16 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         cmd = 'cat ~/iperf_client.log'
-        result = self.run_on_vm(self.server1, self.instance_keypair, cmd,
-                                vm_login='ubuntu', vm_password='ubuntu')
-
-        while self.get_lost_percentage(result['stdout']) is False:
-            time.sleep(5)
+        while True:
             result = self.run_on_vm(self.server1, self.instance_keypair, cmd,
                                     vm_login='ubuntu', vm_password='ubuntu')
+            lost = self.get_lost_percentage(result['stdout'])
+            if lost is not None:
+                break
+            time.sleep(5)
 
-        lost = self.get_lost_percentage(result['stdout'])
         err_msg = "{0}% datagrams lost. Should be < 10%".format(lost)
-        assert int(lost) < 10, err_msg
+        assert lost < 10, err_msg
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
