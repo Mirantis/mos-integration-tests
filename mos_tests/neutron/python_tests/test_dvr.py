@@ -13,6 +13,7 @@
 #    under the License.
 
 import logging
+import time
 
 import pytest
 
@@ -74,3 +75,60 @@ class TestDVR(base.TestBase):
             self.os_conn.assign_floating_ip(server)
 
         self.check_ping_from_vm(server, vm_keypair=self.instance_keypair)
+
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    def test_west_east_routing_after_ban_and_clear_l3_agent(self, variables):
+        """Check West-East-Routing connectivity with floatingIP after ban
+            and clear l3-agent on compute
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed and
+                with gateway to external network
+            4. Add interfaces to the router01_02 with net01_subnet
+                and net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on different compute
+            7. Ban l3-agent on the compute with vm_1: service l3-agent stop
+            8. Wait 15 seconds
+            9. Clear this l3-agent: service l3-agent stop
+            10. Go to vm_1
+            11. Ping vm_2 with internal IP
+        """
+        # Create router
+        router = self.os_conn.create_router(name="router01", distributed=True)
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        # Create network and instance
+        compute_nodes = self.zone.hosts.keys()[:2]
+        for i, compute_node in enumerate(compute_nodes, 1):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_node),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        # Ban l3 agent
+        compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
+        with compute1.ssh() as remote:
+            remote.check_call('service neutron-l3-agent stop')
+
+        time.sleep(15)
+
+        # Clear l3 agent
+        with compute1.ssh() as remote:
+            remote.check_call('service neutron-l3-agent start')
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2).values()[0]
+        self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
+                                ip_to_ping=server2_ip)
