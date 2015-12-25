@@ -16,6 +16,8 @@ import os
 import unittest
 import subprocess
 from time import time, sleep
+import six
+import paramiko
 
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
@@ -23,6 +25,7 @@ from keystoneclient.v2_0 import client as keystone_client
 from cinderclient import client as cinder_client
 
 from mos_tests.functions import common as common_functions
+from mos_tests.environment.ssh import SSHClient
 
 
 class NovaIntegrationTests(unittest.TestCase):
@@ -79,6 +82,8 @@ class NovaIntegrationTests(unittest.TestCase):
         cls.instances = []
         cls.floating_ips = []
         cls.volumes = []
+        cls.flavors = []
+        cls.keys = []
 
         cls.sec_group = cls.nova.security_groups.create('security_nova',
                                                         'Security group, '
@@ -117,6 +122,12 @@ class NovaIntegrationTests(unittest.TestCase):
         for volume in self.volumes:
             common_functions.delete_volume(self.cinder, volume)
         self.volumes = []
+        for flavor in self.flavors:
+            common_functions.delete_flavor(self.nova, flavor.id)
+        self.flavors = []
+        for key in self.keys:
+            common_functions.delete_keys(self.nova, key.name)
+        self.keys = []
 
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
         """ This test case checks creation of instance from image with all
@@ -134,18 +145,21 @@ class NovaIntegrationTests(unittest.TestCase):
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks
                if not net['router:external']][0]
-        image_id = self.nova.images.list()[0].id
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
         flavor_list = self.nova.flavors.list()
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
             self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
-            inst = common_functions.create_instance(self.nova, "inst_543358_{}"
+            inst = common_functions.create_instance(self.nova,
+                                                    "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
                                                     [self.sec_group.name],
-                                                    image_id=image_id)
+                                                    image_id=image_id,
+                                                    inst_list=self.instances)
             inst_id = inst.id
             self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
@@ -168,8 +182,8 @@ class NovaIntegrationTests(unittest.TestCase):
              6. delete the instance
              7. Repeat all steps for all types of flavor
         """
-        image_id = self.nova.images.list()[0].id
-
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks if not net['router:external']][0]
         flavor_list = self.nova.flavors.list()
@@ -181,19 +195,20 @@ class NovaIntegrationTests(unittest.TestCase):
             volume = common_functions.create_volume(self.cinder, image_id)
             self.volumes.append(volume)
             bdm = {'vda': volume.id}
-            inst = common_functions.create_instance(self.nova, "inst_543360_{}"
+            inst = common_functions.create_instance(self.nova,
+                                                    "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
                                                     [self.sec_group.name],
-                                                    block_device_mapping=bdm)
+                                                    block_device_mapping=bdm,
+                                                    inst_list=self.instances)
             inst_id = inst.id
             self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
             self.assertTrue(common_functions.check_ip(self.nova, inst_id,
                                                       floating_ip.ip))
             ping = common_functions.ping_command(floating_ip.ip)
-            self.assertTrue(ping,
-                            "Instance is not reachable")
+            self.assertTrue(ping, "Instance is not reachable")
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
         """ This test checks that nova allows
@@ -219,10 +234,11 @@ class NovaIntegrationTests(unittest.TestCase):
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
-        instance = common_functions.create_instance(self.nova, name,
-                                                    initial_flavor, net,
+        instance = common_functions.create_instance(self.nova,
+                                                    name, initial_flavor, net,
                                                     [self.sec_group.name],
-                                                    block_device_mapping=bdm)
+                                                    block_device_mapping=bdm,
+                                                    inst_list=self.instances)
         self.instances.append(instance.id)
 
         # Assert for attached volumes
@@ -422,7 +438,8 @@ class NovaIntegrationTests(unittest.TestCase):
         """
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks if not net['router:external']][0]
-        image_id = self.nova.images.list()[0].id
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
         flavor = [flavor for flavor in self.nova.flavors.list() if
                   flavor.name == 'm1.micro'][0]
         floating_ip = self.nova.floating_ips.create()
@@ -434,7 +451,8 @@ class NovaIntegrationTests(unittest.TestCase):
                                                 .format(flavor.name),
                                                 flavor.id, net,
                                                 [self.sec_group.name],
-                                                image_id=image_id)
+                                                image_id=image_id,
+                                                inst_list=self.instances)
         self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip)
@@ -445,7 +463,7 @@ class NovaIntegrationTests(unittest.TestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
                                 stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=False,
                                        disk_over_commit=False)
         inst = self.nova.servers.get(inst.id)
         timeout = 5
@@ -463,6 +481,107 @@ class NovaIntegrationTests(unittest.TestCase):
         packets = {'transmitted': int(output[0]), 'received': int(output[3])}
         loss = packets['transmitted'] - packets['received']
         if loss > 5:
-            raise AssertionError(
-                "Packets loss exceeds the limit, {} packets were lost".format(
-                    loss))
+            msg = "Packets loss exceeds the limit, {} packets were lost"
+            raise AssertionError(msg.format(loss))
+
+    def test_2238777_LiveMigrationOfVMsWithDataOnRootAndEphemeralDisk(self):
+        """ This test checks Live Migration of VMs with data on root and
+        ephemeral disk
+
+            Steps:
+             1. Create flavor with ephemeral disk
+             2. Create a floating ip
+             3. Create an instance from an image with 'm1.ephemeral' flavor
+             4. Add the floating ip to the instance
+             5. Ssh to instance and create timestamp on root and ephemeral
+                disks
+             6. Ping the instance by the floating ip
+             7. Execute live migration
+             8. Check current hypervisor and status of instance
+             9. Check that packets loss was minimal
+             10. Ssh to instance and check timestamp on root and ephemeral
+                 disks
+        """
+        networks = self.neutron.list_networks()['networks']
+        net = [net['id'] for net in networks if not net['router:external']][0]
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
+        flavor = self.nova.flavors.create("m1.ephemeral", 64, 1, 1,
+                                          ephemeral=1, is_public=True)
+        self.flavors.append(flavor)
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip)
+        self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                       self.nova.floating_ips.list()])
+        keys = self.nova.keypairs.create('key_2238776')
+        self.keys.append(keys)
+        private_key = paramiko.RSAKey.from_private_key(six.StringIO(str(
+            keys.private_key)))
+        inst = common_functions.create_instance(self.nova,
+                                                "inst_2238776_{}"
+                                                .format(flavor.name),
+                                                flavor.id, net,
+                                                [self.sec_group.name],
+                                                image_id=image_id,
+                                                key_name='key_2238776',
+                                                inst_list=self.instances)
+        inst.add_floating_ip(floating_ip.ip)
+        ping = common_functions.ping_command(floating_ip.ip, i=10)
+        self.assertTrue(ping, "Instance is not reachable")
+        out = []
+        with SSHClient(host=floating_ip.ip, username="cirros", password=None,
+                       private_keys=[private_key]) as vm_r:
+            out.append(vm_r.execute("sudo sh -c 'date > /timestamp.txt'"))
+            out.append(vm_r.execute("sudo sh -c 'date > /mnt/timestamp.txt'"))
+            out.append(vm_r.execute("sudo -i cat /timestamp.txt"))
+            out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
+
+        for i in out:
+            if i.get('stderr'):
+                raise Exception("ssh commands were executed with errors")
+
+        root_data = out[-2]['stdout'][0]
+        ephem_data = out[-1]['stdout'][0]
+
+        # live migration
+        hypervisors = {h.hypervisor_hostname: h for h in
+                       self.nova.hypervisors.list()}
+        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
+                                stdout=subprocess.PIPE)
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=False,
+                                       disk_over_commit=False)
+        inst = self.nova.servers.get(inst.id)
+        timeout = 10
+        end_time = time() + 60 * timeout
+        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
+                new_hyper:
+            if time() > end_time:
+                raise AssertionError(
+                    "Hypervisor is not changed after live migration")
+            sleep(1)
+            inst = self.nova.servers.get(inst.id)
+        self.assertEqual(inst.status, 'ACTIVE')
+        ping.wait()
+        output = ping.stdout.read().split('\n')[-3].split()
+        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
+        loss = packets['transmitted'] - packets['received']
+        if loss > 5:
+            msg = "Packets loss exceeds the limit, {} packets were lost"
+            raise AssertionError(msg.format(loss))
+        out = []
+        with SSHClient(host=floating_ip.ip, username="cirros", password=None,
+                       private_keys=[private_key]) as vm_r:
+            out.append(vm_r.execute("sudo -i cat /timestamp.txt"))
+            out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
+
+        for i in out:
+            if i.get('stderr'):
+                raise Exception("ssh commands were executed with errors")
+
+        r_data = out[0]['stdout'][0]
+        ep_data = out[1]['stdout'][0]
+        self.assertEqual(root_data, r_data, "Data on root disk is changed")
+        self.assertEqual(ephem_data, ep_data, "Data on ephemeral disk is "
+                                              "changed")
