@@ -588,7 +588,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
 
         # Ping should NOT go between VMs
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60,
+                                self.server2_ip, timeout=None,
                                 should_be_available=False)
 
     def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
@@ -633,5 +633,5 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         # and after restart 'neutron-plugin-openvswitch-agent'.
         # Ping should NOT go between VMs
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60,
+                                self.server2_ip, timeout=None,
                                 should_be_available=False)
