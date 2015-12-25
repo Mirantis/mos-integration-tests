@@ -48,18 +48,13 @@ def env(fuel):
 def os_conn(env):
     """Openstack common actions"""
     logger.info("Wait for OpenStack is waking up")
-    wait(env.is_ready, timeout_seconds=60 * 5,
-        waiting_for="OpenStack is ready")
+    wait(env.is_ostf_tests_pass, timeout_seconds=20 * 60, sleep_seconds=20,
+         waiting_for='OpenStack pass OSTF tests')
     os_conn = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
-        cert=env.certificate)
+        cert=env.certificate, env=env)
 
-    def nova_ready():
-        hosts = os_conn.nova.availability_zones.find(zoneName="nova").hosts
-        return all(x['available'] for y in hosts.values()
-                   for x in y.values() if x['active'])
-
-    wait(nova_ready,
+    wait(os_conn.is_nova_ready,
          timeout_seconds=60 * 5,
          expected_exceptions=Exception,
          waiting_for="OpenStack nova computes is ready")

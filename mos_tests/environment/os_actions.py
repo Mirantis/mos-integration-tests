@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class OpenStackActions(object):
 
     def __init__(self, controller_ip, user='admin', password='admin',
-                 tenant='admin', cert=None):
+                 tenant='admin', cert=None, env=None):
         logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
@@ -84,6 +84,7 @@ class OpenStackActions(object):
         self.glance = GlanceClient(endpoint=glance_endpoint,
                                    token=token,
                                    cacert=path_to_cert)
+        self.env = env
 
     def _get_keystoneclient(self, username, password, tenant_name, auth_url,
                             retries=3, ca_cert=None):
@@ -115,6 +116,12 @@ class OpenStackActions(object):
         for image in self.glance.images.list():
             if image.name.startswith("TestVM"):
                 return image
+
+    def is_nova_ready(self):
+        """Checks that all nova computes are avaliable"""
+        hosts = self.nova.availability_zones.find(zoneName="nova").hosts
+        return all(x['available'] for y in hosts.values()
+                   for x in y.values() if x['active'])
 
     def get_instance_detail(self, server):
         details = self.nova.servers.get(server)
@@ -149,13 +156,38 @@ class OpenStackActions(object):
                                        key_name=key_name,
                                        **kwargs)
 
-        wait(
-            lambda: self.get_instance_detail(srv).status == "ACTIVE",
-            timeout_seconds=timeout, sleep_seconds=5,
+        def is_server_active():
+            status = self.get_instance_detail(srv).status
+            if status == 'ACTIVE':
+                return True
+            if status == 'ERROR':
+                raise Exception('Server {} status is error'.format(srv.name))
+
+        wait(is_server_active, timeout_seconds=timeout, sleep_seconds=5,
             waiting_for='instance {0} status change to ACTIVE'.format(
                 name))
+
+        # wait for ssh ready
+        if self.env is not None:
+            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=60,
+                waiting_for='server avaliable via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
+
+    def is_server_ssh_ready(self, server):
+        """Check ssh connect to server"""
+        paramiko_logger = logging.getLogger("paramiko")
+        try:
+            paramiko_logger.setLevel('CRITICAL')
+            self.ssh_to_instance(self.env, server)
+        except paramiko.SSHException as e:
+            if 'No authentication methods available' in e:
+                return True
+            else:
+                logger.debug('Instance unavaliable yet: {}'.format(e))
+                return False
+        finally:
+            paramiko_logger.setLevel('DEBUG')
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -530,7 +562,7 @@ class OpenStackActions(object):
 
         return result
 
-    def ssh_to_instance(self, env, vm, vm_keypair, username='cirros',
+    def ssh_to_instance(self, env, vm, vm_keypair=None, username='cirros',
                         password=None):
         """Returns direct ssh client to instance via proxy"""
         logger.debug('Try to connect to vm {0}'.format(vm.name))
@@ -559,10 +591,12 @@ class OpenStackActions(object):
                             node_ip=ip,
                             vm_ip=vm_ip))
         logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
-        instance_key = paramiko.RSAKey.from_private_key(
-            six.StringIO(vm_keypair.private_key))
+        instance_keys = []
+        if vm_keypair is not None:
+            instance_keys.append(paramiko.RSAKey.from_private_key(
+                six.StringIO(vm_keypair.private_key)))
         return SSHClient(vm_ip, port=22, username=username, password=password,
-                         private_keys=[instance_key],
+                         private_keys=instance_keys,
                          proxy_command=proxy_command)
 
     def wait_agents_alive(self, agt_ids_to_check):
