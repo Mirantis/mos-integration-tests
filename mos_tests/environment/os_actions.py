@@ -150,7 +150,7 @@ class OpenStackActions(object):
             image_id = self._get_cirros_image().id
         srv = self.nova.servers.create(name=name,
                                        image=image_id,
-                                       flavor=1,
+                                       flavor=flavor,
                                        userdata=scenario,
                                        files=files,
                                        key_name=key_name,

@@ -31,3 +31,7 @@ KEYSTONE_CREDS = {'username': KEYSTONE_USER,
                   'tenant_name': os.environ.get('KEYSTONE_TENANT', 'admin')}
 
 PUBLIC_TEST_IP = os.environ.get('PUBLIC_TEST_IP', '8.8.8.8')
+
+# Path to folder with required images
+TEST_IMAGE_PATH = os.path.expanduser('~/images')
+UBUNTU_IPERF_QCOW2 = 'ubuntu-iperf.qcow2'
