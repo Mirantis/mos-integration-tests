@@ -808,6 +808,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         assert all([agt['alive'] for agt in
                     self.os_conn.neutron.list_agents()['agents']])
 
+
 @pytest.mark.usefixtures("setup")
 class TestOVSRestartAddFlows(OvsBase):
     """Check that new flows are added after restarts of openvswitch-agents."""
