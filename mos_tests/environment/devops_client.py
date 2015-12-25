@@ -93,8 +93,10 @@ class DevopsClient(object):
             logger.info("sync time on master")
             remote.execute('hwclock --hctosys')
             logger.info("sync time on {} slaves".format(slaves_count))
-            remote.execute('for i in {{1..{0}}}; do ssh node-$i '
-                           '"hwclock --hctosys"; done'.format(slaves_count))
+            remote.execute(
+                'for i in {{1..{0}}}; do ('
+                    'ssh node-$i "hwclock --hctosys"'
+                ') done'.format(slaves_count))
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac):

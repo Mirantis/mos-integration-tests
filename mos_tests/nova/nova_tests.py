@@ -349,7 +349,7 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = common_functions.ping_command(fip_dict[inst_id])
+            ping = common_functions.ping_command(fip_dict[inst_id], i=8)
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
@@ -420,7 +420,7 @@ class NovaIntegrationTests(unittest.TestCase):
                 self.nova, inst_id, fip_dict[inst_id]))
 
         for inst_id in self.instances:
-            ping = common_functions.ping_command(fip_dict[inst_id])
+            ping = common_functions.ping_command(fip_dict[inst_id], i=8)
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 

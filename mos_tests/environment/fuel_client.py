@@ -15,11 +15,11 @@
 import logging
 import os
 
-from devops.helpers.helpers import wait
 from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from paramiko import RSAKey
+from waiting import wait
 
 from mos_tests.environment.ssh import SSHClient
 
@@ -89,6 +89,28 @@ class Environment(EnvironmentBase):
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
 
+    def is_ostf_tests_pass(self):
+        """Check for OpenStack tests pass"""
+
+        def test_is_done():
+            result = self.get_state_of_tests()[0]
+            if result['status'] == 'finished':
+                return result
+
+        logger.info('[Re]start OSTF tests')
+        if self.is_ha:
+            self.run_test_sets(['ha'])
+        else:
+            self.run_test_sets(['sanity'])
+        result = wait(test_is_done, timeout_seconds=10 * 60)
+        for test in result['tests']:
+            if test['status'] != 'success':
+                logger.warning(
+                    'Test "{name}" status is {status}; {message}'.format(
+                        **test))
+                return False
+        return True
+
     @property
     def is_operational(self):
         return self.status == 'operational'
@@ -136,9 +158,8 @@ class Environment(EnvironmentBase):
                     for node in devops_nodes]
         for node in devops_nodes:
             node.destroy()
-        assert(wait(lambda: self.check_nodes_get_offline_state(
-                                 node_ips),
-                    timeout=10 * 60))
+        wait(lambda: self.check_nodes_get_offline_state(node_ips),
+             timeout_seconds=10 * 60)
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'
                         .format(node.data['name'], node.data['online']))
@@ -156,8 +177,7 @@ class Environment(EnvironmentBase):
         for node in devops_nodes:
             logger.info('Starting node {}'.format(node.name))
             node.create()
-        assert(wait(lambda: self.check_nodes_get_online_state(),
-                    timeout=10 * 60))
+        wait(self.check_nodes_get_online_state, timeout_seconds=10 * 60)
         logger.info('wait until the nodes get online state')
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'

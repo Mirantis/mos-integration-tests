@@ -38,6 +38,10 @@ class CalledProcessError(Exception):
 
 class SSHClient(object):
 
+    def __repr__(self):
+        orig = super(SSHClient, self).__repr__()
+        return '{} [{}:{}]'.format(orig, self.host, self.port)
+
     @property
     def _sftp(self):
         if self._sftp_client is None:
@@ -95,7 +99,7 @@ class SSHClient(object):
         self.clear()
 
     def connect(self):
-        logging.debug(
+        logger.debug(
             "Connect to '%s:%s' as '%s:%s'" % (
                 self.host, self.port, self.username, self.password))
         base_kwargs = dict(
@@ -112,7 +116,7 @@ class SSHClient(object):
             except paramiko.AuthenticationException:
                 continue
         if self.private_keys:
-            logging.error("Authentication with keys failed")
+            logger.error("Authentication with keys failed")
 
         return self._ssh.connect(self.host, **base_kwargs)
 
@@ -173,7 +177,7 @@ class SSHClient(object):
         return result
 
     def execute_async(self, command):
-        logging.debug("Executing command: '%s'" % command.rstrip())
+        logger.debug("Executing command: '%s'" % command.rstrip())
         chan = self._ssh.get_transport().open_session(timeout=120)
         stdin = chan.makefile('wb')
         stdout = chan.makefile('rb')
