@@ -481,9 +481,8 @@ class NovaIntegrationTests(unittest.TestCase):
         packets = {'transmitted': int(output[0]), 'received': int(output[3])}
         loss = packets['transmitted'] - packets['received']
         if loss > 5:
-            raise AssertionError(
-                "Packets loss exceeds the limit, {} packets were lost".format(
-                    loss))
+            msg = "Packets loss exceeds the limit, {} packets were lost"
+            raise AssertionError(msg.format(loss))
 
     def test_2238777_LiveMigrationOfVMsWithDataOnRootAndEphemeralDisk(self):
         """ This test checks Live Migration of VMs with data on root and
@@ -538,7 +537,7 @@ class NovaIntegrationTests(unittest.TestCase):
             out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
 
         for i in out:
-            if i['stderr'] != []:
+            if i.get('stderr'):
                 raise Exception("ssh commands were executed with errors")
 
         root_data = out[-2]['stdout'][0]
@@ -569,9 +568,8 @@ class NovaIntegrationTests(unittest.TestCase):
         packets = {'transmitted': int(output[0]), 'received': int(output[3])}
         loss = packets['transmitted'] - packets['received']
         if loss > 5:
-            raise AssertionError(
-                "Packets loss exceeds the limit, {} packets were lost".format(
-                     loss))
+            msg = "Packets loss exceeds the limit, {} packets were lost"
+            raise AssertionError(msg.format(loss))
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
                        private_keys=[private_key]) as vm_r:
@@ -579,7 +577,7 @@ class NovaIntegrationTests(unittest.TestCase):
             out.append(vm_r.execute("sudo -i cat /mnt/timestamp.txt"))
 
         for i in out:
-            if i['stderr'] != []:
+            if i.get('stderr'):
                 raise Exception("ssh commands were executed with errors")
 
         r_data = out[0]['stdout'][0]
