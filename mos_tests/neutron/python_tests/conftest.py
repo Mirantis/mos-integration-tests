@@ -48,7 +48,7 @@ def env(fuel):
 def os_conn(env):
     """Openstack common actions"""
     logger.info("Wait for OpenStack is waking up")
-    wait(env.is_ready, timeout_seconds=60 * 15,
+    wait(env.is_ready, timeout_seconds=60 * 5,
         waiting_for="OpenStack is ready")
     os_conn = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
