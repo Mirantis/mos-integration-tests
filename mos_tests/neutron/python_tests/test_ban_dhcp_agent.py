@@ -479,9 +479,9 @@ class TestBanDHCPAgent(base.TestBase):
         agents_networks = [net['id'] for agent_id in agents_ids for net in
                            self.os_conn.get_networks_on_dhcp_agent(agent_id)]
         # determine primary controller
-        leader_node = self.env.leader_controller.data['ip']
+        leader_node_ip = self.env.leader_controller.data['ip']
         for i in range(ban_count):
-            _killing_cycle(leader_node,
+            _killing_cycle(leader_node_ip,
                            agents_mapping[curr_agents[0]],
                            agents_mapping[curr_agents[1]],
                            agents_mapping[free_agent])
@@ -509,6 +509,73 @@ class TestBanDHCPAgent(base.TestBase):
             'networks on free agent - {1}'.format(agents_networks,
                                                   nets_on_free_dhcp_agent))
         assert set(agents_networks) == set(nets_on_free_dhcp_agent), err_msg
+
+    def test_ban_dhcp_agent_many_times(self, ban_count=40):
+        """Check dhcp-agent state after ban all agents and restart one of them.
+
+        Scenario:
+            1. Revert snapshot with neutron cluster
+            2. Create network net01, subnet net01_subnet
+            3. Create router with gateway to external net and
+               interface with net01
+            4. Launch instance and associate floating IP
+            5. Run dhcp-client in instance's console:
+               ``sudo cirros-dhcpc up eth0``
+            6. Look on what DHCP-agents chosen network is:
+               ``neutron dhcp-agent-list-hosting-net <network_name>``
+            7. Ban DHCP-agent on what chosen network is NOT and wait it dies:
+               ``pcs resource ban p_neutron-dhcp-agent node-3``
+            8. Ban one of DHCP-agents on which instance's net is:
+               ``pcs resource ban p_neutron-dhcp-agent node-1``
+            9. Unban (clear) last banned DHCP-agent and wait it get up:
+                ``pcs resource clear p_neutron-dhcp-agent node-1``
+            10. Repeat 8-10 steps for 40 times
+            11. Run dhcp-client in instance's console:
+                ``sudo cirros-dhcpc up eth0``
+            12. Check that instance networks is on two dhcp-agents:
+                ``neutron dhcp-agent-list-hosting-net <network_name>``
+
+        Duration 30m
+
+        """
+        # Fixture init from method self._prepare_openstack_state
+        # Get all dhcp agents
+
+        all_agents = self.os_conn.list_all_neutron_agents(agent_type='dhcp',
+                                                          filter_attr='host')
+        curr_agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=self.net_id)
+
+        # determine primary controller
+        leader_node_ip = self.env.leader_controller.data['ip']
+
+        # determine free of current network dhcp agent and ban it
+        free_agent = (set(all_agents) - set(curr_agents)).pop()
+
+        self.ban_dhcp_agent(node_to_ban=free_agent,
+                            host=leader_node_ip, wait_for_die=True,
+                            wait_for_rescheduling=False)
+
+        for i in range(ban_count):
+            # ban agent was on current network
+            self.ban_dhcp_agent(node_to_ban=curr_agents[0],
+                                host=leader_node_ip, wait_for_die=True,
+                                wait_for_rescheduling=False)
+
+            # clear free dhcp agent and wait for reschedule it
+            self.clear_dhcp_agent(node_to_clear=curr_agents[0],
+                                  host=leader_node_ip)
+
+        # check dhcp client on instance after dhcp agents killing cycle
+        self.check_dhcp_on_cirros_instance(vm=self.instance)
+
+        # check dhcp agent behaviour after clearing
+        actual_agents = self.os_conn.get_node_with_dhcp_for_network(
+            self.net_id)
+        err_msg = ('We have not enough dhcp-agent alive: '
+                   'current actual - {}'.format(actual_agents))
+        # check instance network is on same count of dhcp-agents as on start
+        assert len(actual_agents) == len(curr_agents), err_msg
 
     def test_reschedule_dhcp_agents(self):
         """Check dhcp-agent manual rescheduling.

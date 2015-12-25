@@ -301,8 +301,9 @@ def delete_instance(nova_client, uid):
             sleep(1)
 
 
-def create_instance(nova_client, inst_name, flavor_id, net_id, security_groups,
-                    image_id='', block_device_mapping=None, timeout=5):
+def create_instance(nova_client, inst_name, flavor_id, net_id,
+                    security_groups, image_id='', block_device_mapping=None,
+                    timeout=5, key_name=None, inst_list=None):
     """ Check instance creation
         :param nova_client: Nova API client connection point
         :param inst_name: name for instance
@@ -312,6 +313,8 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_groups,
         :param image_id: id of image
         :param block_device_mapping: if volume is used
         :param timeout: Timeout for check operation
+        :param key_name: Keypair name
+        :param inst_list: instances list for cleaning
         :return instance
     """
     end_time = time() + 60 * timeout
@@ -321,7 +324,10 @@ def create_instance(nova_client, inst_name, flavor_id, net_id, security_groups,
             flavor=flavor_id,
             image=image_id,
             security_groups=security_groups,
-            block_device_mapping=block_device_mapping)
+            block_device_mapping=block_device_mapping,
+            key_name=key_name)
+    if inst_list:
+        inst_list.append(inst.id)
     inst_status = [s.status for s in nova_client.servers.list()
                    if s.id == inst.id][0]
     while inst_status != 'ACTIVE':
@@ -543,3 +549,27 @@ def delete_volume_snapshot(cinder_client, snapshot):
         cinder_client.volume_snapshots.delete(snapshot)
         while snapshot in cinder_client.volume_snapshots.list():
             sleep(1)
+
+
+# Keys
+def is_key_exists(nova_client, key_name):
+    """ Check the presence of keys in the system
+        :param nova_client: Nova API client connection point
+        :param key_name: name of the keypair
+        :return True or False
+    """
+    return len(nova_client.keypairs.findall(name=key_name)) > 0
+
+
+def delete_keys(nova_client, key_name):
+    """ This function delete the keys by its name.
+        :param nova_client: Nova API client connection point
+        :param key_name: Name of the keypair to delete
+        :return: Nothing
+    """
+    for key in nova_client.keypairs.list():
+        if key.name == key_name:
+            nova_client.keypairs.delete(key)
+            break
+    while is_key_exists(nova_client, key_name):
+        sleep(1)

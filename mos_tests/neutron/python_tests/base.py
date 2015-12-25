@@ -117,7 +117,7 @@ class TestBase(object):
         if timeout is None:
             execute()
         else:
-            err_msg = ("SSH command:\n{command}\n completed with exit code 0.")
+            err_msg = "SSH command:\n{command}\n completed with exit code 0."
             wait(lambda: execute()['exit_code'] == 0,
                  sleep_seconds=(1, 60, 5), timeout_seconds=timeout,
                  expected_exceptions=(Exception,),
