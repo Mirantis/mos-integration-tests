@@ -110,6 +110,27 @@ class OvsBase(TestBase):
                     'pcs resource clear p_neutron-plugin-openvswitch-agent')
                 assert result['exit_code'] == 0
 
+    def get_current_cookie(self, compute):
+        """Get the value of the cookie parameter for br-int or br-tun bridge.
+            :param compute: Compute node where the server is scheduled
+            :return: cookie value
+        """
+        with compute.ssh() as remote:
+            result = remote.execute('ovs-ofctl dump-flows br-int')
+            result_tun = remote.execute('ovs-ofctl dump-flows br-tun')
+        assert result['exit_code'] == 0
+        result_out = result['stdout']
+        if result_tun['stderr'] != ['ovs-ofctl: br-tun is not a bridge or a '
+                                    'socket\n']:
+            assert result_tun['exit_code'] == 0
+            result_out.extend(result_tun['stdout'])
+        cookie_lines = filter(lambda x: x.find(' cookie=') != -1, result_out)
+        cookie_values = map(lambda x: x.split(',')[0].partition(' cookie=')[2],
+                            cookie_lines)
+        assert cookie_values[0] != 0
+        assert cookie_values.count(cookie_values[0]) == len(cookie_values)
+        return cookie_values[0]
+
 
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
@@ -786,3 +807,91 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         # check all agents are alive
         assert all([agt['alive'] for agt in
                     self.os_conn.neutron.list_agents()['agents']])
+
+
+@pytest.mark.usefixtures("setup")
+class TestOVSRestartAddFlows(OvsBase):
+    """Check that new flows are added after restarts of openvswitch-agents."""
+
+    @pytest.fixture(autouse=True)
+    def _prepare_openstack(self, init):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+            1. Update default security group
+            2. Create create network net01: net01__subnet,
+            192.168.1.0/24.
+            3. Launch vm1 in net01 network
+            4. Get list of openvswitch-agents
+        """
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        host = zone.hosts.keys()[0]
+
+        self.setup_rules_for_default_sec_group()
+
+        # create 1 network and 1 instance
+        net, subnet = self.create_internal_network_with_subnet(suffix=1)
+        self.os_conn.create_server(
+            name='server_for_flow_check',
+            availability_zone='{}:{}'.format(zone.zoneName, host),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': net['network']['id']}])
+
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [agt['id'] for agt in ovs_agts]
+        # make a list of ovs agents that resides only on controllers
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
+
+    def test_ovs_new_flows_added_after_restart(self):
+        """Check that new flows are added after ovs-agents restart
+
+        Steps:
+            1. Create network net01: net01__subnet, 192.168.1.0/24
+            2. Launch vm1 in net01 network
+            3. Get list of flows for br-int
+            4. Save cookie parameter for bridge
+            5. Disable ovs-agents on all controllers, restart service
+               neutron-plugin-openvswitch-agent on all computes, and enable
+               them back. To do this, launch the script against master node.
+            6. Check that all ovs-agents are in alive state
+            7. Get list of flows for br-int again
+            8. Compere cookie parameters
+        """
+        server = self.os_conn.nova.servers.find(name="server_for_flow_check")
+        node_name = getattr(server, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        compute = [i for i in self.env.get_nodes_by_role('compute')
+                   if i.data['fqdn'] == node_name][0]
+
+        before_value = self.get_current_cookie(compute)
+
+        # Check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # Disable ovs agent on all controllers
+        self.disable_ovs_agents_on_controller()
+
+        # Then check that all ovs went down
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
+
+        # Restart ovs agent service on all computes
+        self.restart_ovs_agents_on_computes()
+
+        # Enable ovs agent on all controllers
+        self.enable_ovs_agents_on_controllers()
+
+        # Then check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # sleep is used to check that system will be stable for some time
+        # after restarting service
+        time.sleep(30)
+
+        after_value = self.get_current_cookie(compute)
+        assert before_value != after_value

@@ -471,8 +471,8 @@ class NovaIntegrationTests(unittest.TestCase):
         while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
                 new_hyper:
             if time() > end_time:
-                raise AssertionError(
-                    "Hypervisor is not changed after live migration")
+                msg = "Hypervisor is not changed after live migration"
+                raise AssertionError(msg)
             sleep(1)
             inst = self.nova.servers.get(inst.id)
         self.assertEqual(inst.status, 'ACTIVE')
@@ -558,8 +558,8 @@ class NovaIntegrationTests(unittest.TestCase):
         while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
                 new_hyper:
             if time() > end_time:
-                raise AssertionError(
-                    "Hypervisor is not changed after live migration")
+                msg = "Hypervisor is not changed after live migration"
+                raise AssertionError(msg)
             sleep(1)
             inst = self.nova.servers.get(inst.id)
         self.assertEqual(inst.status, 'ACTIVE')
