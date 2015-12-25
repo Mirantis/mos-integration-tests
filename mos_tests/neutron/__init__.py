@@ -42,14 +42,8 @@ logging.config.dictConfig({
         }
     },
     'handlers': {
-        'console_mos': {
+        'console': {
             'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'standart',
-            'filters': ['mos_tests']
-        },
-        'console_warn': {
-            'level': 'WARNING',
             'class': 'logging.StreamHandler',
             'formatter': 'standart',
         },
@@ -62,9 +56,14 @@ logging.config.dictConfig({
     },
     'loggers': {
         '': {
-            'handlers': ['file', 'console_warn', 'console_mos'],
+            'handlers': ['file'],
             'level': 'DEBUG',
             'propagate': True,
+        },
+        'mos_tests': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'filters': ['mos_tests']
         }
     }
 })

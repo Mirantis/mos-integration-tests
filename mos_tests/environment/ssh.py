@@ -38,6 +38,10 @@ class CalledProcessError(Exception):
 
 class SSHClient(object):
 
+    def __repr__(self):
+        orig = super(SSHClient, self).__repr__()
+        return '{} [{}:{}]'.format(orig, self.host, self.port)
+
     @property
     def _sftp(self):
         if self._sftp_client is None:

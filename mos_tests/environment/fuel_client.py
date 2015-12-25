@@ -14,13 +14,12 @@
 
 import logging
 import os
-import re
 
-from devops.helpers.helpers import wait
 from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from paramiko import RSAKey
+from waiting import wait
 
 from mos_tests.environment.ssh import SSHClient
 
@@ -90,52 +89,26 @@ class Environment(EnvironmentBase):
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
 
-    def is_ready(self):
-        """Check for all OpenStack services is normally wake up"""
-        return self.controllers_is_ready and self.computes_is_ready
+    def is_ostf_tests_pass(self):
+        """Check for OpenStack tests pass"""
 
-    @property
-    def controllers_is_ready(self):
-        node = self.get_nodes_by_role('controller')[0]
-        logger.debug('Check controller {} is alive'.format(
-            node.data['fqdn']))
-        with node.ssh() as remote:
-            for cmd in ('glance image-list', 'nova list',
-                        'openstack project list'):
-                result = remote.execute('. openrc && {}'.format(cmd))
-                if result['exit_code'] != 0:
-                    output = ''.join(result['stdout'] + result['stderr'])
-                    logger.debug(
-                        '{} return {} exit_code. Output:\n{}'.format(
-                        cmd, result['exit_code'], output))
-                    return False
-        return True
+        def test_is_done():
+            result = self.get_state_of_tests()[0]
+            if result['status'] == 'finished':
+                return result
 
-    @property
-    def computes_is_ready(self):
-        for node in self.get_nodes_by_role('compute'):
-            logger.debug('Check compute {} is alive'.format(
-                node.data['fqdn']))
-            with node.ssh() as remote:
-                result = remote.execute('status nova-compute')
-                if result['exit_code'] != 0:
-                    logger.debug(
-                        "'status nova-compute' exit with {} exit_code".format(
-                            result['exit_code']))
-                    return False
-                if 'start/running' not in ''.join(result['stdout']):
-                    logger.debug(
-                        "'status nova-compute' return {}".format(
-                            ''.join(result['stdout'])))
-                    return False
-                result = remote.execute(
-                    'grep AMQP /var/log/nova/nova-compute.log | tail')
-                if re.search(r'INFO .+? (Rec)|(C)onnected to AMQP server',
-                             result['stdout'][-1]) is None:
-                    logger.debug(
-                        "Nova not connected to AMPQ".format(
-                            result['stdout'][-1].strip()))
-                    return False
+        logger.info('[Re]start OSTF tests')
+        if self.is_ha:
+            self.run_test_sets(['ha'])
+        else:
+            self.run_test_sets(['sanity'])
+        result = wait(test_is_done, timeout_seconds=10 * 60)
+        for test in result['tests']:
+            if test['status'] != 'success':
+                logger.warning(
+                    'Test "{name}" status is {status}; {message}'.format(
+                        **test))
+                return False
         return True
 
     @property
@@ -185,9 +158,8 @@ class Environment(EnvironmentBase):
                     for node in devops_nodes]
         for node in devops_nodes:
             node.destroy()
-        assert(wait(lambda: self.check_nodes_get_offline_state(
-                                 node_ips),
-                    timeout=10 * 60))
+        wait(lambda: self.check_nodes_get_offline_state(node_ips),
+             timeout_seconds=10 * 60)
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'
                         .format(node.data['name'], node.data['online']))
@@ -205,8 +177,7 @@ class Environment(EnvironmentBase):
         for node in devops_nodes:
             logger.info('Starting node {}'.format(node.name))
             node.create()
-        assert(wait(lambda: self.check_nodes_get_online_state(),
-                    timeout=10 * 60))
+        wait(self.check_nodes_get_online_state, timeout_seconds=10 * 60)
         logger.info('wait until the nodes get online state')
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'

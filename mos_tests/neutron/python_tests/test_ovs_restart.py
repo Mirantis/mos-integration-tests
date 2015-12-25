@@ -485,6 +485,107 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self.check_vm_connectivity()
 
 
+@pytest.mark.check_env_("has_1_or_more_computes")
+@pytest.mark.usefixtures("setup")
+class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
+    """Check restarts of openvswitch-agents."""
+
+    @pytest.fixture(autouse=True)
+    def _prepare_openstack(self, init):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+            1. Update default security group
+            2. Create networks net01: net01__subnet, 192.168.1.0/24
+            3. Launch vm1 and vm2 in net01 network on a single compute compute
+            4. Go to vm1 console and send pings to vm2
+        """
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        host = zone.hosts.keys()[0]
+
+        self.setup_rules_for_default_sec_group()
+
+        # create 1 network and 2 instances
+        net, subnet = self.create_internal_network_with_subnet()
+
+        self.os_conn.create_server(
+            name='server01',
+            availability_zone='{}:{}'.format(zone.zoneName, host),
+            key_name=self.instance_keypair.name,
+            nics=[{'net-id': net['network']['id']}],
+            max_count=2)
+
+        # check pings
+        self.server1 = self.os_conn.nova.servers.find(name="server01-1")
+        self.server2_ip = self.os_conn.get_nova_instance_ips(
+            self.os_conn.nova.servers.find(name="server01-2")
+        ).values()[0]
+
+        self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                self.server2_ip, timeout=2 * 60)
+
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [
+            agt['id'] for agt in
+            self.os_conn.neutron.list_agents(
+                binary='neutron-openvswitch-agent')['agents']]
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
+
+    def test_ovs_restart_pcs_vms_on_single_compute_in_single_network(self):
+        """Check connectivity for instances scheduled on a single compute in
+         a single private network
+
+        Steps:
+            1. Update default security group
+            2. Create networks net01: net01__subnet, 192.168.1.0/24
+            3. Launch vm1 and vm2 in net01 network on a single compute compute
+            4. Go to vm1 console and send pings to vm2
+            5. Disable ovs-agents on all controllers, restart service
+                neutron-plugin-openvswitch-agent on all computes, and enable
+                them back. To do this, launch the script against master node.
+            6. Wait 30 seconds, send pings from vm1 to vm2 and check that
+                it is successful.
+
+        Duration 10m
+
+        """
+        # Check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # Disable ovs agent on all controllers
+        self.disable_ovs_agents_on_controller()
+
+        # Then check that all ovs went down
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
+
+        # Restart ovs agent service on all computes
+        self.restart_ovs_agents_on_computes()
+
+        # Enable ovs agent on all controllers
+        self.enable_ovs_agents_on_controllers()
+
+        # Then check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # sleep is used to check that system will be stable for some time
+        # after restarting service
+        time.sleep(30)
+
+        self.check_ping_from_vm(self.server1, self.instance_keypair,
+                                self.server2_ip, timeout=2 * 60)
+
+        # check all agents are alive
+        assert all([agt['alive'] for agt in
+                    self.os_conn.neutron.list_agents()['agents']])
+
+
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.usefixtures("setup")
 class TestOVSRestartWithIperfTraffic(OvsBase):
