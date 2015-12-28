@@ -176,7 +176,7 @@ class OpenStackActions(object):
 
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
-        paramiko_logger = logging.getLogger("paramiko")
+        paramiko_logger = logging.getLogger("paramiko.transport")
         try:
             paramiko_logger.setLevel('CRITICAL')
             self.ssh_to_instance(self.env, server)
