@@ -213,3 +213,12 @@ class TestBase(object):
     def convert_private_key_for_vm(private_keys):
         return [paramiko.RSAKey.from_private_key(six.StringIO(str(pkey)))
                 for pkey in private_keys]
+
+    def run_udhcpc_on_vm(self, vm):
+        command = 'sudo -i cirros-dhcpc up eth0'
+        result = self.run_on_vm(vm,
+                                self.instance_keypair,
+                                command)
+        err_msg = 'Failed to start the udhcpc on vm std_err: {}'.format(
+            result['stderr'])
+        assert not result['exit_code'], err_msg

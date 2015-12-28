@@ -53,15 +53,6 @@ class TestDHCPAgent(TestBase):
                                self.os_conn.neutron.list_agents(
                                    binary='neutron-dhcp-agent')['agents']]
 
-    def run_udhcpc_on_vm(self, vm):
-        command = 'sudo -i cirros-dhcpc up eth0'
-        result = self.run_on_vm(vm,
-                                self.instance_keypair,
-                                command)
-        err_msg = 'Failed to start the udhcpc on vm std_err: {}'.format(
-                    result['stderr'])
-        assert not result['exit_code'], err_msg
-
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 

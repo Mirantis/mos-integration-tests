@@ -67,8 +67,8 @@ class TestRestarts(TestBase):
                                     self.security_group.id)
 
         # add floating ip to first server
-        server1 = self.os_conn.nova.servers.find(name="server01")
-        self.os_conn.assign_floating_ip(server1)
+        self.server1 = self.os_conn.nova.servers.find(name="server01")
+        self.os_conn.assign_floating_ip(self.server1)
 
         # check pings
         self.check_vm_connectivity()
@@ -244,3 +244,94 @@ class TestRestarts(TestBase):
                                 self.hosts[0],
                                 self.security_group.id)
         self.check_vm_connectivity()
+
+    def test_shutdown_primary_controller_dhcp_agent(self):
+        """Shutdown primary controller and check dhcp-agent
+
+        Scenario:
+            2. Create network1, subnet1, router1
+            3. Launch instances vm1 in network1
+            4. Find primary controller
+            5. Check on what agents is network1
+            6. Run udhcp on vm1
+            7. Reset primary controller
+            8. Check that all networks reschedule from primary controller
+            9. Run udhcp on vm1
+
+        Duration 10m
+
+        """
+        agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[0])
+
+        # Check if the agent is not on the primary controller
+        # Reschedule if needed
+        if not any(self.primary_host in host for host in agents_hosts):
+            self.os_conn.reschedule_dhcp_agent(self.networks[0],
+                                               self.primary_host)
+
+        # Get primary controller agent id
+        agent_ids = [agt['id'] for agt in self.os_conn.neutron.list_agents(
+            binary='neutron-dhcp-agent')['agents']
+            if self.primary_host in agt['host']]
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
+
+        # Destroy primary controller
+        self.env.destroy_nodes([self.primary_node])
+
+        # Wait some time while agents become down
+        self.os_conn.wait_agents_down(agent_ids)
+
+        # Check that all networks reschedule from primary controller
+        assert(not self.os_conn.neutron.list_networks_on_dhcp_agent(
+            agent_ids[0])['networks'])
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
+
+    def test_reset_primary_controller_dhcp_agent(self):
+        """Reset primary controller and check dhcp-agent
+
+        Scenario:
+            2. Create network1, subnet1, router1
+            3. Launch instances vm1 in network1
+            4. Find primary controller
+            5. Check on what agents is network1
+            6. Run udhcp on vm1
+            7. Reset primary controller
+            8. Check that all networks reschedule from primary controller
+            9. Run udhcp on vm1
+
+        Duration 10m
+
+        """
+        agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[0])
+
+        # Check if the agent is not on the primary controller
+        # Reschedule if needed
+        if not any(self.primary_host in host for host in agents_hosts):
+            self.os_conn.reschedule_dhcp_agent(self.networks[0],
+                                               self.primary_host)
+
+        # Get primary controller agent id
+        agent_ids = [agt['id'] for agt in self.os_conn.neutron.list_agents(
+            binary='neutron-dhcp-agent')['agents']
+            if self.primary_host in agt['host']]
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
+
+        # Reset primary controller
+        self.env.warm_restart_nodes([self.primary_node])
+
+        # Wait some time while agents become down
+        self.os_conn.wait_agents_down(agent_ids)
+
+        # Check that all networks reschedule from primary controller
+        assert(not self.os_conn.neutron.list_networks_on_dhcp_agent(
+            agent_ids[0])['networks'])
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
