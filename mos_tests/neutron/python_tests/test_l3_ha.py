@@ -1,0 +1,177 @@
+#    Copyright 2015 Mirantis, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from collections import defaultdict
+from collections import namedtuple
+from contextlib import contextmanager
+import logging
+import re
+import signal
+
+import pytest
+
+from mos_tests.neutron.python_tests.base import TestBase
+
+
+logger = logging.getLogger(__name__)
+
+
+def get_ping_seq(line):
+    """Return ping seq"""
+    seq = re.search(r'seq=(\d+) ', line)
+    if seq is None:
+        return None
+    return int(seq.group(1))
+
+
+def ping_groups(stdout):
+    """Generate ping info for each line of stdout
+
+    Format:
+        * `sended` - count of sended packets
+        * `received` - count of received packets
+        * `group_len` - len of last continuous group of success pings
+    """
+    PingInfo = namedtuple('PingInfo', ['sended', 'received', 'group_len'])
+    prev_seq = -1
+    group_start = 0
+    received = 0
+    for line in stdout:
+        logger.debug('Ping result: {}'.format(line.strip()))
+        seq = get_ping_seq(line)
+        if seq is None:
+            continue
+        received += 1
+        if seq != prev_seq + 1:
+            logger.debug('ping interrupted')
+            group_start = seq
+        pi = PingInfo(sended=seq, received=received,
+                      group_len=seq - group_start)
+        yield pi
+        prev_seq = seq
+
+
+@pytest.mark.check_env_('is_l3_ha', 'has_2_or_more_computes')
+class TestL3HA(TestBase):
+    """Tests for L3 HA"""
+
+    @contextmanager
+    def background_ping(self, vm, vm_keypair, ip_to_ping):
+        """Start ping from `vm` to `ip_to_ping` before enter and stop it after
+
+        Return dict with ping stat
+        """
+
+        result = {}
+
+        logger.info('Start ping on {0}'.format(ip_to_ping))
+        with self.os_conn.ssh_to_instance(self.env, vm,
+                                          vm_keypair) as remote:
+            command = 'ping {0}'.format(ip_to_ping)
+            chan, stdin, stdout, stderr = remote.execute_async(command)
+
+            # Wait for 10 not interrupted packets
+            groups = ping_groups(stdout)
+            for ping_info in groups:
+                if ping_info.group_len >= 10:
+                    break
+
+            yield result
+
+            logger.info('Wait for ping restored')
+            for ping_info in groups:
+                result['received'] = ping_info.received
+                result['sended'] = ping_info.sended
+                if ping_info.group_len >= 50:
+                    break
+            stdin.write(chr(signal.SIGINT))
+            stdin.flush()
+            chan.close()
+
+    @pytest.fixture
+    def variables(self, init):
+        """Init Openstack variables"""
+        self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        self.security_group = self.os_conn.create_sec_group_for_ssh()
+        self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+
+    @pytest.fixture
+    def router(self, variables):
+        """Make router and connnect it to external network"""
+        router = self.os_conn.create_router(name="router01")
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        return router
+
+    def test_ban_l3_agent_with_active_ha_state(self, router):
+        """Ban l3-agent with ACTIVE ha_state for router
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Check what one agent has ACTIVE ha_state
+                and other has STANDBY state
+            7. Start ping vm2 from vm1 by floating ip
+            8. Ban agent with ACTIVE state from step 6
+            9. Stop ping
+            10. Check that ping lost no more than 10 packets
+        """
+        computes = self.zone.hosts.keys()[:2]
+        # create 2 networks and 2 instances
+        for i, hostname in enumerate(computes, 1):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName, hostname),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        # add floating ip to second server
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        floating_ip = self.os_conn.assign_floating_ip(server2)
+
+        # collect l3 agents and group it by hs_state
+        agents = defaultdict(list)
+        agent_list = self.os_conn.get_l3_for_router(router['router']['id'])
+        for agent in agent_list['agents']:
+            agents[agent['ha_state']].append(agent)
+
+        # check agents state
+        assert len(agents['active']) == 1
+        assert len(agents['standby']) == 2
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
+
+        node_to_ban = agents['active'][0]['host']
+
+        # Ban l3 agent
+        with self.background_ping(vm=server1, vm_keypair=self.instance_keypair,
+                                  ip_to_ping=floating_ip.ip) as ping_result:
+            with self.env.get_ssh_to_node(controller_ip) as remote:
+                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                remote.execute(
+                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                        node_to_ban))
+
+        assert ping_result['sended'] - ping_result['received'] < 10
