@@ -174,6 +174,25 @@ class TestBase(object):
                              vm_login=vm_login, vm_password=vm_password)
         return res
 
+    def check_ping_from_vm_with_ip(self, vm_ip, vm_keypair=None, ip_to_ping=None,
+                                   ping_count=1, vm_login='cirros',
+                                   vm_password='cubswin:)'):
+        if ip_to_ping is None:
+            ip_to_ping = [settings.PUBLIC_TEST_IP]
+        if isinstance(ip_to_ping, six.string_types):
+            ip_to_ping = [ip_to_ping]
+        pkeys = self.convert_private_key_for_vm([vm_keypair.private_key])
+        cmd_list = ["ping -c{0} {1}".format(ping_count, x) for x in ip_to_ping]
+        with self.env.get_ssh_to_vm(vm_ip, private_keys=pkeys,
+                                    username=vm_login,
+                                    password=vm_password) as vm_remote:
+            res = vm_remote.execute(' && '.join(cmd_list))
+            assert 0 == res['exit_code'], \
+                ('Ping is not successful, exit code {0},'
+                 'stdout {1}, stderr {2}'.format(res['exit_code'],
+                                                 res['stdout'],
+                                                 res['stderr']))
+
     def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""
         servers = self.os_conn.get_servers()
