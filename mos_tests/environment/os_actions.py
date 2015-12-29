@@ -672,3 +672,22 @@ class OpenStackActions(object):
         assert(wait(
             lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
             timeout_seconds=5 * 60))
+
+    def reschedule_dhcp_agent(self, net_id, controller_fqdn):
+        agent_list = self.neutron.list_agents(
+            binary='neutron-dhcp-agent')['agents']
+        agt_id_to_move_on = [agt['id'] for agt in agent_list
+                             if agt['host'] == controller_fqdn][0]
+        self.force_dhcp_reschedule(net_id, agt_id_to_move_on)
+
+    def force_dhcp_reschedule(self, net_id, new_dhcp_agt_id):
+        logger.info('going to reshedule network to specified '
+                    'controller dhcp agent')
+        current_dhcp_agt_id = self.neutron.list_dhcp_agent_hosting_networks(
+            net_id)['agents'][0]['id']
+        self.neutron.remove_network_from_dhcp_agent(current_dhcp_agt_id,
+                                                    net_id)
+        self.neutron.add_network_to_dhcp_agent(new_dhcp_agt_id,
+                                               {'network_id': net_id})
+        wait(lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
+             timeout_seconds=5 * 60)
