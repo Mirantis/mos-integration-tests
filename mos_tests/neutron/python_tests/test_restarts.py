@@ -18,6 +18,7 @@ import pytest
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase
+from waiting import wait
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,12 @@ class TestRestarts(TestBase):
         self.primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
                                                          mac=mac)
         self.primary_host = self.env.primary_controller.data['fqdn']
+
+        # Find a non-primary contrloller
+        mac = self.env.non_primary_controller.data['mac']
+        self.non_primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
+                                                         mac=mac)
+        self.non_primary_host = self.env.non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
         self.l3_agent_ids = [agt['id'] for agt in
@@ -285,8 +292,13 @@ class TestRestarts(TestBase):
         self.os_conn.wait_agents_down(agent_ids)
 
         # Check that all networks reschedule from primary controller
-        assert(not self.os_conn.neutron.list_networks_on_dhcp_agent(
-            agent_ids[0])['networks'])
+        wait(
+            lambda: len(self.os_conn.neutron.list_networks_on_dhcp_agent(
+                agent_ids[0])['networks']) == 0,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating all networks from died dhcp agent"
+        )
+
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
 
@@ -330,8 +342,63 @@ class TestRestarts(TestBase):
         self.os_conn.wait_agents_down(agent_ids)
 
         # Check that all networks reschedule from primary controller
-        assert(not self.os_conn.neutron.list_networks_on_dhcp_agent(
-            agent_ids[0])['networks'])
+        wait(
+            lambda: len(self.os_conn.neutron.list_networks_on_dhcp_agent(
+                agent_ids[0])['networks']) == 0,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating all networks from died dhcp agent"
+        )
 
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
+
+    def test_shutdown_non_primary_controller_dhcp_agent(self):
+        """Shutdown non-primary controller and check dhcp-agent
+
+        Scenario:
+            2. Create network1, subnet1, router1
+            3. Launch instances vm1 in network1
+            4. Find non-primary controller
+            5. Check on what agents is network1. Reschedule agents if needed.
+            6. Run udhcp on vm1
+            7. Shutdown non-primary controller
+            8. Check that all networks reschedule from non-primary controller
+            9. Run udhcp on vm1
+
+        Duration 10m
+
+        """
+        agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[0])
+        logger.info('Agent hosts is {0}'.format(agents_hosts))
+        logger.info('Network id is {0}'.format(self.networks[0]))
+        logger.info('Non-primary controller {0}'.format(self.non_primary_host))
+        logger.info('Primary controller {0}'.format(self.primary_host))
+        # Check if the agent is not on the non-primary controller
+        # Reschedule if needed
+        if not any(self.non_primary_host in host for host in agents_hosts):
+            self.os_conn.reschedule_dhcp_agent(self.networks[0], self.non_primary_host)
+
+        # Get non-primary controller agent id
+        agent_ids = [agt['id'] for agt in self.os_conn.neutron.list_agents(
+            binary='neutron-dhcp-agent')['agents'] if self.non_primary_host in agt['host']]
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(srv)
+
+        # Destroy non-primary controller
+        self.env.destroy_nodes([self.non_primary_node])
+
+        # Wait some time while agents become down
+        self.os_conn.wait_agents_down(agent_ids)
+
+        # Check that all networks rescedule from non-primary controller
+        wait(
+            lambda: len(self.os_conn.neutron.list_networks_on_dhcp_agent(
+                agent_ids[0])['networks']) == 0,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating all networks from died dhcp agent"
+        )
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(srv)

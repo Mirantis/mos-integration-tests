@@ -152,6 +152,17 @@ class Environment(EnvironmentBase):
                 if 'primary-controller' in stdout:
                     return controller
 
+    @property
+    def non_primary_controller(self):
+        controllers = self.get_nodes_by_role('controller')
+        for controller in controllers:
+            ip = controller.data['ip']
+            with self.get_ssh_to_node(ip) as remote:
+                response = remote.execute('hiera role')
+                stdout = ' '.join(response['stdout'])
+                if 'primary-controller' not in stdout:
+                    return controller
+
     def destroy_nodes(self, devops_nodes):
         logger.info('wait until the nodes get offline state')
         node_ips = [node.get_ip_address_by_network_name('admin')
