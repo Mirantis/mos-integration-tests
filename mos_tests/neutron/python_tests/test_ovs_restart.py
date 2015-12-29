@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import time
+from random import randint
 
 import pytest
 
@@ -65,10 +66,12 @@ class OvsBase(TestBase):
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
-            result = remote.execute(
+            result = remote.check_call(
                 '. openrc && pcs resource disable '
                 'p_neutron-plugin-openvswitch-agent --wait')
-            assert result['exit_code'] == 0
+            cmd_exit_code = result['exit_code']
+            if cmd_exit_code != 0:
+                logger.error(result['stderr'])
 
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
@@ -76,19 +79,23 @@ class OvsBase(TestBase):
 
         for node in computes:
             with node.ssh() as remote:
-                result = remote.execute(
+                result = remote.check_call(
                     'service neutron-plugin-openvswitch-agent restart')
-                assert result['exit_code'] == 0
+                cmd_exit_code = result['exit_code']
+                if cmd_exit_code != 0:
+                    logger.error(result['stderr'])
 
     def enable_ovs_agents_on_controllers(self):
         """Enable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
-            result = remote.execute(
+            result = remote.check_call(
                 '. openrc && pcs resource enable '
                 'p_neutron-plugin-openvswitch-agent --wait')
-            assert result['exit_code'] == 0
+            cmd_exit_code = result['exit_code']
+            if cmd_exit_code != 0:
+                logger.error(result['stderr'])
 
     def ban_ovs_agents_controllers(self):
         """Ban openvswitch-agents on all controllers."""
@@ -895,3 +902,148 @@ class TestOVSRestartAddFlows(OvsBase):
 
         after_value = self.get_current_cookie(compute)
         assert before_value != after_value
+
+
+@pytest.mark.check_env_("has_2_or_more_computes", "is_vlan")
+@pytest.mark.usefixtures("setup")
+class TestOVSRestartTwoSeparateVms(OvsBase):
+    """Check restarts of openvswitch-agents."""
+
+    @pytest.fixture(autouse=True)
+    def _prepare_openstack(self, init):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+        1. Update default security group if needed
+        2. Create CONFIG 1:
+        Network: test_net_05
+        SubNetw: test_net_05__subnet, 192.168.5.0/24
+        Router:  test_router_05
+        3. Create CONFIG 2:
+        Network: test_net_06
+        SubNetw: test_net_06__subnet, 192.168.6.0/24
+        Router:  test_router_06
+        4. Launch 'test_vm_05' in 'config 1'
+        5. Launch 'test_vm_05' in 'config 2'
+        6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+        Pings should NOT go between VMs.
+        """
+        # Create new key-pair with random name
+        keypair_name = 'instancekey_{0}'.format(randint(100, 1000))
+        self.instance_keypair = self.os_conn.create_key(key_name=keypair_name)
+        logger.info('New keypair "{0}" was created'.format(keypair_name))
+
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        hosts = zone.hosts.keys()[:2]
+
+        # Try to add sec groups if they were not added before
+        logger.info('Add security groups')
+        self.setup_rules_for_default_sec_group()
+
+        # Create 2 separate routers, 2 networks, 2 vm instances
+        # and associate each element to their router (06net+06sub-> 06 router)
+        for i, hostname in enumerate(hosts, 5):  # will be: 5,6
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            # Create router
+            router_name = 'test_router_%02d' % i  # test_router_05/_06
+            logger.info('Create router: "{0}"'.format(router_name))
+            router = self.os_conn.create_router(name=router_name)
+            # Add interface to router
+            logger.info('Add subnet "{0}" to router "{1}"'.format(
+                subnet['subnet']['name'],
+                router['router']['name']))
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            # Create server
+            vm_server_name = 'test_vm_%02d' % i  # 'test_vm_05' / 'test_vm_06'
+            logger.info('Create VM instance: "{0}"'.format(vm_server_name))
+            self.os_conn.create_server(
+                name=vm_server_name,
+                availability_zone='{}:{}'.format(zone.zoneName, hostname),
+                key_name=self.instance_keypair.name,
+                timeout=200,
+                nics=[{'net-id': net['network']['id']}])
+
+        # Check pings with alive ovs-agents,
+        # and before restart 'neutron-plugin-openvswitch-agent'
+        self.server1 = self.os_conn.nova.servers.find(name="test_vm_06")
+        self.server2_ip = self.os_conn.get_nova_instance_ips(
+            self.os_conn.nova.servers.find(name="test_vm_05")
+        ).values()[0]
+
+        # Ping should NOT go between VMs
+        self.check_no_ping_from_vm(self.server1, self.instance_keypair,
+                                   self.server2_ip, timeout=None)
+
+        # make a list of all ovs agent ids
+        self.ovs_agent_ids = [
+            agt['id'] for agt in
+            self.os_conn.neutron.list_agents(
+                binary='neutron-openvswitch-agent')['agents']]
+        # make a list of ovs agents that resides only on controllers
+        controllers = [node.data['fqdn']
+                       for node in self.env.get_nodes_by_role('controller')]
+        ovs_agts = self.os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                     if agt['host'] in controllers]
+
+    def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
+        """ Restart openvswitch-agents with pcs disable/enable on controllers.
+        [VLAN only] Check connectivity between private networks on different
+        routers
+        Testrail: 542666
+        Jira:     QA-375
+
+        Steps:
+        1. Update default security group if needed
+        2. Create CONFIG 1:
+        Network: test_net_05
+        SubNetw: test_net_05__subnet, 192.168.5.0/24
+        Router:  test_router_05
+        3. Create CONFIG 2:
+        Network: test_net_06
+        SubNetw: test_net_06__subnet, 192.168.6.0/24
+        Router:  test_router_06
+        4. Launch 'test_vm_05' inside 'config 1'
+        5. Launch 'test_vm_06' inside 'config 2'
+        6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+        Pings should NOT go between VMs.
+        7. Operations with OVS agents:
+        - Check that all OVS are alive;
+        - Disable ovs-agents on all controllers;
+        - Check that they wend down;
+        - Restart OVS agent service on all computes;
+        - Enable ovs-agents on all controllers;
+        - Check that they wend up and alive;
+        8. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
+        and check that they are still NOT successful.
+
+        Duration 5m
+
+        """
+        # Check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # Disable ovs agent on all controllers
+        self.disable_ovs_agents_on_controller()
+
+        # Then check that all ovs went down
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
+
+        # Restart ovs agent service on all computes
+        self.restart_ovs_agents_on_computes()
+
+        # Enable ovs agent on all controllers
+        self.enable_ovs_agents_on_controllers()
+
+        # Then check that all ovs agents are alive
+        self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        # sleep is used to check that system will be stable for some time
+        # after restarting service
+        time.sleep(30)
+
+        self.check_no_ping_from_vm(self.server1, self.instance_keypair,
+                                   self.server2_ip, timeout=None)
