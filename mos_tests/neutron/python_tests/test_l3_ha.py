@@ -20,6 +20,7 @@ import re
 import signal
 
 import pytest
+from waiting import wait
 
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -115,7 +116,8 @@ class TestL3HA(TestBase):
             network_id=self.os_conn.ext_network['id'])
         return router
 
-    def test_ban_l3_agent_with_active_ha_state(self, router):
+    @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
+    def test_ban_l3_agent_with_active_ha_state(self, router, ban_count):
         """Ban l3-agent with ACTIVE ha_state for router
 
         Scenario:
@@ -128,9 +130,11 @@ class TestL3HA(TestBase):
             6. Check what one agent has ACTIVE ha_state
                 and other has STANDBY state
             7. Start ping vm2 from vm1 by floating ip
-            8. Ban agent with ACTIVE state from step 6
-            9. Stop ping
-            10. Check that ping lost no more than 10 packets
+            8. Ban agent on what router scheduled with ACTIVE state
+            9. Wait until router rescheduled
+            10. Stop ping
+            11. Check that ping lost no more than 10 packets
+            12. Repeat steps 7-10 `ban_count` times
         """
         computes = self.zone.hosts.keys()[:2]
         # create 2 networks and 2 instances
@@ -165,13 +169,30 @@ class TestL3HA(TestBase):
 
         node_to_ban = agents['active'][0]['host']
 
-        # Ban l3 agent
-        with self.background_ping(vm=server1, vm_keypair=self.instance_keypair,
-                                  ip_to_ping=floating_ip.ip) as ping_result:
-            with self.env.get_ssh_to_node(controller_ip) as remote:
-                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
-                remote.execute(
-                    "pcs resource ban p_neutron-l3-agent {0}".format(
-                        node_to_ban))
+        def new_active_agent(prev_node):
+            agents = self.os_conn.get_l3_for_router(router['router']['id'])
+            new_agents = [x for x in agents['agents']
+                          if x['ha_state'] == 'active'
+                          and x['host'] != prev_node and x['alive'] is True]
+            if len(new_agents) == 1:
+                return new_agents[0]
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        for _ in range(ban_count):
+
+            # Ban l3 agent
+            with self.background_ping(vm=server1,
+                                      vm_keypair=self.instance_keypair,
+                                      ip_to_ping=floating_ip.ip
+            ) as ping_result:
+                with self.env.get_ssh_to_node(controller_ip) as remote:
+                    logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                    remote.execute(
+                        "pcs resource ban p_neutron-l3-agent {0}".format(
+                            node_to_ban))
+                    waiting_for = "router rescheduled from {}".format(
+                            node_to_ban)
+                    node_to_ban = wait(lambda: new_active_agent(node_to_ban),
+                                       timeout_seconds=60,
+                                       waiting_for=waiting_for)
+
+            assert ping_result['sended'] - ping_result['received'] < 10
