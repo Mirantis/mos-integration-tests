@@ -40,3 +40,8 @@ DVR tests
 .. automodule:: mos_tests.neutron.python_tests.test_dvr
    :members:
 
+L3 HA tests
+-----------
+.. automodule:: mos_tests.neutron.python_tests.test_l3_ha
+   :members:
+

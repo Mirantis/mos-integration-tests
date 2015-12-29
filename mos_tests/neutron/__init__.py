@@ -15,16 +15,9 @@
 import logging
 import logging.config
 
-
-# suppress iso8601 and paramiko debug logging
-class NoDebugMessageFilter(logging.Filter):
-    def filter(self, record):
-        return not record.levelno <= logging.DEBUG
-
-logging.getLogger('paramiko.transport').addFilter(NoDebugMessageFilter())
-logging.getLogger('paramiko.hostkeys').addFilter(NoDebugMessageFilter())
-logging.getLogger('iso8601.iso8601').addFilter(NoDebugMessageFilter())
-
+logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
+logging.getLogger("paramiko.hostkeys").setLevel(logging.INFO)
+logging.getLogger("iso8601.iso8601").setLevel(logging.INFO)
 
 logging.config.dictConfig({
     'version': 1,
@@ -35,20 +28,14 @@ logging.config.dictConfig({
             'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
         },
     },
-    'filters': {
-        'mos_tests': {
-            'class': 'logging.Filter',
-            'name': 'mos_tests',
-        }
-    },
     'handlers': {
         'console': {
-            'level': 'INFO',
+            'level': logging.INFO,
             'class': 'logging.StreamHandler',
             'formatter': 'standart',
         },
         'file': {
-            'level': 'DEBUG',
+            'level': logging.DEBUG,
             'class': 'logging.FileHandler',
             'filename': 'neutron.log',
             'formatter': 'standart',
@@ -57,13 +44,11 @@ logging.config.dictConfig({
     'loggers': {
         '': {
             'handlers': ['file'],
-            'level': 'DEBUG',
-            'propagate': True,
+            'level': logging.DEBUG,
         },
         'mos_tests': {
             'handlers': ['console'],
-            'level': 'INFO',
-            'filters': ['mos_tests']
+            'level': logging.DEBUG,
         }
     }
 })

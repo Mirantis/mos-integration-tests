@@ -20,8 +20,8 @@ from random import randint
 
 import pytest
 
-from mos_tests import settings
 from mos_tests.neutron.python_tests.base import TestBase
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
@@ -642,7 +642,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
     """Restart ovs-agents with iperf traffic background"""
 
     def create_image(self, full_path):
-        """
+        """Create image
 
         :param full_path: full path to image file
         :return: image object for Glance
@@ -656,7 +656,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         return image
 
     def get_lost_percentage(self, output):
-        """
+        """Get lost percentage
 
         :param output: list of lines (output of iperf client)
         :return: percentage of lost datagrams

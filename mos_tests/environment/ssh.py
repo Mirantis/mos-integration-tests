@@ -158,7 +158,7 @@ class SSHClient(object):
             raise CalledProcessError(command, errors)
 
     def execute(self, command, verbose=False):
-        chan, stdin, stderr, stdout = self.execute_async(command)
+        chan, stdin, stdout, stderr = self.execute_async(command)
         result = {
             'stdout': [],
             'stderr': [],
@@ -191,7 +191,7 @@ class SSHClient(object):
                 stdin.flush()
         else:
             chan.exec_command(cmd)
-        return chan, stdin, stderr, stdout
+        return chan, stdin, stdout, stderr
 
     def mkdir(self, path):
         if self.exists(path):
