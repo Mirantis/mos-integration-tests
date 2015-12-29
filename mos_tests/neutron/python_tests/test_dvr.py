@@ -37,10 +37,6 @@ class TestDVRBase(base.TestBase):
         self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         self.security_group = self.os_conn.create_sec_group_for_ssh()
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
-        exist_networks = self.os_conn.list_networks()['networks']
-        self.ext_network = [x for x in exist_networks
-                            if x.get('router:external')][0]
-        self.hosts = self.zone.hosts.keys()
 
     def reset_computes(self, hostnames, env_name):
 
@@ -70,7 +66,6 @@ class TestDVRBase(base.TestBase):
 
     def find_snat_controller(self, excluded=()):
         """Find controller with SNAT service.
-
         :param excluded: excluded nodes fqdns
         :returns: controller node with SNAT
         """
@@ -86,6 +81,18 @@ class TestDVRBase(base.TestBase):
                     controller_with_snat = controller
                     break
         return controller_with_snat
+
+    def shut_down_br_ex_on_controllers(self):
+        """Shut down br-ex for all controllers"""
+        controllers = self.env.get_nodes_by_role('controller')
+        for node in controllers:
+            with node.ssh() as remote:
+                res = remote.execute('ip link set br-ex down')
+                assert 0 == res['exit_code'], \
+                    ('Shut-downing br-ex is not successful, exit code {0},'
+                     'stdout {1}, stderr {2}'.format(res['exit_code'],
+                                                     res['stdout'],
+                                                     res['stderr']))
 
 
 @pytest.mark.check_env_('has_1_or_more_computes')
@@ -127,7 +134,8 @@ class TestDVR(TestDVRBase):
             security_groups=[self.security_group.id])
 
         if assign_floating_ip:
-            self.os_conn.assign_floating_ip(self.server)
+            self.floating_ip = self.os_conn.assign_floating_ip(
+                self.server, use_neutron=True)
 
     @pytest.mark.parametrize('floating_ip', (True, False),
                              ids=('with floating', 'without floating'))
@@ -236,10 +244,9 @@ def shut_down_br_ex_on_controllers(self):
                                                      res['stdout'],
                                                      res['stderr']))
 
-    def test_north_south_floating_ip_shut_down_br_ex_on_controllers(
-            self, prepare_openstack):
+    def test_north_south_floating_ip_shut_down_br_ex_on_controllers(self):
         """Check North-South connectivity with floatingIP after shut-downing
-         br-ex on all controllers
+        br-ex on all controllers
 
         Scenario:
             1. Create net01, subnet net01__subnet for it
@@ -256,19 +263,20 @@ def shut_down_br_ex_on_controllers(self):
         Duration 10m
 
         """
-        ip = self.os_conn.assign_floating_ip(
-            self.server, use_neutron=True)["floating_ip_address"]
+        self._prepare_openstack_env()
 
+        ip = self.floating_ip['floating_ip_address']
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
         self.shut_down_br_ex_on_controllers()
 
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
-    def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(
-            self, prepare_openstack):
+    def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
         """Check North-South connectivity with floatingIP after ban and
         clear l3-agent on compute
 
@@ -290,13 +298,15 @@ def shut_down_br_ex_on_controllers(self):
         Duration 10m
 
         """
-        ip = self.os_conn.assign_floating_ip(
-            self.server, use_neutron=True)["floating_ip_address"]
+        self._prepare_openstack_env()
+
+        ip = self.floating_ip['floating_ip_address']
 
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
-        compute = self.env.find_node_by_fqdn(self.hosts[0])
+        compute = self.env.find_node_by_fqdn(self.zone.hosts.keys()[0])
         with compute.ssh() as remote:
             remote.check_call('service neutron-l3-agent stop')
 
@@ -307,6 +317,7 @@ def shut_down_br_ex_on_controllers(self):
             remote.check_call('service neutron-l3-agent start')
 
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
 @pytest.mark.check_env_('has_2_or_more_computes')
@@ -315,8 +326,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.fixture
     def prepare_openstack(self, variables):
-        """
-        Prepare OpenStack for some scenarios run
+        """Prepare OpenStack for some scenarios run
 
         Steps:
             1. Create net01, subnet net01__subnet for it
@@ -335,7 +345,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             router_id=router['router']['id'],
             network_id=self.os_conn.ext_network['id'])
         # Create network and instance
-        self.compute_nodes = self.hosts[:2]
+        self.compute_nodes = self.zone.hosts.keys()[:2]
         for i, compute_node in enumerate(self.compute_nodes, 1):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             self.os_conn.router_interface_add(
@@ -434,6 +444,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.reset_computes(self.compute_nodes, env_name)
 
         time.sleep(60)
+
         # Check ping after reset
         self.check_ping_from_vm(vm=self.server2,
                                 vm_keypair=self.instance_keypair,
@@ -448,7 +459,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             1. Create net01, subnet net01__subnet for it
             2. Create net02, subnet net02__subnet for it
             3. Create router01_02 with router type Distributed and
-            with gateway to external network
+                with gateway to external network
             4. Add interfaces to the router01_02 with net01_subnet and
                 net02_subnet
             5. Boot vm_1 in the net01
@@ -508,7 +519,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             router_id=router['router']['id'],
             network_id=self.os_conn.ext_network['id'])
         # Create network and instance
-        compute_name = self.hosts[0]
+        compute_name = self.zone.hosts.keys()[0]
 
         for i in xrange(1, 3):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
