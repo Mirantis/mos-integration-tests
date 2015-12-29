@@ -18,7 +18,6 @@ import pytest
 from waiting import wait
 
 from mos_tests.neutron.python_tests import base
-from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
