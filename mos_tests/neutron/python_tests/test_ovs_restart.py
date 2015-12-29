@@ -72,7 +72,6 @@ class OvsBase(TestBase):
             cmd_exit_code = result['exit_code']
             if cmd_exit_code != 0:
                 logger.error(result['stderr'])
-            # assert cmd_exit_code == 0
 
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
@@ -85,7 +84,6 @@ class OvsBase(TestBase):
                 cmd_exit_code = result['exit_code']
                 if cmd_exit_code != 0:
                     logger.error(result['stderr'])
-                # assert cmd_exit_code == 0
 
     def enable_ovs_agents_on_controllers(self):
         """Enable openvswitch-agents on a controller."""
@@ -98,7 +96,6 @@ class OvsBase(TestBase):
             cmd_exit_code = result['exit_code']
             if cmd_exit_code != 0:
                 logger.error(result['stderr'])
-            # assert cmd_exit_code == 0
 
     def ban_ovs_agents_controllers(self):
         """Ban openvswitch-agents on all controllers."""
