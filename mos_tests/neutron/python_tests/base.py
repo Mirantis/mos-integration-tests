@@ -159,7 +159,7 @@ class TestBase(object):
             'STDERR {stderr}').format(**res)
         # Ping should not pass
         logger.info('Expecting that ping from vm should fail')
-        assert 1 == res['exit_code'], error_msg
+        assert 0 != res['exit_code'], error_msg
 
     def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""
