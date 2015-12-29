@@ -233,3 +233,41 @@ class TestL3HA(TestBase):
 
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
+
+    def test_delete_ns_for_active_router(self, router, prepare_openstack):
+        """Delete namespace for router on node with ACTIVE ha_state
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Find node with active ha_state for router
+            7. Start ping vm2 from vm1 by floating ip
+            8. Delete namespace for router on node with ACTIVE ha_state
+            9. Stop ping
+            10. Check that ping lost no more than 10 packets
+        """
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        agents = self.os_conn.get_l3_for_router(router['router']['id'])
+        hostname = [x['host'] for x in agents['agents']
+                    if x['ha_state'] == 'active' and x['alive'] is True][0]
+        node_ip = self.env.find_node_by_fqdn(hostname).data['ip']
+
+        # Delete namespace
+        with self.background_ping(vm=server1, vm_keypair=self.instance_keypair,
+                                  ip_to_ping=server2_ip) as ping_result:
+            with self.env.get_ssh_to_node(node_ip) as remote:
+                logger.info(("Delete namespace for router `router01` "
+                             "on {0}").format(node_ip))
+                remote.check_call(
+                    "ip netns delete qrouter-{0}".format(
+                        router['router']['id']))
+
+        assert ping_result['sended'] - ping_result['received'] < 10
