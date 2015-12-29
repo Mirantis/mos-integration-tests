@@ -83,7 +83,7 @@ class TestBaseDHCPAgent(base.TestBase):
 
         # Wait to die banned dhcp agent
         if wait_for_die:
-            err_msg = "Awainting ban of DHCP agent: {0}"
+            err_msg = "Awaiting ban of DHCP agent: {0}"
             wait(
                 lambda: (node_to_ban not in list_dhcp_agents()),
                 timeout_seconds=60 * 3,

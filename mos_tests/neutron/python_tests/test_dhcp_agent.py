@@ -115,7 +115,7 @@ class TestDHCPAgent(TestBase):
         for value in networks_amount_on_each_agt:
             assert self.isclose(value, max_value, abs_tol=3), err_msg
 
-    def test_drop_rabbit_port_chedk_dhcp_agent(self):
+    def test_drop_rabbit_port_check_dhcp_agent(self):
         """[Neutron VLAN and VXLAN] Drop rabbit port and check dhcp-agent
 
         TestRail id is C542619
@@ -161,7 +161,7 @@ class TestDHCPAgent(TestBase):
         controller_ip = self.env.get_node_ip_by_host_name(
             network_agt[0]['host'])
         # If ip is empty than no controller was found
-        err_msg = 'No controller with hostnamei {} was found'.format(
+        err_msg = 'No controller with hostname {} was found'.format(
                 network_agt[0]['host'])
         assert controller_ip, err_msg
 
@@ -183,7 +183,7 @@ class TestDHCPAgent(TestBase):
         controller_ip = self.env.get_node_ip_by_host_name(
             network_agt[0]['host'])
         # If ip is empty than no controller was found
-        err_msg = 'No controller with hostnamei {} was found'.format(
+        err_msg = 'No controller with hostname {} was found'.format(
                 network_agt[0]['host'])
         assert controller_ip, err_msg
 
@@ -203,10 +203,10 @@ class TestDHCPAgent(TestBase):
 
         TestRail id is C542621
         Steps:
-        logger.info('wait untill the nodes get offline state')
+        logger.info('wait until the nodes get offline state')
             1. Create network net01, subnet net01_subnet, add it to router01
             2. Launch instance
-            3. Log on instacne by root:
+            3. Log on instance by root:
                 sudo -i
             4. Run dhcp-client in console:
                 udhcp
@@ -245,7 +245,7 @@ class TestDHCPAgent(TestBase):
         controller_ip = self.env.get_node_ip_by_host_name(
             network_agts[0]['host'])
         # If ip is empty than no controller was found
-        err_msg = 'No controller with hostnamei {} was found'.format(
+        err_msg = 'No controller with hostname {} was found'.format(
                 network_agts[0]['host'])
         assert controller_ip, err_msg
 
