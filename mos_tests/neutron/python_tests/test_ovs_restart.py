@@ -943,14 +943,9 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         logger.info('Add security groups')
         self.setup_rules_for_default_sec_group()
 
-        # Create two routers for two configs
-        logger.info('Create two routers')
-        # router_05 = self.os_conn.create_router(name="test_router_05")
-        # router_06 = self.os_conn.create_router(name="test_router_06")
-
-        # Create 2 separate networks and 2 vm instances
+        # Create 2 separate routers, 2 networks, 2 vm instances
         # and associate each element to their router (06net+06sub-> 06 router)
-        for i, hostname in enumerate(hosts, 5):  # 5,6
+        for i, hostname in enumerate(hosts, 5):  # will be: 5,6
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             # Create router
             router_name = 'test_router_%02d' % i  # test_router_05/_06
@@ -972,27 +967,6 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
                 key_name=self.instance_keypair.name,
                 timeout=200,
                 nics=[{'net-id': net['network']['id']}])
-
-        '''
-        # Create 2 separate networks and 2 vm instances
-        # and associate each element to their router (06net+06sub-> 06 router)
-        for i, hostname in enumerate(hosts, 5):
-            net, subnet = self.create_internal_network_with_subnet(suffix=i)
-            if i == 5:
-                self.os_conn.router_interface_add(
-                    router_id=router_05['router']['id'],
-                    subnet_id=subnet['subnet']['id'])
-            else:
-                self.os_conn.router_interface_add(
-                    router_id=router_06['router']['id'],
-                    subnet_id=subnet['subnet']['id'])
-            self.os_conn.create_server(
-                name='test_vm_%02d' % i,  # 'test_vm_05' OR 'test_vm_06'
-                availability_zone='{}:{}'.format(zone.zoneName, hostname),
-                key_name=self.instance_keypair.name,
-                timeout=200,
-                nics=[{'net-id': net['network']['id']}])
-        '''
 
         # Check pings with alive ovs-agents,
         # and before restart 'neutron-plugin-openvswitch-agent'
@@ -1019,7 +993,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
                                      if agt['host'] in controllers]
 
     def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
-        """Restart openvswitch-agents with pcs disable/enable on controllers.
+        """ Restart openvswitch-agents with pcs disable/enable on controllers.
         [VLAN only] Check connectivity between private networks on different
         routers
         Testrail: 542666
@@ -1035,14 +1009,14 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         Network: test_net_06
         SubNetw: test_net_06__subnet, 192.168.6.0/24
         Router:  test_router_06
-        3. Launch 'test_vm_05' inside 'config 1'
-        4. Launch 'test_vm_06' inside 'config 2'
-        5. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+        4. Launch 'test_vm_05' inside 'config 1'
+        5. Launch 'test_vm_06' inside 'config 2'
+        6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
         Pings should NOT go between VMs.
-        5. Disable ovs-agents on all controllers, restart service
+        7. Disable ovs-agents on all controllers, restart service
         neutron-plugin-openvswitch-agent on all computes, and enable
         them back. To do this, launch the script against master node.
-        6. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
+        8. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
         and check that they are still NOT successful.
 
         Duration 5m
