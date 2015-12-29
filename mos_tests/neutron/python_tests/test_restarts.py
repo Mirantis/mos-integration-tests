@@ -370,21 +370,20 @@ class TestRestarts(TestBase):
         """
         agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
             self.networks[0])
-        logger.info('Agent hosts is {0}'.format(agents_hosts))
-        logger.info('Network id is {0}'.format(self.networks[0]))
-        logger.info('Non-primary controller {0}'.format(self.non_primary_host))
-        logger.info('Primary controller {0}'.format(self.primary_host))
+
         # Check if the agent is not on the non-primary controller
         # Reschedule if needed
         if not any(self.non_primary_host in host for host in agents_hosts):
-            self.os_conn.reschedule_dhcp_agent(self.networks[0], self.non_primary_host)
+            self.os_conn.reschedule_dhcp_agent(self.networks[0],
+                                               self.non_primary_host)
 
         # Get non-primary controller agent id
         agent_ids = [agt['id'] for agt in self.os_conn.neutron.list_agents(
-            binary='neutron-dhcp-agent')['agents'] if self.non_primary_host in agt['host']]
+            binary='neutron-dhcp-agent')['agents']
+            if self.non_primary_host in agt['host']]
 
         # Run udhcp on vm
-        self.run_udhcpc_on_vm(srv)
+        self.run_udhcpc_on_vm(self.server1)
 
         # Destroy non-primary controller
         self.env.destroy_nodes([self.non_primary_node])
@@ -401,4 +400,4 @@ class TestRestarts(TestBase):
         )
 
         # Run udhcp on vm
-        self.run_udhcpc_on_vm(srv)
+        self.run_udhcpc_on_vm(self.server1)
