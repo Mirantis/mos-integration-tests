@@ -1022,7 +1022,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         # after restarting service
         time.sleep(30)
 
-        # Check pings after anable/disable ovs-agents,
+        # Check pings after enable/disable ovs-agents,
         # and after restart 'neutron-plugin-openvswitch-agent'.
         # Ping should NOT go between VMs
         self.check_ping_from_vm(self.server1, self.instance_keypair,
