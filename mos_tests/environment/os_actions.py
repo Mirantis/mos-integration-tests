@@ -177,8 +177,9 @@ class OpenStackActions(object):
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
         paramiko_logger = logging.getLogger("paramiko.transport")
+        paramiko_orig_level = paramiko_logger.getEffectiveLevel()
         try:
-            paramiko_logger.setLevel('CRITICAL')
+            paramiko_logger.setLevel(logging.CRITICAL)
             self.ssh_to_instance(self.env, server)
         except paramiko.SSHException as e:
             if 'authentication' in unicode(e).lower():
@@ -189,7 +190,7 @@ class OpenStackActions(object):
         except Exception as e:
             logger.error(e)
         finally:
-            paramiko_logger.setLevel('DEBUG')
+            paramiko_logger.setLevel(paramiko_orig_level)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -603,17 +604,17 @@ class OpenStackActions(object):
 
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('waiting until the agents get alive')
-        assert(wait(lambda: all([agt['alive'] for agt in
+        wait(lambda: all(agt['alive'] for agt in
                                   self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check]),
-                    timeout_seconds=5 * 60))
+                                  if agt['id'] in agt_ids_to_check),
+             timeout_seconds=5 * 60)
 
     def wait_agents_down(self, agt_ids_to_check):
         logger.info('waiting until the agents go down')
-        assert(wait(lambda: all([not agt['alive'] for agt in
+        wait(lambda: all(not agt['alive'] for agt in
                                   self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check]),
-                    timeout_seconds=5 * 60))
+                                  if agt['id'] in agt_ids_to_check),
+             timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1

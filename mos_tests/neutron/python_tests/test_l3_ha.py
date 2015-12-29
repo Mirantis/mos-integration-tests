@@ -116,8 +116,29 @@ class TestL3HA(TestBase):
             network_id=self.os_conn.ext_network['id'])
         return router
 
+    @pytest.fixture
+    def prepare_openstack(self, router):
+        computes = self.zone.hosts.keys()[:2]
+        # create 2 networks and 2 instances
+        for i, hostname in enumerate(computes, 1):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName, hostname),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        # add floating ip to second server
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        self.os_conn.assign_floating_ip(server2)
+
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
-    def test_ban_l3_agent_with_active_ha_state(self, router, ban_count):
+    def test_ban_l3_agent_with_active_ha_state(self, router, prepare_openstack,
+                                               ban_count):
         """Ban l3-agent with ACTIVE ha_state for router
 
         Scenario:
@@ -136,24 +157,6 @@ class TestL3HA(TestBase):
             11. Check that ping lost no more than 10 packets
             12. Repeat steps 7-10 `ban_count` times
         """
-        computes = self.zone.hosts.keys()[:2]
-        # create 2 networks and 2 instances
-        for i, hostname in enumerate(computes, 1):
-            net, subnet = self.create_internal_network_with_subnet(suffix=i)
-            self.os_conn.router_interface_add(
-                router_id=router['router']['id'],
-                subnet_id=subnet['subnet']['id'])
-            self.os_conn.create_server(
-                name='server%02d' % i,
-                availability_zone='{}:{}'.format(self.zone.zoneName, hostname),
-                key_name=self.instance_keypair.name,
-                nics=[{'net-id': net['network']['id']}],
-                security_groups=[self.security_group.id])
-
-        # add floating ip to second server
-        server2 = self.os_conn.nova.servers.find(name="server02")
-        floating_ip = self.os_conn.assign_floating_ip(server2)
-
         # collect l3 agents and group it by hs_state
         agents = defaultdict(list)
         agent_list = self.os_conn.get_l3_for_router(router['router']['id'])
@@ -165,6 +168,8 @@ class TestL3HA(TestBase):
         assert len(agents['standby']) == 2
 
         server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
         controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
 
         node_to_ban = agents['active'][0]['host']
@@ -182,7 +187,7 @@ class TestL3HA(TestBase):
             # Ban l3 agent
             with self.background_ping(vm=server1,
                                       vm_keypair=self.instance_keypair,
-                                      ip_to_ping=floating_ip.ip
+                                      ip_to_ping=server2_ip
             ) as ping_result:
                 with self.env.get_ssh_to_node(controller_ip) as remote:
                     logger.info("Ban L3 agent on node {0}".format(node_to_ban))
@@ -196,3 +201,35 @@ class TestL3HA(TestBase):
                                        waiting_for=waiting_for)
 
             assert ping_result['sended'] - ping_result['received'] < 10
+
+    def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
+        """Disable all l3 agents and enable them
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Disable all p_neutron-l3-agent
+            7. Wait until all agents died
+            8. Enable all p_neutron-l3-agent
+            9. Wait until all agents alive
+            10. Check ping vm2 from vm1 by floating ip
+        """
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        agents = self.os_conn.get_l3_for_router(router['router']['id'])
+        agent_ids = [x['id'] for x in agents['agents']]
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            remote.check_call('pcs resource disable p_neutron-l3-agent')
+            self.os_conn.wait_agents_down(agent_ids)
+            remote.check_call('pcs resource enable p_neutron-l3-agent')
+            self.os_conn.wait_agents_alive(agent_ids)
+
+        self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
+                                ip_to_ping=server2_ip)
