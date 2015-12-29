@@ -95,7 +95,7 @@ class TestBase(object):
         :param vm_login: username to login to vm via ssh
         :param vm_password: password to login to vm via ssh
         :param timeout: type - int or None
-            - if None - execite command and return results
+            - if None - execute command and return results
             - if int - wait `timeout` seconds until command exit_code will be 0
         :returns: Dictionary with `exit_code`, `stdout`, `stderr` keys.
             `Stdout` and `stderr` are list of strings
@@ -127,39 +127,52 @@ class TestBase(object):
     def check_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
                            timeout=3 * 60, vm_login='cirros',
                            vm_password='cubswin:)'):
-        if ip_to_ping is None:
-            ip_to_ping = [settings.PUBLIC_TEST_IP]
-        if isinstance(ip_to_ping, six.string_types):
-            ip_to_ping = [ip_to_ping]
-        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
-        cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
-                             vm_login=vm_login, vm_password=vm_password)
-        error_msg = (
-            'Instance has no connectivity, exit code {exit_code},'
-            'stdout {stdout}, stderr {stderr}'
-        ).format(**res)
-        assert 0 == res['exit_code'], error_msg
+        logger.info('Expecting that ping from VM should pass')
+        # Get ping results
+        result = self.check_ping_from_vm_helper(
+            vm, vm_keypair, ip_to_ping,
+            timeout, vm_login, vm_password)
 
-    def check_no_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
-                              timeout=3 * 60, vm_login='cirros',
-                              vm_password='cubswin:)'):
-        if ip_to_ping is None:
-            ip_to_ping = [settings.PUBLIC_TEST_IP]
-        if isinstance(ip_to_ping, six.string_types):
-            ip_to_ping = [ip_to_ping]
-        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
-        cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
-                             vm_login=vm_login, vm_password=vm_password)
         error_msg = (
-            'Instance HAS connection, but it should not.\n'
+            'Instance has NO connection, but it should have.\n'
             'EXIT CODE: "{exit_code}"\n'
             'STDOUT: "{stdout}"\n'
-            'STDERR {stderr}').format(**res)
-        # Ping should not pass
-        logger.info('Expecting that ping from vm should fail')
-        assert 0 != res['exit_code'], error_msg
+            'STDERR {stderr}').format(**result)
+
+        # As ping should pass we expect '0' in exit_code
+        assert 0 == result['exit_code'], error_msg
+
+    def check_no_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
+                              timeout=None, vm_login='cirros',
+                              vm_password='cubswin:)'):
+        logger.info('Expecting that ping from VM should fail')
+        # Get ping results
+        result = self.check_ping_from_vm_helper(
+            vm, vm_keypair, ip_to_ping,
+            timeout, vm_login, vm_password)
+
+        error_msg = (
+            'Instance has a connection, but it should NOT have.\n'
+            'EXIT CODE: "{exit_code}"\n'
+            'STDOUT: "{stdout}"\n'
+            'STDERR {stderr}').format(**result)
+
+        # As ping should fail we expect NOT '0' in exit_code
+        assert 0 != result['exit_code'], error_msg
+
+    def check_ping_from_vm_helper(self, vm, vm_keypair, ip_to_ping,
+                                  timeout, vm_login, vm_password):
+        """ Returns dictionary with results of ping execution:
+        exit_code, stdout, stderr """
+        if ip_to_ping is None:
+            ip_to_ping = [settings.PUBLIC_TEST_IP]
+        if isinstance(ip_to_ping, six.string_types):
+            ip_to_ping = [ip_to_ping]
+        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
+        cmd = ' && '.join(cmd_list)
+        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
+                             vm_login=vm_login, vm_password=vm_password)
+        return res
 
     def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""

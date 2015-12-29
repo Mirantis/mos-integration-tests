@@ -1010,9 +1010,13 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         5. Launch 'test_vm_06' inside 'config 2'
         6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
         Pings should NOT go between VMs.
-        7. Disable ovs-agents on all controllers, restart service
-        neutron-plugin-openvswitch-agent on all computes, and enable
-        them back. To do this, launch the script against master node.
+        7. Operations with OVS agents:
+        - Check that all OVS are alive;
+        - Disable ovs-agents on all controllers;
+        - Check that they wend down;
+        - Restart OVS agent service on all computes;
+        - Enable ovs-agents on all controllers;
+        - Check that they wend up and alive;
         8. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
         and check that they are still NOT successful.
 
@@ -1043,7 +1047,3 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
 
         self.check_no_ping_from_vm(self.server1, self.instance_keypair,
                                    self.server2_ip, timeout=None)
-
-        # check all agents are alive
-        assert all([agt['alive'] for agt in
-                    self.os_conn.neutron.list_agents()['agents']])
