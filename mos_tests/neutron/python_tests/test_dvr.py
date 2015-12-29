@@ -96,6 +96,7 @@ class TestDVR(TestDVRBase):
                                assign_floating_ip=True):
         """Prepare OpenStack for scenarios run
 
+
         Steps:
             1. Revert snapshot with neutron cluster
             2. Create network net01, subnet net01_subnet
@@ -236,13 +237,14 @@ def shut_down_br_ex_on_controllers(self):
                                                      res['stderr']))
 
     def test_north_south_floating_ip_shut_down_br_ex_on_controllers(
-            self, variables):
+            self, prepare_openstack):
         """Check North-South connectivity with floatingIP after shut-downing
          br-ex on all controllers
 
         Scenario:
             1. Create net01, subnet net01__subnet for it
-            2. Create router01 with external network and router type Distributed
+            2. Create router01 with external network and
+                router type Distributed
             3. Add interfaces to the router01 with net01__subnet
             4. Boot vm_1 in the net01
             5. Associate floating IP
@@ -254,25 +256,8 @@ def shut_down_br_ex_on_controllers(self):
         Duration 10m
 
         """
-        net, subnet = self.create_internal_network_with_subnet(1)
-        router = self.os_conn.create_router(name='router01', distributed=True)
-        self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
-            network_id=self.os_conn.ext_network['id'])
-
-        self.os_conn.router_interface_add(
-            router_id=router['router']['id'],
-            subnet_id=subnet['subnet']['id'])
-
-        server = self.os_conn.create_server(
-            name='server01',
-            availability_zone=self.zone.zoneName,
-            key_name=self.instance_keypair.name,
-            nics=[{'net-id': net['network']['id']}],
-            security_groups=[self.security_group.id])
-
         ip = self.os_conn.assign_floating_ip(
-            server, use_neutron=True)["floating_ip_address"]
+            self.server, use_neutron=True)["floating_ip_address"]
 
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ping_count=10, vm_login='cirros')
@@ -282,13 +267,15 @@ def shut_down_br_ex_on_controllers(self):
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ping_count=10, vm_login='cirros')
 
-    def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self, variables):
+    def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(
+            self, prepare_openstack):
         """Check North-South connectivity with floatingIP after ban and
         clear l3-agent on compute
 
         Scenario:
             1. Create net01, subnet net01__subnet for it
-            2. Create router01 with external network and router type Distributed
+            2. Create router01 with external network and
+                router type Distributed
             3. Add interfaces to the router01 with net01__subnet
             4. Boot vm_1 in the net01
             5. Associate floating IP
@@ -303,25 +290,8 @@ def shut_down_br_ex_on_controllers(self):
         Duration 10m
 
         """
-        net, subnet = self.create_internal_network_with_subnet(1)
-        router = self.os_conn.create_router(name='router01', distributed=True)
-        self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
-            network_id=self.os_conn.ext_network['id'])
-
-        self.os_conn.router_interface_add(
-            router_id=router['router']['id'],
-            subnet_id=subnet['subnet']['id'])
-
-        server = self.os_conn.create_server(
-            name='server01',
-            availability_zone=self.zone.zoneName,
-            key_name=self.instance_keypair.name,
-            nics=[{'net-id': net['network']['id']}],
-            security_groups=[self.security_group.id])
-
         ip = self.os_conn.assign_floating_ip(
-            server, use_neutron=True)["floating_ip_address"]
+            self.server, use_neutron=True)["floating_ip_address"]
 
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ping_count=10, vm_login='cirros')
@@ -345,6 +315,20 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.fixture
     def prepare_openstack(self, variables):
+        """
+        Prepare OpenStack for some scenarios run
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed
+                and with gateway to external network
+            4. Add interfaces to the router01_02
+                with net01_subnet and net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on different compute
+            7. Add rules for ping
+        """
         # Create router
         router = self.os_conn.create_router(name="router01", distributed=True)
         self.os_conn.router_gateway_add(
@@ -457,7 +441,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.mark.check_env_('is_ha')
     def test_east_west_connectivity_after_destroy_controller(
-            self, env_name, prepare_openstack):
+            self, prepare_openstack, env_name):
         """Check East-West connectivity after destroy controller
 
         Scenario:
@@ -465,7 +449,8 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             2. Create net02, subnet net02__subnet for it
             3. Create router01_02 with router type Distributed and
             with gateway to external network
-            4. Add interfaces to the router01_02 with net01_subnet and net02_subnet
+            4. Add interfaces to the router01_02 with net01_subnet and
+                net02_subnet
             5. Boot vm_1 in the net01
             6. Boot vm_2 in the net02
             7. Check that VMs are on the different computes (otherwise migrate
@@ -493,7 +478,8 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server1_ip)
 
-    def test_east_west_connectivity_instances_on_the_same_host(self, variables):
+    def test_east_west_connectivity_instances_on_the_same_host(
+            self, variables):
         """Check East-West connectivity with instances on the same host
 
         Scenario:

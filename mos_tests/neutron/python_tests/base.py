@@ -174,8 +174,9 @@ class TestBase(object):
                              vm_login=vm_login, vm_password=vm_password)
         return res
 
-    def check_ping_from_vm_with_ip(self, vm_ip, vm_keypair=None, ip_to_ping=None,
-                                   ping_count=1, vm_login='cirros',
+    def check_ping_from_vm_with_ip(self, vm_ip, vm_keypair=None,
+                                   ip_to_ping=None, ping_count=1,
+                                   vm_login='cirros',
                                    vm_password='cubswin:)'):
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
