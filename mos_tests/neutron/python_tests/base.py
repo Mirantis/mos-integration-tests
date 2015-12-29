@@ -126,7 +126,7 @@ class TestBase(object):
 
     def check_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
                            timeout=3 * 60, vm_login='cirros',
-                           vm_password='cubswin:)', should_be_available=True):
+                           vm_password='cubswin:)'):
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
         if isinstance(ip_to_ping, six.string_types):
@@ -139,13 +139,27 @@ class TestBase(object):
             'Instance has no connectivity, exit code {exit_code},'
             'stdout {stdout}, stderr {stderr}'
         ).format(**res)
-        # If ping should not pass
-        if should_be_available:
-            expected_exit_code = 0
-        else:
-            expected_exit_code = 1
-            logger.info('Expecting that ping from vm should fail')
-        assert expected_exit_code == res['exit_code'], error_msg
+        assert 0 == res['exit_code'], error_msg
+
+    def check_no_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
+                              timeout=3 * 60, vm_login='cirros',
+                              vm_password='cubswin:)'):
+        if ip_to_ping is None:
+            ip_to_ping = [settings.PUBLIC_TEST_IP]
+        if isinstance(ip_to_ping, six.string_types):
+            ip_to_ping = [ip_to_ping]
+        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
+        cmd = ' && '.join(cmd_list)
+        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
+                             vm_login=vm_login, vm_password=vm_password)
+        error_msg = (
+            'Instance HAS connection, but it should not.\n'
+            'EXIT CODE: "{exit_code}"\n'
+            'STDOUT: "{stdout}"\n'
+            'STDERR {stderr}').format(**res)
+        # Ping should not pass
+        logger.info('Expecting that ping from vm should fail')
+        assert 1 == res['exit_code'], error_msg
 
     def check_vm_connectivity(self, timeout=3 * 60):
         """Check that all vms can ping each other and public ip"""
