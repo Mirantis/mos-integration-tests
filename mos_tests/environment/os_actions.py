@@ -678,7 +678,6 @@ class OpenStackActions(object):
             binary='neutron-dhcp-agent')['agents']
         agt_id_to_move_on = [agt['id'] for agt in agent_list
                              if agt['host'] == controller_fqdn][0]
-        logger.info('Agent id to move on {0}'.format(agt_id_to_move_on))
         self.force_dhcp_reschedule(net_id, agt_id_to_move_on)
 
     def force_dhcp_reschedule(self, net_id, new_dhcp_agt_id):
@@ -690,6 +689,5 @@ class OpenStackActions(object):
                                                     net_id)
         self.neutron.add_network_to_dhcp_agent(new_dhcp_agt_id,
                                                {'network_id': net_id})
-        assert(wait(
-            lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
-            timeout_seconds=5 * 60))
+        wait(lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
+             timeout_seconds=5 * 60)
