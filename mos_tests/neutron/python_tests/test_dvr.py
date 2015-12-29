@@ -191,6 +191,26 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.server2_ip = self.os_conn.get_nova_instance_ips(
             self.server2).values()[0]
 
+    def test_routing(self, prepare_openstack):
+        """Check connectivity to East-West-Routing
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed
+                and with gateway to external network
+            4. Add interfaces to the router01_02
+                with net01_subnet and net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on different compute
+            7. Add rules for ping
+            8. Go to the vm_1
+            9. Ping vm_2
+        """
+        self.check_ping_from_vm(vm=self.server1,
+                                vm_keypair=self.instance_keypair,
+                                ip_to_ping=self.server2_ip)
+
     def test_routing_after_ban_and_clear_l3_agent(self, prepare_openstack):
         """Check West-East-Routing connectivity with floatingIP after ban
             and clear l3-agent on compute
