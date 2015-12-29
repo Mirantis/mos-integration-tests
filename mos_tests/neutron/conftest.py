@@ -14,6 +14,7 @@
 
 from distutils.spawn import find_executable
 import pytest
+from six.moves import configparser
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.settings import SERVER_ADDRESS
@@ -111,22 +112,42 @@ def is_vxlan(env):
     return env.network_segmentation_type == 'tun'
 
 
+def get_config_option(fp, key, res_type):
+    """Find and return value for key in INI-like file"""
+    parser = configparser.RawConfigParser()
+    parser.readfp(fp)
+    if res_type is bool:
+        getter = parser.getboolean
+    else:
+        getter = parser.get
+    for section in parser.sections():
+        if parser.has_option(section, key):
+            return getter(section, key)
+
+
 def is_l2pop(env):
     """Env deployed with vxlan segmentation and l2 population"""
-    cmd = 'grep -q ^l2_population=True /etc/neutron/plugin.ini'
     controller = env.get_nodes_by_role('controller')[0]
     with env.get_ssh_to_node(controller.data['ip']) as remote:
-        result = remote.execute(cmd)
-    return is_vxlan(env) and result['exit_code'] == 0
+        with remote.open('/etc/neutron/plugin.ini') as f:
+            return get_config_option(f, 'l2_population', bool) is True
 
 
 def is_dvr(env):
     """Env deployed with enabled distributed routers support"""
-    cmd = 'grep -q ^enable_distributed_routing=True /etc/neutron/plugin.ini'
     controller = env.get_nodes_by_role('controller')[0]
     with env.get_ssh_to_node(controller.data['ip']) as remote:
-        result = remote.execute(cmd)
-    return result['exit_code'] == 0
+        with remote.open('/etc/neutron/plugin.ini') as f:
+            return get_config_option(
+                f, 'enable_distributed_routing', bool) is True
+
+
+def is_l3_ha(env):
+    """Env deployed with enabled distributed routers support"""
+    controller = env.get_nodes_by_role('controller')[0]
+    with env.get_ssh_to_node(controller.data['ip']) as remote:
+        with remote.open('/etc/neutron/neutron.conf') as f:
+            return get_config_option(f, 'l3_ha', bool) is True
 
 
 @pytest.fixture(autouse=True)

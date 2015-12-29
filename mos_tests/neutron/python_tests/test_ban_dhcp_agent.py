@@ -692,7 +692,7 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
         return res
 
     def _prepare_neutron_server_and_env(self, net_count):
-        """ Prepares neutron service network count on dhcp agent
+        """Prepares neutron service network count on dhcp agent
             and prepares env.
 
         :param net_count: how many networks musth dhcp agent handle
