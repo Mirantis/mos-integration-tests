@@ -144,6 +144,7 @@ class TestBase(object):
             expected_exit_code = 0
         else:
             expected_exit_code = 1
+            logger.info('Expecting that ping from vm should fail')
         assert expected_exit_code == res['exit_code'], error_msg
 
     def check_vm_connectivity(self, timeout=3 * 60):
