@@ -176,16 +176,18 @@ class OpenStackActions(object):
 
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
-        paramiko_logger = logging.getLogger("paramiko")
+        paramiko_logger = logging.getLogger("paramiko.transport")
         try:
             paramiko_logger.setLevel('CRITICAL')
             self.ssh_to_instance(self.env, server)
         except paramiko.SSHException as e:
-            if 'No authentication methods available' in e:
+            if 'authentication' in unicode(e).lower():
                 return True
             else:
                 logger.debug('Instance unavaliable yet: {}'.format(e))
                 return False
+        except Exception as e:
+            logger.error(e)
         finally:
             paramiko_logger.setLevel('DEBUG')
 
