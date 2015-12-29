@@ -907,6 +907,7 @@ class TestOVSRestartAddFlows(OvsBase):
         after_value = self.get_current_cookie(compute)
         assert before_value != after_value
 
+
 @pytest.mark.check_env_("has_2_or_more_computes")
 @pytest.mark.check_env_("is_vlan")
 @pytest.mark.usefixtures("setup")
@@ -992,22 +993,22 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         Steps:
         1. Update default security group if needed
         2. Create CONFIG 1:
-            Network: test_net_05
-            SubNetw: test_net_05__subnet, 192.168.5.0/24
-            Router:  test_router_05
+        Network: test_net_05
+        SubNetw: test_net_05__subnet, 192.168.5.0/24
+        Router:  test_router_05
         3. Create CONFIG 2:
-            Network: test_net_06
-            SubNetw: test_net_06__subnet, 192.168.6.0/24
-            Router:  test_router_06
+        Network: test_net_06
+        SubNetw: test_net_06__subnet, 192.168.6.0/24
+        Router:  test_router_06
         3. Launch 'test_vm_05' inside 'config 1'
         4. Launch 'test_vm_06' inside 'config 2'
         5. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
-            Pings should NOT go between VMs.
+        Pings should NOT go between VMs.
         5. Disable ovs-agents on all controllers, restart service
-            neutron-plugin-openvswitch-agent on all computes, and enable
-            them back. To do this, launch the script against master node.
+        neutron-plugin-openvswitch-agent on all computes, and enable
+        them back. To do this, launch the script against master node.
         6. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
-            and check that they are still NOT successful.
+        and check that they are still NOT successful.
 
         Duration 10m
 
