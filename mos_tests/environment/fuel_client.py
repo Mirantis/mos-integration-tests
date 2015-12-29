@@ -37,6 +37,12 @@ class NodeProxy(object):
     def __getattr__(self, name):
         return getattr(self._orig_node, name)
 
+    def __eq__(self, other):
+        return self.data['ip'] == other.data['ip']
+
+    def __ne__(self, other):
+        return not(self == other)
+
     @property
     def ip_list(self):
         """Returns node ip addresses list"""
