@@ -20,6 +20,7 @@ import re
 import signal
 
 import pytest
+from waiting import wait
 
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -115,23 +116,8 @@ class TestL3HA(TestBase):
             network_id=self.os_conn.ext_network['id'])
         return router
 
-    def test_ban_l3_agent_with_active_ha_state(self, router):
-        """Ban l3-agent with ACTIVE ha_state for router
-
-        Scenario:
-            1. Create network1, network2
-            2. Create router1 and connect it with network1, network2 and
-                external net
-            3. Boot vm1 in network1
-            4. Boot vm2 in network2 and associate floating ip
-            5. Add rules for ping
-            6. Check what one agent has ACTIVE ha_state
-                and other has STANDBY state
-            7. Start ping vm2 from vm1 by floating ip
-            8. Ban agent with ACTIVE state from step 6
-            9. Stop ping
-            10. Check that ping lost no more than 10 packets
-        """
+    @pytest.fixture
+    def prepare_openstack(self, router):
         computes = self.zone.hosts.keys()[:2]
         # create 2 networks and 2 instances
         for i, hostname in enumerate(computes, 1):
@@ -148,8 +134,29 @@ class TestL3HA(TestBase):
 
         # add floating ip to second server
         server2 = self.os_conn.nova.servers.find(name="server02")
-        floating_ip = self.os_conn.assign_floating_ip(server2)
+        self.os_conn.assign_floating_ip(server2)
 
+    @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
+    def test_ban_l3_agent_with_active_ha_state(self, router, prepare_openstack,
+                                               ban_count):
+        """Ban l3-agent with ACTIVE ha_state for router
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Check what one agent has ACTIVE ha_state
+                and other has STANDBY state
+            7. Start ping vm2 from vm1 by floating ip
+            8. Ban agent on what router scheduled with ACTIVE state
+            9. Wait until router rescheduled
+            10. Stop ping
+            11. Check that ping lost no more than 10 packets
+            12. Repeat steps 7-10 `ban_count` times
+        """
         # collect l3 agents and group it by hs_state
         agents = defaultdict(list)
         agent_list = self.os_conn.get_l3_for_router(router['router']['id'])
@@ -161,17 +168,68 @@ class TestL3HA(TestBase):
         assert len(agents['standby']) == 2
 
         server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
         controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
 
         node_to_ban = agents['active'][0]['host']
 
-        # Ban l3 agent
-        with self.background_ping(vm=server1, vm_keypair=self.instance_keypair,
-                                  ip_to_ping=floating_ip.ip) as ping_result:
-            with self.env.get_ssh_to_node(controller_ip) as remote:
-                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
-                remote.execute(
-                    "pcs resource ban p_neutron-l3-agent {0}".format(
-                        node_to_ban))
+        def new_active_agent(prev_node):
+            agents = self.os_conn.get_l3_for_router(router['router']['id'])
+            new_agents = [x for x in agents['agents']
+                          if x['ha_state'] == 'active'
+                          and x['host'] != prev_node and x['alive'] is True]
+            if len(new_agents) == 1:
+                return new_agents[0]
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        for _ in range(ban_count):
+
+            # Ban l3 agent
+            with self.background_ping(vm=server1,
+                                      vm_keypair=self.instance_keypair,
+                                      ip_to_ping=server2_ip
+            ) as ping_result:
+                with self.env.get_ssh_to_node(controller_ip) as remote:
+                    logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                    remote.execute(
+                        "pcs resource ban p_neutron-l3-agent {0}".format(
+                            node_to_ban))
+                    waiting_for = "router rescheduled from {}".format(
+                            node_to_ban)
+                    node_to_ban = wait(lambda: new_active_agent(node_to_ban),
+                                       timeout_seconds=60,
+                                       waiting_for=waiting_for)
+
+            assert ping_result['sended'] - ping_result['received'] < 10
+
+    def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
+        """Disable all l3 agents and enable them
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Disable all p_neutron-l3-agent
+            7. Wait until all agents died
+            8. Enable all p_neutron-l3-agent
+            9. Wait until all agents alive
+            10. Check ping vm2 from vm1 by floating ip
+        """
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        agents = self.os_conn.get_l3_for_router(router['router']['id'])
+        agent_ids = [x['id'] for x in agents['agents']]
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            remote.check_call('pcs resource disable p_neutron-l3-agent')
+            self.os_conn.wait_agents_down(agent_ids)
+            remote.check_call('pcs resource enable p_neutron-l3-agent')
+            self.os_conn.wait_agents_alive(agent_ids)
+
+        self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
+                                ip_to_ping=server2_ip)
