@@ -101,24 +101,6 @@ class OvsBase(TestBase):
                 logger.error(result['stderr'])
             assert cmd_exit_code == 0
 
-    # TODO: remove when fixed
-    # WA - delete when it'll be fixed
-    def wa_for_bug_with_ovs(self):
-        """ BUG: Neutron agents flapping after the issues with rabbitmq
-        https://bugs.launchpad.net/mos/+bug/1528563
-        """
-        controller = self.env.get_nodes_by_role('controller')[0]
-        with controller.ssh() as remote:
-            result = remote.execute(
-                'service neutron-server restart && '
-                'service nova-conductor restart')
-            assert result['exit_code'] == 0
-            cmd_exit_code = result['exit_code']
-            if cmd_exit_code != 0:
-                logger.error(result['stderr'])
-            assert cmd_exit_code == 0
-        time.sleep(60)
-
     def ban_ovs_agents_controllers(self):
         """Ban openvswitch-agents on all controllers."""
         controllers = self.env.get_nodes_by_role('controller')
@@ -970,10 +952,6 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         logger.info('Create two routers')
         router_05 = self.os_conn.create_router(name="test_router_05")
         router_06 = self.os_conn.create_router(name="test_router_06")
-
-        # WA for Bug: https://bugs.launchpad.net/mos/+bug/1528563
-        # restart service neutron-server on all controllers
-        # self.wa_for_bug_with_ovs()
 
         # Create 2 separate networks and 2 vm instances
         # and associate each element to their router (06net+06sub-> 06 router)
