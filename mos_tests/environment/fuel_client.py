@@ -99,9 +99,9 @@ class Environment(EnvironmentBase):
         """Check for OpenStack tests pass"""
 
         def test_is_done():
-            result = self.get_state_of_tests()[0]
-            if result['status'] == 'finished':
-                return result
+            res = self.get_state_of_tests()[0]
+            if res['status'] == 'finished':
+                return res
 
         logger.info('[Re]start OSTF tests')
         if self.is_ha:
@@ -206,7 +206,7 @@ class Environment(EnvironmentBase):
         self.warm_shutdown_nodes(devops_nodes)
         self.warm_start_nodes(devops_nodes)
 
-    def check_nodes_get_offline_state(self, node_ips=[]):
+    def check_nodes_get_offline_state(self, node_ips=()):
         nodes_states = [not x.data['online']
                         for x in self.get_all_nodes()
                         if x.data['ip'] in node_ips]
