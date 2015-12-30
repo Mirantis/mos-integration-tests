@@ -443,7 +443,8 @@ class TestOVSRestartsOneNetwork(OvsBase):
         """[Networking: OVS graceful restart] Create automated test
            Restart openvswitch-agents with broadcast traffic background
 
-        TestRail ids are C270643 C270644 C273800 C273801 C273802
+        TestRail ids are C542673 C542674 C542675 C542676
+                         C542677 C580200 C580201 C580202
         Steps:
             1. Go to vm1's console and run arping
                to initiate broadcast traffic:

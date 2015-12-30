@@ -18,6 +18,9 @@ import time
 
 import pytest
 from waiting import wait
+import neutronclient.v2_0.client as neutronclient
+from neutronclient.common.exceptions import NeutronClientException
+from tempfile import NamedTemporaryFile
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests import base
@@ -37,6 +40,7 @@ class TestDVRBase(base.TestBase):
         self.zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         self.security_group = self.os_conn.create_sec_group_for_ssh()
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
+        self.hosts = self.zone.hosts.keys()
 
     def reset_computes(self, hostnames, env_name):
 
@@ -387,3 +391,363 @@ class TestDVREastWestConnectivity(TestDVRBase):
         self.check_ping_from_vm(vm=self.server1,
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server2_ip)
+
+
+@pytest.mark.check_env_('has_1_or_more_computes')
+class TestDVRTypeChange(TestDVRBase):
+
+    def check_exception_on_router_update_to_centralize(self, router_id):
+        # Change admin_state_up to False
+        # and then try to set distributed to False
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': False}})
+
+        # distributed parameter can't be changed from True to False
+        # exception is expected here
+        # in case if no exception is generated the py.test will fail
+        with pytest.raises(NeutronClientException) as e:
+            self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'distributed': False}})
+
+        # allowed_msg is for doulbe check
+        # There is no separate exception for each case
+        # So just check that generated exception contains the expected message
+        # Otherwise the test is failed
+        allowed_msg = 'Migration from distributed router'
+        allowed_msg = allowed_msg + ' to centralized is not supported'
+        err_msg = 'Failed to update the router, exception: {}'.format(e)
+        assert allowed_msg in str(e.value), err_msg
+
+    def test_distributed_router_is_not_updated_to_centralized(self, init):
+        """[Neutron DVR] Check that it is not poissible to update
+           distributed router to centralized
+
+        TestRail ids are: C542770 C542771
+
+        Scenario:
+            1. Create router with enabled dvr feature
+            2. Check that distributed attribute is set to True
+            3. Set admin_state_up of the router to False
+            4. Try to change the distributed attribute to False
+                The value should not be changed and exception occured
+        """
+
+        # Create router with default value of distributed
+        # In case of dvr feature distributed default value should be True
+        router = {'name': 'router01'}
+        router_id = self.os_conn.neutron.create_router(
+                        {'router': router})['router']['id']
+        logger.info('router {} was created'.format(router_id))
+
+        # Check that router is distributed by default
+        router = self.os_conn.neutron.show_router(router_id)['router']
+        err_msg = ('distributed parameter for the router {0} is {1}. '
+                   "But it's expected value is True"
+                  ).format(router['name'], router['distributed'])
+        assert router['distributed'], err_msg
+
+        self.check_exception_on_router_update_to_centralize(router['id'])
+
+    @pytest.fixture
+    def legacy_router(self, variables):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+            1. Create centralized router1 and connect it with external net
+        """
+
+        router = self.os_conn.create_router(
+                     name="router01", distributed=False)['router']
+        self.os_conn.router_gateway_add(router_id=router['id'],
+            network_id=self.os_conn.ext_network['id'])
+        logger.info('router {} was created'.format(router['id']))
+        return router
+
+    @pytest.fixture
+    def dvr_router(self, variables):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+            1. Create distributed router1 and connect it with external net
+        """
+
+        router = self.os_conn.create_router(
+                     name="router01", distributed=True)['router']
+        self.os_conn.router_gateway_add(router_id=router['id'],
+            network_id=self.os_conn.ext_network['id'])
+        logger.info('router {} was created'.format(router['id']))
+        return router
+
+    def create_net_and_vm(self, router_id):
+        """Prepare OpenStack for scenarios run
+
+        Steps:
+            1. Create network1 and connect it with router01
+            2. Boot vm1 in network1 and associate floatidvrng ip
+            3. Add rules for ping
+            4. ping 8.8.8.8 from vm1
+        """
+        # create one network and one instacne in it
+        net_id = self.os_conn.add_net(router_id)
+        srv = self.os_conn.add_server(net_id,
+                                      self.instance_keypair.name,
+                                      self.hosts[0],
+                                      self.security_group.id)
+
+        # add floating ip to first server
+        self.os_conn.assign_floating_ip(srv)
+
+        # check pings
+        self.check_vm_connectivity()
+
+        # find the compute where the vm is run
+        computes = self.env.get_nodes_by_role('compute')
+        compute_ips = [node.data['ip'] for node in computes
+                           if node.data['fqdn'] == self.hosts[0]]
+
+        assert compute_ips, "Can't find the compute node with the vm"
+
+        return compute_ips
+
+    def test_centralized_update_to_distributed(self, legacy_router, variables):
+        """[Neutron DVR] Create centralized router and update it to distributed
+
+        TestRail ids are: C542772 C542773
+
+        Steps:
+            1. Check that the router is not distributed by default
+            2. Try to change the distributed parameter
+                It shouldn't be possible without
+                setting admin_state_up to False
+            3. Change admin_state_up to False and than set distributed to True
+            4. Change admin_state_up to True to enable the router
+            5. Check that the router namespace is available on the compute
+            6. Ping 8.8.8.8 from vm1
+            7. And finally as a bonus check that it is not poissible
+                to change the router type from distributed to centralized
+        """
+
+        router_id = legacy_router['id']
+        compute_ips = self.create_net_and_vm(router_id)
+
+        # Check that router is not distributed by default
+        router = self.os_conn.neutron.show_router(router_id)['router']
+        err_msg = ('distributed parameter for the router {0} is {1}. '
+                   "But it's expected value is False"
+                  ).format(router['name'], router['distributed'])
+        assert not router['distributed'], err_msg
+
+        # Try to change the distributed parameter
+        # That shouldn't be possible without setting admin_state_up to False
+        # exception is expected here
+        # in case if no exception is generated the py.test will fail
+        with pytest.raises(NeutronClientException) as e:
+            self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'distributed': True}})
+
+        # allowed_msg is for doulbe check
+        # There is no separate exception for each case
+        # So just check that generated exception contains the expected message
+        # Otherwise the test is failed
+        allowed_msg = 'admin_state_up to False prior to upgrade'
+        err_msg = 'Failed to update the router, exception: {}'.format(e)
+        assert allowed_msg in str(e.value), err_msg
+
+        # Change admin_state_up to False and than set distributed to True
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': False}})
+
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'distributed': True}})
+
+        # Change admin_state_up to True to enable the router
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': True}})
+
+        # Check that distributed is really changed to True
+        router = self.os_conn.neutron.show_router(router_id)['router']
+        err_msg = ('distributed parameter for the router {0} is {1}. '
+                   "But it's expected value is True"
+                  ).format(router['name'], router['distributed'])
+        assert router['distributed'], err_msg
+
+        # Check that the router namespace is available on the compute now
+        with self.env.get_ssh_to_node(compute_ips[0]) as remote:
+            cmd = "ip netns | grep [q]router-{}".format(router_id)
+            remote.check_call(cmd)
+
+        # check pings
+        self.check_vm_connectivity()
+
+        # And finally check that after all it is not poissible
+        # to change the router type from distributed to centralized
+
+        self.check_exception_on_router_update_to_centralize(router['id'])
+
+    def get_snat_controller(self, host_name, router_id):
+        snat_controller = None
+        controllers = self.env.get_nodes_by_role('controller')
+        for node in controllers:
+            if node.data['fqdn'] == host_name:
+                with self.env.get_ssh_to_node(node.data['ip']) as remote:
+                    cmd = 'ip netns | grep [s]nat-{}'.format(router_id)
+                    result = remote.execute(cmd)
+                    if result['exit_code'] == 0:
+                        snat_controller = node
+                        break
+        return snat_controller
+
+    @pytest.mark.check_env_('is_ha')
+    def test_reschedule_router_from_snat_controller(self, dvr_router):
+        """[Neutron DVR] Reschedule router from snat controller
+
+        TestRail ids are: C542780 C542781
+
+        Steps:
+            1.  Find controller with SNAT-namespace:
+                ip net | grep snat on all controller
+            2.  Reshedule router to another controller
+            3.  Check that snat-namespace moved to another controller
+            4.  Go to the vm_1 with ssh and floating IP and Ping 8.8.8.8
+        """
+
+        router_id = dvr_router['id']
+        self.create_net_and_vm(router_id)
+
+        # Find the current controller with snat namespace
+        current_l3_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
+                             router_id)['agents'][0]
+        current_snat_controller = self.get_snat_controller(
+                                      current_l3_agt['host'], router_id)
+        err_msg = "Can't find controller with snat namespace"
+        assert current_snat_controller, err_msg
+
+        # Reschedule the router to any other available controller
+        self.os_conn.force_l3_reschedule(router_id)
+        new_l3_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
+                         router_id)['agents'][0]
+
+        # Find the new controller where the snat namespace should appear
+        new_snat_controller = self.get_snat_controller(
+                                      new_l3_agt['host'], router_id)
+        err_msg = "Can't find controller with snat namespace"
+        assert new_snat_controller, err_msg
+
+        # Check that the router and the snat namespace
+        # are really moved to other controller
+        err_msg = 'SNAT namepspace and router were not moved!'
+        old_host = current_snat_controller.data['fqdn']
+        new_host = new_snat_controller.data['fqdn']
+        assert old_host != new_host, err_msg
+
+        # Check pings
+        self.check_vm_connectivity()
+
+    def test_create_dvr_by_no_admin_user(self):
+        """[Neutron DVR] Create distributed router with member user
+
+        TestRail ids are: C542758 C542759
+
+        Steps:
+            1.  Create new user for admin tenant with member role
+            2.  Login with this user in the CLI
+            3.  Create router with parameter Distributed = True
+            4.  Check that creation isn't available
+            5.  Create router with parameter Distributed = False
+            6.  Check that creation isn't available
+            7.  Create router without this parameter
+            8.  Log in as admin user
+            9.  Check that parameter Distributed is true
+        """
+
+        # Find the admin tenant
+        admin_role = self.os_conn.keystone.roles.find(name='admin')
+        admin_tenant = None
+        for tenant in self.os_conn.keystone.tenants.list():
+            if admin_role in tenant.manager.role_manager.list():
+                admin_tenant = tenant
+                break
+        assert admin_tenant, "Can't find the tenant with admin role"
+
+        # Create new user
+        # Member role is used by default
+        username = 'test_dvr'
+        userpass = 'test_dvr'
+        # But at first check if the same user exist
+        # try to find it and delete
+        try:
+            user = self.os_conn.keystone.users.find(name=username)
+            self.os_conn.keystone.users.delete(user)
+        except Exception as e:
+            logger.info('Tried to clean up user with result: {}'.format(e))
+        # Actual user creation is here
+        user = self.os_conn.keystone.users.create(name=username,
+                                                  password=userpass,
+                                                  tenant_id=admin_tenant.id)
+
+        # Find the certificate for the current env
+        # and log in with new user in new netron client
+        cert = self.env.certificate
+        path_to_cert = None
+        if cert:
+            with NamedTemporaryFile(prefix="fuel_cert_", suffix=".pem",
+                                    delete=False) as f:
+                f.write(cert)
+            path_to_cert = f.name
+
+        auth_url = self.os_conn.keystone.auth_url
+        tenant_name = self.os_conn.keystone.project_name
+        neutron = neutronclient.Client(username=username,
+                                       password=userpass,
+                                       tenant_name=tenant_name,
+                                       auth_url=auth_url,
+                                       ca_cert=path_to_cert)
+
+        # Try to create router with explicit distributed True value
+        # by user with memeber role but in admin tenant
+        # That shouldn't be possible, exception is expected here
+        # in case if no exception is generated the py.test will fail
+        with pytest.raises(NeutronClientException) as e:
+            router = {'name': 'router01', 'distributed': True}
+            router_id = neutron.create_router(
+                            {'router': router})['router']['id']
+        # allowed_msg is for doulbe check
+        # There is no separate exception for each case
+        # So just check that generated exception contains the expected message
+        # Otherwise the test is failed
+        allowed_msg = 'disallowed by policy'
+        err_msg = 'Failed to create the router, exception: {}'.format(e)
+        assert allowed_msg in str(e.value), err_msg
+
+        # Try to create router with explicit distributed False value
+        # by user with memeber role but in admin tenant
+        # exception is expected here
+        with pytest.raises(NeutronClientException) as e:
+            router = {'name': 'router01', 'distributed': False}
+            router_id = neutron.create_router(
+                            {'router': router})['router']['id']
+        allowed_msg = 'disallowed by policy'
+        err_msg = 'Failed to create the router, exception: {}'.format(e)
+        assert allowed_msg in str(e.value), err_msg
+
+        # Try to create router with default distributed value
+        # by user with memeber role but in admin tenant
+        router = {'name': 'router01'}
+        router_id = neutron.create_router(
+                        {'router': router})['router']['id']
+
+        # Check that the created router has distributed value set to True
+        # Check is done by admin user
+        router = self.os_conn.neutron.show_router(router_id)['router']
+        err_msg = ('distributed parameter for the router {0} is {1}. '
+                   "But it's expected value is True"
+                  ).format(router['name'], router['distributed'])
+        assert router['distributed'], err_msg
+
+        self.check_exception_on_router_update_to_centralize(router['id'])

@@ -648,13 +648,14 @@ class OpenStackActions(object):
                           binary='neutron-l3-agent')['agents']
         agt_id_to_move_on = [agt['id'] for agt in agent_list
                              if agt['host'] == primary_host][0]
-        self.force_l3_reshedule(router_id,
+        self.force_l3_reschedule(router_id,
                                  agt_id_to_move_on)
 
-    def force_l3_reshedule(self, router_id, new_l3_agt_id=''):
-        logger.info('going to reshedule the router on new agent')
+    def force_l3_reschedule(self, router_id, new_l3_agt_id=''):
+        logger.info('going to reschedule the router on new agent')
         current_l3_agt_id = self.neutron.list_l3_agent_hosting_routers(
                                  router_id)['agents'][0]['id']
+        availabe_l3_agts = None
         if not new_l3_agt_id:
             all_l3_agts = self.neutron.list_agents(
                               binary='neutron-l3-agent')['agents']
@@ -669,9 +670,10 @@ class OpenStackActions(object):
                                                  router_id)
         self.neutron.add_router_to_l3_agent(new_l3_agt_id,
                                             {"router_id": router_id})
-        assert(wait(
+
+        wait(
             lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
-            timeout_seconds=5 * 60))
+            timeout_seconds=5 * 60)
 
     def reschedule_dhcp_agent(self, net_id, controller_fqdn):
         agent_list = self.neutron.list_agents(
