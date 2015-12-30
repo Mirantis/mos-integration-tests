@@ -90,7 +90,7 @@ class TestBase(object):
         """Execute command on vm and return dict with results
 
         :param vm: server to execute command on
-        :param vm_keypair: keypair used dduring vm creating
+        :param vm_keypair: keypair used during vm creating
         :param command: command to execute
         :param vm_login: username to login to vm via ssh
         :param vm_password: password to login to vm via ssh
@@ -187,6 +187,36 @@ class TestBase(object):
             self.check_ping_from_vm(server1, self.instance_keypair,
                                     ips_to_ping, timeout=timeout)
 
+    def run_on_cirros(self, vm, cmd):
+        """Run command on Cirros VM, connected by floating ip.
+
+        :param vm: instance with cirros
+        :param cmd: command to execute
+        :returns: dict, result of command with code, stdout, stderr.
+        """
+        vm = self.os_conn.get_instance_detail(vm)
+        _floating_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
+
+        with self.env.get_ssh_to_vm(_floating_ip,
+                                    **self.cirros_creds) as remote:
+            res = remote.execute(cmd)
+        return res
+
+    def check_ping_from_cirros(self, vm, ip_to_ping=None):
+        """Run ping some ip from Cirros instance.
+
+        :param vm: instance with cirros
+        :param ip_to_ping: ip to ping
+        """
+        ip_to_ping = ip_to_ping or settings.PUBLIC_TEST_IP
+        cmd = "ping -c1 {0}".format(ip_to_ping)
+        res = self.run_on_cirros(vm, cmd)
+        error_msg = (
+            'Instance has no connectivity, '
+            'exit code {exit_code},'
+            'stdout {stdout}, stderr {stderr}').format(**res)
+        assert 0 == res['exit_code'], error_msg
+
     def check_vm_is_available(self, vm,
                               username=None, password=None, pkeys=None):
         """Check that instance is available for connect from controller.
@@ -210,7 +240,7 @@ class TestBase(object):
                 'connectivity from node with ip {1}.').format(vm_ip, srv_host)
 
             wait(lambda: remote.execute(cmd)['exit_code'] == 0,
-                 sleep_seconds=10, timeout_seconds=3 * 10,
+                 sleep_seconds=10, timeout_seconds=3 * 60,
                  waiting_for=waiting_for_msg)
         return self.check_vm_is_accessible_with_ssh(
             vm_ip, username=username, password=password, pkeys=pkeys)

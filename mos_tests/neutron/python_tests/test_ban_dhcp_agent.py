@@ -18,7 +18,6 @@ import pytest
 from waiting import wait
 
 from mos_tests.neutron.python_tests import base
-from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
@@ -166,36 +165,6 @@ class TestBaseDHCPAgent(base.TestBase):
                 remote, _floating_ip, cmd)
         return res
 
-    def run_on_cirros(self, vm, cmd):
-        """Run command on Cirros VM, connected by floating ip.
-
-        :param vm: instance with cirros
-        :param cmd: command to execute
-        :returns: dict, result of command with code, stdout, stderr.
-        """
-        vm = self.os_conn.get_instance_detail(vm)
-        _floating_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
-
-        with self.env.get_ssh_to_vm(_floating_ip,
-                                    **self.cirros_creds) as remote:
-            res = remote.execute(cmd)
-        return res
-
-    def check_ping_from_cirros(self, vm, ip_to_ping=None):
-        """Run ping some ip from Cirros instance.
-
-        :param vm: instance with cirros
-        :param ip_to_ping: ip to ping
-        """
-        ip_to_ping = ip_to_ping or settings.PUBLIC_TEST_IP
-        cmd = "ping -c1 {0}".format(ip_to_ping)
-        res = self.run_on_cirros(vm, cmd)
-        error_msg = (
-            'Instance has no connectivity, '
-            'exit code {exit_code},'
-            'stdout {stdout}, stderr {stderr}').format(**res)
-        assert 0 == res['exit_code'], error_msg
-
     def check_dhcp_on_cirros_instance(self, vm):
         """Check dhcp client on Cirros instance.
 
@@ -213,25 +182,20 @@ class TestBaseDHCPAgent(base.TestBase):
         """Prepare OpenStack for scenarios run
 
         Steps:
-            1. Revert snapshot with neutron cluster
-            2. Create network net01, subnet net01_subnet
-            3. Create router with gateway to external net and
+            1. Create network net01, subnet net01_subnet
+            2. Create router with gateway to external net and
                interface with net01
-            4. Launch instance and associate floating IP
+            3. Launch instance and associate floating IP
             4. Check ping from instance google DNS
-            6. Check run dhcp-client in instance's console:
+            5. Check run dhcp-client in instance's console:
                sudo cirros-dhcpc up eth0
         """
-        # init variables
-        exist_networks = self.os_conn.list_networks()['networks']
-        ext_net = [net for net in exist_networks
-                   if net.get('router:external')][0]
-
         # create network with subnet and router
         int_net, sub_net = self.create_internal_network_with_subnet()
         self.net_id = int_net['network']['id']
         self.net_name = int_net['network']['name']
-        router = self.create_router_between_nets(ext_net, sub_net)
+        router = self.create_router_between_nets(self.os_conn.ext_network,
+                                                 sub_net)
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
         # create instance and assign floating ip to it
