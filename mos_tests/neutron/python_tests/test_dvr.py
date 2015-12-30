@@ -66,6 +66,7 @@ class TestDVRBase(base.TestBase):
 
     def find_snat_controller(self, excluded=()):
         """Find controller with SNAT service.
+
         :param excluded: excluded nodes fqdns
         :returns: controller node with SNAT
         """
@@ -87,12 +88,7 @@ class TestDVRBase(base.TestBase):
         controllers = self.env.get_nodes_by_role('controller')
         for node in controllers:
             with node.ssh() as remote:
-                res = remote.execute('ip link set br-ex down')
-                assert 0 == res['exit_code'], \
-                    ('Shut-downing br-ex is not successful, exit code {0},'
-                     'stdout {1}, stderr {2}'.format(res['exit_code'],
-                                                     res['stdout'],
-                                                     res['stderr']))
+                remote.check_call('ip link set br-ex down')
 
 
 @pytest.mark.check_env_('has_1_or_more_computes')
@@ -102,7 +98,6 @@ class TestDVR(TestDVRBase):
     def _prepare_openstack_env(self, distributed_router=True,
                                assign_floating_ip=True):
         """Prepare OpenStack for scenarios run
-
 
         Steps:
             1. Revert snapshot with neutron cluster
@@ -231,19 +226,6 @@ class TestDVR(TestDVRBase):
             controller_with_snat.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
 
-
-def shut_down_br_ex_on_controllers(self):
-        """Shut down br-ex for all controllers"""
-        controllers = self.env.get_nodes_by_role('controller')
-        for node in controllers:
-            with node.ssh() as remote:
-                res = remote.execute('ip link set br-ex down')
-                assert 0 == res['exit_code'], \
-                    ('Shut-downing br-ex is not successful, exit code {0},'
-                     'stdout {1}, stderr {2}'.format(res['exit_code'],
-                                                     res['stdout'],
-                                                     res['stderr']))
-
     def test_north_south_floating_ip_shut_down_br_ex_on_controllers(self):
         """Check North-South connectivity with floatingIP after shut-downing
         br-ex on all controllers
@@ -306,7 +288,8 @@ def shut_down_br_ex_on_controllers(self):
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
-        compute = self.env.find_node_by_fqdn(self.zone.hosts.keys()[0])
+        compute_hostname = getattr(self.server, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_hostname)
         with compute.ssh() as remote:
             remote.check_call('service neutron-l3-agent stop')
 
@@ -319,6 +302,7 @@ def shut_down_br_ex_on_controllers(self):
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
+
 
 @pytest.mark.check_env_('has_2_or_more_computes')
 class TestDVRWestEastConnectivity(TestDVRBase):
@@ -463,14 +447,12 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             4. Add interfaces to the router01_02 with net01_subnet and
                 net02_subnet
             5. Boot vm_1 in the net01
-            6. Boot vm_2 in the net02
-            7. Check that VMs are on the different computes (otherwise migrate
-                one of them to another compute: nova migrate <your_vm>)
-            8. Go to the vm_1
-            9. Ping vm_2
-            10. Destroy one controller
-            11. Go to the vm_2 with internal ip from namespace on compute
-            12. Ping vm_1 with internal IP
+            6. Boot vm_2 in the net02 on another compute
+            7. Go to the vm_1
+            8. Ping vm_2
+            9. Destroy one controller
+            10. Go to the vm_2 with internal ip from namespace on compute
+            11. Ping vm_1 with internal IP
 
         Duration 10m
 
@@ -521,7 +503,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         # Create network and instance
         compute_name = self.zone.hosts.keys()[0]
 
-        for i in xrange(1, 3):
+        for i in range(1, 3):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             self.os_conn.router_interface_add(
                 router_id=router['router']['id'],
