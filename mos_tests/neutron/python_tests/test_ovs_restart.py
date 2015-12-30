@@ -1047,3 +1047,33 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
 
         self.check_no_ping_from_vm(self.server1, self.instance_keypair,
                                    self.server2_ip, timeout=None)
+
+    @pytest.mark.check_env_("is_dvr")
+    def test_ovs_restart_pcs_disable_enable_ping_private_vms_dvr(self):
+        """ Restart openvswitch-agents with pcs disable/enable on controllers.
+        [VLAN only][DVR] Check connectivity between private networks
+        on different routers.
+        Testrail: 542667
+        Jira:     QA-376
+
+        Steps:
+        The same as in test_ovs_restart_pcs_disable_enable_ping_private_vms
+        but with DVR config
+
+        """
+        self.test_ovs_restart_pcs_disable_enable_ping_private_vms()
+
+    @pytest.mark.check_env_("is_l3_ha")
+    def test_ovs_restart_pcs_disable_enable_ping_private_vms_l3ha(self):
+        """ Restart openvswitch-agents with pcs disable/enable on controllers.
+        [VLAN only][L3 HA] Check connectivity between private networks
+        on different routers.
+        Testrail: 580204
+        Jira:     QA-1175
+
+        Steps:
+        The same as in test_ovs_restart_pcs_disable_enable_ping_private_vms
+        but with L2 HA config
+
+        """
+        self.test_ovs_restart_pcs_disable_enable_ping_private_vms()
