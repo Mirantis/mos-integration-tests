@@ -990,35 +990,42 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
                                      if agt['host'] in controllers]
 
     def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
-        """ Restart openvswitch-agents with pcs disable/enable on controllers.
-        [VLAN only] Check connectivity between private networks on different
-        routers
-        Testrail: 542666
-        Jira:     QA-375
+        """
+        Restart openvswitch-agents with pcs disable/enable on controllers:
+            QA-375  - Create automated test "[VLAN only] Check
+                connectivity between private networks on different routers"
+            QA-376  - Create automated test "[VLAN only][DVR] Check
+                connectivity between private networks on different routers"
+            QA-1175 - Create automated test "[VLAN only][L3 HA] Check
+                connectivity between private networks on different routers"
+
+        Jira: QA-375,  Testrail: 542666
+        Jira: QA-376,  Testrail: 542667
+        Jira: QA-1175, Testrail: 580204
 
         Steps:
-        1. Update default security group if needed
-        2. Create CONFIG 1:
-        Network: test_net_05
-        SubNetw: test_net_05__subnet, 192.168.5.0/24
-        Router:  test_router_05
-        3. Create CONFIG 2:
-        Network: test_net_06
-        SubNetw: test_net_06__subnet, 192.168.6.0/24
-        Router:  test_router_06
-        4. Launch 'test_vm_05' inside 'config 1'
-        5. Launch 'test_vm_06' inside 'config 2'
-        6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
-        Pings should NOT go between VMs.
-        7. Operations with OVS agents:
-        - Check that all OVS are alive;
-        - Disable ovs-agents on all controllers;
-        - Check that they wend down;
-        - Restart OVS agent service on all computes;
-        - Enable ovs-agents on all controllers;
-        - Check that they wend up and alive;
-        8. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
-        and check that they are still NOT successful.
+            1. Update default security group if needed
+            2. Create CONFIG 1:
+                Network: test_net_05
+                SubNetw: test_net_05__subnet, 192.168.5.0/24
+                Router:  test_router_05
+            3. Create CONFIG 2:
+                Network: test_net_06
+                SubNetw: test_net_06__subnet, 192.168.6.0/24
+                Router:  test_router_06
+            4. Launch 'test_vm_05' inside 'config 1'
+            5. Launch 'test_vm_06' inside 'config 2'
+            6. Go to 'test_vm_05' console and send pings to 'test_vm_05'.
+                Pings should NOT go between VMs.
+            7. Operations with OVS agents:
+                - Check that all OVS are alive;
+                - Disable ovs-agents on all controllers;
+                - Check that they wend down;
+                - Restart OVS agent service on all computes;
+                - Enable ovs-agents on all controllers;
+                - Check that they wend up and alive;
+            8. Wait 30 seconds, send pings from 'test_vm_05' to 'test_vm_06'
+                and check that they are still NOT successful.
 
         Duration 5m
 
