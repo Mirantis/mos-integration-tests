@@ -998,6 +998,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
                 connectivity between private networks on different routers"
             QA-1175 - Create automated test "[VLAN only][L3 HA] Check
                 connectivity between private networks on different routers"
+
         Jira: QA-375,  Testrail: 542666
         Jira: QA-376,  Testrail: 542667
         Jira: QA-1175, Testrail: 580204
