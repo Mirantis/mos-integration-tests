@@ -334,3 +334,56 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.check_ping_from_vm(vm=self.server2,
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server1_ip)
+
+
+@pytest.mark.check_env_('has_2_or_more_computes')
+class TestDVREastWestConnectivity(TestDVRBase):
+    """Test DVR east-west connectivity"""
+
+    @pytest.fixture
+    def prepare_openstack(self, variables):
+        # Create router
+        router = self.os_conn.create_router(name="router01")
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        # Create network and instance
+        self.compute_nodes = self.zone.hosts.keys()[:2]
+        for i, compute_node in enumerate(self.compute_nodes, 1):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_node),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        self.server1 = self.os_conn.nova.servers.find(name="server01")
+        self.server1_ip = self.os_conn.get_nova_instance_ips(
+            self.server1).values()[0]
+        self.server2 = self.os_conn.nova.servers.find(name="server02")
+        self.server2_ip = self.os_conn.get_nova_instance_ips(
+            self.server2).values()[0]
+
+    def test_routing_east_west(self, prepare_openstack):
+        """Check connectivity to East-West-Routing
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create centralized router01_02 with gateway to external network
+            4. Add interfaces to the router01_02
+                with net01_subnet and net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on different compute
+            7. Add rules for ping
+            8. Go to the vm_1
+            9. Ping vm_2
+        """
+        self.check_ping_from_vm(vm=self.server1,
+                                vm_keypair=self.instance_keypair,
+                                ip_to_ping=self.server2_ip)
