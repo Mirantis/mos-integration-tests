@@ -221,7 +221,7 @@ class TestL3HA(TestBase):
             ) as ping_result:
                 with self.env.get_ssh_to_node(controller_ip) as remote:
                     logger.info("Ban L3 agent on node {0}".format(node_to_ban))
-                    remote.execute(
+                    remote.check_call(
                         "pcs resource ban p_neutron-l3-agent {0}".format(
                             node_to_ban))
                     new_agent = self.wait_router_rescheduled(
@@ -361,3 +361,77 @@ class TestL3HA(TestBase):
 
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
+
+    def test_ban_l3_agent_for_many_routers(self, variables):
+        """Ban agent for many routers
+
+        Scenario:
+            1. Create 19 nets, subnets, routers.
+            2. Create network20, network21
+            3. Create router20_21 and connect it with network20, network21
+            4. Boot vm1 in network20
+            5. Boot vm2 in network21
+            6. Add rules for ping
+            7. Start ping beetween vms
+            8. Ban active agent for router between vms
+            9. Check lost pings not more 10 packets
+        """
+        # Update quota
+        tenant = self.os_conn.neutron.get_quotas_tenant()
+        tenant_id = tenant['tenant']['tenant_id']
+        self.os_conn.neutron.update_quota(
+            tenant_id,
+            {
+                'quota': {
+                    'network': 30,
+                    'router': 30,
+                    'subnet': 30,
+                    'port': 90
+                }
+            })
+        # Create 19 nets, subnets, routers
+        for i in range(1, 20):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            router = self.os_conn.create_router(name="router01")
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+
+        # Create 2 networks, subnets, vms, add router between subnets
+        router20_21 = self.os_conn.create_router(name="router01")
+        for i in range(20, 22):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router20_21['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone=self.zone.zoneName,
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        server20 = self.os_conn.nova.servers.find(name='server20')
+        server21 = self.os_conn.nova.servers.find(name='server21')
+        server21_ip = self.os_conn.get_nova_instance_ips(server21)['fixed']
+
+        agent = self.get_active_l3_agents_for_router(
+            router20_21['router']['id'])[0]
+        node_to_ban = agent['host']
+
+        # Ban l3 agent
+        with self.background_ping(vm=server20,
+                                  vm_keypair=self.instance_keypair,
+                                  ip_to_ping=server21_ip
+        ) as ping_result:
+            with self.env.leader_controller.ssh() as remote:
+                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                remote.check_call(
+                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                        node_to_ban))
+                new_agent = self.wait_router_rescheduled(
+                    router_id=router['router']['id'],
+                    from_node=node_to_ban)
+                node_to_ban = new_agent['host']
+
+        assert ping_result['sended'] - ping_result['received'] < 10
