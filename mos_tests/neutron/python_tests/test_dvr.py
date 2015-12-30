@@ -87,6 +87,13 @@ class TestDVRBase(base.TestBase):
                     break
         return controller_with_snat
 
+    def shut_down_br_ex_on_controllers(self):
+        """Shut down br-ex for all controllers"""
+        controllers = self.env.get_nodes_by_role('controller')
+        for node in controllers:
+            with node.ssh() as remote:
+                remote.check_call('ip link set br-ex down')
+
 
 @pytest.mark.check_env_('has_1_or_more_computes')
 class TestDVR(TestDVRBase):
@@ -126,7 +133,8 @@ class TestDVR(TestDVRBase):
             security_groups=[self.security_group.id])
 
         if assign_floating_ip:
-            self.os_conn.assign_floating_ip(self.server)
+            self.floating_ip = self.os_conn.assign_floating_ip(
+                self.server, use_neutron=True)
 
     @pytest.mark.parametrize('floating_ip', (True, False),
                              ids=('with floating', 'without floating'))
@@ -222,6 +230,83 @@ class TestDVR(TestDVRBase):
             controller_with_snat.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
 
+    def test_north_south_floating_ip_shut_down_br_ex_on_controllers(self):
+        """Check North-South connectivity with floatingIP after shut-downing
+        br-ex on all controllers
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01 with external network and
+                router type Distributed
+            3. Add interfaces to the router01 with net01__subnet
+            4. Boot vm_1 in the net01
+            5. Associate floating IP
+            6. Go to the vm_1 with ssh and floating IP
+            7. Shut down br-ex on all controllers
+            8. Go to the vm_1 with ssh and floating IP
+            9. Ping 8.8.8.8
+
+        Duration 10m
+
+        """
+        self._prepare_openstack_env()
+
+        ip = self.floating_ip['floating_ip_address']
+        self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
+                                        ping_count=10, vm_login='cirros')
+
+        self.shut_down_br_ex_on_controllers()
+
+        self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
+                                        ping_count=10, vm_login='cirros')
+
+    def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
+        """Check North-South connectivity with floatingIP after ban and
+        clear l3-agent on compute
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01 with external network and
+                router type Distributed
+            3. Add interfaces to the router01 with net01__subnet
+            4. Boot vm_1 in the net01
+            5. Associate floating IP
+            6. Go to the vm_1 with ssh and floating IP
+            7. Ping 8.8.8.8
+            8. Ban l3-agent on the compute with vm_1: service l3-agent stop
+            9. Wait 15 seconds
+            10. Clear this l3-agent: service l3-agent stop
+            11. Go to vm_1 with ssh and floating IP
+            12. Ping 8.8.8.8
+
+        Duration 10m
+
+        """
+        self._prepare_openstack_env()
+
+        ip = self.floating_ip['floating_ip_address']
+
+        self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
+                                        ping_count=10, vm_login='cirros')
+
+        compute_hostname = getattr(self.server, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_hostname)
+        with compute.ssh() as remote:
+            remote.check_call('service neutron-l3-agent stop')
+
+        time.sleep(15)
+
+        # Clear l3 agent
+        with compute.ssh() as remote:
+            remote.check_call('service neutron-l3-agent start')
+
+        self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
+                                        ip_to_ping='8.8.8.8',
+                                        ping_count=10, vm_login='cirros')
+
 
 @pytest.mark.check_env_('has_2_or_more_computes')
 class TestDVRWestEastConnectivity(TestDVRBase):
@@ -229,6 +314,19 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.fixture
     def prepare_openstack(self, variables):
+        """Prepare OpenStack for some scenarios run
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed
+                and with gateway to external network
+            4. Add interfaces to the router01_02
+                with net01_subnet and net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on different compute
+            7. Add rules for ping
+        """
         # Create router
         router = self.os_conn.create_router(name="router01", distributed=True)
         self.os_conn.router_gateway_add(
@@ -334,10 +432,102 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.reset_computes(self.compute_nodes, env_name)
 
         time.sleep(60)
+
         # Check ping after reset
         self.check_ping_from_vm(vm=self.server2,
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server1_ip)
+
+    @pytest.mark.check_env_('is_ha')
+    def test_east_west_connectivity_after_destroy_controller(
+            self, prepare_openstack, env_name):
+        """Check East-West connectivity after destroy controller
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed and
+                with gateway to external network
+            4. Add interfaces to the router01_02 with net01_subnet and
+                net02_subnet
+            5. Boot vm_1 in the net01
+            6. Boot vm_2 in the net02 on another compute
+            7. Go to the vm_1
+            8. Ping vm_2
+            9. Destroy one controller
+            10. Go to the vm_2 with internal ip from namespace on compute
+            11. Ping vm_1 with internal IP
+
+        Duration 10m
+
+        """
+        self.check_ping_from_vm(vm=self.server1,
+                                vm_keypair=self.instance_keypair,
+                                ip_to_ping=self.server2_ip)
+
+        # destroy controller
+        controller = self.env.get_nodes_by_role('controller')[0]
+        devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
+                                                   mac=controller.data['mac'])
+        self.env.destroy_nodes([devops_node])
+
+        self.check_ping_from_vm(vm=self.server2,
+                                vm_keypair=self.instance_keypair,
+                                ip_to_ping=self.server1_ip)
+
+    def test_east_west_connectivity_instances_on_the_same_host(
+            self, variables):
+        """Check East-West connectivity with instances on the same host
+
+        Scenario:
+            1. Create net01, subnet net01__subnet for it
+            2. Create net02, subnet net02__subnet for it
+            3. Create router01_02 with router type Distributed and
+                with gateway to external network
+            4. Add interfaces to the router01_02 with net01_subnet
+                and net02_subnet
+            5. Boot vm_1 in the net01 (with
+                --availability-zone nova:node-i.domain.tld
+                parameter for command nova boot)
+            6. Boot vm_2 in the net02 on the same node-compute
+            7. Check that VMs are on the same computes
+                (otherwise migrate one of them to another compute:
+                nova migrate <your_vm>)
+            8. Go to the vm_1
+            9. Ping vm_2
+
+        Duration 10m
+
+        """
+        # Create router
+        router = self.os_conn.create_router(name="router01", distributed=True)
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        # Create network and instance
+        compute_name = self.zone.hosts.keys()[0]
+
+        for i in range(1, 3):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server%02d' % i,
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_name),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+
+        server2_ip = self.os_conn.get_nova_instance_ips(
+            self.os_conn.nova.servers.find(name="server02")).values()[0]
+
+        self.check_ping_from_vm(vm=server1,
+                                vm_keypair=self.instance_keypair,
+                                ip_to_ping=server2_ip)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
