@@ -81,9 +81,9 @@ def check_all_traffic_has_vni(vni, log_file):
 
 
 def get_arp_traffic(src_ip, dst_ip, log_file):
-    cond = ("arp.dst.proto_ipv4=={dst_ip} and "
-            "arp.src.proto_ipv4=={src_ip}".format(dst_ip=dst_ip, src_ip=src_ip)
-    )
+    cond = (
+        "arp.dst.proto_ipv4=={dst_ip} and "
+        "arp.src.proto_ipv4=={src_ip}".format(dst_ip=dst_ip, src_ip=src_ip))
     return _run_tshark_on_vxlan(log_file, cond)
 
 
@@ -129,7 +129,7 @@ class TestVxlanBase(TestBase):
 
     @pytest.fixture
     def router(self, variables):
-        """Make router and connnect it to external network"""
+        """Make router and connect it to external network"""
         router = self.os_conn.create_router(name="router01")
         self.os_conn.router_gateway_add(
             router_id=router['router']['id'],
@@ -205,7 +205,7 @@ class TestVxlan(TestVxlanBase):
 
     @pytest.mark.check_env_('has_2_or_more_computes')
     def test_vni_for_icmp_between_instances(self, router):
-        """Check VNI and segmention_id for icmp traffic between instances
+        """Check VNI and segmentation_id for icmp traffic between instances
         on different computers
 
         Scenario:
@@ -264,7 +264,7 @@ class TestVxlan(TestVxlanBase):
             ), tcpdump_vxlan(
                 ip=compute2.data['ip'], env=self.env,
                 log_path='/tmp/vxlan2.log'
-            ):
+        ):
             # Ping server1 from server2
             server1_ip = self.os_conn.get_nova_instance_ips(
                 server1).values()[0]
@@ -348,10 +348,10 @@ class TestVxlanL2pop(TestVxlanBase):
         # Initiate broadcast traffic from server1 to server2
         broadcast_log = '/tmp/vxlan_broadcast.log'
         with tcpdump(
-                ip=compute2.data['ip'], env=self.env,
-                log_path=broadcast_log,
-                tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
-            ):
+            ip=compute2.data['ip'], env=self.env,
+            log_path=broadcast_log,
+            tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
+        ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
@@ -361,10 +361,10 @@ class TestVxlanL2pop(TestVxlanBase):
         # Initiate unicast traffic from server1 to server2
         unicast_log = '/tmp/vxlan_unicast.log'
         with tcpdump(
-                ip=compute2.data['ip'], env=self.env,
-                log_path=unicast_log,
-                tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
-            ):
+            ip=compute2.data['ip'], env=self.env,
+            log_path=unicast_log,
+            tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
+        ):
             cmd = 'ping -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
@@ -551,13 +551,12 @@ class TestVxlanL2pop(TestVxlanBase):
         # Initiate broadcast traffic from server1 to server2
         broadcast_log = '/tmp/vxlan_broadcast1.log'
         with tcpdump(
-                ip=compute2.data['ip'], env=self.env,
-                log_path=broadcast_log,
-                tcpdump_args=' -n src host {ip} -i {interface}'.format(
-                    ip=server1_ip,
-                    interface=server2_tap,
-                )
-            ):
+            ip=compute2.data['ip'], env=self.env,
+            log_path=broadcast_log,
+            tcpdump_args=' -n src host {ip} -i {interface}'.format(
+                ip=server1_ip,
+                interface=server2_tap,)
+        ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
@@ -569,13 +568,12 @@ class TestVxlanL2pop(TestVxlanBase):
         # Initiate broadcast traffic from server1 to server3
         broadcast_log = '/tmp/vxlan_broadcast1.log'
         with tcpdump(
-                ip=compute2.data['ip'], env=self.env,
-                log_path=broadcast_log,
-                tcpdump_args=' -n src host {ip} -i {interface}'.format(
-                    ip=server1_ip,
-                    interface=server3_tap,
-                )
-            ):
+            ip=compute2.data['ip'], env=self.env,
+            log_path=broadcast_log,
+            tcpdump_args=' -n src host {ip} -i {interface}'.format(
+                ip=server1_ip,
+                interface=server3_tap,)
+        ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 

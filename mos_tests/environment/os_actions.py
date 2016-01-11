@@ -79,7 +79,7 @@ class OpenStackActions(object):
         logger.debug('Token is {0}'.format(token))
         glance_endpoint = self.keystone.service_catalog.url_for(
             service_type='image', endpoint_type='publicURL')
-        logger.debug('Glance endpoind is {0}'.format(glance_endpoint))
+        logger.debug('Glance endpoint is {0}'.format(glance_endpoint))
 
         self.glance = GlanceClient(endpoint=glance_endpoint,
                                    token=token,
@@ -118,7 +118,7 @@ class OpenStackActions(object):
                 return image
 
     def is_nova_ready(self):
-        """Checks that all nova computes are avaliable"""
+        """Checks that all nova computes are available"""
         hosts = self.nova.availability_zones.find(zoneName="nova").hosts
         return all(x['available'] for y in hosts.values()
                    for x in y.values() if x['active'])
@@ -164,13 +164,13 @@ class OpenStackActions(object):
                 raise Exception('Server {} status is error'.format(srv.name))
 
         wait(is_server_active, timeout_seconds=timeout, sleep_seconds=5,
-            waiting_for='instance {0} status change to ACTIVE'.format(
+             waiting_for='instance {0} status change to ACTIVE'.format(
                 name))
 
         # wait for ssh ready
         if self.env is not None:
             wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=60,
-                waiting_for='server avaliable via ssh')
+                 waiting_for='server available via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
 
@@ -185,7 +185,7 @@ class OpenStackActions(object):
             if 'authentication' in unicode(e).lower():
                 return True
             else:
-                logger.debug('Instance unavaliable yet: {}'.format(e))
+                logger.debug('Instance unavailable yet: {}'.format(e))
                 return False
         except Exception as e:
             logger.error(e)
@@ -316,17 +316,17 @@ class OpenStackActions(object):
             return floating_ip
 
     def disassociate_floating_ip(self, srv, floating_ip, use_neutron=False):
+        def is_floating_ip_down():
+            fl_ip = self.neutron.show_floatingip(identifier)
+            return fl_ip['floatingip']['status'] == 'DOWN'
         if use_neutron:
             try:
                 self.neutron.update_floatingip(
                     floatingip=floating_ip['id'],
                     body={'floatingip': {}})
 
-                id = floating_ip['id']
-                wait(
-                    lambda: self.neutron.show_floatingip(id)
-                            ['floatingip']['status'] == "DOWN",
-                    timeout_seconds=60)
+                identifier = floating_ip['id']
+                wait(is_floating_ip_down, timeout_seconds=60)
             except NeutronClientException:
                 logger.info('The floatingip {} can not be disassociated.'
                             .format(floating_ip['id']))
@@ -605,15 +605,15 @@ class OpenStackActions(object):
     def wait_agents_alive(self, agt_ids_to_check):
         logger.info('waiting until the agents get alive')
         wait(lambda: all(agt['alive'] for agt in
-                                  self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check),
+                         self.neutron.list_agents()['agents']
+                         if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60)
 
     def wait_agents_down(self, agt_ids_to_check):
         logger.info('waiting until the agents go down')
         wait(lambda: all(not agt['alive'] for agt in
-                                  self.neutron.list_agents()['agents']
-                                  if agt['id'] in agt_ids_to_check),
+                         self.neutron.list_agents()['agents']
+                         if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60)
 
     def add_net(self, router_id):
@@ -648,24 +648,22 @@ class OpenStackActions(object):
                           binary='neutron-l3-agent')['agents']
         agt_id_to_move_on = [agt['id'] for agt in agent_list
                              if agt['host'] == primary_host][0]
-        self.force_l3_reschedule(router_id,
-                                 agt_id_to_move_on)
+        self.force_l3_reschedule(router_id, agt_id_to_move_on)
 
     def force_l3_reschedule(self, router_id, new_l3_agt_id=''):
         logger.info('going to reschedule the router on new agent')
         current_l3_agt_id = self.neutron.list_l3_agent_hosting_routers(
                                  router_id)['agents'][0]['id']
-        availabe_l3_agts = None
         if not new_l3_agt_id:
             all_l3_agts = self.neutron.list_agents(
                               binary='neutron-l3-agent')['agents']
             for agt in all_l3_agts:
                 logger.info(agt['id'])
-            availabe_l3_agts = [agt for agt in all_l3_agts
-                                if agt['id'] != current_l3_agt_id]
-            for agt in availabe_l3_agts:
+            available_l3_agts = [agt for agt in all_l3_agts
+                                 if agt['id'] != current_l3_agt_id]
+            for agt in available_l3_agts:
                 logger.info(agt['id'])
-            new_l3_agt_id = availabe_l3_agts[0]['id']
+            new_l3_agt_id = available_l3_agts[0]['id']
         self.neutron.remove_router_from_l3_agent(current_l3_agt_id,
                                                  router_id)
         self.neutron.add_router_to_l3_agent(new_l3_agt_id,
@@ -683,7 +681,7 @@ class OpenStackActions(object):
         self.force_dhcp_reschedule(net_id, agt_id_to_move_on)
 
     def force_dhcp_reschedule(self, net_id, new_dhcp_agt_id):
-        logger.info('going to reshedule network to specified '
+        logger.info('going to reschedule network to specified '
                     'controller dhcp agent')
         current_dhcp_agt_id = self.neutron.list_dhcp_agent_hosting_networks(
             net_id)['agents'][0]['id']

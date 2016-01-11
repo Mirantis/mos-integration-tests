@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
-    """Common fuctions for ovs tests"""
+    """Common functions for ovs tests"""
 
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
@@ -302,7 +302,7 @@ class TestOVSRestartTwoVms(OvsBase):
 
 @pytest.mark.check_env_('is_vlan')
 class TestPortTags(TestBase):
-    """Chect that port tags arent't change after ovs-agent restart"""
+    """Check that port tags aren't change after ovs-agent restart"""
 
     def get_ports_tags_data(self, lines):
         """Returns dict with ports as keys and tags as values"""
@@ -415,7 +415,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
         # create one network by amount of the compute hosts
         self.net_id = self.os_conn.add_net(self.router['id'])
 
-        # create two instaced in that network
+        # create two instances in that network
         # each instance is on the own compute
         for i, hostname in enumerate(self.hosts, 1):
             self.os_conn.create_server(

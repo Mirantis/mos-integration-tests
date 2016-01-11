@@ -46,7 +46,7 @@ class DevopsClient(object):
         """Resume the env and revert the snapshot.
 
         If the snapshot_name is empty
-        than just find the last created snaphost
+        than just find the last created snapshot
         Return True if the resume-revert is successfully done
         False otherwise.
         """
@@ -65,7 +65,7 @@ class DevopsClient(object):
             logger.info("Reverting snapshot {0}".format(snapshot_name))
             env.revert(snapshot_name, flag=False)
             env.resume(verbose=False)
-            cls.sync_tyme(env)
+            cls.sync_time(env)
         except Exception as e:
             logger.error('Can\'t revert snapshot due to error: {}'.
                          format(e))
@@ -87,16 +87,16 @@ class DevopsClient(object):
         return admin_ip
 
     @classmethod
-    def sync_tyme(cls, env):
+    def sync_time(cls, env):
         with env.get_admin_remote() as remote:
             slaves_count = len(env.nodes().all) - 1
             logger.info("sync time on master")
             remote.execute('hwclock --hctosys')
             logger.info("sync time on {} slaves".format(slaves_count))
             remote.execute(
-                'for i in {{1..{0}}}; do ('
-                    'ssh node-$i "hwclock --hctosys"'
-                ') done'.format(slaves_count))
+                'for i in {{1..{0}}}; '
+                'do (ssh node-$i "hwclock --hctosys") done'.format(
+                    slaves_count))
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac):

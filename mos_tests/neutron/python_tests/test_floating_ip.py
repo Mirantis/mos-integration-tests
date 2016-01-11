@@ -131,7 +131,7 @@ class TestFloatingIP(TestBase):
             'Floatingip is not in the DOWN state.' \
             'disassociate_floating_ip has failed.'
 
-        assert res2 is None, 'SSH hasn\'t been stopped'
+        assert res2 is None, "SSH hasn't been stopped"
 
         # check that vm became inaccessible with ssh
         self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)

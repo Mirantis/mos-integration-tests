@@ -74,7 +74,7 @@ class TestRestarts(TestBase):
         # check pings
         self.check_vm_connectivity()
 
-        # Find a primary contrloller
+        # Find a primary controller
         mac = self.env.primary_controller.data['mac']
         self.primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
                                                          mac=mac)
@@ -83,7 +83,7 @@ class TestRestarts(TestBase):
         # Find a non-primary contrloller
         mac = self.env.non_primary_controller.data['mac']
         self.non_primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                         mac=mac)
+                                                             mac=mac)
         self.non_primary_host = self.env.non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
@@ -121,12 +121,12 @@ class TestRestarts(TestBase):
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                         self.router['id'])['agents'][0]
-        # Check if the agent is not on the prmary controller
-        # Resceduler if needed
+        # Check if the agent is not on the primary controller
+        # Reschedule if needed
         if router_agt['host'] != self.primary_host:
 
             self.os_conn.reschedule_router_to_primary_host(self.router['id'],
-                                                      self.primary_host)
+                                                           self.primary_host)
             router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                             self.router['id'])['agents'][0]
 
@@ -141,9 +141,9 @@ class TestRestarts(TestBase):
         # Then check that the rest l3 agents are alive
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
-        # Check that tere are no routers on the first agent
+        # Check that there are no routers on the first agent
         assert not self.os_conn.neutron.list_routers_on_l3_agent(
-                router_agt['id'])['routers']
+            router_agt['id'])['routers']
 
         self.os_conn.add_server(self.networks[0],
                                 self.instance_keypair.name,
@@ -176,11 +176,11 @@ class TestRestarts(TestBase):
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                         self.router['id'])['agents'][0]
-        # Check if the agent is not on the prmary controller
-        # Resceduler if needed
+        # Check if the agent is not on the primary controller
+        # Reschedule if needed
         if router_agt['host'] != self.primary_host:
             self.os_conn.reschedule_router_to_primary_host(self.router['id'],
-                                                      self.primary_host)
+                                                           self.primary_host)
             router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                             self.router['id'])['agents'][0]
 
@@ -190,7 +190,7 @@ class TestRestarts(TestBase):
         # Check that the all l3 are alive
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
-        # Check that tere are no routers on the first agent
+        # Check that there are no routers on the first agent
         assert not self.os_conn.neutron.list_routers_on_l3_agent(
                         router_agt['id'])['routers']
 
