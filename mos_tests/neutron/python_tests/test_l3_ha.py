@@ -24,6 +24,7 @@ from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase
+from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
@@ -217,8 +218,7 @@ class TestL3HA(TestBase):
             # Ban l3 agent
             with self.background_ping(vm=server1,
                                       vm_keypair=self.instance_keypair,
-                                      ip_to_ping=server2_ip
-            ) as ping_result:
+                                      ip_to_ping=server2_ip) as ping_result:
                 with self.env.get_ssh_to_node(controller_ip) as remote:
                     logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                     remote.check_call(
@@ -422,8 +422,7 @@ class TestL3HA(TestBase):
         # Ban l3 agent
         with self.background_ping(vm=server20,
                                   vm_keypair=self.instance_keypair,
-                                  ip_to_ping=server21_ip
-        ) as ping_result:
+                                  ip_to_ping=server21_ip) as ping_result:
             with self.env.leader_controller.ssh() as remote:
                 logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                 remote.check_call(
@@ -435,3 +434,43 @@ class TestL3HA(TestBase):
                 node_to_ban = new_agent['host']
 
         assert ping_result['sended'] - ping_result['received'] < 10
+
+    def test_ban_active_l3_agent_with_external_connectivity(self, router,
+                                                            prepare_openstack):
+        """Ban l3-agent with ACTIVE ha_state for router and check external ping
+
+         Steps:
+            1. Create network net01, subnet net01_subnet
+            2. Create router with gateway to external net and
+               interface with net01
+            3. Launch instance and associate floating IP
+            4. Check ping from instance to google DNS
+            5. Ban active l3 agent
+            6. Wait until router rescheduled
+            7. Stop ping
+            8. Check that ping lost less than 40 packets
+        """
+        instance = self.os_conn.nova.servers.find(name="server02")
+        controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
+
+        active_agent_list = [
+            agent for agent in
+            self.os_conn.get_l3_for_router(router['router']['id'])['agents']
+            if agent['ha_state'] == 'active']
+        node_to_ban = active_agent_list[0]['host']
+
+        # Ban l3 agent
+        with self.background_ping(
+                vm=instance,
+                vm_keypair=self.instance_keypair,
+                ip_to_ping=settings.PUBLIC_TEST_IP) as ping_result:
+            with self.env.get_ssh_to_node(controller_ip) as remote:
+                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                remote.check_call(
+                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                        node_to_ban))
+                self.wait_router_rescheduled(
+                    router_id=router['router']['id'],
+                    from_node=node_to_ban)
+
+        assert (ping_result['sended'] - ping_result['received']) < 40
