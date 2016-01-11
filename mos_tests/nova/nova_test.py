@@ -85,14 +85,15 @@ class NovaIntegrationTests(OpenStackTestCase):
         """This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-            Steps:
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
+
+        Steps:
+            1. Create a floating ip
+            2. Create an instance from an image with some flavor
+            3. Add the floating ip to the instance
+            4. Ping the instance by the floating ip
+            5. Delete the floating ip
+            6. delete the instance
+            7. Repeat all steps for all types of flavor
         """
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks
@@ -124,15 +125,16 @@ class NovaIntegrationTests(OpenStackTestCase):
         """This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-            Steps:
-             1. Create bootable volume
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
+
+        Steps:
+            1. Create bootable volume
+            1. Create a floating ip
+            2. Create an instance from an image with some flavor
+            3. Add the floating ip to the instance
+            4. Ping the instance by the floating ip
+            5. Delete the floating ip
+            6. delete the instance
+            7. Repeat all steps for all types of flavor
         """
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
@@ -224,10 +226,11 @@ class NovaIntegrationTests(OpenStackTestCase):
 
     def test_543359_MassivelySpawnVolumes(self):
         """This test checks massively spawn volumes
-            Steps:
-                1. Create 10 volumes
-                2. Check status of newly created volumes
-                3. Delete all volumes
+
+        Steps:
+            1. Create 10 volumes
+            2. Check status of newly created volumes
+            3. Delete all volumes
         """
         volume_count = 10
         volumes = []
@@ -248,12 +251,13 @@ class NovaIntegrationTests(OpenStackTestCase):
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
         """This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
-            Steps:
-                1. Boot 10-100 instances from image.
-                2. Check that list of instances contains created VMs.
-                3. Check state of created instances
-                4. Add the floating ips to the instances
-                5. Ping the instances by the floating ips
+
+        Steps:
+            1. Boot 10-100 instances from image.
+            2. Check that list of instances contains created VMs.
+            3. Check state of created instances
+            4. Add the floating ips to the instances
+            5. Ping the instances by the floating ips
         """
         initial_instances = self.nova.servers.list()
         primary_name = "testVM_543356"
@@ -308,13 +312,14 @@ class NovaIntegrationTests(OpenStackTestCase):
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
         """This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
-            Steps:
-                1. Create 10-100 volumes.
-                2. Boot 10-100 instances from volumes.
-                3. Check that list of instances contains created VMs.
-                4. Check state of created instances
-                5. Add the floating ips to the instances
-                6. Ping the instances by the floating ips
+
+        Steps:
+            1. Create 10-100 volumes.
+            2. Boot 10-100 instances from volumes.
+            3. Check that list of instances contains created VMs.
+            4. Check state of created instances
+            5. Add the floating ips to the instances
+            6. Ping the instances by the floating ips
         """
         initial_instances = self.nova.servers.list()
         count = 10
