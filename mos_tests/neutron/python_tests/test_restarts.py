@@ -83,7 +83,7 @@ class TestRestarts(TestBase):
         # Find a non-primary contrloller
         mac = self.env.non_primary_controller.data['mac']
         self.non_primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                         mac=mac)
+                                                             mac=mac)
         self.non_primary_host = self.env.non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids

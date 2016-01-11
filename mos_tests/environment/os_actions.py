@@ -316,9 +316,9 @@ class OpenStackActions(object):
             return floating_ip
 
     def disassociate_floating_ip(self, srv, floating_ip, use_neutron=False):
-        floating_ip_status = (
-            lambda ip_id:
-            self.neutron.show_floatingip(ip_id)['floatingip']['status'])
+        def is_floating_ip_down():
+            fl_ip = self.neutron.show_floatingip(identifier)
+            return fl_ip['floatingip']['status'] == 'DOWN'
         if use_neutron:
             try:
                 self.neutron.update_floatingip(
@@ -326,9 +326,7 @@ class OpenStackActions(object):
                     body={'floatingip': {}})
 
                 identifier = floating_ip['id']
-                wait(
-                    lambda: floating_ip_status(identifier) == "DOWN",
-                    timeout_seconds=60)
+                wait(is_floating_ip_down, timeout_seconds=60)
             except NeutronClientException:
                 logger.info('The floatingip {} can not be disassociated.'
                             .format(floating_ip['id']))
@@ -656,7 +654,6 @@ class OpenStackActions(object):
         logger.info('going to reschedule the router on new agent')
         current_l3_agt_id = self.neutron.list_l3_agent_hosting_routers(
                                  router_id)['agents'][0]['id']
-        availabe_l3_agts = None
         if not new_l3_agt_id:
             all_l3_agts = self.neutron.list_agents(
                               binary='neutron-l3-agent')['agents']
