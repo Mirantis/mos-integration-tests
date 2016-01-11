@@ -14,9 +14,9 @@
 
 import logging
 import os
+from random import randint
 import re
 import time
-from random import randint
 
 import pytest
 
@@ -991,8 +991,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
                                      if agt['host'] in controllers]
 
     def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
-        """
-        Restart openvswitch-agents with pcs disable/enable on controllers:
+        """Restart openvswitch-agents with pcs disable/enable on controllers:
             QA-375  - Create automated test "[VLAN only] Check
                 connectivity between private networks on different routers"
             QA-376  - Create automated test "[VLAN only][DVR] Check

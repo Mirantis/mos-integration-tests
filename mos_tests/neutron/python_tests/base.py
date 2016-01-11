@@ -162,8 +162,9 @@ class TestBase(object):
 
     def check_ping_from_vm_helper(self, vm, vm_keypair, ip_to_ping,
                                   timeout, vm_login, vm_password):
-        """ Returns dictionary with results of ping execution:
-        exit_code, stdout, stderr """
+        """Returns dictionary with results of ping execution:
+            exit_code, stdout, stderr
+        """
         if ip_to_ping is None:
             ip_to_ping = [settings.PUBLIC_TEST_IP]
         if isinstance(ip_to_ping, six.string_types):

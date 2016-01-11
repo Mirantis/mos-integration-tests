@@ -1,11 +1,26 @@
+#    Copyright 2015 Mirantis, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 import os
-from time import sleep, time
+from time import sleep
+from time import time
 import urllib2
 import yaml
 
 
 def is_stack_exists(stack_name, heat):
-    """ Check the presence of stack_name in stacks list
+    """Check the presence of stack_name in stacks list
         :param stack_name: Name of stack
         :param heat: Heat API client connection point
         :return True or False
@@ -14,7 +29,7 @@ def is_stack_exists(stack_name, heat):
 
 
 def get_stack_id(heat_client, stack_name):
-    """ Check stack status
+    """Check stack status
         :param heat_client: Heat API client connection point
         :param stack_name: Name of stack
         :return Stack uid
@@ -25,7 +40,7 @@ def get_stack_id(heat_client, stack_name):
 
 
 def check_stack_status(stack_name, heat, status, timeout=60):
-    """ Check stack status
+    """Check stack status
         :param stack_name: Name of stack
         :param heat: Heat API client connection point
         :param status: Expected stack status
@@ -48,7 +63,7 @@ def check_stack_status(stack_name, heat, status, timeout=60):
 
 def create_stack(heat_client, stack_name, template, parameters={}, timeout=20,
                  files=None):
-    """ Create a stack from template and check STATUS == CREATE_COMPLETE
+    """Create a stack from template and check STATUS == CREATE_COMPLETE
         :param parameters: parameters from template
         :param heat_client: Heat API client connection point
         :param stack_name: Name of a new stack
@@ -71,7 +86,7 @@ def create_stack(heat_client, stack_name, template, parameters={}, timeout=20,
 
 
 def delete_stack(heat_client, uid):
-    """ Delete stack and check STATUS == DELETE_COMPLETE
+    """Delete stack and check STATUS == DELETE_COMPLETE
         :param heat_client: Heat API client connection point
         :param uid:         UID of stack
     """
@@ -82,7 +97,7 @@ def delete_stack(heat_client, uid):
 
 
 def check_stack_status_complete(heat_client, uid, action, timeout=10):
-    """ Check stack STATUS in COMPLETE state
+    """Check stack STATUS in COMPLETE state
         :param heat_client: Heat API client connection point
         :param uid: ID stack
         :param action: status that will be checked.
@@ -104,7 +119,7 @@ def check_stack_status_complete(heat_client, uid, action, timeout=10):
 
 
 def read_template(templates_dir, template_name):
-    """ Read template file and return it content.
+    """Read template file and return it content.
         :param templates_dir: dir
         :param template_name: name of template,
         for ex.: empty_heat_template.yaml
@@ -120,7 +135,7 @@ def read_template(templates_dir, template_name):
 
 
 def update_stack(heat_client, uid, template_file, parameters={}):
-    """ Update stack using template file
+    """Update stack using template file
         :param heat_client:   Heat API client connection point
         :param uid:           ID of stack
         :param template_file: Path to stack template file.
@@ -133,7 +148,7 @@ def update_stack(heat_client, uid, template_file, parameters={}):
 
 
 def get_resource_id(heat_client, uid):
-    """ Get stack resource id
+    """Get stack resource id
         :param heat_client: Heat API client connection point
         :param uid:         ID of stack
         :return: -
@@ -143,7 +158,7 @@ def get_resource_id(heat_client, uid):
 
 
 def get_specific_resource_id(heat_client, uid, resource_name):
-    """ Get stack resource id by name
+    """Get stack resource id by name
         :param heat_client:   heat API client connection point
         :param uid:           ID of stack
         :param resource_name: resource name
@@ -154,7 +169,7 @@ def get_specific_resource_id(heat_client, uid, resource_name):
 
 
 def update_template_file(template_file, type_of_changes, **kwargs):
-    """ Update template file specific fields.
+    """Update template file specific fields.
         :param template_file: path to template file.
         :param type_of_changes:
         if changes in format - 'format'
@@ -180,7 +195,7 @@ def update_template_file(template_file, type_of_changes, **kwargs):
 
 
 def download_image(image_link_file, where_to_put='/tmp/'):
-    """ This function will download image from internet and write it
+    """This function will download image from internet and write it
         if image is not already present on node.
         :param image_link_file: Location of file with a link
         :param where_to_put:    Path to output folder on node
@@ -208,10 +223,10 @@ def download_image(image_link_file, where_to_put='/tmp/'):
         # Open URL
         try:
             response = urllib2.urlopen(image_url)
-        except urllib2.HTTPError, e:
+        except urllib2.HTTPError as e:
             raise Exception('Can not get file from URL. HTTPError = {}.'
                             '\n\tURL = "{}"'.format(str(e.code), image_url))
-        except urllib2.URLError, e:
+        except urllib2.URLError as e:
             raise Exception('Can not get file from URL. URLError = {}.'
                             '\n\tURL = "{}"'.format(str(e.reason), image_url))
         except Exception:
@@ -231,7 +246,7 @@ def download_image(image_link_file, where_to_put='/tmp/'):
 
 # Instance functions
 def get_inst_id(nova_client, inst_name):
-    """ Get instance id for instance with the name
+    """Get instance id for instance with the name
         :param nova_client: Heat API client connection point
         :param inst_name: Name of instance
         :return Instance uid
@@ -244,7 +259,7 @@ def get_inst_id(nova_client, inst_name):
 
 
 def is_instance_exists(nova_client, uid):
-    """ Check the presence of instance id in the list of instances
+    """Check the presence of instance id in the list of instances
         :param nova_client: Nova API client connection point
         :param uid: UID of instance
         :return True or False
@@ -253,7 +268,7 @@ def is_instance_exists(nova_client, uid):
 
 
 def check_volume(cinder_client, uid):
-    """ Check the presence of volume id in the list of volume
+    """Check the presence of volume id in the list of volume
         :param cinder_client: Cinder API client connection point
         :param uid: UID of volume
         :return True or False
@@ -262,7 +277,7 @@ def check_volume(cinder_client, uid):
 
 
 def check_volume_snapshot(cinder_client, uid):
-    """ Check the presence of volume status id in the list of volume status
+    """Check the presence of volume status id in the list of volume status
         :param cinder_client: Cinder API client connection point
         :param uid: UID of volume status
         :return True or False
@@ -271,7 +286,7 @@ def check_volume_snapshot(cinder_client, uid):
 
 
 def check_inst_status(nova_client, uid, status, timeout=5):
-    """ Check status of instance
+    """Check status of instance
         :param nova_client: Nova API client connection point
         :param uid: UID of instance
         :param status: Expected instance status
@@ -291,7 +306,7 @@ def check_inst_status(nova_client, uid, status, timeout=5):
 
 
 def delete_instance(nova_client, uid):
-    """ Delete instance and check that it is absent in the list
+    """Delete instance and check that it is absent in the list
         :param nova_client: Nova API client connection point
         :param uid: UID of instance
     """
@@ -304,7 +319,7 @@ def delete_instance(nova_client, uid):
 def create_instance(nova_client, inst_name, flavor_id, net_id,
                     security_groups, image_id='', block_device_mapping=None,
                     timeout=5, key_name=None, inst_list=None):
-    """ Check instance creation
+    """Check instance creation
         :param nova_client: Nova API client connection point
         :param inst_name: name for instance
         :param flavor_id: id of flavor
@@ -343,7 +358,7 @@ def create_instance(nova_client, inst_name, flavor_id, net_id,
 
 # Floating IP functions
 def delete_floating_ip(nova_client, floating_ip):
-    """ Delete floating ip and check that it is absent in the list
+    """Delete floating ip and check that it is absent in the list
         :param nova_client: Nova API client connection point
         :param floating_ip: floating ip
     """
@@ -354,7 +369,7 @@ def delete_floating_ip(nova_client, floating_ip):
 
 
 def check_ip(nova_client, uid, fip, timeout=1):
-    """ Check floating ip address adding to instance
+    """Check floating ip address adding to instance
         :param nova_client: Nova API client connection point
         :param uid: UID of instance
         :param fip: Floating ip
@@ -375,7 +390,7 @@ def check_ip(nova_client, uid, fip, timeout=1):
 
 # Volume functions
 def is_volume_exists(cinder_client, uid):
-    """ Check the presence of volume id in the list of volume
+    """Check the presence of volume id in the list of volume
         :param cinder_client: Cinder API client connection point
         :param uid: UID of volume
         :return True or False
@@ -384,7 +399,7 @@ def is_volume_exists(cinder_client, uid):
 
 
 def create_volume(cinder_client, image_id, size=1, timeout=5):
-    """ Check volume creation
+    """Check volume creation
         :param cinder_client: Cinder API client connection point
         :param image_id: UID of image
         :param size: Size of volume in GB
@@ -405,7 +420,7 @@ def create_volume(cinder_client, image_id, size=1, timeout=5):
 
 
 def delete_volume(cinder_client, volume):
-    """ Delete volume and check that it is absent in the list
+    """Delete volume and check that it is absent in the list
         :param cinder_client: Cinder API client connection point
         :param volume: volume
     """
@@ -417,7 +432,7 @@ def delete_volume(cinder_client, volume):
 
 
 def check_volume_status(cinder_client, uid, status, timeout=5):
-    """ Check status of volume
+    """Check status of volume
         :param cinder_client: Cinder API client connection point
         :param uid: UID of volume
         :param status: Expected volume status
@@ -438,7 +453,7 @@ def check_volume_status(cinder_client, uid, status, timeout=5):
 
 # Flavor functions
 def is_flavor_exists(nova_client, flavor_id):
-    """ Check the presence of flavor in the system
+    """Check the presence of flavor in the system
         :param nova_client: Nova API client connection point
         :param flavor_id: name of the flavor
         :return True or False
@@ -447,7 +462,7 @@ def is_flavor_exists(nova_client, flavor_id):
 
 
 def get_flavor_id_by_name(nova_client, flavor_name):
-    """ The function returns flavor's id by its name
+    """The function returns flavor's id by its name
         :param nova_client: Nova API client connection point
         :param flavor_name: Name of the flavor
         :return: UID of the flavor
@@ -459,7 +474,7 @@ def get_flavor_id_by_name(nova_client, flavor_name):
 
 
 def delete_flavor(nova_client, flavor_id):
-    """ This function delete the flavor by its name.
+    """This function delete the flavor by its name.
         :param nova_client: Nova API client connection point
         :param flavor_id: UID of the flavor to delete
         :return: Nothing
@@ -474,7 +489,7 @@ def delete_flavor(nova_client, flavor_id):
 
 # Images
 def is_image_exists(glance_client, image_id):
-    """ This function check if image with required id presents in the system
+    """This function check if image with required id presents in the system
         or not
         :param glance_client: Glance API client connection point
         :param image_id: UID of the image to delete
@@ -485,7 +500,7 @@ def is_image_exists(glance_client, image_id):
 
 
 def delete_image(glance_client, image_id):
-    """ This function should delete the image with provided id from the system
+    """This function should delete the image with provided id from the system
         :param glance_client: Glance API client connection point
         :param image_id: UID of the image to delete
         :return: Nothing
@@ -497,7 +512,7 @@ def delete_image(glance_client, image_id):
 
 # execution of system commands
 def ping_command(ip_address, c=4, i=4, timeout=3, should_be_available=True):
-    """ This function executes the ping program and check its results
+    """This function executes the ping program and check its results
         :param ip_address: The IP address to ping
         :param c: value of the [-c count] parameter of the ping command
         :param i: value of the [-i interval] parameter of the ping command
@@ -512,7 +527,7 @@ def ping_command(ip_address, c=4, i=4, timeout=3, should_be_available=True):
     while time() < end_time:
         the_result = os.system("ping -c {} -i {} {}".
                                format(c, i, ip_address))
-        # TODO: Make sure that all packages has been received
+        # TODO(mlaptev): Make sure that all packages has been received
         ping_result = \
             the_result == 0 if should_be_available else the_result != 0
         if ping_result:
@@ -521,7 +536,7 @@ def ping_command(ip_address, c=4, i=4, timeout=3, should_be_available=True):
 
 
 def check_volume_snapshot_status(cinder_client, uid, status, timeout=5):
-    """ Check status of volume
+    """Check status of volume
             :param cinder_client: Cinder API client connection point
             :param uid: UID of volume snapshot
             :param status: Expected volume snapshot status
@@ -541,7 +556,7 @@ def check_volume_snapshot_status(cinder_client, uid, status, timeout=5):
 
 
 def delete_volume_snapshot(cinder_client, snapshot):
-    """ Delete volume snapshot and check that it is absent in the list
+    """Delete volume snapshot and check that it is absent in the list
         :param cinder_client: Cinder API client connection point
         :param volume: volume snapshot
     """
@@ -553,7 +568,7 @@ def delete_volume_snapshot(cinder_client, snapshot):
 
 # Keys
 def is_key_exists(nova_client, key_name):
-    """ Check the presence of keys in the system
+    """Check the presence of keys in the system
         :param nova_client: Nova API client connection point
         :param key_name: name of the keypair
         :return True or False
@@ -562,7 +577,7 @@ def is_key_exists(nova_client, key_name):
 
 
 def delete_keys(nova_client, key_name):
-    """ This function delete the keys by its name.
+    """This function delete the keys by its name.
         :param nova_client: Nova API client connection point
         :param key_name: Name of the keypair to delete
         :return: Nothing

@@ -117,6 +117,12 @@ class Environment(EnvironmentBase):
                 return False
         return True
 
+    def wait_for_ostf_pass(self):
+        logger.info("Wait for OpenStack is waking up")
+        wait(self.is_ostf_tests_pass, timeout_seconds=20 * 60,
+             sleep_seconds=20,
+             waiting_for='OpenStack pass OSTF tests')
+
     @property
     def is_operational(self):
         return self.status == 'operational'

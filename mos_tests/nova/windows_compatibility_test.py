@@ -13,97 +13,43 @@
 #    under the License.
 
 
-import os
-import unittest
-import time
 import logging
+import os
+import time
 
-from keystoneclient.v2_0 import client as keystone_client
-from neutronclient.v2_0 import client as neutron_client
-from novaclient import client as nova_client
-from glanceclient.v2 import client as glance_client
+import pytest
 
+from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 
 logger = logging.getLogger(__name__)
 
+pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
-class WindowCompatibilityIntegrationTests(unittest.TestCase):
-    """ Basic automated tests for OpenStack Windows Compatibility verification.
+
+@pytest.mark.undestructive
+class WindowCompatibilityIntegrationTests(OpenStackTestCase):
+    """Basic automated tests for OpenStack Windows Compatibility verification.
     """
 
-    @classmethod
-    def setUpClass(cls):
-        OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
-        OS_USERNAME = os.environ.get('OS_USERNAME')
-        OS_PASSWORD = os.environ.get('OS_PASSWORD')
-        OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
-        OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
-
-        cls.keystone = keystone_client.Client(
-                auth_url=OS_AUTH_URL,
-                username=OS_USERNAME,
-                password=OS_PASSWORD,
-                tenat_name=OS_TENANT_NAME,
-                project_name=OS_PROJECT_NAME)
-
-        services = cls.keystone.service_catalog
+    def setUp(self):
+        super(self.__class__, self).setUp()
 
         # Get path on node to 'templates' dir
-        cls.templates_dir = os.path.join(
+        self.templates_dir = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 'templates')
         # Get path on node to 'images' dir
-        cls.images_dir = os.path.join(
+        self.images_dir = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 'images')
 
-        # Neutron connect
-        cls.neutron = neutron_client.Client(
-                username=OS_USERNAME,
-                password=OS_PASSWORD,
-                tenant_name=OS_TENANT_NAME,
-                auth_url=OS_AUTH_URL,
-                insecure=True)
-
-        # Nova connect
-        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
-        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
-                auth_url=OS_AUTH_URL,
-                username=OS_USERNAME,
-                password=OS_PASSWORD,
-                tenant_name=OS_TENANT_NAME)
-        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
-
-        cls.nova = nova_client.Client(
-                '2',
-                auth_url=OS_AUTH_URL,
-                username=OS_USERNAME,
-                auth_token=OS_TOKEN,
-                tenant_id=OS_TENANT_ID,
-                insecure=True)
-
-        # Glance connect
-        glance_endpoint = services.url_for(
-                service_type='image',
-                endpoint_type='publicURL')
-
-        cls.glance = glance_client.Client(
-                endpoint=glance_endpoint,
-                token=OS_TOKEN,
-                insecure=True)
-
-        cls.uid_list = []
+        self.uid_list = []
 
         # timeouts (in minutes)
-        cls.ping_timeout = 3
-        cls.hypervisor_timeout = 10
+        self.ping_timeout = 3
+        self.hypervisor_timeout = 10
 
-    def setUp(self):
-        """
-
-        :return: Nothing
-        """
         self.amount_of_images_before = len(list(self.glance.images.list()))
         self.image = None
         self.our_own_flavor_was_created = False
@@ -183,7 +129,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         logger.info("Starting with network interface id {}".
                      format(network_id))
 
-        # TODO: add check flavor parameters vs. vm parameters
+        # TODO(mlaptev) add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and create a copy of it
         for flavor in self.nova.flavors.list():
             if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
@@ -231,10 +177,6 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                 self.floating_ip.ip))
 
     def tearDown(self):
-        """
-
-        :return:
-        """
         if self.node_to_boot is not None:
             common_functions.delete_instance(self.nova, self.node_to_boot.id)
         if self.image is not None:
@@ -255,7 +197,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
                          "Length of list with images should be the same")
 
     def test_542825_CreateInstanceWithWindowsImage(self):
-        """ This test checks that instance with Windows image could be created
+        """This test checks that instance with Windows image could be created
 
         Steps:
         1. Upload Windows 2012 Server image to Glance
@@ -268,7 +210,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
-        """ This test checks that instance with Windows image could be paused
+        """This test checks that instance with Windows image could be paused
         and unpaused
 
         Steps:
@@ -317,7 +259,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
-        """ This test checks that instance with Windows image can be suspended
+        """This test checks that instance with Windows image can be suspended
         and resumed
 
         Steps:
@@ -366,7 +308,7 @@ class WindowCompatibilityIntegrationTests(unittest.TestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
 
     def test_542827_LiveMigrationForWindowsInstance(self):
-        """ This test checks that instance with Windows Image could be
+        """This test checks that instance with Windows Image could be
         migrated without any issues
 
         Steps:

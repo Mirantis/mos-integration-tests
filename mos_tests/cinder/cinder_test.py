@@ -12,58 +12,30 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 import time
-import unittest
 
-from keystoneclient.v2_0 import client as keystone_client
-from novaclient import client as nova_client
-from cinderclient import client as cinder_client
+import pytest
 
+from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 
+logger = logging.getLogger(__name__)
 
-class CinderIntegrationTests(unittest.TestCase):
-    """ Basic automated tests for OpenStack Heat verification. """
+pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
-    @classmethod
-    def setUpClass(self):
-        OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
-        OS_USERNAME = os.environ.get('OS_USERNAME')
-        OS_PASSWORD = os.environ.get('OS_PASSWORD')
-        OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
-        OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
 
-        self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                               username=OS_USERNAME,
-                                               password=OS_PASSWORD,
-                                               tenat_name=OS_TENANT_NAME,
-                                               project_name=OS_PROJECT_NAME)
+@pytest.mark.undestructive
+class CinderIntegrationTests(OpenStackTestCase):
+    """Basic automated tests for OpenStack Heat verification."""
 
-        # Nova connect
-        OS_TOKEN = self.keystone.get_token(self.keystone.session)
-        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
-            auth_url=OS_AUTH_URL,
-            username=OS_USERNAME,
-            password=OS_PASSWORD,
-            tenant_name=OS_TENANT_NAME)
-        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
+    def setUp(self):
+        super(self.__class__, self).setUp()
 
-        self.nova = nova_client.Client('2',
-                                       auth_url=OS_AUTH_URL,
-                                       username=OS_USERNAME,
-                                       auth_token=OS_TOKEN,
-                                       tenant_id=OS_TENANT_ID,
-                                       insecure=True)
-
-        # Cinder endpoint
-        self.cinder = cinder_client.Client('2', OS_USERNAME, OS_PASSWORD,
-                                           OS_TENANT_NAME,
-                                           auth_url=OS_AUTH_URL)
         self.volume_list = []
         self.snapshot_list = []
 
-    def setUp(self):
         self.tenant_id = [t.id for t in self.keystone.tenants.list() if
                           t.name == os.environ.get('OS_TENANT_NAME')][0]
         self.quota = self.cinder.quotas.get(self.tenant_id).snapshots
@@ -81,7 +53,7 @@ class CinderIntegrationTests(unittest.TestCase):
             self.cinder.quotas.update(self.tenant_id, snapshots=self.quota)
 
     def test_543176_CreatingMultipleSnapshots(self):
-        """ This test case checks creation of several snapshot at the same time
+        """This test case checks creation of several snapshot at the same time
 
             Steps:
                 1. Create a volume
@@ -89,8 +61,8 @@ class CinderIntegrationTests(unittest.TestCase):
                 3. Delete all of them
                 4. Launch creation of 50 snapshot without waiting of deletion
         """
-
         # 1. Create volume
+        logger.info('Create volume')
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
         volume = common_functions.create_volume(self.cinder, image_id,
@@ -98,6 +70,7 @@ class CinderIntegrationTests(unittest.TestCase):
         self.volume_list.append(volume)
 
         # 2. Creation of 70 snapshots
+        logger.info('Create 70 snapshots')
         count = 70
         initial_snapshot_lst = []
         for num in xrange(count):
@@ -112,10 +85,13 @@ class CinderIntegrationTests(unittest.TestCase):
         self.snapshot_list.extend(initial_snapshot_lst)
 
         # 3. Delete all snapshots
+        logger.info('Delete all snapshots')
         for snapshot in initial_snapshot_lst:
             self.cinder.volume_snapshots.delete(snapshot)
 
         # 4. Launch creation of 50 snapshot without waiting of deletion
+        logger.info('Launch creation of 50 snapshot without waiting '
+                    'of deletion')
         new_count = 50
         new_snapshot_lst = []
         for num in xrange(new_count):
