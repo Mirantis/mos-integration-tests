@@ -13,82 +13,43 @@
 #    under the License.
 
 import os
+from random import randint
 import re
 import time
-import unittest
-from random import randint
 
-from glanceclient.v2 import client as glance_client
 from heatclient.v1.client import Client as heat_client
-from keystoneclient.v2_0 import client as keystone_client
-from neutronclient.v2_0 import client as neutron_client
-from novaclient import client as nova_client
+import pytest
 
+from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 
+pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
-class HeatIntegrationTests(unittest.TestCase):
-    """ Basic automated tests for OpenStack Heat verification. """
 
-    @classmethod
-    def setUpClass(cls):
-        OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
-        OS_USERNAME = os.environ.get('OS_USERNAME')
-        OS_PASSWORD = os.environ.get('OS_PASSWORD')
-        OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
-        OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
+@pytest.mark.undestructive
+class HeatIntegrationTests(OpenStackTestCase):
+    """Basic automated tests for OpenStack Heat verification."""
 
-        cls.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                              username=OS_USERNAME,
-                                              password=OS_PASSWORD,
-                                              tenat_name=OS_TENANT_NAME,
-                                              project_name=OS_PROJECT_NAME)
-        services = cls.keystone.service_catalog
+    def setUp(self):
+        super(self.__class__, self).setUp()
+
+        services = self.keystone.service_catalog
         heat_endpoint = services.url_for(service_type='orchestration',
                                          endpoint_type='internalURL')
 
-        cls.heat = heat_client(endpoint=heat_endpoint,
-                               token=cls.keystone.auth_token)
+        self.heat = heat_client(endpoint=heat_endpoint,
+                               token=self.keystone.auth_token)
 
         # Get path on node to 'templates' dir
-        cls.templates_dir = os.path.join(
+        self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'templates')
         # Get path on node to 'images' dir
-        cls.images_dir = os.path.join(
+        self.images_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'images')
 
-        # Neutron connect
-        cls.neutron = neutron_client.Client(username=OS_USERNAME,
-                                            password=OS_PASSWORD,
-                                            tenant_name=OS_TENANT_NAME,
-                                            auth_url=OS_AUTH_URL,
-                                            insecure=True)
-
-        # Nova connect
-        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
-        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
-            auth_url=OS_AUTH_URL,
-            username=OS_USERNAME,
-            password=OS_PASSWORD,
-            tenant_name=OS_TENANT_NAME)
-        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
-
-        cls.nova = nova_client.Client('2',
-                                      auth_url=OS_AUTH_URL,
-                                      username=OS_USERNAME,
-                                      auth_token=OS_TOKEN,
-                                      tenant_id=OS_TENANT_ID,
-                                      insecure=True)
-
-        # Glance connect
-        glance_endpoint = services.url_for(service_type='image',
-                                           endpoint_type='publicURL')
-        cls.glance = glance_client.Client(endpoint=glance_endpoint,
-                                          token=OS_TOKEN,
-                                          insecure=True)
-        cls.uid_list = []
+        self.uid_list = []
 
     def tearDown(self):
         for stack_uid in self.uid_list:
@@ -96,7 +57,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.uid_list = []
 
     def test_543328_HeatResourceTypeList(self):
-        """ This test case checks list of available Heat resources.
+        """This test case checks list of available Heat resources.
 
         Steps:
         1. Get list of Heat resources.
@@ -116,7 +77,7 @@ class HeatIntegrationTests(unittest.TestCase):
                           "Resource {0} not found!".format(resource))
 
     def test_543347_HeatCreateStack(self):
-        """ This test performs creation of a new stack with
+        """This test performs creation of a new stack with
             a help of Heat. And then delete it.
 
         Steps:
@@ -152,7 +113,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.uid_list.append(uid_of_new_stack)
 
     def test_543337_HeatStackUpdate(self):
-        """ This test case checks stack-update action.
+        """This test case checks stack-update action.
         Steps:
         1. Create stack using template file empty_heat_templ.yaml
         2. Update stack parameter
@@ -181,7 +142,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 time.sleep(1)
 
     def test_543329_HeatResourceTypeShow(self):
-        """ This test case checks representation of all Heat resources.
+        """This test case checks representation of all Heat resources.
 
         Steps:
         1. Get list of Heat resources.
@@ -196,7 +157,7 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIsInstance(resource_schema, dict, msg.format(resource))
 
     def test_543330_HeatResourceTypeTemplate(self):
-        """ This test case checks representation of templates for all Heat
+        """This test case checks representation of templates for all Heat
             resources.
 
         Steps:
@@ -212,7 +173,7 @@ class HeatIntegrationTests(unittest.TestCase):
             self.assertIsInstance(schema, dict, msg.format(resource))
 
     def test_543335_HeatStackDelete(self):
-        """ This test case checks deletion of stack.
+        """This test case checks deletion of stack.
 
         Steps:
         1. Create stack using template file empty_heat_templ.yaml.
@@ -241,7 +202,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertNotIn(stack_name, stacks)
 
     def test_543333_HeatStackCreateWithTemplate(self):
-        """ This test case checks creation of stack.
+        """This test case checks creation of stack.
 
         Steps:
         1. Create stack using template file empty_heat_templ.yaml.
@@ -269,7 +230,7 @@ class HeatIntegrationTests(unittest.TestCase):
                                                             timeout))
 
     def test_543334_HeatStackCreateWithURL(self):
-        """ This test case checks creation of stack using template URL.
+        """This test case checks creation of stack using template URL.
 
         Steps:
         1. Create stack using template URL.
@@ -299,7 +260,7 @@ class HeatIntegrationTests(unittest.TestCase):
                                                             timeout))
 
     def test_543339_CheckStackResourcesStatuses(self):
-        """ This test case checks that stack resources are in expected states
+        """This test case checks that stack resources are in expected states
         Steps:
         1. Create new stack
         2. Launch heat action-check stack_name
@@ -330,7 +291,7 @@ class HeatIntegrationTests(unittest.TestCase):
                           stack_name))
 
     def test_543341_ShowStackEventList(self):
-        """ This test checks list events for a stack
+        """This test checks list events for a stack
 
         Steps:
         1. Create new stack
@@ -351,7 +312,7 @@ class HeatIntegrationTests(unittest.TestCase):
                       .format(stack_name))
 
     def test_543344_HeatStackTemplateShow(self):
-        """ This test case checks representation of template of created stack.
+        """This test case checks representation of template of created stack.
 
         Steps:
         1. Create stack using template file empty_heat_templ.yaml.
@@ -379,7 +340,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertIsInstance(stack_template, dict)
 
     def test_543342_ShowInfoOfSpecifiedStackEvent(self):
-        """ This test checks info about stack event
+        """This test checks info about stack event
 
         Steps:
         1. Create new stack
@@ -409,7 +370,7 @@ class HeatIntegrationTests(unittest.TestCase):
         common_functions.delete_stack(self.heat, stack_id)
 
     def test_543345_HeatCreateStackAWS(self):
-        """ This test creates stack using AWS format template
+        """This test creates stack using AWS format template
 
         Steps:
         1. Connect to Neutron and get ID of internal_network
@@ -479,7 +440,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.uid_list.append(uid)
 
     def test_543332_HeatStackPreview(self):
-        """ This test case previews a stack.
+        """This test case previews a stack.
 
         Steps:
         1. Execute stack preview.
@@ -515,7 +476,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(output.links[0]['rel'], 'self')
 
     def test_543343_HeatStackTemplateValidate(self):
-        """ This test case checks representation of template file.
+        """This test case checks representation of template file.
 
         Steps:
         1. Check that selected template file has correct \
@@ -528,7 +489,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertIsInstance(result, dict)
 
     def test_543340_StackResumeSuspend(self):
-        """ Suspend and resume stack
+        """Suspend and resume stack
         (with its resources for which that feature works)
 
         Steps:
@@ -586,7 +547,7 @@ class HeatIntegrationTests(unittest.TestCase):
                              .format(name, status))
 
     def test_543351_HeatStackUpdateReplace(self):
-        """ This test case checks change stack id after stack update.
+        """This test case checks change stack id after stack update.
 
         Steps:
         1. Create stack using template.
@@ -626,7 +587,7 @@ class HeatIntegrationTests(unittest.TestCase):
                 template_path, 'format', **back_format_change)
 
     def test_543352_HeatStackUpdateInPlace(self):
-        """ This test case checks stack id doesn't change after stack update.
+        """This test case checks stack id doesn't change after stack update.
 
         Steps:
         1. Create stack using template nova_server.yaml.
@@ -669,7 +630,7 @@ class HeatIntegrationTests(unittest.TestCase):
                                                   **back_flavor_change)
 
     def test_543336_HeatStackShow(self):
-        """ This test case checks detailed stack's information.
+        """This test case checks detailed stack's information.
 
         Steps:
         1. Create stack using template file empty_heat_templ.yaml
@@ -721,7 +682,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(output.links[0]['rel'], 'self')
 
     def test_543338_StackCancelUpdate(self):
-        """ This test check the possibility to cancel update
+        """This test check the possibility to cancel update
 
         Steps:
         1. Create new stack
@@ -777,7 +738,7 @@ class HeatIntegrationTests(unittest.TestCase):
                         (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
 
     def test_543353_HeatStackOutputList(self):
-        """ This test case checks list of all stack attributes.
+        """This test case checks list of all stack attributes.
 
         Steps:
         1. Create stack using template.
@@ -805,7 +766,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(stack_attributes, correct_attributes)
 
     def test_543353_HeatStackOutputShow(self):
-        """ This test case checks value of specific attribute
+        """This test case checks value of specific attribute
             as well as list of all stack attributes.
 
         Steps:
@@ -837,7 +798,7 @@ class HeatIntegrationTests(unittest.TestCase):
         self.assertEqual(stack_attributes, correct_attributes)
 
     def test_543348_HeatCreateStackWaitCondition(self):
-        """ This test creates stack with WaitCondition resources
+        """This test creates stack with WaitCondition resources
 
         Steps:
         1. Download Cirros image
@@ -923,7 +884,7 @@ class HeatIntegrationTests(unittest.TestCase):
         keypair.delete()
 
     def test_543349_HeatCreateStackNeutronResources(self):
-        """ This test creates stack with Neutron resources
+        """This test creates stack with Neutron resources
 
         Steps:
         1. Download Cirros image
@@ -1033,7 +994,7 @@ class HeatIntegrationTests(unittest.TestCase):
         keypair.delete()
 
     def test_543350_HeatCreateStackNovaResources(self):
-        """ This test creates stack with Nova resources
+        """This test creates stack with Nova resources
 
         Steps:
         1. Download Cirros image
@@ -1129,7 +1090,7 @@ class HeatIntegrationTests(unittest.TestCase):
         keypair.delete()
 
     def test_543346_HeatCreateStackDockerResources(self):
-        """ This test creates stack with Docker resource
+        """This test creates stack with Docker resource
 
         Steps:
         1. Download custom Fedora image

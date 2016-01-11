@@ -17,39 +17,16 @@ import logging
 import pytest
 from waiting import wait
 
-from mos_tests.environment.fuel_client import FuelClient
+from mos_tests.conftest import revert_snapshot
 from mos_tests.environment.os_actions import OpenStackActions
-from mos_tests.neutron.conftest import revert_snapshot
-from mos_tests.settings import KEYSTONE_PASS
-from mos_tests.settings import KEYSTONE_USER
-from mos_tests.settings import SSH_CREDENTIALS
 
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
-def fuel(fuel_master_ip):
-    """Initialized fuel client"""
-    return FuelClient(ip=fuel_master_ip,
-                      login=KEYSTONE_USER,
-                      password=KEYSTONE_PASS,
-                      ssh_login=SSH_CREDENTIALS['login'],
-                      ssh_password=SSH_CREDENTIALS['password'])
-
-
-@pytest.fixture
-def env(fuel):
-    """Environment instance"""
-    return fuel.get_last_created_cluster()
-
-
-@pytest.fixture
 def os_conn(env):
     """Openstack common actions"""
-    logger.info("Wait for OpenStack is waking up")
-    wait(env.is_ostf_tests_pass, timeout_seconds=20 * 60, sleep_seconds=20,
-         waiting_for='OpenStack pass OSTF tests')
     os_conn = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
         cert=env.certificate, env=env)

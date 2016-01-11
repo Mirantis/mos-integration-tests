@@ -12,80 +12,35 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-import unittest
 import subprocess
-from time import time, sleep
-import six
+from time import sleep
+from time import time
+
 import paramiko
+import pytest
+import six
 
-from novaclient import client as nova_client
-from neutronclient.v2_0 import client as neutron_client
-from keystoneclient.v2_0 import client as keystone_client
-from cinderclient import client as cinder_client
-
-from mos_tests.functions import common as common_functions
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.functions.base import OpenStackTestCase
+from mos_tests.functions import common as common_functions
+
+pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
 
-class NovaIntegrationTests(unittest.TestCase):
-    """ Basic automated tests for OpenStack Nova verification. """
+@pytest.mark.undestructive
+class NovaIntegrationTests(OpenStackTestCase):
+    """Basic automated tests for OpenStack Nova verification. """
 
-    @classmethod
-    def setUpClass(cls):
-        OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
-        OS_USERNAME = os.environ.get('OS_USERNAME')
-        OS_PASSWORD = os.environ.get('OS_PASSWORD')
-        OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
-        OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
+    def setUp(self):
+        super(self.__class__, self).setUp()
 
-        cls.keystone = keystone_client.Client(
-                auth_url=OS_AUTH_URL,
-                username=OS_USERNAME,
-                password=OS_PASSWORD,
-                tenat_name=OS_TENANT_NAME,
-                project_name=OS_PROJECT_NAME)
+        self.instances = []
+        self.floating_ips = []
+        self.volumes = []
+        self.flavors = []
+        self.keys = []
 
-        # Nova connect
-        OS_TOKEN = cls.keystone.get_token(cls.keystone.session)
-        RAW_TOKEN = cls.keystone.get_raw_token_from_identity_service(
-            auth_url=OS_AUTH_URL,
-            username=OS_USERNAME,
-            password=OS_PASSWORD,
-            tenant_name=OS_TENANT_NAME)
-        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
-
-        cls.nova = nova_client.Client(
-                '2',
-                auth_url=OS_AUTH_URL,
-                username=OS_USERNAME,
-                auth_token=OS_TOKEN,
-                tenant_id=OS_TENANT_ID,
-                insecure=True)
-
-        # Neutron connect
-        cls.neutron = neutron_client.Client(
-                username=OS_USERNAME,
-                password=OS_PASSWORD,
-                tenant_name=OS_TENANT_NAME,
-                auth_url=OS_AUTH_URL,
-                insecure=True)
-
-        # Cinder endpoint
-        cls.cinder = cinder_client.Client(
-                '2',
-                OS_USERNAME,
-                OS_PASSWORD,
-                OS_TENANT_NAME,
-                auth_url=OS_AUTH_URL)
-
-        cls.instances = []
-        cls.floating_ips = []
-        cls.volumes = []
-        cls.flavors = []
-        cls.keys = []
-
-        cls.sec_group = cls.nova.security_groups.create('security_nova',
+        self.sec_group = self.nova.security_groups.create('security_nova',
                                                         'Security group, '
                                                         'created for Nova '
                                                         'automatic tests')
@@ -106,11 +61,7 @@ class NovaIntegrationTests(unittest.TestCase):
             }
         ]
         for rule in rules:
-            cls.nova.security_group_rules.create(cls.sec_group.id, **rule)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.nova.security_groups.delete(cls.sec_group)
+            self.nova.security_group_rules.create(self.sec_group.id, **rule)
 
     def tearDown(self):
         for inst in self.instances:
@@ -128,19 +79,21 @@ class NovaIntegrationTests(unittest.TestCase):
         for key in self.keys:
             common_functions.delete_keys(self.nova, key.name)
         self.keys = []
+        self.nova.security_groups.delete(self.sec_group)
 
     def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
-        """ This test case checks creation of instance from image with all
+        """This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-            Steps:
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
+
+        Steps:
+            1. Create a floating ip
+            2. Create an instance from an image with some flavor
+            3. Add the floating ip to the instance
+            4. Ping the instance by the floating ip
+            5. Delete the floating ip
+            6. delete the instance
+            7. Repeat all steps for all types of flavor
         """
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks
@@ -169,18 +122,19 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(ping, "Instance is not reachable")
 
     def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
-        """ This test case checks creation of instance from volume with all
+        """This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
-            Steps:
-             1. Create bootable volume
-             1. Create a floating ip
-             2. Create an instance from an image with some flavor
-             3. Add the floating ip to the instance
-             4. Ping the instance by the floating ip
-             5. Delete the floating ip
-             6. delete the instance
-             7. Repeat all steps for all types of flavor
+
+        Steps:
+            1. Create bootable volume
+            1. Create a floating ip
+            2. Create an instance from an image with some flavor
+            3. Add the floating ip to the instance
+            4. Ping the instance by the floating ip
+            5. Delete the floating ip
+            6. delete the instance
+            7. Repeat all steps for all types of flavor
         """
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
@@ -211,7 +165,7 @@ class NovaIntegrationTests(unittest.TestCase):
             self.assertTrue(ping, "Instance is not reachable")
 
     def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
-        """ This test checks that nova allows
+        """This test checks that nova allows
             resize down an instance booted from volume
             Steps:
             1. Create bootable volume
@@ -271,11 +225,12 @@ class NovaIntegrationTests(unittest.TestCase):
         self.assertTrue(ping, "Instance after resize is not reachable")
 
     def test_543359_MassivelySpawnVolumes(self):
-        """ This test checks massively spawn volumes
-            Steps:
-                1. Create 10 volumes
-                2. Check status of newly created volumes
-                3. Delete all volumes
+        """This test checks massively spawn volumes
+
+        Steps:
+            1. Create 10 volumes
+            2. Check status of newly created volumes
+            3. Delete all volumes
         """
         volume_count = 10
         volumes = []
@@ -294,14 +249,15 @@ class NovaIntegrationTests(unittest.TestCase):
                 "Volume '{0}' is not available".format(volume.id))
 
     def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
-        """ This test case creates a lot of VMs with boot local, checks it
+        """This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
-            Steps:
-                1. Boot 10-100 instances from image.
-                2. Check that list of instances contains created VMs.
-                3. Check state of created instances
-                4. Add the floating ips to the instances
-                5. Ping the instances by the floating ips
+
+        Steps:
+            1. Boot 10-100 instances from image.
+            2. Check that list of instances contains created VMs.
+            3. Check state of created instances
+            4. Add the floating ips to the instances
+            5. Ping the instances by the floating ips
         """
         initial_instances = self.nova.servers.list()
         primary_name = "testVM_543356"
@@ -354,15 +310,16 @@ class NovaIntegrationTests(unittest.TestCase):
                             "Instance {} is not reachable".format(inst_id))
 
     def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
-        """ This test case creates a lot of VMs which boot from Cinder, checks
+        """This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
-            Steps:
-                1. Create 10-100 volumes.
-                2. Boot 10-100 instances from volumes.
-                3. Check that list of instances contains created VMs.
-                4. Check state of created instances
-                5. Add the floating ips to the instances
-                6. Ping the instances by the floating ips
+
+        Steps:
+            1. Create 10-100 volumes.
+            2. Boot 10-100 instances from volumes.
+            3. Check that list of instances contains created VMs.
+            4. Check state of created instances
+            5. Add the floating ips to the instances
+            6. Ping the instances by the floating ips
         """
         initial_instances = self.nova.servers.list()
         count = 10
@@ -425,7 +382,7 @@ class NovaIntegrationTests(unittest.TestCase):
                             "Instance {} is not reachable".format(inst_id))
 
     def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
-        """ This test checks network connectivity to VM during Live Migration
+        """This test checks network connectivity to VM during Live Migration
 
             Steps:
              1. Create a floating ip
@@ -485,7 +442,7 @@ class NovaIntegrationTests(unittest.TestCase):
             raise AssertionError(msg.format(loss))
 
     def test_2238777_LiveMigrationOfVMsWithDataOnRootAndEphemeralDisk(self):
-        """ This test checks Live Migration of VMs with data on root and
+        """This test checks Live Migration of VMs with data on root and
         ephemeral disk
 
             Steps:
