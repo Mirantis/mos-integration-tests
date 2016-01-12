@@ -17,7 +17,6 @@ import logging
 import pytest
 from waiting import wait
 
-from mos_tests.conftest import revert_snapshot
 from mos_tests.environment.os_actions import OpenStackActions
 
 
@@ -57,11 +56,7 @@ def clean_os(os_conn):
     os_conn.cleanup_network()
 
 
-@pytest.yield_fixture(scope="function")
+@pytest.fixture
 def setup(request, env_name, snapshot_name, env, os_conn):
-    if env_name:
-        revert_snapshot(request, env_name, snapshot_name)
-    yield
-    if not env_name:
-        clear_l3_ban(env, os_conn)
-        clean_os(os_conn)
+    # TODO(gdyuldin) remove this fixture
+    pass
