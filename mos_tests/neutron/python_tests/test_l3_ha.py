@@ -663,3 +663,151 @@ class TestL3HA(TestBase):
         assert (last_tcpdump_results and new_tcpdump_results) is not None
         assert last_tcpdump_results < new_tcpdump_results
         assert (ping_result['sended'] - ping_result['received']) < 10
+
+    def reschedule_active_l3_agt(self, router_id,
+                                 to_controller, from_controller):
+        if to_controller != from_controller:
+            other_controllers = [x for x
+                                 in self.env.get_nodes_by_role('controller')
+                                 if x != to_controller]
+            with to_controller.ssh() as remote:
+                for node in other_controllers:
+                    # Ban l3 agents on all controllers
+                    # except the one to which it is goinig to be migrated
+                    remote.check_call(
+                        'pcs resource ban p_neutron-l3-agent {}'.format(
+                            node.data['fqdn']))
+                # Wait until the agent is migrated
+                # to the destination controller
+                self.wait_router_migrate(router_id,
+                                         to_controller.data['fqdn'])
+                for node in other_controllers:
+                    remote.check_call(
+                        'pcs resource clear p_neutron-l3-agent {}'.format(
+                            node.data['fqdn']))
+
+    def check_l3_ha_agent_states(self, router_id):
+        active_agents = self.get_active_l3_agents_for_router(router_id)
+        err_msg = 'One and only one l3 agent should be active for the router'
+        assert len(active_agents) == 1, err_msg
+
+        agents = self.os_conn.get_l3_for_router(router_id)['agents']
+        standby_agents = [x for x in agents if x['ha_state'] == 'standby']
+        err_msg = 'At least 2 controllers with standby agents are expected'
+        assert len(standby_agents) >= 2, err_msg
+
+    def test_destroy_non_primary_controller(self, router,
+                                            prepare_openstack, env_name):
+        """Reset primary controller (l3 agent on it should be
+            with ACTIVE ha_state)
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Find node with active ha_state for router
+            7. If node from step 6 isn't primary controller,
+                reschedule router1 to primary by banning all another
+                and then clear them
+            8. Start ping vm2 from vm1 by floating ip
+            9. destroy primary controller
+            10. Stop ping
+            11. Check that ping lost no more than 10 packets
+            12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
+
+        """
+        router_id = router['router']['id']
+        agents = self.get_active_l3_agents_for_router(router_id)
+        l3_agent_controller = self.env.find_node_by_fqdn(agents[0]['host'])
+        controller = self.env.non_primary_controller
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        # Reschedule active l3 agent to the non primary if needed
+        self.reschedule_active_l3_agt(router_id, controller,
+                                      l3_agent_controller)
+
+        from_node = l3_agent_controller.data['fqdn']
+        self.wait_router_rescheduled(router_id=router_id,
+                                     from_node=from_node,
+                                     timeout_seconds=5 * 60)
+
+        # Start ping in background and destroy the node
+        with self.background_ping(vm=server1,
+                                  vm_keypair=self.instance_keypair,
+                                  ip_to_ping=server2_ip) as ping_result:
+
+            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
+                              mac=controller.data['mac'])
+            self.env.destroy_nodes([devops_node])
+
+        assert ping_result['sended'] - ping_result['received'] < 10
+
+        # To ensure that the l3 agt is moved from the affected controller
+        self.wait_router_rescheduled(router_id=router_id,
+                                     from_node=controller.data['fqdn'],
+                                     timeout_seconds=5 * 60)
+
+        self.check_l3_ha_agent_states(router_id)
+
+    def test_reset_primary_controller(self, router,
+                                      prepare_openstack, env_name):
+        """Reset primary controller (l3 agent on it should be
+            with ACTIVE ha_state)
+
+        Scenario:
+            1. Create network1, network2
+            2. Create router1 and connect it with network1, network2 and
+                external net
+            3. Boot vm1 in network1
+            4. Boot vm2 in network2 and associate floating ip
+            5. Add rules for ping
+            6. Find node with active ha_state for router
+            7. If node from step 6 isn't primary controller,
+                reschedule router1 to primary by banning all another
+                and then clear them
+            8. Start ping vm2 from vm1 by floating ip
+            9. Reset primary controller
+            10. Stop ping
+            11. Check that ping lost no more than 10 packets
+            12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
+
+        """
+        router_id = router['router']['id']
+        agents = self.get_active_l3_agents_for_router(router_id)
+        l3_agent_controller = self.env.find_node_by_fqdn(agents[0]['host'])
+        controller = self.env.primary_controller
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        # Reschedule active l3 agent to primary if needed
+        self.reschedule_active_l3_agt(router_id, controller,
+                                      l3_agent_controller)
+
+        from_node = l3_agent_controller.data['fqdn']
+        self.wait_router_rescheduled(router_id=router_id,
+                                     from_node=from_node,
+                                     timeout_seconds=5 * 60)
+
+        # Start ping in background and reset the node
+        with self.background_ping(vm=server1,
+                                  vm_keypair=self.instance_keypair,
+                                  ip_to_ping=server2_ip) as ping_result:
+
+            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
+                              mac=controller.data['mac'])
+            devops_node.reset()
+
+        assert ping_result['sended'] - ping_result['received'] < 10
+
+        # To ensure that the l3 agt is moved from the affected controller
+        self.wait_router_rescheduled(router_id=router_id,
+                                     from_node=controller.data['fqdn'],
+                                     timeout_seconds=5 * 60)
+
+        self.check_l3_ha_agent_states(router_id)
