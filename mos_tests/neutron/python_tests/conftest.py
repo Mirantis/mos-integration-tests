@@ -15,27 +15,9 @@
 import logging
 
 import pytest
-from waiting import wait
-
-from mos_tests.environment.os_actions import OpenStackActions
 
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.fixture
-def os_conn(env):
-    """Openstack common actions"""
-    os_conn = OpenStackActions(
-        controller_ip=env.get_primary_controller_ip(),
-        cert=env.certificate, env=env)
-
-    wait(os_conn.is_nova_ready,
-         timeout_seconds=60 * 5,
-         expected_exceptions=Exception,
-         waiting_for="OpenStack nova computes is ready")
-    logger.info("OpenStack is ready")
-    return os_conn
 
 
 @pytest.yield_fixture
@@ -48,12 +30,6 @@ def clear_l3_ban(env, os_conn):
         for node in controllers:
             remote.execute("pcs resource clear p_neutron-l3-agent {0}".format(
                 node.data['fqdn']))
-
-
-@pytest.fixture
-def clean_os(os_conn):
-    """Cleanup OpenStack"""
-    os_conn.cleanup_network()
 
 
 @pytest.fixture
