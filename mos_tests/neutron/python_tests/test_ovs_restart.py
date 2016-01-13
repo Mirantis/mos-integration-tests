@@ -26,6 +26,11 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.name_suffix('vlan', cond='is_vlan(env)')
+@pytest.mark.name_suffix('vxlan', cond='is_vxlan(env)')
+@pytest.mark.name_suffix('l2pop', cond='is_l2pop(env)')
+@pytest.mark.name_suffix('dvr', cond='is_dvr(env)')
+@pytest.mark.name_suffix('l3_ha', cond='is_l3_ha(env)')
 @pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
     """Common fuctions for ovs tests"""
