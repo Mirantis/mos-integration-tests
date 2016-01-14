@@ -18,6 +18,8 @@ from contextlib import contextmanager
 import logging
 import re
 import signal
+import subprocess
+import threading
 
 import pytest
 from waiting import wait
@@ -68,6 +70,36 @@ def ping_groups(stdout):
 @pytest.mark.check_env_('is_l3_ha', 'has_2_or_more_computes')
 class TestL3HA(TestBase):
     """Tests for L3 HA"""
+
+    @contextmanager
+    def background_ping_from_host(self, ip_to_ping, recover_pings=50):
+        """Start ping from host to `ip_to_ping` before enter and stop it after
+
+        Return dict with ping stat
+
+        :param ip_to_ping: ip address to ping from `vm`
+        """
+
+        result = {}
+
+        logger.info('Start ping on {0}'.format(ip_to_ping))
+        proc = subprocess.Popen(['ping', ip_to_ping], stdout=subprocess.PIPE)
+        proc.stdout.readline()
+        output = []
+        for line_count in range(10):
+            output.append(proc.stdout.readline().strip())
+
+        yield result
+        # terminate ping subprocess and fill analyzed result
+        logger.info('Wait for ping restored')
+        for line_count in range(recover_pings):
+            output.append(proc.stdout.readline().strip())
+        proc.terminate()
+        output += proc.communicate()[0].split('\n')
+        groups = ping_groups(output)
+        for ping_info in groups:
+            result['received'] = ping_info.received
+            result['sended'] = ping_info.sended
 
     @contextmanager
     def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50):
@@ -127,7 +159,7 @@ class TestL3HA(TestBase):
 
         return wait(new_active_agent, timeout_seconds=timeout_seconds,
                     waiting_for="router rescheduled from {}".format(
-                            from_node))
+                        from_node))
 
     def wait_router_migrate(self, router_id, new_node, timeout_seconds=60):
         """Wait for router migrate to l3 agent hosted on `new node`"""
@@ -505,7 +537,7 @@ class TestL3HA(TestBase):
         active_ha_iface_id = 'ha-{}'.format(
             active_l3_ha_port_for_router_id[:11])
 
-        # Ban l3 agent
+        # Move down router ha-port
         with self.background_ping(
                 vm=instance,
                 vm_keypair=self.instance_keypair,
@@ -520,4 +552,114 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=active_hostname)
 
+        assert (ping_result['sended'] - ping_result['received']) < 10
+
+    def test_ban_l3_agent_with_tcpdump_check(self, router, prepare_openstack):
+        """Ban l3 active agent and check it by tcpdump log.
+
+         Steps:
+            1. Create network net01, subnet net01_subnet
+            2. Create router with gateway to external net and
+               interface with net01
+            3. Launch instance and associate floating IP
+            4. Start tcpdump on all controllers
+            5. Check ping from external host to instance by floating IP
+            6. Ban active l3 agent
+            7. Wait until router rescheduled
+            8. Stop ping
+            9. Stop tcpdump
+            10. Check that tcpdump results and active l3 agents statuses
+            11. Check that ping lost less than 10 packets
+        """
+        def start_tcpdump_in_background(node, router_id, active_qg_iface_id):
+            """Start tcpdump on l3ha-router provided port.
+
+            :param node: node on which start tcpdump
+            :param router_id: router id on which start tcpdump
+            :param active_qg_iface_id: interface id on which start tcpdump
+            :return: thread with executing command over ssh
+            """
+            logger.info('Start tcpdump on {0}'.format(node.data['fqdn']))
+            cmd_for_tcpdump = (
+                'ip netns exec qrouter-{router_id} '
+                'tcpdump -n -l -tttt -i {qg_port_id} icmp 2>&1 | '
+                'tee /tmp/tcpdump.log'.format(
+                    router_id=router_id, qg_port_id=active_qg_iface_id))
+
+            def start_tcpdump():
+                with node.ssh() as remote:
+                    res = remote.execute(cmd_for_tcpdump)
+                    return res
+
+            tcpdump_thread = threading.Thread(target=start_tcpdump)
+            tcpdump_thread.start()
+            return tcpdump_thread
+
+        def get_last_package_datetime(node):
+            """Get last package time from tcpdump log on provided node
+
+            :param node: node on which we need to analyze log
+            :return: last time from log or None, if log is empty
+            """
+            with node.ssh() as remote:
+                res = remote.execute("grep 'ICMP echo reply' /tmp/tcpdump.log")
+                if res['exit_code'] != 0:
+                    return None
+                res = remote.execute(
+                    "grep 'ICMP echo reply' /tmp/tcpdump.log | "
+                    "tail -1 | cut -d ' ' -f 1,2")
+                last_checked = res['stdout'][0].strip()
+                return last_checked
+
+        instance = self.os_conn.nova.servers.find(name="server02")
+        instance_ip = (
+            self.os_conn.get_nova_instance_ips(instance)['floating'])
+        router_id = router['router']['id']
+
+        controllers = self.env.get_nodes_by_role('controller')
+        active_agents = self.get_active_l3_agents_for_router(router_id)
+        active_hostname = active_agents[0]['host']
+
+        # determine port for start tcpdump on it
+        active_l3_qg_port_for_router_id = self.os_conn.neutron.list_ports(
+            device_owner='network:router_gateway',
+            device_id=router_id)['ports'][0]['id']
+        active_qg_iface_id = 'qg-{}'.format(
+            active_l3_qg_port_for_router_id[:11])
+
+        # Start tcpdump on all controllers
+        tcpdump_threads = []
+        for controller in controllers:
+            tcpdump_threads.append(
+                start_tcpdump_in_background(
+                    controller, router_id, active_qg_iface_id))
+        # Ban l3 agent
+        with self.background_ping_from_host(
+                ip_to_ping=instance_ip) as ping_result:
+            with controllers[0].ssh() as remote:
+                logger.info("Ban active l3 agent")
+                remote.check_call(
+                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                        active_hostname))
+                new_active_agent = self.wait_router_rescheduled(
+                    router_id=router['router']['id'],
+                    from_node=active_hostname)
+                new_active_hostname = new_active_agent['host']
+
+        # kill tcpdump on controllers
+        for controller in controllers:
+            logger.info('Killing tcpdump on {0}'.format(
+                controller.data['fqdn']))
+            with controller.ssh() as remote:
+                remote.execute('killall tcpdump')
+        # joining threads with ssh execute tcpdump
+        for thread in tcpdump_threads:
+            thread.join(0)
+        # check that l3 active agents matching with tcpdump results
+        last_active_node = self.env.find_node_by_fqdn(active_hostname)
+        new_active_node = self.env.find_node_by_fqdn(new_active_hostname)
+        last_tcpdump_results = get_last_package_datetime(last_active_node)
+        new_tcpdump_results = get_last_package_datetime(new_active_node)
+        assert (last_tcpdump_results and new_tcpdump_results) is not None
+        assert last_tcpdump_results < new_tcpdump_results
         assert (ping_result['sended'] - ping_result['received']) < 10
