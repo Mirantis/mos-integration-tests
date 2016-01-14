@@ -49,20 +49,19 @@ def pytest_configure(config):
         "undestructive: mark test wich has teardown")
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    destroyed = True
-    if 'undestructive' in item.keywords:
-        destroyed = False
-    if call.excinfo is not None:
-        if call.excinfo.typename != 'Skipped':
-            destroyed = True
-    destroyed = destroyed or getattr(item, 'env_destroyed', False)
-    setattr(item, 'env_destroyed', destroyed)
+    # execute all other hooks to obtain the report object
+    outcome = yield
+    rep = outcome.get_result()
+
+    # set an report attribute for each phase of a call, which can
+    # be "setup", "call", "teardown"
+    setattr(item, "rep_" + rep.when, rep)
 
 
 def pytest_runtest_teardown(item, nextitem):
-    if nextitem is not None:
-        setattr(nextitem, 'do_revert', getattr(item, 'env_destroyed', True))
+    setattr(item, "nextitem", nextitem)
 
 
 @pytest.fixture(scope="session")
@@ -75,20 +74,41 @@ def snapshot_name(request):
     return request.config.getoption("--snapshot")
 
 
-@pytest.fixture
-def revert_snapshot(request, env_name, snapshot_name):
-    """Revert Fuel devops snapshot before test"""
+def revert_snapshot(env_name, snapshot_name):
+    DevopsClient.revert_snapshot(env_name=env_name,
+                                 snapshot_name=snapshot_name)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_session(env_name, snapshot_name):
+    """Revert Fuel devops snapshot before test session"""
     if not all([env_name, snapshot_name]):
         return
-    if getattr(request.node, 'do_revert', True):
-        DevopsClient.revert_snapshot(env_name=env_name,
-                                     snapshot_name=snapshot_name)
-        setattr(request.node, 'do_revert', False)
-        setattr(request.node, 'reverted', True)
+    revert_snapshot(env_name, snapshot_name)
 
 
-@pytest.fixture
-def fuel_master_ip(request, env_name, revert_snapshot):
+@pytest.yield_fixture(autouse=True)
+def cleanup(request, env_name, snapshot_name):
+    yield
+    if request.config.option.exitfirst:
+        return
+    item = request.node
+    if item.nextitem is None:
+        return
+    test_results = [getattr(item, 'rep_{}'.format(name), None)
+                    for name in ("setup", "call", "teardown")]
+    failed = any(x for x in test_results if x is not None and x.failed)
+    skipped = any(x for x in test_results if x is not None and x.skipped)
+    destructive = 'undestructive' not in item.keywords
+    reverted = False
+    if failed or (not skipped and destructive):
+        revert_snapshot(env_name, snapshot_name)
+        reverted = True
+    setattr(item.nextitem, 'reverted', reverted)
+
+
+@pytest.fixture(scope="session")
+def fuel_master_ip(request, env_name, snapshot_name):
     """Get fuel master ip"""
     fuel_ip = request.config.getoption("--fuel-ip")
     if not fuel_ip:
@@ -98,10 +118,8 @@ def fuel_master_ip(request, env_name, revert_snapshot):
     return fuel_ip
 
 
-@pytest.fixture
-def fuel(fuel_master_ip):
-    """Initialized fuel client"""
-    return FuelClient(ip=fuel_master_ip,
+def get_fuel_client(fuel_ip):
+    return FuelClient(ip=fuel_ip,
                       login=KEYSTONE_USER,
                       password=KEYSTONE_PASS,
                       ssh_login=SSH_CREDENTIALS['login'],
@@ -109,19 +127,25 @@ def fuel(fuel_master_ip):
 
 
 @pytest.fixture
+def fuel(fuel_master_ip):
+    """Initialized fuel client"""
+    return get_fuel_client(fuel_master_ip)
+
+
+@pytest.fixture
 def env(request, fuel):
     """Environment instance"""
     env = fuel.get_last_created_cluster()
-    if getattr(request.node, 'reverted', False):
+    if getattr(request.node, 'reverted', True):
         env.wait_for_ostf_pass()
     return env
 
 
-@pytest.fixture
-def set_openstack_environ(env):
+@pytest.fixture(scope="session")
+def set_openstack_environ(fuel_master_ip):
+    fuel = get_fuel_client(fuel_master_ip)
+    env = fuel.get_last_created_cluster()
     """Set os.environ variables from openrc file"""
-    if 'OS_AUTH_URL' in os.environ:
-        return
     logger.info("read OpenStack openrc file")
     controllers = env.get_nodes_by_role('controller')[0]
     with controllers.ssh() as remote:
@@ -131,10 +155,6 @@ def set_openstack_environ(env):
         after_vars = set(result['stdout'][-1].strip().split('\x00'))
         for os_var in after_vars - before_vars:
             k, v = os_var.split('=', 1)
-            # if k == 'OS_AUTH_URL':
-            #     parts = parse.urlparse(v)
-            #     netloc = '{}:{}'.format(env.get_primary_controller_ip(),
-            #                             parts.port)
-            #     new_parts = parts._replace(netloc=netloc)
-            #     v = parse.urlunparse(new_parts)
+            if v == 'internalURL':
+                v = 'publicURL'
             os.environ[k] = v
