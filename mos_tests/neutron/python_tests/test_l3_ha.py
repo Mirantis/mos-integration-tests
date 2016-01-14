@@ -453,11 +453,9 @@ class TestL3HA(TestBase):
         instance = self.os_conn.nova.servers.find(name="server02")
         controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
 
-        active_agent_list = [
-            agent for agent in
-            self.os_conn.get_l3_for_router(router['router']['id'])['agents']
-            if agent['ha_state'] == 'active']
-        node_to_ban = active_agent_list[0]['host']
+        active_agents = self.get_active_l3_agents_for_router(
+            router['router']['id'])
+        node_to_ban = active_agents[0]['host']
 
         # Ban l3 agent
         with self.background_ping(
@@ -474,3 +472,52 @@ class TestL3HA(TestBase):
                     from_node=node_to_ban)
 
         assert (ping_result['sended'] - ping_result['received']) < 40
+
+    def test_move_router_iface_to_down_state(self, router, prepare_openstack):
+        """Move router ha-interface down and check ping.
+
+         Steps:
+            1. Create network net01, subnet net01_subnet
+            2. Create router with gateway to external net and
+               interface with net01
+            3. Launch instance and associate floating IP
+            4. Check ping from instance to google DNS
+            5. Find node with active agent for router
+            6. Move router interface to down state on founded controller:
+               ip netns exec qrouter-<router_id> ip link set dev ha-<id> down
+            7. Wait until router rescheduled
+            8. Stop ping
+            9. Check that ping lost less than 10 packets
+        """
+        instance = self.os_conn.nova.servers.find(name="server01")
+        router_id = router['router']['id']
+
+        active_agents = self.get_active_l3_agents_for_router(router_id)
+        active_hostname = active_agents[0]['host']
+        active_node = self.env.find_node_by_fqdn(active_hostname)
+
+        ports_list_for_router = self.os_conn.neutron.list_ports(
+            device_owner='network:router_ha_interface',
+            device_id=router_id)['ports']
+        active_l3_ha_port_for_router_id = [
+            port for port in ports_list_for_router
+            if port['binding:host_id'] == active_hostname][0]['id']
+        active_ha_iface_id = 'ha-{}'.format(
+            active_l3_ha_port_for_router_id[:11])
+
+        # Ban l3 agent
+        with self.background_ping(
+                vm=instance,
+                vm_keypair=self.instance_keypair,
+                ip_to_ping=settings.PUBLIC_TEST_IP) as ping_result:
+            with active_node.ssh() as remote:
+                logger.info("Move down ha-port on router")
+                remote.check_call(
+                    "ip netns exec qrouter-{router_id} "
+                    "ip link set dev {iface_id} down".format(
+                        router_id=router_id, iface_id=active_ha_iface_id))
+                self.wait_router_rescheduled(
+                    router_id=router['router']['id'],
+                    from_node=active_hostname)
+
+        assert (ping_result['sended'] - ping_result['received']) < 10
