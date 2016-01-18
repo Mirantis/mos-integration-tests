@@ -141,6 +141,7 @@ class TestVxlanBase(TestBase):
 class TestVxlan(TestVxlanBase):
     """Simple Vxlan tests"""
 
+    @pytest.mark.testrail_id('542631')
     def test_tunnel_established(self, router):
         """Check that VxLAN is established on nodes and VNI matching
            the segmentation_id of a network
@@ -203,6 +204,7 @@ class TestVxlan(TestVxlanBase):
         vni = network['network']['provider:segmentation_id']
         check_all_traffic_has_vni(vni, '/tmp/vxlan1.log')
 
+    @pytest.mark.testrail_id('542632')
     @pytest.mark.check_env_('has_2_or_more_computes')
     def test_vni_for_icmp_between_instances(self, router):
         """Check VNI and segmentation_id for icmp traffic between instances

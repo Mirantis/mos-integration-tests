@@ -50,6 +50,10 @@ def pytest_configure(config):
         "neeed_tshark: mark test wich need tshark to be installed to run")
     config.addinivalue_line("markers",
         "undestructive: mark test wich has teardown")
+    config.addinivalue_line("markers",
+        "testrail_id(id, params={'name': value,...}): add suffix to "
+        "test name. If defined, `params` apply case_id only if it "
+        "matches test params.")
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
@@ -262,3 +266,28 @@ def env_requirements(request, env):
                 doc = func.__doc__ or 'Env {}'.format(
                     func_name.replace('_', ' '))
                 pytest.skip('Requires: {}'.format(doc))
+
+
+@pytest.fixture(autouse=True)
+def testrail_id(request):
+    """Add suffix_(<testrail_id>) mark to testcases"""
+    node = request.node
+    markers = node.get_marker('testrail_id') or []
+    for marker in markers:
+        test_id = marker.args[0]
+        params = marker.kwargs.get('params', {})
+        if len(params) > 0 and node.callspec.params != params:
+            continue
+        suffix_string = '({})'.format(test_id)
+        node.add_marker('suffixes_{}'.format(suffix_string))
+        break
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_logreport(report):
+    """Collect suffix_ prefixed marks and add it to testid in report"""
+    suffixes = [x.lstrip('suffixes_') for x in report.keywords.keys()
+                if x.startswith('suffixes_')]
+    if len(suffixes) > 0:
+        report.nodeid += ''.join(suffixes)
+    yield

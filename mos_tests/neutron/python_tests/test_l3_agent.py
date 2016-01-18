@@ -185,6 +185,8 @@ class TestL3Agent(TestBase):
              waiting_for=waiting_for.format(node_with_l3),
              sleep_seconds=(1, 60))
 
+    @pytest.mark.testrail_id('542603', params={'ban_count': 1})
+    @pytest.mark.testrail_id('542604', params={'ban_count': 2})
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
     def test_ban_one_l3_agent(self, ban_count):
         """Check l3-agent rescheduling after l3-agent dies on vlan
@@ -234,6 +236,7 @@ class TestL3Agent(TestBase):
         # check pings
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542605')
     def test_ban_l3_agents_and_clear_last(self):
         """Ban all l3-agents, clear last of them and check health of l3-agent
 
@@ -290,6 +293,7 @@ class TestL3Agent(TestBase):
         # check pings
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542606')
     def test_ban_l3_agents_and_clear_first(self):
         """Ban all l3-agents, clear first of them and check health of l3-agent
 
@@ -357,6 +361,7 @@ class TestL3Agent(TestBase):
         # check pings
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542607')
     def test_l3_agent_after_drop_rabbit_port(self):
         """Drop rabbit port and check l3-agent work
 
@@ -386,6 +391,7 @@ class TestL3Agent(TestBase):
         # check pings
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542608')
     def test_ban_l3_agents_many_times(self):
         """Ban l3-agent many times and check health of l3-agent
 
@@ -439,6 +445,7 @@ class TestL3Agent(TestBase):
         self.check_vm_connectivity()
 
     @pytest.mark.need_devops
+    @pytest.mark.testrail_id('542609')
     def test_shutdown_not_primary_controller(self, env_name):
         """Shut down non-primary controller and check l3-agent work
 
