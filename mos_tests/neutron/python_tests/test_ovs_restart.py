@@ -200,6 +200,8 @@ class TestOVSRestartTwoVms(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('580185', params={'count': 1})
+    @pytest.mark.testrail_id('542649', params={'count': 40})
     @pytest.mark.parametrize('count', [1, 40], ids=['1x', '40x'])
     def test_ovs_restart_pcs_disable_enable(self, count):
         """Restart openvswitch-agents with pcs disable/enable on controllers
@@ -252,6 +254,7 @@ class TestOVSRestartTwoVms(OvsBase):
             assert all([agt['alive'] for agt in
                         self.os_conn.neutron.list_agents()['agents']])
 
+    @pytest.mark.testrail_id('542644')
     def test_ovs_restart_pcs_ban_clear(self):
         """Restart openvswitch-agents with pcs ban/clear on controllers
 
@@ -325,6 +328,7 @@ class TestPortTags(TestBase):
                 port = None
         return port_tags
 
+    @pytest.mark.testrail_id('542664')
     def test_port_tags_immutable(self):
         """Check that ports tags don't change their values after
             ovs-agents restart
@@ -439,12 +443,10 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('542673')
     def test_restart_openvswitch_agent_under_bat(self, prepare_openstack):
-        """[Networking: OVS graceful restart] Create automated test
-           Restart openvswitch-agents with broadcast traffic background
+        """Restart openvswitch-agents with broadcast traffic background
 
-        TestRail ids are C542673 C542674 C542675 C542676
-                         C542677 C580200 C580201 C580202
         Steps:
             1. Go to vm1's console and run arping
                to initiate broadcast traffic:
@@ -567,6 +569,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('542668')
     def test_ovs_restart_pcs_vms_on_single_compute_in_single_network(self):
         """Check connectivity for instances scheduled on a single compute in
          a single private network
@@ -746,6 +749,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('542659')
     @pytest.mark.require_QCOW2_ubuntu_image_with_iperf
     def test_ovs_restart_with_iperf_traffic(self, _prepare_openstack):
         """Checks that iperf traffic is not interrupted during ovs restart
@@ -857,6 +861,7 @@ class TestOVSRestartAddFlows(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('542654')
     def test_ovs_new_flows_added_after_restart(self):
         """Check that new flows are added after ovs-agents restart
 
@@ -990,18 +995,9 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
+    @pytest.mark.testrail_id('542666')
     def test_ovs_restart_pcs_disable_enable_ping_private_vms(self):
-        """Restart openvswitch-agents with pcs disable/enable on controllers:
-            QA-375  - Create automated test "[VLAN only] Check
-                connectivity between private networks on different routers"
-            QA-376  - Create automated test "[VLAN only][DVR] Check
-                connectivity between private networks on different routers"
-            QA-1175 - Create automated test "[VLAN only][L3 HA] Check
-                connectivity between private networks on different routers"
-
-        Jira: QA-375,  Testrail: 542666
-        Jira: QA-376,  Testrail: 542667
-        Jira: QA-1175, Testrail: 580204
+        """Restart openvswitch-agents with pcs disable/enable on controllers.
 
         Steps:
             1. Update default security group if needed

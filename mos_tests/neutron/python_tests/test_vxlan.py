@@ -202,7 +202,7 @@ class TestVxlan(TestVxlanBase):
 
         # Check log
         vni = network['network']['provider:segmentation_id']
-        check_all_traffic_has_vni(vni, '/tmp/vxlan1.log')
+        check_all_traffic_has_vni(vni, '/tmp/vxlan.log')
 
     @pytest.mark.testrail_id('542632')
     @pytest.mark.check_env_('has_2_or_more_computes')
@@ -290,6 +290,10 @@ class TestVxlanL2pop(TestVxlanBase):
         :returns str: name of tap device
         """
 
+    @pytest.mark.testrail_id(
+        '542633', params={'tcpdump_args': '-vvni any port 4789'})
+    @pytest.mark.testrail_id(
+        '542637', params={'tcpdump_args': '-n src host {source_ip} -i any'})
     @pytest.mark.need_tshark
     @pytest.mark.check_env_('has_2_or_more_computes')
     @pytest.mark.parametrize('tcpdump_args', [
@@ -373,6 +377,7 @@ class TestVxlanL2pop(TestVxlanBase):
         check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                            log_file=unicast_log)
 
+    @pytest.mark.testrail_id('542636')
     @pytest.mark.check_env_('has_3_or_more_computes')
     def test_establishing_tunnels_between_computes(self, variables):
         """Check the tunnels established between computes
@@ -499,6 +504,7 @@ class TestVxlanL2pop(TestVxlanBase):
                 stdout = ''.join(result['stdout'])
                 assert any([x in stdout for x in compute3.ip_list])
 
+    @pytest.mark.testrail_id('542638')
     @pytest.mark.need_tshark
     @pytest.mark.check_env_('has_2_or_more_computes')
     def test_broadcast_traffic_propagation_single_net(self, router):

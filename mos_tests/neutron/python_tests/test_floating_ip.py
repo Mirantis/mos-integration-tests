@@ -85,6 +85,7 @@ class TestFloatingIP(TestBase):
                                         **self.cirros_creds) as vm_remote:
                 vm_remote.execute("date")
 
+    @pytest.mark.testrail_id('542634')
     def test_ssh_after_deleting_floating(self):
         """Check ssh-connection by floating ip for vm after
         deleting floating ip
