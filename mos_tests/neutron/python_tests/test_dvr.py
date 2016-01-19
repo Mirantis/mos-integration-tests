@@ -218,7 +218,7 @@ class TestDVR(TestDVRBase):
 
         """
         self._prepare_openstack_env()
-        self.check_ping_from_cirros(self.server)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         # Get controller with SNAT and destroy it
         controller_with_snat = self.find_snat_controller()
         logger.info('Destroying controller with SNAT: {}'.format(
@@ -235,7 +235,7 @@ class TestDVR(TestDVRBase):
             sleep_seconds=(1, 60, 5),
             waiting_for=wait_msg)
         # Check external ping and proper SNAT rescheduling
-        self.check_ping_from_cirros(self.server)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         assert (
             controller_with_snat.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
