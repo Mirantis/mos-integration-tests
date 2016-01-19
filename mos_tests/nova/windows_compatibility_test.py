@@ -196,7 +196,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                          len(list(self.glance.images.list())),
                          "Length of list with images should be the same")
 
-    def test_542825_CreateInstanceWithWindowsImage(self):
+    def test_create_instance_with_windows_image(self):
         """This test checks that instance with Windows image could be created
 
         Steps:
@@ -209,7 +209,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-    def test_542826_PauseAndUnpauseInstanceWithWindowsImage(self):
+    def test_pause_and_unpause_instance_with_windows_image(self):
         """This test checks that instance with Windows image could be paused
         and unpaused
 
@@ -258,7 +258,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-    def test_542826_SuspendAndResumeInstanceWithWindowsImage(self):
+    def test_suspend_and_resume_instance_with_windows_image(self):
         """This test checks that instance with Windows image can be suspended
         and resumed
 
@@ -307,7 +307,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-    def test_542827_LiveMigrationForWindowsInstance(self):
+    def test_live_migration_for_windows_instance(self):
         """This test checks that instance with Windows Image could be
         migrated without any issues
 

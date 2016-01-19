@@ -52,7 +52,8 @@ class CinderIntegrationTests(OpenStackTestCase):
         finally:
             self.cinder.quotas.update(self.tenant_id, snapshots=self.quota)
 
-    def test_543176_CreatingMultipleSnapshots(self):
+    @pytest.mark.testrail_id('543176')
+    def test_creating_multiple_snapshots(self):
         """This test case checks creation of several snapshot at the same time
 
             Steps:

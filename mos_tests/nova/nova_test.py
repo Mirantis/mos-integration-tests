@@ -81,7 +81,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
         self.nova.security_groups.delete(self.sec_group)
 
-    def test_543358_NovaLaunchVMFromImageWithAllFlavours(self):
+    def test_nova_launch_v_m_from_image_with_all_flavours(self):
         """This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
@@ -121,7 +121,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
-    def test_543360_NovaLaunchVMFromVolumeWithAllFlavours(self):
+    def test_nova_launch_v_m_from_volume_with_all_flavours(self):
         """This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
         20Gb RAM and 150GB disk for each
@@ -164,7 +164,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
-    def test_543355_ResizeDownAnInstanceBootedFromVolume(self):
+    def test_resize_down_an_instance_booted_from_volume(self):
         """This test checks that nova allows
             resize down an instance booted from volume
             Steps:
@@ -224,7 +224,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after resize is not reachable")
 
-    def test_543359_MassivelySpawnVolumes(self):
+    def test_massively_spawn_volumes(self):
         """This test checks massively spawn volumes
 
         Steps:
@@ -248,7 +248,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
 
-    def test_543356_NovaMassivelySpawnVMsWithBootLocal(self):
+    def test_nova_massively_spawn_v_ms_with_boot_local(self):
         """This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
 
@@ -309,7 +309,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
-    def test_543357_NovaMassivelySpawnVMsBootFromCinder(self):
+    def test_nova_massively_spawn_v_ms_boot_from_cinder(self):
         """This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
 
@@ -381,7 +381,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
-    def test_2238776_NetworkConnectivityToVMDuringLiveMigration(self):
+    def test_network_connectivity_to_v_m_during_live_migration(self):
         """This test checks network connectivity to VM during Live Migration
 
             Steps:
@@ -441,7 +441,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             msg = "Packets loss exceeds the limit, {} packets were lost"
             raise AssertionError(msg.format(loss))
 
-    def test_2238777_LiveMigrationOfVMsWithDataOnRootAndEphemeralDisk(self):
+    def test_live_migration_of_v_ms_with_data_on_root_and_ephemeral_disk(self):
         """This test checks Live Migration of VMs with data on root and
         ephemeral disk
 
