@@ -210,9 +210,13 @@ class TestL3HA(TestBase):
 
     def wait_router_migrate(self, router_id, new_node, timeout_seconds=60):
         """Wait for router migrate to l3 agent hosted on `new node`"""
+        def check_active_router_on_host():
+            agents = self.get_active_l3_agents_for_router(router_id)
+            if not agents:
+                return False
+            return agents[0]['host'] == new_node
         return wait(
-            lambda: self.get_active_l3_agents_for_router(
-                router_id)[0]['host'] == new_node,
+            check_active_router_on_host,
             timeout_seconds=timeout_seconds,
             waiting_for="router migrate to l3 agent hosted on {}".format(
                 new_node)
@@ -729,7 +733,7 @@ class TestL3HA(TestBase):
             with to_controller.ssh() as remote:
                 for node in other_controllers:
                     # Ban l3 agents on all controllers
-                    # except the one to which it is goinig to be migrated
+                    # except the one to which it is going to be migrated
                     remote.check_call(
                         'pcs resource ban p_neutron-l3-agent {}'.format(
                             node.data['fqdn']))
