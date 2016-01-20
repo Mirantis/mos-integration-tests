@@ -56,10 +56,10 @@ class TestDHCPAgent(TestBase):
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
+    @pytest.mark.testrail_id('542614')
     def test_to_check_dhcp_agents_work(self):
         """[Neutron VLAN and VXLAN] Check dhcp-agents work
 
-        TestRail id is C542614
         Steps:
             1. Update quotas for creation a lot of networks:
                 neutron quota-update --network 1000 --subnet 1000
@@ -115,10 +115,10 @@ class TestDHCPAgent(TestBase):
         for value in networks_amount_on_each_agt:
             assert self.isclose(value, max_value, abs_tol=3), err_msg
 
+    @pytest.mark.testrail_id('542619')
     def test_drop_rabbit_port_check_dhcp_agent(self):
         """[Neutron VLAN and VXLAN] Drop rabbit port and check dhcp-agent
 
-        TestRail id is C542619
         Steps:
             2. Create network net01, subnet net01_subnet, add it to router01
             3. Launch instance
@@ -198,10 +198,10 @@ class TestDHCPAgent(TestBase):
 
         self.os_conn.wait_agents_alive(self.dhcp_agent_ids)
 
+    @pytest.mark.testrail_id('542621')
     def test_kill_active_dhcp_agt(self):
         """"[Neutron VLAN and VXLAN] Kill process and check dhcp-agents"
 
-        TestRail id is C542621
         Steps:
         logger.info('wait until the nodes get offline state')
             1. Create network net01, subnet net01_subnet, add it to router01

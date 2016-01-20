@@ -95,11 +95,11 @@ class TestRestarts(TestBase):
                                self.os_conn.neutron.list_agents(
                                    binary='neutron-dhcp-agent')['agents']]
 
+    @pytest.mark.testrail_id('542612')
     def test_shutdown_primary_controller_with_l3_agt(self):
         """[Neutron VLAN and VXLAN] Shut down primary controller
            and check l3-agent
 
-        TestRail id is C542612
         Steps:
             1. Check on what agents is router1:
                 neutron l3-agent-list-hosting-router router1
@@ -152,10 +152,10 @@ class TestRestarts(TestBase):
         # Create one more server and check connectivity
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542611')
     def test_restart_primary_controller_with_l3_agt(self):
         """[Neutron VLAN and VXLAN] Reset primary controller and check l3-agent
 
-        TestRail id is C542611
         Steps:
             1. Check on what agents is router1:
                 neutron l3-agent-list-hosting-router router1
@@ -201,10 +201,10 @@ class TestRestarts(TestBase):
                                 self.security_group.id)
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542613')
     def test_kill_active_l3_agt(self):
         """[Neutron VLAN and VXLAN] Kill l3-agent process
 
-        TestRail id is C542613
             8. get node with l3 agent where is the router1:
                 neutron l3-agent-hosting-router router1
             9. on this node find l3-agent process:
@@ -252,6 +252,7 @@ class TestRestarts(TestBase):
                                 self.security_group.id)
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542625')
     def test_shutdown_primary_controller_dhcp_agent(self):
         """Shutdown primary controller and check dhcp-agent
 
@@ -302,6 +303,7 @@ class TestRestarts(TestBase):
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
 
+    @pytest.mark.testrail_id('542628')
     def test_reset_primary_controller_dhcp_agent(self):
         """Reset primary controller and check dhcp-agent
 
@@ -352,6 +354,7 @@ class TestRestarts(TestBase):
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
 
+    @pytest.mark.testrail_id('542626')
     def test_shutdown_non_primary_controller_dhcp_agent(self):
         """Shutdown non-primary controller and check dhcp-agent
 

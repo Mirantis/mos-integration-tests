@@ -56,7 +56,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.delete_stack(self.heat, stack_uid)
         self.uid_list = []
 
-    def test_543328_HeatResourceTypeList(self):
+    def test_heat_resource_type_list(self):
         """This test case checks list of available Heat resources.
 
         Steps:
@@ -76,7 +76,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
 
-    def test_543347_HeatCreateStack(self):
+    def test_heat_create_stack(self):
         """This test performs creation of a new stack with
             a help of Heat. And then delete it.
 
@@ -89,7 +89,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         Check that stack became from \
         'DELETE_IN_PROGRESS' --> 'DELETE_COMPLETE'
 
-        https://mirantis.testrail.com/index.php?/cases/view/543347
         """
         # Be sure that this template file will be put on
         # controller during test preparation
@@ -112,7 +111,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                          template_content)
         self.uid_list.append(uid_of_new_stack)
 
-    def test_543337_HeatStackUpdate(self):
+    def test_heat_stack_update(self):
         """This test case checks stack-update action.
         Steps:
         1. Create stack using template file empty_heat_templ.yaml
@@ -141,7 +140,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             else:
                 time.sleep(1)
 
-    def test_543329_HeatResourceTypeShow(self):
+    def test_heat_resource_type_show(self):
         """This test case checks representation of all Heat resources.
 
         Steps:
@@ -156,7 +155,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             msg = "Schema of resource {0} is incorrect!"
             self.assertIsInstance(resource_schema, dict, msg.format(resource))
 
-    def test_543330_HeatResourceTypeTemplate(self):
+    def test_heat_resource_type_template(self):
         """This test case checks representation of templates for all Heat
             resources.
 
@@ -172,7 +171,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             msg = "Schema of resource template {0} is incorrect!"
             self.assertIsInstance(schema, dict, msg.format(resource))
 
-    def test_543335_HeatStackDelete(self):
+    def test_heat_stack_delete(self):
         """This test case checks deletion of stack.
 
         Steps:
@@ -201,7 +200,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
 
-    def test_543333_HeatStackCreateWithTemplate(self):
+    def test_heat_stack_create_with_template(self):
         """This test case checks creation of stack.
 
         Steps:
@@ -229,7 +228,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                             'CREATE_COMPLETE',
                                                             timeout))
 
-    def test_543334_HeatStackCreateWithURL(self):
+    def test_heat_stack_create_with_url(self):
         """This test case checks creation of stack using template URL.
 
         Steps:
@@ -259,7 +258,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                             'CREATE_COMPLETE',
                                                             timeout))
 
-    def test_543339_CheckStackResourcesStatuses(self):
+    def test_check_stack_resources_statuses(self):
         """This test case checks that stack resources are in expected states
         Steps:
         1. Create new stack
@@ -290,7 +289,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                       "Stack {0} is not in CHECK_COMPLETE state".format(
                           stack_name))
 
-    def test_543341_ShowStackEventList(self):
+    def test_show_stack_event_list(self):
         """This test checks list events for a stack
 
         Steps:
@@ -311,7 +310,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
 
-    def test_543344_HeatStackTemplateShow(self):
+    def test_heat_stack_template_show(self):
         """This test case checks representation of template of created stack.
 
         Steps:
@@ -339,7 +338,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         stack_template = self.heat.stacks.template(stack_id)
         self.assertIsInstance(stack_template, dict)
 
-    def test_543342_ShowInfoOfSpecifiedStackEvent(self):
+    def test_show_info_of_specified_stack_event(self):
         """This test checks info about stack event
 
         Steps:
@@ -369,7 +368,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                          .format(event_info.resource_status, stack_status))
         common_functions.delete_stack(self.heat, stack_id)
 
-    def test_543345_HeatCreateStackAWS(self):
+    def test_heat_create_stack_a_w_s(self):
         """This test creates stack using AWS format template
 
         Steps:
@@ -380,7 +379,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         5. Create stack
         6. Delete stack
 
-        https://mirantis.testrail.com/index.php?/cases/view/543345
         """
         # Prepare new name. Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
@@ -439,7 +437,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                             parameters)
         self.uid_list.append(uid)
 
-    def test_543332_HeatStackPreview(self):
+    def test_heat_stack_preview(self):
         """This test case previews a stack.
 
         Steps:
@@ -475,7 +473,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
 
-    def test_543343_HeatStackTemplateValidate(self):
+    def test_heat_stack_template_validate(self):
         """This test case checks representation of template file.
 
         Steps:
@@ -488,7 +486,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         result = self.heat.stacks.validate(**template_data)
         self.assertIsInstance(result, dict)
 
-    def test_543340_StackResumeSuspend(self):
+    def test_stack_resume_suspend(self):
         """Suspend and resume stack
         (with its resources for which that feature works)
 
@@ -546,7 +544,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
 
-    def test_543351_HeatStackUpdateReplace(self):
+    def test_heat_stack_update_replace(self):
         """This test case checks change stack id after stack update.
 
         Steps:
@@ -586,7 +584,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
 
-    def test_543352_HeatStackUpdateInPlace(self):
+    def test_heat_stack_update_in_place(self):
         """This test case checks stack id doesn't change after stack update.
 
         Steps:
@@ -629,7 +627,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.update_template_file(template_path, 'flavor',
                                                   **back_flavor_change)
 
-    def test_543336_HeatStackShow(self):
+    def test_heat_stack_show(self):
         """This test case checks detailed stack's information.
 
         Steps:
@@ -681,7 +679,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
 
-    def test_543338_StackCancelUpdate(self):
+    def test_stack_cancel_update(self):
         """This test check the possibility to cancel update
 
         Steps:
@@ -737,7 +735,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertTrue(common_functions.check_stack_status
                         (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
 
-    def test_543353_HeatStackOutputList(self):
+    def test_heat_stack_output_list(self):
         """This test case checks list of all stack attributes.
 
         Steps:
@@ -765,7 +763,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                             outputs]
         self.assertEqual(stack_attributes, correct_attributes)
 
-    def test_543353_HeatStackOutputShow(self):
+    def test_heat_stack_output_show(self):
         """This test case checks value of specific attribute
             as well as list of all stack attributes.
 
@@ -797,7 +795,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                              if k != 'output_value'} for item in outputs]
         self.assertEqual(stack_attributes, correct_attributes)
 
-    def test_543348_HeatCreateStackWaitCondition(self):
+    def test_heat_create_stack_wait_condition(self):
         """This test creates stack with WaitCondition resources
 
         Steps:
@@ -809,7 +807,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         created successfully
         6. CleanUp
 
-        https://mirantis.testrail.com/index.php?/cases/view/543348
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
         image_name = '543348_Cirros-image' + '_' + str(randint(100, 10000))
@@ -883,7 +880,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
-    def test_543349_HeatCreateStackNeutronResources(self):
+    def test_heat_create_stack_neutron_resources(self):
         """This test creates stack with Neutron resources
 
         Steps:
@@ -897,7 +894,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         created successfully
         8. CleanUp
 
-        https://mirantis.testrail.com/index.php?/cases/view/543349
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
         image_name = '543349_Cirros-image' + '_' + str(randint(100, 10000))
@@ -993,7 +989,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
-    def test_543350_HeatCreateStackNovaResources(self):
+    def test_heat_create_stack_nova_resources(self):
         """This test creates stack with Nova resources
 
         Steps:
@@ -1005,7 +1001,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         6. Create stack
         7. CleanUp
 
-        https://mirantis.testrail.com/index.php?/cases/view/543350
         """
         file_name = 'cirros-0.3.4-x86_64-disk.img.txt'
         image_name = '543350_Cirros-image' + '_' + str(randint(100, 10000))
@@ -1089,7 +1084,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
-    def test_543346_HeatCreateStackDockerResources(self):
+    def test_heat_create_stack_docker_resources(self):
         """This test creates stack with Docker resource
 
         Steps:
@@ -1104,7 +1099,6 @@ class HeatIntegrationTests(OpenStackTestCase):
         9. Create Docker stack
         10. CleanUp
 
-        https://mirantis.testrail.com/index.php?/cases/view/543346
         """
         # At first we need to check that heat has Docker resources
         # but it was already verified in "test_543328_HeatResourceTypeList".

@@ -219,6 +219,8 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
     def prepare_openstack_state(self, init):
         self._prepare_openstack_state()
 
+    @pytest.mark.testrail_id('542615', params={'ban_count': 1})
+    @pytest.mark.testrail_id('542616', params={'ban_count': 2})
     @pytest.mark.parametrize('ban_count', [1, 2])
     def test_ban_some_dhcp_agents(self, ban_count):
         """Check dhcp-agent rescheduling after dhcp-agent dies.
@@ -270,6 +272,7 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
                                                    new_agents_hosts))
         assert sorted(agents_hosts) != sorted(new_agents_hosts), err_msg
 
+    @pytest.mark.testrail_id('542617')
     def test_ban_all_dhcp_agents_and_restart_one(self):
         """Check dhcp-agent state after ban all agents and restart one of them.
 
@@ -364,6 +367,7 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
                                                      nets_on_dhcp_agent))
         assert set(agents_networks) == set(nets_on_dhcp_agent), err_msg
 
+    @pytest.mark.testrail_id('542618')
     def test_multiple_ban_dhcp_agents_and_restart_first(self, ban_count=18):
         """Check dhcp-agent state after ban all agents and restart one of them.
 
@@ -482,6 +486,7 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
                                                   nets_on_free_dhcp_agent))
         assert set(agents_networks) == set(nets_on_free_dhcp_agent), err_msg
 
+    @pytest.mark.testrail_id('542620')
     def test_ban_dhcp_agent_many_times(self, ban_count=40):
         """Check dhcp-agent state after ban all agents and restart one of them.
 
@@ -550,6 +555,7 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
         # check instance network is on same count of dhcp-agents as on start
         assert len(actual_agents) == len(curr_agents), err_msg
 
+    @pytest.mark.testrail_id('542622')
     def test_reschedule_dhcp_agents(self):
         """Check dhcp-agent manual rescheduling.
 
@@ -688,6 +694,8 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
 
         self._prepare_openstack_state()
 
+    @pytest.mark.testrail_id('542623', params={'net_on_dhcp_count': 1})
+    @pytest.mark.testrail_id('542624', params={'net_on_dhcp_count': 3})
     @pytest.mark.parametrize('net_on_dhcp_count', [1, 3])
     def test_rescheduling_with_one_or_three_dhcp_agents(self,
                                                         net_on_dhcp_count):
