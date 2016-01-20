@@ -39,9 +39,9 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
 
         self.sec_group = self.nova.security_groups.create('security_nova',
-                                                        'Security group, '
-                                                        'created for Nova '
-                                                        'automatic tests')
+                                                          'Security group, '
+                                                          'created for Nova '
+                                                          'automatic tests')
         rules = [
             {
                 # ssh

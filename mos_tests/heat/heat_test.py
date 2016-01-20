@@ -607,9 +607,9 @@ class HeatIntegrationTests(OpenStackTestCase):
                                           parameters)
             second_resource_id = common_functions.get_specific_resource_id(
                 self.heat, sid, 'vm')
-            self.assertEqual(first_resource_id, second_resource_id,
-                                msg='Resource id should not be changed'
-                                    ' after modifying stack')
+            self.assertEqual(
+                first_resource_id, second_resource_id,
+                msg='Resource id should not be changed after modifying stack')
         finally:
             common_functions.delete_stack(self.heat, sid)
             back_flavor_change = {'flavor': 'm1.tiny'}
