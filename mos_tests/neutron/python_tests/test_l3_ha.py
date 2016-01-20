@@ -788,8 +788,8 @@ class TestL3HA(TestBase):
                                   vm_keypair=self.instance_keypair,
                                   ip_to_ping=server2_ip) as ping_result:
 
-            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                              mac=controller.data['mac'])
+            devops_node = DevopsClient.get_node_by_mac(
+                env_name=env_name, mac=controller.data['mac'])
             self.env.destroy_nodes([devops_node])
 
         assert ping_result['sended'] - ping_result['received'] < 10
@@ -846,8 +846,8 @@ class TestL3HA(TestBase):
                                   vm_keypair=self.instance_keypair,
                                   ip_to_ping=server2_ip) as ping_result:
 
-            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                              mac=controller.data['mac'])
+            devops_node = DevopsClient.get_node_by_mac(
+                env_name=env_name, mac=controller.data['mac'])
             devops_node.reset()
 
         assert ping_result['sended'] - ping_result['received'] < 10
