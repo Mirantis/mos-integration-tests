@@ -136,6 +136,14 @@ class OpenStackActions(object):
         srv = self.nova.servers.get(srv.id)
         return getattr(srv, "OS-EXT-SRV-ATTR:hypervisor_hostname")
 
+    def is_server_active(self, server):
+        status = self.nova.servers.get(server).status
+        if status == 'ACTIVE':
+            return True
+        if status == 'ERROR':
+            raise Exception('Server {} status is error'.format(
+                      server.name))
+
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=100, **kwargs):
         try:
@@ -156,14 +164,8 @@ class OpenStackActions(object):
                                        key_name=key_name,
                                        **kwargs)
 
-        def is_server_active():
-            status = self.get_instance_detail(srv).status
-            if status == 'ACTIVE':
-                return True
-            if status == 'ERROR':
-                raise Exception('Server {} status is error'.format(srv.name))
-
-        wait(is_server_active, timeout_seconds=timeout, sleep_seconds=5,
+        wait(lambda: self.is_server_active(srv),
+             timeout_seconds=timeout, sleep_seconds=5,
              waiting_for='instance {0} status change to ACTIVE'.format(
                 name))
 
