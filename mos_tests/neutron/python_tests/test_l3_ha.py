@@ -46,11 +46,11 @@ def ping_groups(stdout):
     """Generate ping info for each line of stdout
 
     Format:
-        * `sended` - count of sended packets
+        * `sent` - count of sent packets
         * `received` - count of received packets
         * `group_len` - len of last continuous group of success pings
     """
-    PingInfo = namedtuple('PingInfo', ['sended', 'received', 'group_len'])
+    PingInfo = namedtuple('PingInfo', ['sent', 'received', 'group_len'])
     prev_seq = -1
     group_start = 0
     received = 0
@@ -63,7 +63,7 @@ def ping_groups(stdout):
         if seq != prev_seq + 1:
             logger.debug('ping interrupted')
             group_start = seq
-        pi = PingInfo(sended=seq, received=received,
+        pi = PingInfo(sent=seq, received=received,
                       group_len=seq - group_start)
         yield pi
         prev_seq = seq
@@ -144,7 +144,7 @@ class TestL3HA(TestBase):
         groups = ping_groups(output)
         for ping_info in groups:
             result['received'] = ping_info.received
-            result['sended'] = ping_info.sended
+            result['sent'] = ping_info.sent
 
     @contextmanager
     def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50):
@@ -161,7 +161,7 @@ class TestL3HA(TestBase):
 
         result = {
             'received': 0,
-            'sended': 0,
+            'sent': 0,
         }
 
         t = PingThread(env=self.env, os_conn=self.os_conn, vm=vm,
@@ -181,7 +181,7 @@ class TestL3HA(TestBase):
         logger.info('Wait for ping restored')
         for ping_info in groups:
             result['received'] = ping_info.received
-            result['sended'] = ping_info.sended
+            result['sent'] = ping_info.sent
             if ping_info.group_len >= good_pings:
                 break
         t.stop()
@@ -308,7 +308,7 @@ class TestL3HA(TestBase):
                         from_node=node_to_ban)
                     node_to_ban = new_agent['host']
 
-            assert ping_result['sended'] - ping_result['received'] < 10
+            assert ping_result['sent'] - ping_result['received'] < 10
 
     def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
         """Disable all l3 agents and enable them
@@ -379,7 +379,7 @@ class TestL3HA(TestBase):
                     "ip netns delete qrouter-{0}".format(
                         router['router']['id']))
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
     def test_destroy_primary_controller(self, router, prepare_openstack,
                                         env_name):
@@ -512,7 +512,7 @@ class TestL3HA(TestBase):
                     from_node=node_to_ban)
                 node_to_ban = new_agent['host']
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
     def test_ban_active_l3_agent_with_external_connectivity(self, router,
                                                             prepare_openstack):
@@ -550,7 +550,7 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=node_to_ban)
 
-        assert (ping_result['sended'] - ping_result['received']) < 40
+        assert (ping_result['sent'] - ping_result['received']) < 40
 
     def test_move_router_iface_to_down_state(self, router, prepare_openstack):
         """Move router ha-interface down and check ping.
@@ -599,7 +599,7 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=active_hostname)
 
-        assert (ping_result['sended'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 10
 
     def test_ban_l3_agent_with_tcpdump_check(self, router, prepare_openstack):
         """Ban l3 active agent and check it by tcpdump log.
@@ -709,7 +709,7 @@ class TestL3HA(TestBase):
         new_tcpdump_results = get_last_package_datetime(new_active_node)
         assert (last_tcpdump_results and new_tcpdump_results) is not None
         assert last_tcpdump_results < new_tcpdump_results
-        assert (ping_result['sended'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 10
 
     def reschedule_active_l3_agt(self, router_id,
                                  to_controller, from_controller):
@@ -792,7 +792,7 @@ class TestL3HA(TestBase):
                 env_name=env_name, mac=controller.data['mac'])
             self.env.destroy_nodes([devops_node])
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
@@ -850,7 +850,7 @@ class TestL3HA(TestBase):
                 env_name=env_name, mac=controller.data['mac'])
             devops_node.reset()
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
