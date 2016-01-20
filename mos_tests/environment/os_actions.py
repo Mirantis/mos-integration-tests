@@ -181,7 +181,7 @@ class OpenStackActions(object):
 
         # wait for ssh ready
         if self.env is not None:
-            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=60,
+            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=100,
                  waiting_for='server available via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
@@ -240,7 +240,7 @@ class OpenStackActions(object):
             'metadata': 'neutron-metadata-agent',
             'l3': 'neutron-l3-agent',
             None: ''
-            }
+        }
         filter_fn = lambda x: x[filter_attr] if filter_attr else x
         agents = [
             filter_fn(agent) for agent in self.neutron.list_agents(

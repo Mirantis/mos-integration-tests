@@ -366,7 +366,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.server2_ip = self.os_conn.get_nova_instance_ips(
             self.server2).values()[0]
 
-    @pytest.mark.testrail_id('542744')  #TODO: ??? which tes is it?
+    @pytest.mark.testrail_id('542744')
     def test_routing(self, prepare_openstack):
         """Check connectivity to East-West-Routing
 

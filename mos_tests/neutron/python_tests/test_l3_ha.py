@@ -254,6 +254,8 @@ class TestL3HA(TestBase):
         server2 = self.os_conn.nova.servers.find(name="server02")
         self.os_conn.assign_floating_ip(server2)
 
+    @pytest.mark.testrail_id('542782', params={'ban_count': 1})
+    @pytest.mark.testrail_id('542785', params={'ban_count': 2})
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
     def test_ban_l3_agent_with_active_ha_state(self, router, prepare_openstack,
                                                ban_count):
@@ -310,6 +312,7 @@ class TestL3HA(TestBase):
 
             assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542794')
     def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
         """Disable all l3 agents and enable them
 
@@ -344,6 +347,7 @@ class TestL3HA(TestBase):
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
 
+    @pytest.mark.testrail_id('542792')
     def test_delete_ns_for_active_router(self, router, prepare_openstack):
         """Delete namespace for router on node with ACTIVE ha_state
 
@@ -381,6 +385,7 @@ class TestL3HA(TestBase):
 
         assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542786')
     def test_destroy_primary_controller(self, router, prepare_openstack,
                                         env_name):
         """Destroy primary controller (l3 agent on it should be
@@ -441,6 +446,7 @@ class TestL3HA(TestBase):
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
 
+    @pytest.mark.testrail_id('542793')
     def test_ban_l3_agent_for_many_routers(self, variables):
         """Ban agent for many routers
 
@@ -514,6 +520,7 @@ class TestL3HA(TestBase):
 
         assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542790')
     def test_ban_active_l3_agent_with_external_connectivity(self, router,
                                                             prepare_openstack):
         """Ban l3-agent with ACTIVE ha_state for router and check external ping
@@ -552,6 +559,7 @@ class TestL3HA(TestBase):
 
         assert (ping_result['sent'] - ping_result['received']) < 40
 
+    @pytest.mark.testrail_id('542791')
     def test_move_router_iface_to_down_state(self, router, prepare_openstack):
         """Move router ha-interface down and check ping.
 
@@ -601,6 +609,7 @@ class TestL3HA(TestBase):
 
         assert (ping_result['sent'] - ping_result['received']) < 10
 
+    @pytest.mark.testrail_id('542789')
     def test_ban_l3_agent_with_tcpdump_check(self, router, prepare_openstack):
         """Ban l3 active agent and check it by tcpdump log.
 
@@ -743,6 +752,7 @@ class TestL3HA(TestBase):
         err_msg = 'At least 2 controllers with standby agents are expected'
         assert len(standby_agents) >= 2, err_msg
 
+    @pytest.mark.testrail_id('542788')
     def test_destroy_non_primary_controller(self, router,
                                             prepare_openstack, env_name):
         """Reset primary controller (l3 agent on it should be
@@ -801,6 +811,7 @@ class TestL3HA(TestBase):
 
         self.check_l3_ha_agent_states(router_id)
 
+    @pytest.mark.testrail_id('542787')
     def test_reset_primary_controller(self, router,
                                       prepare_openstack, env_name):
         """Reset primary controller (l3 agent on it should be
