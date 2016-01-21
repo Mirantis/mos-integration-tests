@@ -97,14 +97,14 @@ def setup_session(env_name, snapshot_name):
 @pytest.yield_fixture(autouse=True)
 def cleanup(request, env_name, snapshot_name):
     yield
-    if request.config.option.exitfirst:
-        return
     item = request.node
     if item.nextitem is None:
         return
     test_results = [getattr(item, 'rep_{}'.format(name), None)
                     for name in ("setup", "call", "teardown")]
     failed = any(x for x in test_results if x is not None and x.failed)
+    if request.config.option.exitfirst and failed:
+        return
     skipped = any(x for x in test_results if x is not None and x.skipped)
     destructive = 'undestructive' not in item.keywords
     reverted = False
