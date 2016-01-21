@@ -98,25 +98,20 @@ class TestFailoverRestarts(TestBase):
         """ Restart all RabbitMQ services with data replication
         Scenario
             1. Login to the first Openstack controller node
-               and restart RabbitMQ service: service rabbitmq-server restart
-            2. Wait while RabbitMQ is successfully started on the controller
+               and disable RabbitMQ service:
+                   pcs resource disable master_p_rabbitmq-server
+                   pcs resource disable p_rabbitmq-server
+            2. Wait for several seconds and enable the RabbitMQ service back:
+                   pcs resource enable master_p_rabbitmq-server
+                   pcs resource enable p_rabbitmq-server
             3. Repeat steps 1-2 for all controller nodes in your cluster
-            4. Execute 'rabbitmqctl cluster_status'
+            4. Execute 'rabbitmqctl cluster_status' on each contrloller
             5. Verify that all RabbitMQ nodes are in the same cluster.
 
             The test might fail due to the bug:
                 https://bugs.launchpad.net/fuel/+bug/1524024
             The reproduction frequency is about 1/10
         """
-
-        controllers = self.env.get_nodes_by_role('controller')
-
-        cmd = 'service rabbitmq-server restart'
-        logger.info('restart all rabbitmq services by: {}'.format(cmd))
-        for controller in controllers:
-            with controller.ssh() as remote:
-                remote.check_call(cmd)
-
         def is_rabbit_alive():
             # Need to check the rabbit service on each controller
             # because on some controller it might take more time to start
@@ -132,8 +127,26 @@ class TestFailoverRestarts(TestBase):
             # returned zero exit code for each controller
             return True
 
-        logger.info('wait until all rabbits come alive')
-        wait(is_rabbit_alive, timeout_seconds=10 * 60, sleep_seconds=5)
+        controllers = self.env.get_nodes_by_role('controller')
+
+        logger.info('kill all rabbitmq servers')
+        for controller in controllers:
+            with controller.ssh() as remote:
+                logger.info('disable rabbitmq services on node {}'.format(
+                            controller.data['ip']))
+                remote.check_call(
+                    'pcs resource disable master_p_rabbitmq-server')
+                remote.check_call('pcs resource disable p_rabbitmq-server')
+                # just a little sleep before enabling the services
+                time.sleep(5)
+                logger.info('enable rabbitmq services on node {}'.format(
+                            controller.data['ip']))
+                remote.check_call(
+                    'pcs resource enable master_p_rabbitmq-server')
+                remote.check_call('pcs resource enable p_rabbitmq-server')
+
+            logger.info('wait until all rabbits come alive')
+            wait(is_rabbit_alive, timeout_seconds=10 * 60, sleep_seconds=5)
 
         logger.info('check that all rabbitmq nodes are in the same cluster')
         # OSTF contain test "RabbitMQ availability"
