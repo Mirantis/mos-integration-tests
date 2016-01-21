@@ -106,6 +106,8 @@ class PingThread(threading.Thread):
             try:
                 yield self.stdout_q.get(timeout=self.timeout)
             except Empty:
+                self.stop()
+                self._Thread__stop()
                 raise Exception('Timeout was reached during communicate '
                                 'with thread')
 
