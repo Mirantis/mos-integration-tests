@@ -19,6 +19,7 @@ import time
 
 from cinderclient import client as cinderclient
 from glanceclient.v1 import Client as GlanceClient
+from heatclient.v1.client import Client as heat_client
 from keystoneclient.exceptions import ClientException as KeyStoneException
 from keystoneclient.v2_0 import Client as KeystoneClient
 from neutronclient.common.exceptions import NeutronClientException
@@ -59,7 +60,7 @@ class OpenStackActions(object):
                                        auth_url=auth_url,
                                        cacert=path_to_cert)
 
-        self.cinder = cinderclient.Client(1, user, password,
+        self.cinder = cinderclient.Client(2, user, password,
                                           tenant, auth_url,
                                           cacert=path_to_cert)
 
@@ -84,6 +85,14 @@ class OpenStackActions(object):
         self.glance = GlanceClient(endpoint=glance_endpoint,
                                    token=token,
                                    cacert=path_to_cert)
+
+        heat_endpoint = self.keystone.service_catalog.url_for(
+            service_type='orchestration', endpoint_type='publicURL')
+        logger.debug('Heat endpoint is {0}'.format(heat_endpoint))
+        self.heat = heat_client(endpoint=heat_endpoint,
+                                token=token,
+                                cacert=path_to_cert,
+                                ca_file=path_to_cert)
         self.env = env
 
     def _get_keystoneclient(self, username, password, tenant_name, auth_url,
@@ -110,6 +119,7 @@ class OpenStackActions(object):
                 time.sleep(5)
         if not keystone:
             raise
+        keystone.management_url = auth_url
         return keystone
 
     def _get_cirros_image(self):

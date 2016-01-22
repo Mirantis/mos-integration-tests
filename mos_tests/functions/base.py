@@ -13,65 +13,18 @@
 #    under the License.
 
 
-import os
+import pytest
 import unittest
 
-from cinderclient import client as cinder_client
-from glanceclient.v2 import client as glance_client
-from keystoneclient.v2_0 import client as keystone_client
-from neutronclient.v2_0 import client as neutron_client
-from novaclient import client as nova_client
+from mos_tests.conftest import get_os_conn
 
 
+@pytest.mark.usefixtures("os_conn_for_unittests")
 class OpenStackTestCase(unittest.TestCase):
     """Base TestCase class with initialized clients"""
 
+    def __getattr__(self, item):
+        return getattr(self.os_conn, item)
+
     def setUp(self):
-        OS_AUTH_URL = os.environ.get('OS_AUTH_URL')
-        OS_USERNAME = os.environ.get('OS_USERNAME')
-        OS_PASSWORD = os.environ.get('OS_PASSWORD')
-        OS_TENANT_NAME = os.environ.get('OS_TENANT_NAME')
-        OS_PROJECT_NAME = os.environ.get('OS_PROJECT_NAME')
-
-        self.keystone = keystone_client.Client(auth_url=OS_AUTH_URL,
-                                              username=OS_USERNAME,
-                                              password=OS_PASSWORD,
-                                              tenat_name=OS_TENANT_NAME,
-                                              project_name=OS_PROJECT_NAME)
-
-        services = self.keystone.service_catalog
-
-        # Neutron connect
-        self.neutron = neutron_client.Client(username=OS_USERNAME,
-                                            password=OS_PASSWORD,
-                                            tenant_name=OS_TENANT_NAME,
-                                            auth_url=OS_AUTH_URL,
-                                            insecure=True)
-
-        # Nova connect
-        OS_TOKEN = self.keystone.get_token(self.keystone.session)
-        RAW_TOKEN = self.keystone.get_raw_token_from_identity_service(
-            auth_url=OS_AUTH_URL,
-            username=OS_USERNAME,
-            password=OS_PASSWORD,
-            tenant_name=OS_TENANT_NAME)
-        OS_TENANT_ID = RAW_TOKEN['token']['tenant']['id']
-
-        self.nova = nova_client.Client('2',
-                                      auth_url=OS_AUTH_URL,
-                                      username=OS_USERNAME,
-                                      auth_token=OS_TOKEN,
-                                      tenant_id=OS_TENANT_ID,
-                                      insecure=True)
-
-        # Glance connect
-        glance_endpoint = services.url_for(service_type='image',
-                                           endpoint_type='publicURL')
-        self.glance = glance_client.Client(endpoint=glance_endpoint,
-                                          token=OS_TOKEN,
-                                          insecure=True)
-
-        # Cinder endpoint
-        self.cinder = cinder_client.Client('2', OS_USERNAME, OS_PASSWORD,
-                                           OS_TENANT_NAME,
-                                           auth_url=OS_AUTH_URL)
+        self.os_conn = get_os_conn(self.env)

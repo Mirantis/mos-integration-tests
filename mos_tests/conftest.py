@@ -167,19 +167,30 @@ def set_openstack_environ(fuel_master_ip):
             os.environ[k] = v
 
 
-@pytest.fixture
-def os_conn(env):
-    """Openstack common actions"""
-    os_conn = OpenStackActions(
-        controller_ip=env.get_primary_controller_ip(),
-        cert=env.certificate, env=env)
+def get_os_conn(environment):
+    os_connection = OpenStackActions(
+        controller_ip=environment.get_primary_controller_ip(),
+        cert=environment.certificate, env=environment)
 
-    wait(os_conn.is_nova_ready,
+    wait(os_connection.is_nova_ready,
          timeout_seconds=60 * 5,
          expected_exceptions=Exception,
          waiting_for="OpenStack nova computes is ready")
     logger.info("OpenStack is ready")
-    return os_conn
+    return os_connection
+
+
+@pytest.fixture(scope='class')
+def os_conn_for_unittests(request, fuel_master_ip):
+    fuel_client = get_fuel_client(fuel_master_ip)
+    environment = fuel_client.get_last_created_cluster()
+    request.cls.env = environment
+
+
+@pytest.fixture
+def os_conn(env):
+    """Openstack common actions"""
+    return get_os_conn(env)
 
 
 @pytest.fixture
