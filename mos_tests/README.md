@@ -17,7 +17,7 @@ To run one test on local machine:
 
 `$ py.test test_l3_agent.py/test_l3_agent.py::TestL3Agent::test_ban_one_l3_agent`
 or
-`$ py.test mos_tests/neutron -k test_ban_one_dhcp_agent`
+`$ py.test mos_tests/neutron -k test_ban_some_dhcp_agent`
 
 
 ### Remote

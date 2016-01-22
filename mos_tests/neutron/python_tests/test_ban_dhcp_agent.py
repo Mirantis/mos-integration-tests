@@ -598,6 +598,9 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
 
         # remove net from one of dhcp-agents
         id_agent_to_remove = agents_mapping[curr_agents[0]]['id']
+        logger.info(
+            'Removing network from dhcp agent: {}'.format(
+                agents_mapping[curr_agents[0]]['host']))
         self.os_conn.remove_network_from_dhcp_agent(id_agent_to_remove,
                                                     self.net_id)
 
@@ -611,6 +614,9 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
 
         # add network to other dhcp-agent
         id_agent_to_add = agents_mapping[free_agent]['id']
+        logger.info(
+            'Adding network to dhcp agent: {}'.format(
+                agents_mapping[free_agent]['host']))
         self.os_conn.add_network_to_dhcp_agent(id_agent_to_add, self.net_id)
 
         # check that network is on third agent
@@ -659,6 +665,9 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
         restart_service = "service neutron-server restart"
         res = remote.execute(
             '{} && {}'.format(param_change_value, restart_service))
+        logger.info(
+            'Applied new neutron config value {} for param {}'.format(value,
+                                                                      param))
         return res
 
     def _prepare_neutron_server_and_env(self, net_count):

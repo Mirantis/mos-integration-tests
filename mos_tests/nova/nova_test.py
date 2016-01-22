@@ -39,9 +39,9 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
 
         self.sec_group = self.nova.security_groups.create('security_nova',
-                                                        'Security group, '
-                                                        'created for Nova '
-                                                        'automatic tests')
+                                                          'Security group, '
+                                                          'created for Nova '
+                                                          'automatic tests')
         rules = [
             {
                 # ssh
@@ -79,6 +79,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
         self.nova.security_groups.delete(self.sec_group)
 
+    @pytest.mark.testrail_id('543358')
     def test_nova_launch_v_m_from_image_with_all_flavours(self):
         """This test case checks creation of instance from image with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -119,6 +120,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
+    @pytest.mark.testrail_id('543360')
     def test_nova_launch_v_m_from_volume_with_all_flavours(self):
         """This test case checks creation of instance from volume with all
         types of flavor. For this test needs 2 nodes with compute role:
@@ -162,6 +164,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             ping = common_functions.ping_command(floating_ip.ip)
             self.assertTrue(ping, "Instance is not reachable")
 
+    @pytest.mark.testrail_id('543355')
     def test_resize_down_an_instance_booted_from_volume(self):
         """This test checks that nova allows
             resize down an instance booted from volume
@@ -222,6 +225,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after resize is not reachable")
 
+    @pytest.mark.testrail_id('543359')
     def test_massively_spawn_volumes(self):
         """This test checks massively spawn volumes
 
@@ -246,6 +250,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                      'available', 60),
                 "Volume '{0}' is not available".format(volume.id))
 
+    @pytest.mark.testrail_id('543356')
     def test_nova_massively_spawn_v_ms_with_boot_local(self):
         """This test case creates a lot of VMs with boot local, checks it
         state and availability and then deletes it.
@@ -307,6 +312,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
+    @pytest.mark.testrail_id('543357')
     def test_nova_massively_spawn_v_ms_boot_from_cinder(self):
         """This test case creates a lot of VMs which boot from Cinder, checks
         it state and availability and then deletes it.
@@ -379,6 +385,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             self.assertTrue(ping,
                             "Instance {} is not reachable".format(inst_id))
 
+    @pytest.mark.testrail_id('542823')
     def test_network_connectivity_to_v_m_during_live_migration(self):
         """This test checks network connectivity to VM during Live Migration
 
@@ -439,6 +446,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             msg = "Packets loss exceeds the limit, {} packets were lost"
             raise AssertionError(msg.format(loss))
 
+    @pytest.mark.testrail_id('542824')
     def test_live_migration_of_v_ms_with_data_on_root_and_ephemeral_disk(self):
         """This test checks Live Migration of VMs with data on root and
         ephemeral disk

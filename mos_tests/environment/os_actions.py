@@ -151,8 +151,7 @@ class OpenStackActions(object):
         if status == 'ACTIVE':
             return True
         if status == 'ERROR':
-            raise Exception('Server {} status is error'.format(
-                      server.name))
+            raise Exception('Server {} status is error'.format(server.name))
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=100, **kwargs):
@@ -176,12 +175,11 @@ class OpenStackActions(object):
 
         wait(lambda: self.is_server_active(srv),
              timeout_seconds=timeout, sleep_seconds=5,
-             waiting_for='instance {0} status change to ACTIVE'.format(
-                name))
+             waiting_for='instance {0} status change to ACTIVE'.format(name))
 
         # wait for ssh ready
         if self.env is not None:
-            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=60,
+            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=100,
                  waiting_for='server available via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
@@ -240,7 +238,7 @@ class OpenStackActions(object):
             'metadata': 'neutron-metadata-agent',
             'l3': 'neutron-l3-agent',
             None: ''
-            }
+        }
         filter_fn = lambda x: x[filter_attr] if filter_attr else x
         agents = [
             filter_fn(agent) for agent in self.neutron.list_agents(
@@ -597,14 +595,14 @@ class OpenStackActions(object):
             path = '/tmp/fuel_key{0}.rsa'.format(i)
             key.write_private_key_file(path)
             key_paths.append(path)
-        proxy_command = ("ssh {keys} -o 'StrictHostKeyChecking no' "
-                         "root@{node_ip} ip netns exec {ns} "
-                         "nc {vm_ip} 22".format(
-                            keys=' '.join('-i {}'.format(k)
-                                          for k in key_paths),
-                            ns=dhcp_namespace,
-                            node_ip=ip,
-                            vm_ip=vm_ip))
+        proxy_command = (
+            "ssh {keys} -o 'StrictHostKeyChecking no' "
+            "root@{node_ip} ip netns exec {ns} "
+            "nc {vm_ip} 22".format(
+                keys=' '.join('-i {}'.format(k) for k in key_paths),
+                ns=dhcp_namespace,
+                node_ip=ip,
+                vm_ip=vm_ip))
         logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
         instance_keys = []
         if vm_keypair is not None:
@@ -648,11 +646,11 @@ class OpenStackActions(object):
         i = len(self.nova.servers.list()) + 1
         zone = self.nova.availability_zones.find(zoneName="nova")
         srv = self.create_server(
-                name='server%02d' % i,
-                availability_zone='{}:{}'.format(zone.zoneName, hostname),
-                key_name=key_name,
-                nics=[{'net-id': network_id}],
-                security_groups=[sg_id])
+            name='server%02d' % i,
+            availability_zone='{}:{}'.format(zone.zoneName, hostname),
+            key_name=key_name,
+            nics=[{'net-id': network_id}],
+            security_groups=[sg_id])
         return srv
 
     def reschedule_router_to_primary_host(self, router_id, primary_host):
@@ -681,9 +679,8 @@ class OpenStackActions(object):
         self.neutron.add_router_to_l3_agent(new_l3_agt_id,
                                             {"router_id": router_id})
 
-        wait(
-            lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
-            timeout_seconds=5 * 60)
+        wait(lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
+             timeout_seconds=5 * 60)
 
     def reschedule_dhcp_agent(self, net_id, controller_fqdn):
         agent_list = self.neutron.list_agents(

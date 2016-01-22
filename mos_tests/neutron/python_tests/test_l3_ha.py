@@ -18,10 +18,10 @@ from contextlib import contextmanager
 import logging
 import re
 import signal
-import subprocess
-import threading
 from six.moves.queue import Queue
 from six.moves.queue import Empty
+import subprocess
+import threading
 
 import pytest
 from waiting import wait
@@ -46,11 +46,11 @@ def ping_groups(stdout):
     """Generate ping info for each line of stdout
 
     Format:
-        * `sended` - count of sended packets
+        * `sent` - count of sent packets
         * `received` - count of received packets
         * `group_len` - len of last continuous group of success pings
     """
-    PingInfo = namedtuple('PingInfo', ['sended', 'received', 'group_len'])
+    PingInfo = namedtuple('PingInfo', ['sent', 'received', 'group_len'])
     prev_seq = -1
     group_start = 0
     received = 0
@@ -63,7 +63,7 @@ def ping_groups(stdout):
         if seq != prev_seq + 1:
             logger.debug('ping interrupted')
             group_start = seq
-        pi = PingInfo(sended=seq, received=received,
+        pi = PingInfo(sent=seq, received=received,
                       group_len=seq - group_start)
         yield pi
         prev_seq = seq
@@ -144,7 +144,7 @@ class TestL3HA(TestBase):
         groups = ping_groups(output)
         for ping_info in groups:
             result['received'] = ping_info.received
-            result['sended'] = ping_info.sended
+            result['sent'] = ping_info.sent
 
     @contextmanager
     def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50):
@@ -161,7 +161,7 @@ class TestL3HA(TestBase):
 
         result = {
             'received': 0,
-            'sended': 0,
+            'sent': 0,
         }
 
         t = PingThread(env=self.env, os_conn=self.os_conn, vm=vm,
@@ -181,7 +181,7 @@ class TestL3HA(TestBase):
         logger.info('Wait for ping restored')
         for ping_info in groups:
             result['received'] = ping_info.received
-            result['sended'] = ping_info.sended
+            result['sent'] = ping_info.sent
             if ping_info.group_len >= good_pings:
                 break
         t.stop()
@@ -210,9 +210,13 @@ class TestL3HA(TestBase):
 
     def wait_router_migrate(self, router_id, new_node, timeout_seconds=60):
         """Wait for router migrate to l3 agent hosted on `new node`"""
+        def check_active_router_on_host():
+            agents = self.get_active_l3_agents_for_router(router_id)
+            if not agents:
+                return False
+            return agents[0]['host'] == new_node
         return wait(
-            lambda: self.get_active_l3_agents_for_router(
-                router_id)[0]['host'] == new_node,
+            check_active_router_on_host,
             timeout_seconds=timeout_seconds,
             waiting_for="router migrate to l3 agent hosted on {}".format(
                 new_node)
@@ -254,6 +258,8 @@ class TestL3HA(TestBase):
         server2 = self.os_conn.nova.servers.find(name="server02")
         self.os_conn.assign_floating_ip(server2)
 
+    @pytest.mark.testrail_id('542782', params={'ban_count': 1})
+    @pytest.mark.testrail_id('542785', params={'ban_count': 2})
     @pytest.mark.parametrize('ban_count', [1, 2], ids=['once', 'twice'])
     def test_ban_l3_agent_with_active_ha_state(self, router, prepare_openstack,
                                                ban_count):
@@ -308,8 +314,9 @@ class TestL3HA(TestBase):
                         from_node=node_to_ban)
                     node_to_ban = new_agent['host']
 
-            assert ping_result['sended'] - ping_result['received'] < 10
+            assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542794')
     def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
         """Disable all l3 agents and enable them
 
@@ -344,6 +351,7 @@ class TestL3HA(TestBase):
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
 
+    @pytest.mark.testrail_id('542792')
     def test_delete_ns_for_active_router(self, router, prepare_openstack):
         """Delete namespace for router on node with ACTIVE ha_state
 
@@ -379,8 +387,9 @@ class TestL3HA(TestBase):
                     "ip netns delete qrouter-{0}".format(
                         router['router']['id']))
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542786')
     def test_destroy_primary_controller(self, router, prepare_openstack,
                                         env_name):
         """Destroy primary controller (l3 agent on it should be
@@ -441,6 +450,7 @@ class TestL3HA(TestBase):
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
                                 ip_to_ping=server2_ip)
 
+    @pytest.mark.testrail_id('542793')
     def test_ban_l3_agent_for_many_routers(self, variables):
         """Ban agent for many routers
 
@@ -512,8 +522,9 @@ class TestL3HA(TestBase):
                     from_node=node_to_ban)
                 node_to_ban = new_agent['host']
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
+    @pytest.mark.testrail_id('542790')
     def test_ban_active_l3_agent_with_external_connectivity(self, router,
                                                             prepare_openstack):
         """Ban l3-agent with ACTIVE ha_state for router and check external ping
@@ -550,8 +561,9 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=node_to_ban)
 
-        assert (ping_result['sended'] - ping_result['received']) < 40
+        assert (ping_result['sent'] - ping_result['received']) < 40
 
+    @pytest.mark.testrail_id('542791')
     def test_move_router_iface_to_down_state(self, router, prepare_openstack):
         """Move router ha-interface down and check ping.
 
@@ -599,8 +611,9 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=active_hostname)
 
-        assert (ping_result['sended'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 10
 
+    @pytest.mark.testrail_id('542789')
     def test_ban_l3_agent_with_tcpdump_check(self, router, prepare_openstack):
         """Ban l3 active agent and check it by tcpdump log.
 
@@ -709,7 +722,7 @@ class TestL3HA(TestBase):
         new_tcpdump_results = get_last_package_datetime(new_active_node)
         assert (last_tcpdump_results and new_tcpdump_results) is not None
         assert last_tcpdump_results < new_tcpdump_results
-        assert (ping_result['sended'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 10
 
     def reschedule_active_l3_agt(self, router_id,
                                  to_controller, from_controller):
@@ -720,7 +733,7 @@ class TestL3HA(TestBase):
             with to_controller.ssh() as remote:
                 for node in other_controllers:
                     # Ban l3 agents on all controllers
-                    # except the one to which it is goinig to be migrated
+                    # except the one to which it is going to be migrated
                     remote.check_call(
                         'pcs resource ban p_neutron-l3-agent {}'.format(
                             node.data['fqdn']))
@@ -743,6 +756,7 @@ class TestL3HA(TestBase):
         err_msg = 'At least 2 controllers with standby agents are expected'
         assert len(standby_agents) >= 2, err_msg
 
+    @pytest.mark.testrail_id('542788')
     def test_destroy_non_primary_controller(self, router,
                                             prepare_openstack, env_name):
         """Reset primary controller (l3 agent on it should be
@@ -788,11 +802,11 @@ class TestL3HA(TestBase):
                                   vm_keypair=self.instance_keypair,
                                   ip_to_ping=server2_ip) as ping_result:
 
-            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                              mac=controller.data['mac'])
+            devops_node = DevopsClient.get_node_by_mac(
+                env_name=env_name, mac=controller.data['mac'])
             self.env.destroy_nodes([devops_node])
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
@@ -801,6 +815,7 @@ class TestL3HA(TestBase):
 
         self.check_l3_ha_agent_states(router_id)
 
+    @pytest.mark.testrail_id('542787')
     def test_reset_primary_controller(self, router,
                                       prepare_openstack, env_name):
         """Reset primary controller (l3 agent on it should be
@@ -846,11 +861,11 @@ class TestL3HA(TestBase):
                                   vm_keypair=self.instance_keypair,
                                   ip_to_ping=server2_ip) as ping_result:
 
-            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                              mac=controller.data['mac'])
+            devops_node = DevopsClient.get_node_by_mac(
+                env_name=env_name, mac=controller.data['mac'])
             devops_node.reset()
 
-        assert ping_result['sended'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 10
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,

@@ -136,6 +136,14 @@ class TestDVR(TestDVRBase):
             self.floating_ip = self.os_conn.assign_floating_ip(
                 self.server, use_neutron=True)
 
+    @pytest.mark.testrail_id(
+        '542746', params={'floating_ip': True, 'dvr_router': True})
+    @pytest.mark.testrail_id(
+        '542748', params={'floating_ip': False, 'dvr_router': True})
+    @pytest.mark.testrail_id(
+        '542750', params={'floating_ip': False, 'dvr_router': False})
+    @pytest.mark.testrail_id(
+        '542752', params={'floating_ip': True, 'dvr_router': False})
     @pytest.mark.parametrize('floating_ip', (True, False),
                              ids=('with floating', 'without floating'))
     @pytest.mark.parametrize('dvr_router', (True, False),
@@ -158,6 +166,7 @@ class TestDVR(TestDVRBase):
 
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
+    @pytest.mark.testrail_id('542764')
     def test_connectivity_after_reset_compute(self, env_name):
         """Check North-South connectivity with floatingIP after reset compute
 
@@ -187,6 +196,7 @@ class TestDVR(TestDVRBase):
 
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
+    @pytest.mark.testrail_id('542778')
     def test_shutdown_snat_controller(self, env_name):
         """Shutdown controller with SNAT-namespace and check it reschedules.
 
@@ -208,7 +218,7 @@ class TestDVR(TestDVRBase):
 
         """
         self._prepare_openstack_env()
-        self.check_ping_from_cirros(self.server)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         # Get controller with SNAT and destroy it
         controller_with_snat = self.find_snat_controller()
         logger.info('Destroying controller with SNAT: {}'.format(
@@ -225,11 +235,12 @@ class TestDVR(TestDVRBase):
             sleep_seconds=(1, 60, 5),
             waiting_for=wait_msg)
         # Check external ping and proper SNAT rescheduling
-        self.check_ping_from_cirros(self.server)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         assert (
             controller_with_snat.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
 
+    @pytest.mark.testrail_id('542762')
     def test_north_south_floating_ip_shut_down_br_ex_on_controllers(self):
         """Check North-South connectivity with floatingIP after shut-downing
         br-ex on all controllers
@@ -262,6 +273,7 @@ class TestDVR(TestDVRBase):
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
+    @pytest.mark.testrail_id('542774')
     def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
         """Check North-South connectivity with floatingIP after ban and
         clear l3-agent on compute
@@ -354,6 +366,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         self.server2_ip = self.os_conn.get_nova_instance_ips(
             self.server2).values()[0]
 
+    @pytest.mark.testrail_id('542744')
     def test_routing(self, prepare_openstack):
         """Check connectivity to East-West-Routing
 
@@ -374,6 +387,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server2_ip)
 
+    @pytest.mark.testrail_id('542776')
     def test_routing_after_ban_and_clear_l3_agent(self, prepare_openstack):
         """Check West-East-Routing connectivity with floatingIP after ban
             and clear l3-agent on compute
@@ -408,6 +422,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server2_ip)
 
+    @pytest.mark.testrail_id('542766')
     def test_routing_after_reset_computes(self, prepare_openstack, env_name):
         """Check East-West connectivity after reset compute nodes
 
@@ -438,6 +453,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server1_ip)
 
+    @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')
     def test_east_west_connectivity_after_destroy_controller(
             self, prepare_openstack, env_name):
@@ -475,6 +491,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 vm_keypair=self.instance_keypair,
                                 ip_to_ping=self.server1_ip)
 
+    @pytest.mark.testrail_id('542756')
     def test_east_west_connectivity_instances_on_the_same_host(
             self, variables):
         """Check East-West connectivity with instances on the same host
@@ -563,6 +580,7 @@ class TestDVREastWestConnectivity(TestDVRBase):
         self.server2_ip = self.os_conn.get_nova_instance_ips(
             self.server2).values()[0]
 
+    @pytest.mark.testrail_id('542754')
     def test_routing_east_west(self, prepare_openstack):
         """Check connectivity to East-West-Routing
 
@@ -610,11 +628,10 @@ class TestDVRTypeChange(TestDVRBase):
         err_msg = 'Failed to update the router, exception: {}'.format(e)
         assert allowed_msg in str(e.value), err_msg
 
+    @pytest.mark.testrail_id('542770')
     def test_distributed_router_is_not_updated_to_centralized(self, init):
-        """[Neutron DVR] Check that it is not poissible to update
-           distributed router to centralized
-
-        TestRail ids are: C542770 C542771
+        """Check that it is not poissible to update distributed
+        router to centralized.
 
         Scenario:
             1. Create router with enabled dvr feature
@@ -633,9 +650,10 @@ class TestDVRTypeChange(TestDVRBase):
 
         # Check that router is distributed by default
         router = self.os_conn.neutron.show_router(router_id)['router']
-        err_msg = ('distributed parameter for the router {0} is {1}. '
-                   "But it's expected value is True"
-                  ).format(router['name'], router['distributed'])
+        err_msg = (
+            "distributed parameter for the router {0} is {1}. "
+            "But it's expected value is True").format(
+            router['name'], router['distributed'])
         assert router['distributed'], err_msg
 
         self.check_exception_on_router_update_to_centralize(router['id'])
@@ -695,16 +713,15 @@ class TestDVRTypeChange(TestDVRBase):
         # find the compute where the vm is run
         computes = self.env.get_nodes_by_role('compute')
         compute_ips = [node.data['ip'] for node in computes
-                           if node.data['fqdn'] == self.hosts[0]]
+                       if node.data['fqdn'] == self.hosts[0]]
 
         assert compute_ips, "Can't find the compute node with the vm"
 
         return compute_ips
 
+    @pytest.mark.testrail_id('542772')
     def test_centralized_update_to_distributed(self, legacy_router, variables):
-        """[Neutron DVR] Create centralized router and update it to distributed
-
-        TestRail ids are: C542772 C542773
+        """Create centralized router and update it to distributed.
 
         Steps:
             1. Check that the router is not distributed by default
@@ -793,11 +810,10 @@ class TestDVRTypeChange(TestDVRBase):
                         break
         return snat_controller
 
+    @pytest.mark.testrail_id('542780')
     @pytest.mark.check_env_('is_ha')
     def test_reschedule_router_from_snat_controller(self, dvr_router):
-        """[Neutron DVR] Reschedule router from snat controller
-
-        TestRail ids are: C542780 C542781
+        """Reschedule router from snat controller.
 
         Steps:
             1.  Find controller with SNAT-namespace:
@@ -839,10 +855,9 @@ class TestDVRTypeChange(TestDVRBase):
         # Check pings
         self.check_vm_connectivity()
 
+    @pytest.mark.testrail_id('542758')
     def test_create_dvr_by_no_admin_user(self):
-        """[Neutron DVR] Create distributed router with member user
-
-        TestRail ids are: C542758 C542759
+        """Create distributed router with member user
 
         Steps:
             1.  Create new user for admin tenant with member role
