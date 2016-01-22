@@ -18,10 +18,10 @@ from contextlib import contextmanager
 import logging
 import re
 import signal
-import subprocess
-import threading
 from six.moves.queue import Queue
 from six.moves.queue import Empty
+import subprocess
+import threading
 
 import pytest
 from waiting import wait
