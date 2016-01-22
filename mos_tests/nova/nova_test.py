@@ -24,8 +24,6 @@ from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 
-pytestmark = pytest.mark.usefixtures("set_openstack_environ")
-
 
 @pytest.mark.undestructive
 class NovaIntegrationTests(OpenStackTestCase):

@@ -17,13 +17,10 @@ from random import randint
 import re
 import time
 
-from heatclient.v1.client import Client as heat_client
 import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
-
-pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
 
 @pytest.mark.undestructive
@@ -32,14 +29,6 @@ class HeatIntegrationTests(OpenStackTestCase):
 
     def setUp(self):
         super(self.__class__, self).setUp()
-
-        services = self.keystone.service_catalog
-        heat_endpoint = services.url_for(service_type='orchestration',
-                                         endpoint_type='internalURL')
-
-        self.heat = heat_client(endpoint=heat_endpoint,
-                               token=self.keystone.auth_token)
-
         # Get path on node to 'templates' dir
         self.templates_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),

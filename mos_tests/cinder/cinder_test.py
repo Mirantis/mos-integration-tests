@@ -13,17 +13,15 @@
 #    under the License.
 
 import logging
-import os
 import time
 
 import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
-
-pytestmark = pytest.mark.usefixtures("set_openstack_environ")
 
 
 @pytest.mark.undestructive
@@ -35,9 +33,9 @@ class CinderIntegrationTests(OpenStackTestCase):
 
         self.volume_list = []
         self.snapshot_list = []
-
+        tenant_name = settings.KEYSTONE_CREDS['tenant_name']
         self.tenant_id = [t.id for t in self.keystone.tenants.list() if
-                          t.name == os.environ.get('OS_TENANT_NAME')][0]
+                          t.name == tenant_name][0]
         self.quota = self.cinder.quotas.get(self.tenant_id).snapshots
         self.cinder.quotas.update(self.tenant_id, snapshots=200)
 
@@ -75,6 +73,7 @@ class CinderIntegrationTests(OpenStackTestCase):
         count = 70
         initial_snapshot_lst = []
         for num in xrange(count):
+            logger.info('Creating {} snapshot').format(num)
             snapshot_id = self.cinder.volume_snapshots \
                 .create(volume.id, name='1st_creation_{0}'.format(num))
             initial_snapshot_lst.append(snapshot_id)
@@ -96,6 +95,7 @@ class CinderIntegrationTests(OpenStackTestCase):
         new_count = 50
         new_snapshot_lst = []
         for num in xrange(new_count):
+            logger.info('Creating {} snapshot').format(num)
             snapshot_id = self.cinder.volume_snapshots \
                 .create(volume.id, name='2nd_creation_{0}'.format(num))
             new_snapshot_lst.append(snapshot_id)

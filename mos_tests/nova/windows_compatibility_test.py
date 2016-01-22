@@ -24,8 +24,6 @@ from mos_tests.functions import common as common_functions
 
 logger = logging.getLogger(__name__)
 
-pytestmark = pytest.mark.usefixtures("set_openstack_environ")
-
 
 @pytest.mark.undestructive
 class WindowCompatibilityIntegrationTests(OpenStackTestCase):
