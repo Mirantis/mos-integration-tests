@@ -18,13 +18,15 @@ import subprocess
 import pytest
 
 
+base_dir = os.path.dirname(__file__)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def prepare(set_openstack_environ):
     pass
 
 
 def pytest_cmdline_preparse(args):
-    base_dir = os.path.dirname(__file__)
     subprocess.check_call("{0}/pytest_adapter.sh {0}/client".format(base_dir),
                           shell=True, env=dict(os.environ))
     args[:] = args + ['--doctest-glob=""']
@@ -42,4 +44,5 @@ def pytest_ignore_collect(path, config):
 
 def pytest_collection_modifyitems(items):
     for item in items:
-        item.add_marker(pytest.mark.undestructive)
+        if unicode(item.fspath).startswith(base_dir):
+            item.add_marker(pytest.mark.undestructive)
