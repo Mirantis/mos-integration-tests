@@ -18,7 +18,7 @@ from tempfile import NamedTemporaryFile
 import time
 
 from cinderclient import client as cinderclient
-from glanceclient.v1 import Client as GlanceClient
+from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as heat_client
 from keystoneclient.exceptions import ClientException as KeyStoneException
 from keystoneclient.v2_0 import Client as KeystoneClient
