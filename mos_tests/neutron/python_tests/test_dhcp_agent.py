@@ -91,9 +91,10 @@ class TestDHCPAgent(TestBase):
             logger.info('Total networks created at the moment {}'.format(
                         len(self.networks)))
             srv = self.os_conn.create_server(
-                      name='instanseNo{}'.format(x),
-                      key_name=self.instance_keypair.name,
-                      nics=[{'net-id': net_id}])
+                name='instanseNo{}'.format(x),
+                key_name=self.instance_keypair.name,
+                security_groups=[self.security_group.name],
+                nics=[{'net-id': net_id}])
             logger.info('Delete the server {}'.format(srv.name))
             self.os_conn.nova.servers.delete(srv)
 
