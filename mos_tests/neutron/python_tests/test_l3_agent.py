@@ -25,7 +25,10 @@ from mos_tests.neutron.python_tests.base import TestBase
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
+@pytest.mark.check_env_(
+    'is_ha '
+    'and has_2_or_more_computes '
+    'and not(is_dvr or is_l3_ha)')
 @pytest.mark.usefixtures("setup")
 class TestL3Agent(TestBase):
 

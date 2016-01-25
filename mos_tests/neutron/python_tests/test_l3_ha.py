@@ -18,12 +18,12 @@ from contextlib import contextmanager
 import logging
 import re
 import signal
-from six.moves.queue import Queue
-from six.moves.queue import Empty
 import subprocess
 import threading
 
 import pytest
+from six.moves.queue import Queue
+from six.moves.queue import Empty
 from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
