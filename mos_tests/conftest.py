@@ -273,10 +273,7 @@ def env_requirements(request, env):
     marker = request.node.get_marker('check_env_')
     if not marker:
         return
-    marker_str = marker.args[0]
-    if len(marker.args) > 1:
-        marker_str = ' and '.join(marker.args)
-
+    marker_str = ' and '.join(marker.args)
     marker_str = marker_str.replace(
         '(', ' ( '
     ).replace(
