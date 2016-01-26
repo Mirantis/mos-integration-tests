@@ -75,16 +75,18 @@ class TestRestarts(TestBase):
         self.check_vm_connectivity()
 
         # Find a primary controller
-        mac = self.env.primary_controller.data['mac']
+        primary_controller = self.env.primary_controller
+        mac = primary_controller.data['mac']
         self.primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
                                                          mac=mac)
-        self.primary_host = self.env.primary_controller.data['fqdn']
+        self.primary_host = primary_controller.data['fqdn']
 
-        # Find a non-primary contrloller
-        mac = self.env.non_primary_controller.data['mac']
+        # Find a non-primary controller
+        non_primary_controller = self.env.non_primary_controllers[0]
+        mac = non_primary_controller.data['mac']
         self.non_primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
                                                              mac=mac)
-        self.non_primary_host = self.env.non_primary_controller.data['fqdn']
+        self.non_primary_host = non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
         self.l3_agent_ids = [agt['id'] for agt in
@@ -394,7 +396,7 @@ class TestRestarts(TestBase):
         # Wait some time while agents become down
         self.os_conn.wait_agents_down(agent_ids)
 
-        # Check that all networks rescedule from non-primary controller
+        # Check that all networks reschedule from non-primary controller
         wait(
             lambda: len(self.os_conn.neutron.list_networks_on_dhcp_agent(
                 agent_ids[0])['networks']) == 0,

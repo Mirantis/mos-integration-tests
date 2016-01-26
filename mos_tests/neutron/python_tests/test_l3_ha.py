@@ -783,7 +783,7 @@ class TestL3HA(TestBase):
         router_id = router['router']['id']
         agents = self.get_active_l3_agents_for_router(router_id)
         l3_agent_controller = self.env.find_node_by_fqdn(agents[0]['host'])
-        controller = self.env.non_primary_controller
+        controller = self.env.non_primary_controllers[0]
         server1 = self.os_conn.nova.servers.find(name="server01")
         server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
