@@ -16,6 +16,9 @@ import os
 from time import sleep
 from time import time
 import urllib2
+
+from waiting import TimeoutExpired
+from waiting import wait as base_wait
 import yaml
 
 
@@ -588,3 +591,11 @@ def delete_keys(nova_client, key_name):
             break
     while is_key_exists(nova_client, key_name):
         sleep(1)
+
+
+def wait(*args, **kwargs):
+    __tracebackhide__ = True
+    try:
+        return base_wait(*args, **kwargs)
+    except TimeoutExpired as e:
+        raise e

@@ -19,9 +19,9 @@ from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects.environment import Environment as EnvironmentBase
 from paramiko import RSAKey
-from waiting import wait
 
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.functions.common import wait
 
 
 logger = logging.getLogger(__name__)

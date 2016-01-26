@@ -20,9 +20,9 @@ from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 import pytest
 from tempfile import NamedTemporaryFile
-from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests import base
 
 

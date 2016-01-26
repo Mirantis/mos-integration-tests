@@ -18,8 +18,8 @@ import paramiko
 from paramiko import ssh_exception
 import pytest
 import six
-from waiting import wait
 
+from mos_tests.functions.common import wait
 from mos_tests import settings
 
 

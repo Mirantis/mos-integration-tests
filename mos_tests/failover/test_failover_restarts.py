@@ -16,8 +16,8 @@ import logging
 import time
 
 import pytest
-from waiting import wait
 
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
 
 
