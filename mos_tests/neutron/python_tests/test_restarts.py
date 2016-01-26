@@ -17,8 +17,8 @@ import logging
 import pytest
 
 from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
-from waiting import wait
 
 logger = logging.getLogger(__name__)
 

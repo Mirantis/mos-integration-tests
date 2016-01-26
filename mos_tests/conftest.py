@@ -17,11 +17,11 @@ import os
 
 import pytest
 from six.moves import configparser
-from waiting import wait
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.environment.fuel_client import FuelClient
+from mos_tests.functions.common import wait
 from mos_tests.settings import KEYSTONE_PASS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import SERVER_ADDRESS

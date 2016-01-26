@@ -28,9 +28,9 @@ from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
 import six
-from waiting import wait
 
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.functions.common import wait
 
 logger = logging.getLogger(__name__)
 
