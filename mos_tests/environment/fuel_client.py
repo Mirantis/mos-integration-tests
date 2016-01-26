@@ -165,15 +165,14 @@ class Environment(EnvironmentBase):
                     return controller
 
     @property
-    def non_primary_controller(self):
+    def non_primary_controllers(self):
         controllers = self.get_nodes_by_role('controller')
-        for controller in controllers:
-            ip = controller.data['ip']
-            with self.get_ssh_to_node(ip) as remote:
-                response = remote.execute('hiera role')
-                stdout = ' '.join(response['stdout'])
-                if 'primary-controller' not in stdout:
-                    return controller
+        primary_controller = self.primary_controller
+        non_primary_controllers = [
+            controller for controller in controllers
+            if controller != primary_controller]
+        non_primary_controllers.sort(key=lambda node: node.data['fqdn'])
+        return non_primary_controllers
 
     def destroy_nodes(self, devops_nodes):
         logger.info('wait until the nodes get offline state')
