@@ -14,6 +14,7 @@
 
 import logging
 import os
+import unittest
 
 import pytest
 from six.moves import configparser
@@ -314,3 +315,5 @@ def pytest_collection_modifyitems(config, items):
             suffix_string = '[({})]'.format(test_id)
             break
         item.name += suffix_string
+        if item.cls is not None and issubclass(item.cls, unittest.TestCase):
+            setattr(item.cls, item.name, item.function)

@@ -24,7 +24,10 @@ class OpenStackTestCase(unittest.TestCase):
     """Base TestCase class with initialized clients"""
 
     def __getattr__(self, item):
-        return getattr(self.os_conn, item)
+        if hasattr(self, 'os_conn'):
+            return getattr(self.os_conn, item)
+        else:
+            raise AttributeError()
 
     def setUp(self):
         self.os_conn = get_os_conn(self.env)
