@@ -104,7 +104,9 @@ class OvsBase(TestBase):
         for node in controllers:
             with node.ssh() as remote:
                 result = remote.execute(
-                    'pcs resource ban p_neutron-plugin-openvswitch-agent')
+                    'pcs resource '
+                    'ban p_neutron-plugin-openvswitch-agent {}'.format(
+                        node.data['fqdn']))
                 assert result['exit_code'] == 0
 
     def clear_ovs_agents_controllers(self):
@@ -280,7 +282,7 @@ class TestOVSRestartTwoVms(OvsBase):
         self.ban_ovs_agents_controllers()
 
         # Then check that all ovs went down
-        self.os_conn.wait_agents_down(self.ovs_agent_ids)
+        self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Cleat ovs agent on all controllers
         self.clear_ovs_agents_controllers()
