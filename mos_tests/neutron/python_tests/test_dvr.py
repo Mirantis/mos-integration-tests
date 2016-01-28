@@ -68,9 +68,10 @@ class TestDVRBase(base.TestBase):
 
         wait(is_nodes_started, timeout_seconds=10 * 60)
 
-    def find_snat_controller(self, excluded=()):
+    def find_snat_controller(self, router_id, excluded=()):
         """Find controller with SNAT service.
 
+        :param router_id: router id to find SNAT for it
         :param excluded: excluded nodes fqdns
         :returns: controller node with SNAT
         """
@@ -80,7 +81,7 @@ class TestDVRBase(base.TestBase):
             if controller.data['fqdn'] in excluded:
                 continue
             with controller.ssh() as remote:
-                cmd = 'ip net | grep snat'
+                cmd = 'ip net | grep snat-{}'.format(router_id)
                 res = remote.execute(cmd)
                 if res['exit_code'] == 0:
                     controller_with_snat = controller
@@ -117,12 +118,13 @@ class TestDVR(TestDVRBase):
         net, subnet = self.create_internal_network_with_subnet(1)
         router = self.os_conn.create_router(name='router01',
                                             distributed=distributed_router)
+        self.router_id = router['router']['id']
         self.os_conn.router_gateway_add(
-            router_id=router['router']['id'],
+            router_id=self.router_id,
             network_id=self.os_conn.ext_network['id'])
 
         self.os_conn.router_interface_add(
-            router_id=router['router']['id'],
+            router_id=self.router_id,
             subnet_id=subnet['subnet']['id'])
 
         self.server = self.os_conn.create_server(
@@ -220,7 +222,7 @@ class TestDVR(TestDVRBase):
         self._prepare_openstack_env()
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         # Get controller with SNAT and destroy it
-        controller_with_snat = self.find_snat_controller()
+        controller_with_snat = self.find_snat_controller(self.router_id)
         logger.info('Destroying controller with SNAT: {}'.format(
             controller_with_snat.data['fqdn']))
         devops_node = DevopsClient.get_node_by_mac(
@@ -230,6 +232,7 @@ class TestDVR(TestDVRBase):
         wait_msg = "Waiting for snat is rescheduled"
         new_controller_with_snat = wait(
             lambda: self.find_snat_controller(
+                self.router_id,
                 excluded=[controller_with_snat.data['fqdn']]),
             timeout_seconds=60 * 3,
             sleep_seconds=(1, 60, 5),
@@ -668,7 +671,8 @@ class TestDVRTypeChange(TestDVRBase):
 
         router = self.os_conn.create_router(
                      name="router01", distributed=False)['router']
-        self.os_conn.router_gateway_add(router_id=router['id'],
+        self.os_conn.router_gateway_add(
+            router_id=router['id'],
             network_id=self.os_conn.ext_network['id'])
         logger.info('router {} was created'.format(router['id']))
         return router
@@ -683,7 +687,8 @@ class TestDVRTypeChange(TestDVRBase):
 
         router = self.os_conn.create_router(
                      name="router01", distributed=True)['router']
-        self.os_conn.router_gateway_add(router_id=router['id'],
+        self.os_conn.router_gateway_add(
+            router_id=router['id'],
             network_id=self.os_conn.ext_network['id'])
         logger.info('router {} was created'.format(router['id']))
         return router
@@ -712,12 +717,12 @@ class TestDVRTypeChange(TestDVRBase):
 
         # find the compute where the vm is run
         computes = self.env.get_nodes_by_role('compute')
-        compute_ips = [node.data['ip'] for node in computes
-                       if node.data['fqdn'] == self.hosts[0]]
+        compute_nodes = [node for node in computes
+                         if node.data['fqdn'] == self.hosts[0]]
 
-        assert compute_ips, "Can't find the compute node with the vm"
+        assert compute_nodes, "Can't find the compute node with the vm"
 
-        return compute_ips
+        return compute_nodes[0]
 
     @pytest.mark.testrail_id('542772')
     def test_centralized_update_to_distributed(self, legacy_router, variables):
@@ -735,15 +740,15 @@ class TestDVRTypeChange(TestDVRBase):
             7. And finally as a bonus check that it is not poissible
                 to change the router type from distributed to centralized
         """
-
         router_id = legacy_router['id']
-        compute_ips = self.create_net_and_vm(router_id)
+        compute_node = self.create_net_and_vm(router_id)
 
         # Check that router is not distributed by default
         router = self.os_conn.neutron.show_router(router_id)['router']
-        err_msg = ('distributed parameter for the router {0} is {1}. '
-                   "But it's expected value is False"
-                  ).format(router['name'], router['distributed'])
+        err_msg = (
+            "distributed parameter for the router {0} is {1}. "
+            "But it's expected value is False").format(
+            router['name'], router['distributed'])
         assert not router['distributed'], err_msg
 
         # Try to change the distributed parameter
@@ -752,8 +757,8 @@ class TestDVRTypeChange(TestDVRBase):
         # in case if no exception is generated the py.test will fail
         with pytest.raises(NeutronClientException) as e:
             self.os_conn.neutron.update_router(router_id,
-                                           {'router': {
-                                            'distributed': True}})
+                                               {'router': {
+                                                   'distributed': True}})
 
         # allowed_msg is for doulbe check
         # There is no separate exception for each case
@@ -779,15 +784,23 @@ class TestDVRTypeChange(TestDVRBase):
 
         # Check that distributed is really changed to True
         router = self.os_conn.neutron.show_router(router_id)['router']
-        err_msg = ('distributed parameter for the router {0} is {1}. '
-                   "But it's expected value is True"
-                  ).format(router['name'], router['distributed'])
+        err_msg = (
+            "distributed parameter for the router {0} is {1}. "
+            "But it's expected value is True").format(
+            router['name'], router['distributed'])
         assert router['distributed'], err_msg
 
         # Check that the router namespace is available on the compute now
-        with self.env.get_ssh_to_node(compute_ips[0]) as remote:
+        with compute_node.ssh() as remote:
             cmd = "ip netns | grep [q]router-{}".format(router_id)
-            remote.check_call(cmd)
+            wait_msg = (
+                'router: {} namespace is available on compute: {}'.format(
+                    router_id, compute_node.data['fqdn']))
+            wait(
+                lambda: remote.execute(cmd)['exit_code'] == 0,
+                timeout_seconds=15,
+                sleep_seconds=5,
+                waiting_for=wait_msg)
 
         # check pings
         self.check_vm_connectivity()
@@ -818,10 +831,11 @@ class TestDVRTypeChange(TestDVRBase):
         Steps:
             1.  Find controller with SNAT-namespace:
                 ip net | grep snat on all controller
-            2.  Reshedule router to another controller
-            3.  Check that snat-namespace moved to another controller
+            2.  Reschedule router to another controller
+            3.  Check that SNAT-namespace moved to another controller
             4.  Go to the vm_1 with ssh and floating IP and Ping 8.8.8.8
         """
+        # TODO: rewrite this test
 
         router_id = dvr_router['id']
         self.create_net_and_vm(router_id)
@@ -915,14 +929,14 @@ class TestDVRTypeChange(TestDVRBase):
                                        ca_cert=path_to_cert)
 
         # Try to create router with explicit distributed True value
-        # by user with memeber role but in admin tenant
+        # by user with member role but in admin tenant
         # That shouldn't be possible, exception is expected here
         # in case if no exception is generated the py.test will fail
         with pytest.raises(NeutronClientException) as e:
             router = {'name': 'router01', 'distributed': True}
             router_id = neutron.create_router(
                             {'router': router})['router']['id']
-        # allowed_msg is for doulbe check
+        # allowed_msg is for double check
         # There is no separate exception for each case
         # So just check that generated exception contains the expected message
         # Otherwise the test is failed
@@ -950,9 +964,10 @@ class TestDVRTypeChange(TestDVRBase):
         # Check that the created router has distributed value set to True
         # Check is done by admin user
         router = self.os_conn.neutron.show_router(router_id)['router']
-        err_msg = ('distributed parameter for the router {0} is {1}. '
-                   "But it's expected value is True"
-                  ).format(router['name'], router['distributed'])
+        err_msg = (
+            "distributed parameter for the router {0} is {1}. "
+            "But it's expected value is True").format(
+            router['name'], router['distributed'])
         assert router['distributed'], err_msg
 
         self.check_exception_on_router_update_to_centralize(router['id'])
