@@ -45,6 +45,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.delete_stack(self.heat, stack_uid)
         self.uid_list = []
 
+    @pytest.mark.testrail_id('631860')
     def test_heat_resource_type_list(self):
         """This test case checks list of available Heat resources.
 
@@ -65,9 +66,10 @@ class HeatIntegrationTests(OpenStackTestCase):
             self.assertIn(resource, resource_types,
                           "Resource {0} not found!".format(resource))
 
+    @pytest.mark.testrail_id('631878')
     def test_heat_create_stack(self):
-        """This test performs creation of a new stack with
-            a help of Heat. And then delete it.
+        """This test performs creation of a new stack with Heat.
+        After that it will be deleted.
 
         Steps:
         1. Read template from URL
@@ -100,6 +102,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                          template_content)
         self.uid_list.append(uid_of_new_stack)
 
+    @pytest.mark.testrail_id('631868')
     def test_heat_stack_update(self):
         """This test case checks stack-update action.
         Steps:
@@ -129,6 +132,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             else:
                 time.sleep(1)
 
+    @pytest.mark.testrail_id('631861')
     def test_heat_resource_type_show(self):
         """This test case checks representation of all Heat resources.
 
@@ -144,6 +148,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             msg = "Schema of resource {0} is incorrect!"
             self.assertIsInstance(resource_schema, dict, msg.format(resource))
 
+    @pytest.mark.testrail_id('631862')
     def test_heat_resource_type_template(self):
         """This test case checks representation of templates for all Heat
             resources.
@@ -160,6 +165,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             msg = "Schema of resource template {0} is incorrect!"
             self.assertIsInstance(schema, dict, msg.format(resource))
 
+    @pytest.mark.testrail_id('631866')
     def test_heat_stack_delete(self):
         """This test case checks deletion of stack.
 
@@ -189,6 +195,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         stacks = [s.stack_name for s in self.heat.stacks.list()]
         self.assertNotIn(stack_name, stacks)
 
+    @pytest.mark.testrail_id('631864')
     def test_heat_stack_create_with_template(self):
         """This test case checks creation of stack.
 
@@ -217,6 +224,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                             'CREATE_COMPLETE',
                                                             timeout))
 
+    @pytest.mark.testrail_id('631865')
     def test_heat_stack_create_with_url(self):
         """This test case checks creation of stack using template URL.
 
@@ -247,6 +255,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                                             'CREATE_COMPLETE',
                                                             timeout))
 
+    @pytest.mark.testrail_id('631870')
     def test_check_stack_resources_statuses(self):
         """This test case checks that stack resources are in expected states
         Steps:
@@ -278,6 +287,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                       "Stack {0} is not in CHECK_COMPLETE state".format(
                           stack_name))
 
+    @pytest.mark.testrail_id('631872')
     def test_show_stack_event_list(self):
         """This test checks list events for a stack
 
@@ -299,6 +309,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                       "Event list doesn't contain at least one event for {0}"
                       .format(stack_name))
 
+    @pytest.mark.testrail_id('631875')
     def test_heat_stack_template_show(self):
         """This test case checks representation of template of created stack.
 
@@ -327,6 +338,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         stack_template = self.heat.stacks.template(stack_id)
         self.assertIsInstance(stack_template, dict)
 
+    @pytest.mark.testrail_id('631873')
     def test_show_info_of_specified_stack_event(self):
         """This test checks info about stack event
 
@@ -357,6 +369,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                          .format(event_info.resource_status, stack_status))
         common_functions.delete_stack(self.heat, stack_id)
 
+    @pytest.mark.testrail_id('631876')
     def test_heat_create_stack_a_w_s(self):
         """This test creates stack using AWS format template
 
@@ -426,6 +439,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                             parameters)
         self.uid_list.append(uid)
 
+    @pytest.mark.testrail_id('631863')
     def test_heat_stack_preview(self):
         """This test case previews a stack.
 
@@ -462,6 +476,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
 
+    @pytest.mark.testrail_id('631874')
     def test_heat_stack_template_validate(self):
         """This test case checks representation of template file.
 
@@ -475,6 +490,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         result = self.heat.stacks.validate(**template_data)
         self.assertIsInstance(result, dict)
 
+    @pytest.mark.testrail_id('631871')
     def test_stack_resume_suspend(self):
         """Suspend and resume stack
         (with its resources for which that feature works)
@@ -533,6 +549,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                              "status instead of 'RESUME_COMPLETE'"
                              .format(name, status))
 
+    @pytest.mark.testrail_id('631882')
     def test_heat_stack_update_replace(self):
         """This test case checks change stack id after stack update.
 
@@ -573,6 +590,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.update_template_file(
                 template_path, 'format', **back_format_change)
 
+    @pytest.mark.testrail_id('631883')
     def test_heat_stack_update_in_place(self):
         """This test case checks stack id doesn't change after stack update.
 
@@ -616,6 +634,7 @@ class HeatIntegrationTests(OpenStackTestCase):
             common_functions.update_template_file(template_path, 'flavor',
                                                   **back_flavor_change)
 
+    @pytest.mark.testrail_id('631867')
     def test_heat_stack_show(self):
         """This test case checks detailed stack's information.
 
@@ -668,6 +687,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertNotEqual(output.links[0]['href'].find(stack_name), -1)
         self.assertEqual(output.links[0]['rel'], 'self')
 
+    @pytest.mark.testrail_id('631869')
     def test_stack_cancel_update(self):
         """This test check the possibility to cancel update
 
@@ -724,6 +744,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.assertTrue(common_functions.check_stack_status
                         (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
 
+    @pytest.mark.testrail_id('631884')
     def test_heat_stack_output_list(self):
         """This test case checks list of all stack attributes.
 
@@ -752,6 +773,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                             outputs]
         self.assertEqual(stack_attributes, correct_attributes)
 
+    @pytest.mark.testrail_id('631885')
     def test_heat_stack_output_show(self):
         """This test case checks value of specific attribute
             as well as list of all stack attributes.
@@ -784,6 +806,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                              if k != 'output_value'} for item in outputs]
         self.assertEqual(stack_attributes, correct_attributes)
 
+    @pytest.mark.testrail_id('631879')
     def test_heat_create_stack_wait_condition(self):
         """This test creates stack with WaitCondition resources
 
@@ -869,6 +892,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
+    @pytest.mark.testrail_id('631880')
     def test_heat_create_stack_neutron_resources(self):
         """This test creates stack with Neutron resources
 
@@ -978,6 +1002,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
+    @pytest.mark.testrail_id('631881')
     def test_heat_create_stack_nova_resources(self):
         """This test creates stack with Nova resources
 
@@ -1073,6 +1098,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
+    @pytest.mark.testrail_id('631877')
     def test_heat_create_stack_docker_resources(self):
         """This test creates stack with Docker resource
 
