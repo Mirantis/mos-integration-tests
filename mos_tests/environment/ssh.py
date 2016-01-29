@@ -70,12 +70,10 @@ class SSHClient(object):
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
+        self.proxy_command = proxy_command
+        self._ssh = None
         self._sftp_client = None
-        self.proxy = None
-        if proxy_command is not None:
-            self.proxy = paramiko.ProxyCommand(proxy_command)
-
-        self.reconnect()
+        self._proxy = None
 
     def clear(self):
         if self._sftp_client is not None:
@@ -84,15 +82,23 @@ class SSHClient(object):
             except Exception:
                 logger.exception("Could not close sftp connection")
 
-        try:
-            self._ssh.close()
-        except Exception:
-            logger.exception("Could not close ssh connection")
+        if self._ssh is not None:
+            try:
+                self._ssh.close()
+            except Exception:
+                logger.exception("Could not close ssh connection")
+
+        if self._proxy is not None:
+            try:
+                self._proxy.close()
+            except Exception:
+                logger.exception("Could not close proxy connection")
 
     def __del__(self):
         self.clear()
 
     def __enter__(self):
+        self.reconnect()
         return self
 
     def __exit__(self, *err):
@@ -106,11 +112,13 @@ class SSHClient(object):
             port=self.port, username=self.username,
             password=self.password
         )
-        if self.proxy is not None:
-            base_kwargs['sock'] = self.proxy
+        if self.proxy_command is not None:
+            self._proxy = paramiko.ProxyCommand(self.proxy_command)
+            base_kwargs['sock'] = self._proxy
         for private_key in self.private_keys:
             kwargs = base_kwargs.copy()
             kwargs['pkey'] = private_key
+            kwargs['password'] = None
             try:
                 return self._ssh.connect(self.host, **kwargs)
             except paramiko.AuthenticationException:
@@ -121,6 +129,7 @@ class SSHClient(object):
         return self._ssh.connect(self.host, **base_kwargs)
 
     def reconnect(self):
+        self.clear()
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.connect()
@@ -173,6 +182,9 @@ class SSHClient(object):
             if verbose:
                 logger.info(line)
         result['exit_code'] = chan.recv_exit_status()
+        stdin.close()
+        stdout.close()
+        stderr.close()
         chan.close()
         return result
 

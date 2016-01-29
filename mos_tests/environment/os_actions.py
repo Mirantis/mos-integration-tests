@@ -190,7 +190,10 @@ class OpenStackActions(object):
         paramiko_orig_level = paramiko_logger.getEffectiveLevel()
         try:
             paramiko_logger.setLevel(logging.CRITICAL)
-            self.ssh_to_instance(self.env, server)
+            with self.ssh_to_instance(self.env, server, username='cirros',
+                password='cubswin:)'
+            ):
+                return True
         except paramiko.SSHException as e:
             if 'authentication' in unicode(e).lower():
                 return True
