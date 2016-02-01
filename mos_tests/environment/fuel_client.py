@@ -175,13 +175,15 @@ class Environment(EnvironmentBase):
         return non_primary_controllers
 
     def destroy_nodes(self, devops_nodes):
-        logger.info('wait until the nodes get offline state')
+        wait_msg = 'the nodes get offline state'
+        logger.info('wait until {}'.format(wait_msg))
         node_ips = [node.get_ip_address_by_network_name('admin')
                     for node in devops_nodes]
         for node in devops_nodes:
             node.destroy()
         wait(lambda: self.check_nodes_get_offline_state(node_ips),
-             timeout_seconds=10 * 60)
+             timeout_seconds=10 * 60,
+             waiting_for=wait_msg)
         for node in self.get_all_nodes():
             logger.info('online state of node {0} now is {1}'
                         .format(node.data['name'], node.data['online']))

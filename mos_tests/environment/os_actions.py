@@ -616,18 +616,22 @@ class OpenStackActions(object):
                          proxy_command=proxy_command)
 
     def wait_agents_alive(self, agt_ids_to_check):
-        logger.info('waiting until the agents get alive')
+        wait_msg = 'the agents get alive'
+        logger.info('wait until {}'.format(wait_msg))
         wait(lambda: all(agt['alive'] for agt in
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
-             timeout_seconds=5 * 60)
+             timeout_seconds=5 * 60,
+             waiting_for=wait_msg)
 
     def wait_agents_down(self, agt_ids_to_check):
-        logger.info('waiting until the agents go down')
+        wait_msg = 'the agents go down'
+        logger.info('wait until {}'.format(wait_msg))
         wait(lambda: all(not agt['alive'] for agt in
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
-             timeout_seconds=5 * 60)
+             timeout_seconds=5 * 60,
+             waiting_for=wait_msg)
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
