@@ -13,6 +13,7 @@
 #    under the License.
 
 import os
+from tempfile import NamedTemporaryFile
 from time import sleep
 from time import time
 import urllib2
@@ -599,3 +600,9 @@ def wait(*args, **kwargs):
         return base_wait(*args, **kwargs)
     except TimeoutExpired as e:
         raise e
+
+
+def gen_temp_file(prefix='tmp', suffix=''):
+    tempdir = os.path.join(os.path.dirname(__file__), '../../temp')
+    return NamedTemporaryFile(prefix=prefix, suffix=suffix, dir=tempdir,
+                              delete=False)
