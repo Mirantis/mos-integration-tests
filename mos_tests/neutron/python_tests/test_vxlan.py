@@ -20,6 +20,7 @@ import threading
 
 import pytest
 
+from mos_tests.functions.common import gen_temp_file
 from mos_tests.neutron.python_tests.base import TestBase
 
 
@@ -191,8 +192,9 @@ class TestVxlan(TestVxlanBase):
                 result = remote.execute('ovs-vsctl show | grep -q br-tun')
                 assert result['exit_code'] == 0
 
+        log_file = gen_temp_file(prefix='vxlan', suffix='.log')
         with tcpdump_vxlan(ip=compute.data['ip'], env=self.env,
-                           log_path='/tmp/vxlan.log'):
+                           log_path=log_file.name):
             with self.env.get_ssh_to_node(controller.data['ip']) as remote:
                 vm_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
                 result = remote.execute(
@@ -202,7 +204,7 @@ class TestVxlan(TestVxlanBase):
 
         # Check log
         vni = network['network']['provider:segmentation_id']
-        check_all_traffic_has_vni(vni, '/tmp/vxlan.log')
+        check_all_traffic_has_vni(vni, log_file.name)
 
     @pytest.mark.testrail_id('542632')
     @pytest.mark.check_env_('has_2_or_more_computes')
@@ -260,12 +262,14 @@ class TestVxlan(TestVxlanBase):
         # Start tcpdump
         compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
         compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
+        log_file1 = gen_temp_file(prefix='vxlan', suffix='.log')
+        log_file2 = gen_temp_file(prefix='vxlan', suffix='.log')
         with tcpdump_vxlan(
                 ip=compute1.data['ip'], env=self.env,
-                log_path='/tmp/vxlan1.log'
+                log_path=log_file1.name
             ), tcpdump_vxlan(
                 ip=compute2.data['ip'], env=self.env,
-                log_path='/tmp/vxlan2.log'
+                log_path=log_file2.name
         ):
             # Ping server1 from server2
             server1_ip = self.os_conn.get_nova_instance_ips(
@@ -274,9 +278,9 @@ class TestVxlan(TestVxlanBase):
 
         # Check traffic
         check_all_traffic_has_vni(net1['provider:segmentation_id'],
-                                  '/tmp/vxlan1.log')
+                                  log_file1.name)
         check_all_traffic_has_vni(net2['provider:segmentation_id'],
-                                  '/tmp/vxlan2.log')
+                                  log_file2.name)
 
 
 @pytest.mark.check_env_('is_l2pop')
@@ -352,30 +356,30 @@ class TestVxlanL2pop(TestVxlanBase):
         compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
 
         # Initiate broadcast traffic from server1 to server2
-        broadcast_log = '/tmp/vxlan_broadcast.log'
+        broadcast_log_file = gen_temp_file(prefix='broadcast', suffix='.log')
         with tcpdump(
             ip=compute2.data['ip'], env=self.env,
-            log_path=broadcast_log,
+            log_path=broadcast_log_file.name,
             tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
         ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                             log_file=broadcast_log)
+                             log_file=broadcast_log_file.name)
 
         # Initiate unicast traffic from server1 to server2
-        unicast_log = '/tmp/vxlan_unicast.log'
+        unicast_log_file = gen_temp_file(prefix='unicast', suffix='.log')
         with tcpdump(
             ip=compute2.data['ip'], env=self.env,
-            log_path=unicast_log,
+            log_path=unicast_log_file.name,
             tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
         ):
             cmd = 'ping -c 4 {0}; true'.format(server2_ip)
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                           log_file=unicast_log)
+                           log_file=unicast_log_file.name)
 
     @pytest.mark.testrail_id('542636')
     @pytest.mark.check_env_('has_3_or_more_computes')
@@ -557,10 +561,10 @@ class TestVxlanL2pop(TestVxlanBase):
         server2_port = self.os_conn.get_port_by_fixed_ip(server2_ip)
         server2_tap = 'tap{}'.format(server2_port['id'][:11])
         # Initiate broadcast traffic from server1 to server2
-        broadcast_log = '/tmp/vxlan_broadcast1.log'
+        broadcast_log_file = gen_temp_file(prefix='broadcast', suffix='.log')
         with tcpdump(
             ip=compute2.data['ip'], env=self.env,
-            log_path=broadcast_log,
+            log_path=broadcast_log_file.name,
             tcpdump_args=' -n src host {ip} -i {interface}'.format(
                 ip=server1_ip,
                 interface=server2_tap,)
@@ -569,15 +573,14 @@ class TestVxlanL2pop(TestVxlanBase):
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                          log_file=broadcast_log)
+                          log_file=broadcast_log_file.name)
 
         server3_port = self.os_conn.get_port_by_fixed_ip(server3_ip)
         server3_tap = 'tap{}'.format(server3_port['id'][:11])
         # Initiate broadcast traffic from server1 to server3
-        broadcast_log = '/tmp/vxlan_broadcast1.log'
         with tcpdump(
             ip=compute2.data['ip'], env=self.env,
-            log_path=broadcast_log,
+            log_path=broadcast_log_file.name,
             tcpdump_args=' -n src host {ip} -i {interface}'.format(
                 ip=server1_ip,
                 interface=server3_tap,)
@@ -586,4 +589,4 @@ class TestVxlanL2pop(TestVxlanBase):
             self.run_on_vm(server1, self.instance_keypair, cmd)
 
         check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
-                             log_file=broadcast_log)
+                             log_file=broadcast_log_file.name)

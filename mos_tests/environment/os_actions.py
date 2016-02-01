@@ -14,7 +14,6 @@
 
 import logging
 import random
-from tempfile import NamedTemporaryFile
 import time
 
 from cinderclient import client as cinderclient
@@ -30,6 +29,7 @@ import paramiko
 import six
 
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
 
 logger = logging.getLogger(__name__)
@@ -47,8 +47,7 @@ class OpenStackActions(object):
             path_to_cert = None
         else:
             auth_url = 'https://{0}:5000/v2.0/'.format(self.controller_ip)
-            with NamedTemporaryFile(prefix="fuel_cert_", suffix=".pem",
-                                    delete=False) as f:
+            with gen_temp_file(prefix="fuel_cert_", suffix=".pem") as f:
                 f.write(cert)
             path_to_cert = f.name
 
@@ -595,13 +594,14 @@ class OpenStackActions(object):
         ip = env.find_node_by_fqdn(devops_node).data['ip']
         key_paths = []
         for i, key in enumerate(env.admin_ssh_keys):
-            path = '/tmp/fuel_key{0}.rsa'.format(i)
+            keyfile = gen_temp_file(prefix="fuel_key_", suffix=".rsa")
+            path = keyfile.name
             key.write_private_key_file(path)
             key_paths.append(path)
         proxy_command = (
             "ssh {keys} -o 'StrictHostKeyChecking no' "
-            "root@{node_ip} ip netns exec {ns} "
-            "nc {vm_ip} 22".format(
+            "root@{node_ip} 'ip netns exec {ns} "
+            "nc {vm_ip} 22'".format(
                 keys=' '.join('-i {}'.format(k) for k in key_paths),
                 ns=dhcp_namespace,
                 node_ip=ip,
