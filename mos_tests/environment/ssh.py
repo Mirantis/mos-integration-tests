@@ -99,7 +99,11 @@ class SSHClient(object):
         self.clear()
 
     def __enter__(self):
-        self.reconnect()
+        try:
+            self.reconnect()
+        except Exception:
+            self.clear()
+            raise
         return self
 
     def __exit__(self, *err):

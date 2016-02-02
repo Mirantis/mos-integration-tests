@@ -27,7 +27,8 @@ logging.config.dictConfig({
 
     'formatters': {
         'standart': {
-            'format': '%(asctime)s [%(levelname)s] %(name)s:%(lineno)s: %(message)s'
+            'format':
+                '%(asctime)s [%(levelname)s] %(name)s:%(lineno)s: %(message)s'
         },
     },
     'handlers': {
