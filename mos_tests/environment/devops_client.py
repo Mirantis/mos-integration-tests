@@ -23,45 +23,20 @@ class DevopsClient(object):
     """Method to work with the virtual env over fuel-devops."""
 
     @classmethod
-    def get_env(cls, env_name=''):
-        """Find and return env by name.
-
-        If name is empty will try to find the last created env.
-        Will return None is failed to find any env at all.
-        """
-        env = None
+    def get_env(cls, env_name):
+        """Find and return env by name."""
         try:
-            if env_name:
-                env = Environment.get(name=env_name)
-            else:
-                env = Environment.objects.all().order_by('created').last()
+            return Environment.get(name=env_name)
         except Exception as e:
             logger.error('failed to find the last created environment{}'.
                          format(e))
             raise
-        return env
 
     @classmethod
-    def revert_snapshot(cls, env_name='', snapshot_name=''):
-        """Resume the env and revert the snapshot.
-
-        If the snapshot_name is empty
-        than just find the last created snapshot
-        Return True if the resume-revert is successfully done
-        False otherwise.
-        """
+    def revert_snapshot(cls, env_name, snapshot_name):
+        """Resume the env and revert the snapshot."""
         env = cls.get_env(env_name)
-        not_interested = ['ready', 'empty']
-        snapshots = []
         try:
-            if not snapshot_name:
-                for node in env.get_nodes():
-                    for snapshot in node.get_snapshots():
-                        if snapshot.name not in not_interested:
-                            snapshots.append(snapshot.name)
-                            not_interested.append(snapshot.name)
-                snapshot_name = snapshots[-1]
-            # TBD the calls below are non blocking once, need to add wait
             logger.info("Reverting snapshot {0}".format(snapshot_name))
             env.revert(snapshot_name, flag=False)
             env.resume(verbose=False)
@@ -72,7 +47,7 @@ class DevopsClient(object):
             raise
 
     @classmethod
-    def get_admin_node_ip(cls, env_name=''):
+    def get_admin_node_ip(cls, env_name):
         """Return IP of admin node for given env_name as a string.
 
         Will return empty string if admin node was not found in env.

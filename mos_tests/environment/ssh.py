@@ -59,7 +59,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_command=None):
+                 private_keys=None, proxy_command=None, timeout=120):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -70,6 +70,7 @@ class SSHClient(object):
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
+        self.timeout = timeout
         self.proxy_command = proxy_command
         self._ssh = None
         self._sftp_client = None
@@ -78,7 +79,7 @@ class SSHClient(object):
     def clear(self):
         if self._sftp_client is not None:
             try:
-                self._sftp.close()
+                self._sftp_client.close()
             except Exception:
                 logger.exception("Could not close sftp connection")
 
@@ -110,10 +111,11 @@ class SSHClient(object):
                 self.host, self.port, self.username, self.password))
         base_kwargs = dict(
             port=self.port, username=self.username,
-            password=self.password
+            password=self.password, banner_timeout=30
         )
         if self.proxy_command is not None:
             self._proxy = paramiko.ProxyCommand(self.proxy_command)
+            self._proxy.settimeout(self.timeout)
             base_kwargs['sock'] = self._proxy
         for private_key in self.private_keys:
             kwargs = base_kwargs.copy()
@@ -190,7 +192,7 @@ class SSHClient(object):
 
     def execute_async(self, command):
         logger.debug("Executing command: '%s'" % command.rstrip())
-        chan = self._ssh.get_transport().open_session(timeout=120)
+        chan = self._ssh.get_transport().open_session(timeout=self.timeout)
         stdin = chan.makefile('wb')
         stdout = chan.makefile('rb')
         stderr = chan.makefile_stderr('rb')

@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 
 # Fuel master server ip
@@ -35,3 +36,5 @@ PUBLIC_TEST_IP = os.environ.get('PUBLIC_TEST_IP', '8.8.8.8')
 # Path to folder with required images
 TEST_IMAGE_PATH = os.path.expanduser('~/images')
 UBUNTU_IPERF_QCOW2 = 'ubuntu-iperf.qcow2'
+
+CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
