@@ -64,8 +64,7 @@ class CinderIntegrationTests(OpenStackTestCase):
         logger.info('Create volume')
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
-        volume = common_functions.create_volume(self.cinder, image_id,
-                                                timeout=60)
+        volume = common_functions.create_volume(self.cinder, image_id)
         self.volume_list.append(volume)
 
         # 2. Creation of 70 snapshots
@@ -80,8 +79,7 @@ class CinderIntegrationTests(OpenStackTestCase):
             self.assertTrue(
                 common_functions.check_volume_snapshot_status(self.cinder,
                                                               snapshot_id,
-                                                              'available',
-                                                              timeout=60))
+                                                              'available'))
         self.snapshot_list.extend(initial_snapshot_lst)
 
         # 3. Delete all snapshots
