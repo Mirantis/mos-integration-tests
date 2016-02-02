@@ -153,7 +153,7 @@ class OpenStackActions(object):
             raise Exception('Server {} status is error'.format(server.name))
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
-                      files=None, key_name=None, timeout=100, **kwargs):
+                      files=None, key_name=None, timeout=300, **kwargs):
         try:
             if scenario:
                 with open(scenario, "r+") as f:
@@ -178,7 +178,7 @@ class OpenStackActions(object):
 
         # wait for ssh ready
         if self.env is not None:
-            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=100,
+            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=300,
                  waiting_for='server available via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
