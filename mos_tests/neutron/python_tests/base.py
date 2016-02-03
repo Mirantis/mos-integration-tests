@@ -34,10 +34,11 @@ class TestBase(object):
     """Class contains common methods for neutron tests"""
 
     @pytest.fixture(autouse=True)
-    def init(self, fuel, env, os_conn):
+    def init(self, fuel, env, os_conn, env_name):
         self.fuel = fuel
         self.env = env
         self.os_conn = os_conn
+        self.env_name = env_name
         self.cirros_creds = {'username': 'cirros',
                              'password': 'cubswin:)'}
 

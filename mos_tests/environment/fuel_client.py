@@ -188,7 +188,7 @@ class Environment(EnvironmentBase):
              timeout_seconds=10 * 60,
              waiting_for=wait_msg)
         for node in self.get_all_nodes():
-            logger.info('online={1} for node {0} now'
+            logger.info('online={1} for node {0}'
                         .format(node.data['name'], node.data['online']))
 
     def warm_shutdown_nodes(self, devops_nodes):

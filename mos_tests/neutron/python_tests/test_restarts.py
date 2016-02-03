@@ -24,11 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
-@pytest.mark.usefixtures("setup")
 class TestRestarts(TestBase):
 
-    @pytest.fixture(autouse=True)
-    def prepare_openstack(self, setup, env_name):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -77,15 +75,15 @@ class TestRestarts(TestBase):
         # Find a primary controller
         primary_controller = self.env.primary_controller
         mac = primary_controller.data['mac']
-        self.primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                         mac=mac)
+        self.primary_node = DevopsClient.get_node_by_mac(
+            env_name=self.env_name, mac=mac)
         self.primary_host = primary_controller.data['fqdn']
 
         # Find a non-primary controller
         non_primary_controller = self.env.non_primary_controllers[0]
         mac = non_primary_controller.data['mac']
-        self.non_primary_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                             mac=mac)
+        self.non_primary_node = DevopsClient.get_node_by_mac(
+            env_name=self.env_name, mac=mac)
         self.non_primary_host = non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
@@ -120,6 +118,7 @@ class TestRestarts(TestBase):
             9. ping between vm1 and vm2 by floating ip
         """
 
+        self._prepare_openstack()
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                         self.router['id'])['agents'][0]
@@ -144,8 +143,8 @@ class TestRestarts(TestBase):
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
         # Check that there are no routers on the first agent
-        assert not self.os_conn.neutron.list_routers_on_l3_agent(
-            router_agt['id'])['routers']
+        assert len(self.os_conn.neutron.list_routers_on_l3_agent(
+            router_agt['id'])['routers']) == 0
 
         self.os_conn.add_server(self.networks[0],
                                 self.instance_keypair.name,
@@ -175,6 +174,7 @@ class TestRestarts(TestBase):
             9. ping between vm1 and vm2 by floating ip
         """
 
+        self._prepare_openstack()
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                         self.router['id'])['agents'][0]
@@ -193,8 +193,8 @@ class TestRestarts(TestBase):
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
         # Check that there are no routers on the first agent
-        assert not self.os_conn.neutron.list_routers_on_l3_agent(
-                        router_agt['id'])['routers']
+        assert len(self.os_conn.neutron.list_routers_on_l3_agent(
+                        router_agt['id'])['routers']) == 0
 
         # Create one more server and check connectivity
         self.os_conn.add_server(self.networks[0],
@@ -221,6 +221,7 @@ class TestRestarts(TestBase):
             15. ping between vm1 and vm2 by floating ip
         """
 
+        self._prepare_openstack()
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
                 self.router['id'])['agents'][0]
@@ -243,7 +244,7 @@ class TestRestarts(TestBase):
             logger.info('Now going to kill it on the controller {}'.format(
                         controller_ip))
             result = remote.execute('kill -9 {}'.format(pid))
-            assert not result['exit_code'], "kill failed {}".format(result)
+            assert result['exit_code'] == 0, "kill failed {}".format(result)
 
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
@@ -271,6 +272,7 @@ class TestRestarts(TestBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
             self.networks[0])
 
@@ -322,6 +324,7 @@ class TestRestarts(TestBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
             self.networks[0])
 
@@ -373,6 +376,7 @@ class TestRestarts(TestBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         agents_hosts = self.os_conn.get_node_with_dhcp_for_network(
             self.networks[0])
 

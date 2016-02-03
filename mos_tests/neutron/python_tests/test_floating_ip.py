@@ -16,15 +16,14 @@ from paramiko.ssh_exception import NoValidConnectionsError
 from paramiko.ssh_exception import SSHException
 import pytest
 
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
 
 
-@pytest.mark.usefixtures("setup")
 class TestFloatingIP(TestBase):
     """Check association and disassociation floating ip"""
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -104,35 +103,29 @@ class TestFloatingIP(TestBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         ip = self.floating_ip["floating_ip_address"]
         server = self.os_conn.nova.servers.find(name="server01")
         pkeys = self.convert_private_key_for_vm(
             [self.instance_keypair.private_key])
 
-        res1 = None
-        res2 = None
+        def is_ssh_raise_exception(remote):
+            try:
+                remote.execute('uname')
+                return False
+            except SSHException:
+                return True
+            except Exception:
+                raise
 
-        with pytest.raises(SSHException):
-            with self.env.get_ssh_to_vm(ip, private_keys=pkeys,
-                                        **self.cirros_creds) as vm_remote:
-                res1 = vm_remote.execute("ping -c1 8.8.8.8")
-                self.os_conn.disassociate_floating_ip(
-                    server, self.floating_ip, use_neutron=True)
-                res2 = vm_remote.execute("date")
-
-        assert 0 == res1['exit_code'], \
-            ('Instance has no connectivity, exit code {0},'
-             'stdout {1}, stderr {2}'.format(res1['exit_code'],
-                                             res1['stdout'],
-                                             res1['stderr']))
-
-        # check that disassociate_floating_ip has been performed
-        assert self.os_conn.neutron.show_floatingip(
-            self.floating_ip['id'])['floatingip']['status'] == 'DOWN', \
-            'Floatingip is not in the DOWN state.' \
-            'disassociate_floating_ip has failed.'
-
-        assert res2 is None, "SSH hasn't been stopped"
+        with self.env.get_ssh_to_vm(ip, private_keys=pkeys,
+                                    **self.cirros_creds) as vm_remote:
+            vm_remote.check_call("ping -c1 8.8.8.8")
+            self.os_conn.disassociate_floating_ip(
+                server, self.floating_ip, use_neutron=True)
+            vm_remote.timeout = 10
+            wait(lambda: is_ssh_raise_exception(vm_remote), timeout_seconds=60,
+                 waiting_for='ssh connection be stopped')
 
         # check that vm became inaccessible with ssh
         self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)
