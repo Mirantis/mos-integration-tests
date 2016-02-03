@@ -93,7 +93,7 @@ class CinderIntegrationTests(OpenStackTestCase):
         new_count = 50
         new_snapshot_lst = []
         for num in xrange(new_count):
-            logger.info('Creating {} snapshot').format(num)
+            logger.info('Creating {} snapshot'.format(num))
             snapshot_id = self.cinder.volume_snapshots \
                 .create(volume.id, name='2nd_creation_{0}'.format(num))
             new_snapshot_lst.append(snapshot_id)
