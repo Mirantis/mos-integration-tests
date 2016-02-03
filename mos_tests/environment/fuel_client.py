@@ -157,12 +157,15 @@ class Environment(EnvironmentBase):
     def primary_controller(self):
         controllers = self.get_nodes_by_role('controller')
         for controller in controllers:
-            ip = controller.data['ip']
-            with self.get_ssh_to_node(ip) as remote:
-                response = remote.execute('hiera role')
+            with controller.ssh() as remote:
+                response = remote.execute('hiera roles')
                 stdout = ' '.join(response['stdout'])
+                logger.debug('hiera roles for {} is {}'.format(
+                    controller.data['fqdn'], stdout))
                 if 'primary-controller' in stdout:
                     return controller
+        else:
+            raise Exception("Can't find primary controller")
 
     @property
     def non_primary_controllers(self):
@@ -185,7 +188,7 @@ class Environment(EnvironmentBase):
              timeout_seconds=10 * 60,
              waiting_for=wait_msg)
         for node in self.get_all_nodes():
-            logger.info('online state of node {0} now is {1}'
+            logger.info('online={1} for node {0} now'
                         .format(node.data['name'], node.data['online']))
 
     def warm_shutdown_nodes(self, devops_nodes):
