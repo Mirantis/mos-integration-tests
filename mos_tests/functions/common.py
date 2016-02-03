@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 from tempfile import NamedTemporaryFile
 from time import sleep
@@ -21,6 +22,9 @@ import urllib2
 from waiting import TimeoutExpired
 from waiting import wait as base_wait
 import yaml
+
+
+logger = logging.getLogger(__name__)
 
 
 def is_stack_exists(stack_name, heat):
@@ -596,6 +600,8 @@ def delete_keys(nova_client, key_name):
 
 def wait(*args, **kwargs):
     __tracebackhide__ = True
+    waiting_for = kwargs.get('waiting_for', args[0].__name__)
+    logger.info('waiting for {}'.format(waiting_for))
     try:
         return base_wait(*args, **kwargs)
     except TimeoutExpired as e:
