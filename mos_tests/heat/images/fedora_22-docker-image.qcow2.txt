@@ -1,4 +1,0 @@
-http://NEED/TO/PUT/TO/THE/PUBLIC/LOCATION/fedora-software-config.qcow2
-# NEED INTERNET LINK HERE
-now it is here:
-cz7777.bud.mirantis.net: /home/akoryagin/MOS/build_image/fedora-software-config.qcow2
