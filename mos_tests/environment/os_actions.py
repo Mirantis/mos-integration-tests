@@ -185,10 +185,7 @@ class OpenStackActions(object):
 
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
-        paramiko_logger = logging.getLogger("paramiko.transport")
-        paramiko_orig_level = paramiko_logger.getEffectiveLevel()
         try:
-            paramiko_logger.setLevel(logging.CRITICAL)
             with self.ssh_to_instance(self.env, server, username='cirros',
                 password='cubswin:)'
             ):
@@ -201,8 +198,6 @@ class OpenStackActions(object):
                 return False
         except Exception as e:
             logger.error(e)
-        finally:
-            paramiko_logger.setLevel(paramiko_orig_level)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict

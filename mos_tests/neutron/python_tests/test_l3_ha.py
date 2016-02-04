@@ -70,33 +70,31 @@ def ping_groups(stdout):
 
 
 class PingThread(threading.Thread):
-    def __init__(self, env, os_conn, vm, vm_keypair, ip_to_ping,
+    def __init__(self, remote, ip_to_ping,
                  timeout=10 * 60, *args, **kwargs):
         super(PingThread, self).__init__(*args, **kwargs)
         self.stdout_q = Queue()
         self._stop = threading.Event()
-        self.env = env
-        self.os_conn = os_conn
-        self.vm = vm
-        self.vm_keypair = vm_keypair
+        self.remote = remote
         self.ip_to_ping = ip_to_ping
         self.timeout = timeout
         self.stdin = None
         self.chan = None
 
     def run(self):
-        with self.os_conn.ssh_to_instance(self.env, self.vm,
-                                          self.vm_keypair) as remote:
-            command = 'ping {0} 2&>1'.format(self.ip_to_ping)
-            self.chan, self.stdin, stdout, _ = remote.execute_async(command)
-            for line in stdout:
-                self.stdout_q.put(line)
+        remote = self.remote
+        command = 'ping {0} 2&>1'.format(self.ip_to_ping)
+        self.chan, self.stdin, stdout, _ = remote.execute_async(command)
+        for line in stdout:
+            self.stdout_q.put(line)
 
     def stop(self):
         self._stop.set()
-        self.stdin.write(chr(signal.SIGINT))
-        self.stdin.flush()
-        self.chan.close()
+        if self.stdin is not None:
+            self.stdin.write(chr(signal.SIGINT))
+            self.stdin.flush()
+        if self.chan is not None:
+            self.chan.close()
 
     def stopped(self):
         return self._stop.isSet()
@@ -158,34 +156,33 @@ class TestL3HA(TestBase):
         :param good_pings: count of continuous pings to determine that connect
             is restored
         """
-
         result = {
             'received': 0,
             'sent': 0,
         }
 
-        t = PingThread(env=self.env, os_conn=self.os_conn, vm=vm,
-                       vm_keypair=vm_keypair, ip_to_ping=ip_to_ping)
-        logger.info('Start ping on {0}'.format(ip_to_ping))
-        t.start()
+        with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair) as remote:
+            t = PingThread(remote=remote, ip_to_ping=ip_to_ping)
+            logger.info('Start ping on {0}'.format(ip_to_ping))
+            t.start()
 
-        groups = ping_groups(t.iter_output())
+            groups = ping_groups(t.iter_output())
 
-        # Wait for 10 not interrupted packets
-        for ping_info in groups:
-            if ping_info.group_len >= 10:
-                break
+            # Wait for 10 not interrupted packets
+            for ping_info in groups:
+                if ping_info.group_len >= 10:
+                    break
 
-        yield result
+            yield result
 
-        logger.info('Wait for ping restored')
-        for ping_info in groups:
-            result['received'] = ping_info.received
-            result['sent'] = ping_info.sent
-            if ping_info.group_len >= good_pings:
-                break
-        t.stop()
-        t.join()
+            logger.info('Wait for ping restored')
+            for ping_info in groups:
+                result['received'] = ping_info.received
+                result['sent'] = ping_info.sent
+                if ping_info.group_len >= good_pings:
+                    break
+            t.stop()
+            t.join()
 
     def get_active_l3_agents_for_router(self, router_id):
         agents = self.os_conn.get_l3_for_router(router_id)

@@ -15,6 +15,8 @@
 import logging
 import logging.config
 
+from mos_tests.settings import CONSOLE_LOG_LEVEL
+
 logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
 logging.getLogger("paramiko.hostkeys").setLevel(logging.INFO)
 logging.getLogger("iso8601.iso8601").setLevel(logging.INFO)
@@ -25,14 +27,16 @@ logging.config.dictConfig({
 
     'formatters': {
         'standart': {
-            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+            'format':
+                '%(asctime)s [%(levelname)s] %(name)s:%(lineno)s: %(message)s'
         },
     },
     'handlers': {
         'console': {
-            'level': logging.INFO,
+            'level': CONSOLE_LOG_LEVEL,
             'class': 'logging.StreamHandler',
             'formatter': 'standart',
+            'stream': 'ext://sys.stdout',
         },
         'file': {
             'level': logging.DEBUG,
@@ -49,6 +53,6 @@ logging.config.dictConfig({
         'mos_tests': {
             'handlers': ['console'],
             'level': logging.DEBUG,
-        }
+        },
     }
 })
