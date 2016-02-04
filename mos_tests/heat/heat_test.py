@@ -21,6 +21,7 @@ import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests import settings
 
 
 @pytest.mark.undestructive
@@ -1098,7 +1099,22 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
+    @pytest.fixture
+    def fedora_docker_image(self):
+        image_path = os.path.join(settings.TEST_IMAGE_PATH,
+                                  settings.FEDORA_DOCKER_QCOW2)
+        if os.path.exists(image_path):
+            return image_path
+        return None
+
+    @pytest.fixture(autouse=True)
+    def skip_if_no_ubuntu_docker_image(self, request, fedora_docker_image):
+        if request.node.get_marker('require_QCOW2_fedora_docker_image') \
+                and fedora_docker_image is None:
+            pytest.skip("Unable to find QCOW2 fedora docker image")
+
     @pytest.mark.testrail_id('631877')
+    @pytest.mark.require_QCOW2_fedora_docker_image
     def test_heat_create_stack_docker_resources(self):
         """This test creates stack with Docker resource
 
@@ -1119,15 +1135,10 @@ class HeatIntegrationTests(OpenStackTestCase):
         # but it was already verified in "test_543328_HeatResourceTypeList".
         # So nothing to do here.
 
-        file_name = 'fedora_22-docker-image.qcow2.txt'
         image_name = '543346_Fedora-docker' + '_' + str(randint(100, 10000))
 
-        # Prepare full path to image file. Return e.g.
-        # like: /root/mos_tests/heat/images/fedora_22-docker-image.qcow2.txt
-        image_link_location = os.path.join(self.images_dir, file_name)
-
         # Download image on node. Like: /tmp/fedora-software-config.qcow2
-        image_path = common_functions.download_image(image_link_location)
+        image_path = self.fedora_docker_image()
 
         # Create image in Glance
         image = self.glance.images.create(name=image_name,
