@@ -12,14 +12,35 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
 import logging
 import os
 import paramiko
 import posixpath
 import stat
+import time
 
 
 logger = logging.getLogger(__name__)
+
+
+def retry(count=10, delay=1):
+    """Retry until no exceptions decorator."""
+    def decorator(func):
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for _ in range(count):
+                try:
+                    return func(*args, **kwargs)
+                except Exception:
+                    time.sleep(delay)
+            else:
+                raise
+
+        return wrapper
+
+    return decorator
 
 
 class CalledProcessError(Exception):
@@ -59,7 +80,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_command=None):
+                 private_keys=None, proxy_command=None, timeout=120):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -70,6 +91,7 @@ class SSHClient(object):
 
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
+        self.timeout = timeout
         self.proxy_command = proxy_command
         self._ssh = None
         self._sftp_client = None
@@ -78,7 +100,7 @@ class SSHClient(object):
     def clear(self):
         if self._sftp_client is not None:
             try:
-                self._sftp.close()
+                self._sftp_client.close()
             except Exception:
                 logger.exception("Could not close sftp connection")
 
@@ -98,7 +120,11 @@ class SSHClient(object):
         self.clear()
 
     def __enter__(self):
-        self.reconnect()
+        try:
+            self.reconnect()
+        except Exception:
+            self.clear()
+            raise
         return self
 
     def __exit__(self, *err):
@@ -106,14 +132,13 @@ class SSHClient(object):
 
     def connect(self):
         logger.debug(
-            "Connect to '%s:%s' as '%s:%s'" % (
+            "Connecting to '%s:%s' as '%s:%s'" % (
                 self.host, self.port, self.username, self.password))
         base_kwargs = dict(
             port=self.port, username=self.username,
-            password=self.password
+            password=self.password, banner_timeout=30
         )
-        if self.proxy_command is not None:
-            self._proxy = paramiko.ProxyCommand(self.proxy_command)
+        if self._proxy is not None:
             base_kwargs['sock'] = self._proxy
         for private_key in self.private_keys:
             kwargs = base_kwargs.copy()
@@ -128,10 +153,14 @@ class SSHClient(object):
 
         return self._ssh.connect(self.host, **base_kwargs)
 
+    @retry(count=3, delay=3)
     def reconnect(self):
         self.clear()
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if self.proxy_command is not None:
+            self._proxy = paramiko.ProxyCommand(self.proxy_command)
+            self._proxy.settimeout(self.timeout)
         self.connect()
 
     def check_call(self, command, verbose=False):
@@ -190,7 +219,7 @@ class SSHClient(object):
 
     def execute_async(self, command):
         logger.debug("Executing command: '%s'" % command.rstrip())
-        chan = self._ssh.get_transport().open_session(timeout=120)
+        chan = self._ssh.get_transport().open_session(timeout=self.timeout)
         stdin = chan.makefile('wb')
         stdout = chan.makefile('rb')
         stderr = chan.makefile_stderr('rb')
