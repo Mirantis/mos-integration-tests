@@ -33,9 +33,10 @@ def retry(count=10, delay=1):
             for _ in range(count):
                 try:
                     return func(*args, **kwargs)
-                except Exception:
+                except Exception as e:
                     time.sleep(delay)
             else:
+                logger.warning(e)
                 raise
 
         return wrapper
@@ -132,7 +133,7 @@ class SSHClient(object):
 
     def connect(self):
         logger.debug(
-            "Connecting to '%s:%s' as '%s:%s'" % (
+            "Connecting to '%s:%s' as '%s:%s'...." % (
                 self.host, self.port, self.username, self.password))
         base_kwargs = dict(
             port=self.port, username=self.username,
