@@ -20,6 +20,7 @@ import time
 
 import pytest
 
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
@@ -142,12 +143,10 @@ class OvsBase(TestBase):
 
 
 @pytest.mark.check_env_("has_2_or_more_computes")
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartTwoVms(OvsBase):
     """Check restarts of openvswitch-agents."""
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -226,6 +225,7 @@ class TestOVSRestartTwoVms(OvsBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         for _ in range(count):
             # Check that all ovs agents are alive
             self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -275,6 +275,7 @@ class TestOVSRestartTwoVms(OvsBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         # Check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
@@ -386,11 +387,9 @@ class TestPortTags(TestBase):
 
 
 @pytest.mark.check_env_('is_ha', 'has_2_or_more_computes')
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartsOneNetwork(OvsBase):
 
-    @pytest.fixture
-    def prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -446,7 +445,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
                                      if agt['host'] in controllers]
 
     @pytest.mark.testrail_id('542673')
-    def test_restart_openvswitch_agent_under_bat(self, prepare_openstack):
+    def test_restart_openvswitch_agent_under_bat(self):
         """Restart openvswitch-agents with broadcast traffic background
 
         Steps:
@@ -460,6 +459,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
             5. Check that pings between vm1 and vm2 aren't interrupted
                or not more than 2 packets are lost
         """
+        self._prepare_openstack()
         # Run arping in background on server01 towards server02
         srv_list = self.os_conn.nova.servers.list()
         srv1 = srv_list.pop()
@@ -519,12 +519,10 @@ class TestOVSRestartsOneNetwork(OvsBase):
 
 
 @pytest.mark.check_env_("has_1_or_more_computes")
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
     """Check restarts of openvswitch-agents."""
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -590,6 +588,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         Duration 10m
 
         """
+        self._prepare_openstack()
         # Check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
@@ -621,7 +620,6 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
 
 
 @pytest.mark.check_env_("has_2_or_more_computes")
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartWithIperfTraffic(OvsBase):
     """Restart ovs-agents with iperf traffic background"""
 
@@ -631,12 +629,11 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         :param full_path: full path to image file
         :return: image object for Glance
         """
+        image = self.os_conn.glance.images.create(name="image_ubuntu",
+                                                  disk_format='qcow2',
+                                                  container_format='bare')
         with open(full_path, 'rb') as image_file:
-            image = self.os_conn.glance.images \
-                .create(name="image_ubuntu",
-                        disk_format='qcow2',
-                        data=image_file,
-                        container_format='bare')
+            self.os_conn.glance.images.upload(image['id'], image_file)
         return image
 
     def get_lost_percentage(self, output):
@@ -645,13 +642,14 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         :param output: list of lines (output of iperf client)
         :return: percentage of lost datagrams
         """
-        lost_datagrams_rate_pattern = re.compile('\d+/\d+ \((\d+)%\)')
+        logger.debug('iperf output:\n{}'.format(''.join(output)))
+        lost_datagrams_rate_pattern = re.compile(r'\d+/\d+ \(([\d.]+)%\)')
         server_report_flag = False
         for line in output:
             if server_report_flag:
                 result = lost_datagrams_rate_pattern.search(line)
                 if result:
-                    return int(result.group(1))
+                    return float(result.group(1))
             elif line.endswith("Server Report:\n"):
                 server_report_flag = True
         return None
@@ -689,8 +687,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                 and ubuntu_iperf_image is None:
             pytest.skip("Unable to find QCOW2 ubuntu image with iperf")
 
-    @pytest.fixture
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -727,7 +724,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                 availability_zone='{}:{}'.format(zone.zoneName, hostname),
                 image_id=vm_image.id,
                 flavor=2,
-                timeout=300,
+                timeout=60 * 10,
                 key_name=self.instance_keypair.name,
                 nics=[{'net-id': net['network']['id']}])
 
@@ -753,7 +750,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
 
     @pytest.mark.testrail_id('542659')
     @pytest.mark.require_QCOW2_ubuntu_image_with_iperf
-    def test_ovs_restart_with_iperf_traffic(self, _prepare_openstack):
+    def test_ovs_restart_with_iperf_traffic(self):
         """Checks that iperf traffic is not interrupted during ovs restart
 
         Steps:
@@ -767,7 +764,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
             6. Check that iperf traffic wasn't interrupted during ovs restart,
                 and not more than 10% datagrams are lost
         """
-
+        self._prepare_openstack()
         # Launch iperf server on server2
         res = self.launch_iperf_server(self.server2, self.instance_keypair,
                                        vm_login='ubuntu', vm_pwd='ubuntu')
@@ -807,13 +804,14 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         cmd = 'cat ~/iperf_client.log'
-        while True:
+
+        def get_lost():
             result = self.run_on_vm(self.server1, self.instance_keypair, cmd,
                                     vm_login='ubuntu', vm_password='ubuntu')
-            lost = self.get_lost_percentage(result['stdout'])
-            if lost is not None:
-                break
-            time.sleep(5)
+            return self.get_lost_percentage(result['stdout'])
+
+        lost = wait(get_lost, timeout_seconds=5 * 60, sleep_seconds=5,
+                    waiting_for='interrupt iperf traffic')
 
         err_msg = "{0}% datagrams lost. Should be < 10%".format(lost)
         assert lost < 10, err_msg
@@ -823,12 +821,10 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                     self.os_conn.neutron.list_agents()['agents']])
 
 
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartAddFlows(OvsBase):
     """Check that new flows are added after restarts of openvswitch-agents."""
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -879,6 +875,7 @@ class TestOVSRestartAddFlows(OvsBase):
             7. Get list of flows for br-int again
             8. Compere cookie parameters
         """
+        self._prepare_openstack()
         server = self.os_conn.nova.servers.find(name="server_for_flow_check")
         node_name = getattr(server, "OS-EXT-SRV-ATTR:hypervisor_hostname")
         compute = [i for i in self.env.get_nodes_by_role('compute')
@@ -913,12 +910,10 @@ class TestOVSRestartAddFlows(OvsBase):
 
 
 @pytest.mark.check_env_("has_2_or_more_computes", "is_vlan")
-@pytest.mark.usefixtures("setup")
 class TestOVSRestartTwoSeparateVms(OvsBase):
     """Check restarts of openvswitch-agents."""
 
-    @pytest.fixture(autouse=True)
-    def _prepare_openstack(self, init):
+    def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
 
         Steps:
@@ -1028,6 +1023,7 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         Duration 5m
 
         """
+        self._prepare_openstack()
         # Check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 

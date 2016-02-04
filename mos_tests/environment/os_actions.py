@@ -178,7 +178,8 @@ class OpenStackActions(object):
 
         # wait for ssh ready
         if self.env is not None:
-            wait(lambda: self.is_server_ssh_ready(srv), timeout_seconds=300,
+            wait(lambda: self.is_server_ssh_ready(srv),
+                 timeout_seconds=timeout,
                  waiting_for='server available via ssh')
         logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
@@ -489,14 +490,12 @@ class OpenStackActions(object):
                 # port['network'] == 'router_interface'
                 # dunno what will happen in case of the l3 agent
                 for fixed_ip in port['fixed_ips']:
-                    logger.debug(
-                        self.neutron.remove_interface_router(
-                            port['device_id'],
-                            {
-                                'router_id': port['device_id'],
-                                'subnet_id': fixed_ip['subnet_id'],
-                            }
-                        )
+                    self.neutron.remove_interface_router(
+                        port['device_id'],
+                        {
+                            'router_id': port['device_id'],
+                            'subnet_id': fixed_ip['subnet_id'],
+                        }
                     )
             except NeutronClientException:
                 logger.info('the port {} is not deletable'
@@ -611,22 +610,18 @@ class OpenStackActions(object):
                          proxy_command=proxy_command)
 
     def wait_agents_alive(self, agt_ids_to_check):
-        wait_msg = 'the agents get alive'
-        logger.info('wait until {}'.format(wait_msg))
         wait(lambda: all(agt['alive'] for agt in
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60,
-             waiting_for=wait_msg)
+             waiting_for='the agents get alive')
 
     def wait_agents_down(self, agt_ids_to_check):
-        wait_msg = 'the agents go down'
-        logger.info('wait until {}'.format(wait_msg))
         wait(lambda: all(not agt['alive'] for agt in
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60,
-             waiting_for=wait_msg)
+             waiting_for='the agents go down')
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
@@ -669,12 +664,8 @@ class OpenStackActions(object):
         if not new_l3_agt_id:
             all_l3_agts = self.neutron.list_agents(
                               binary='neutron-l3-agent')['agents']
-            for agt in all_l3_agts:
-                logger.info(agt['id'])
             available_l3_agts = [agt for agt in all_l3_agts
                                  if agt['id'] != current_l3_agt_id]
-            for agt in available_l3_agts:
-                logger.info(agt['id'])
             new_l3_agt_id = available_l3_agts[0]['id']
         self.neutron.remove_router_from_l3_agent(current_l3_agt_id,
                                                  router_id)
