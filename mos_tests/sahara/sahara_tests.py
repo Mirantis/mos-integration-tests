@@ -12,13 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-
 import logging
+import os
 
 import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
+
 
 logger = logging.getLogger(__name__)
 
