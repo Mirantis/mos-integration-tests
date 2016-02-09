@@ -14,17 +14,17 @@
 
 import logging
 import os
+from subprocess import Popen
+import unittest
 
 import pytest
-
-from mos_tests.functions.base import OpenStackTestCase
 
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
-class SaharaScenarioTests(OpenStackTestCase):
+class SaharaScenarioTests(unittest.TestCase):
     """Sahara scenario tests for checking of plugins."""
 
     @pytest.mark.testrail_id('675264')
@@ -35,40 +35,46 @@ class SaharaScenarioTests(OpenStackTestCase):
             1. Install packages
             2. Clone repo with sahara-scenario tests
             3. Separate files for 8.0 release
-            4. Genarate .ini file for tests
+            4. Generate .ini file for tests
             5. Run sahara tests for vanilla 2
         """
         logging.info("Sahara scenario tests started")
+        p = Popen(". openrc", shell=True)
+        out, error = p.communicate()
+        auth_url = os.environ.get('OS_AUTH_URL')
         cmd = (
-            "sudo apt-get install -y git python-pip python-tox libpq-dev && "
-            "rm -rf sahara && "
-            "git clone https://github.com/openstack/sahara && "
-            "mkdir sahara/etc/scenario/8.0 && "
-            "cp sahara/etc/scenario/sahara-ci/{credentials.yaml.mako,"
+            "bash -c \"sudo apt-get install -y git python-pip python-tox libpq-dev && "
+            "rm -rf ~/sahara-scenario && "
+            "git clone https://github.com/openstack/sahara-scenario && "
+            "mkdir ~/sahara-scenario/etc/scenario/8.0 &&"
+            "cp -R ~/sahara-scenario/etc/scenario/sahara-ci/{credentials.yaml.mako,"
             "edp.yaml.mako,vanilla-2.7.1.yaml.mako,ambari-2.3.yaml.mako,"
             "cdh-5.4.0.yaml.mako,mapr-5.0.0.mrv2.yaml.mako,"
             "spark-1.3.1.yaml.mako,transient.yaml.mako} "
-            "sahara/etc/scenario/8.0 && "
+            "~/sahara-scenario/etc/scenario/8.0 && "
             "echo '[DEFAULT]\n"
-            "OS_USERNAME: saharaHA\n"
-            "OS_PASSWORD: saharaHA\n"
-            "OS_TENANT_NAME: saharaHA\n"
-            "OS_AUTH_URL: http://%s:5000/v2.0\n"
+            "OS_USERNAME: admin\n"
+            "OS_PASSWORD: admin\n"
+            "OS_TENANT_NAME: admin\n"
+            "OS_AUTH_URL: %sv2.0\n"
             "network_type: neutron\n"
-            "network_private_name: net04\n"
-            "network_public_name: net04_ext\n"
+            "network_private_name: admin_internal_net\n"
+            "network_public_name: admin_floating_net\n"
             "cluster_name: test-cluster\n"
             "vanilla_two_seven_one_image: "
             "sahara-liberty-vanilla-2.7.1-ubuntu-14.04\n"
             "ci_flavor_id: m1.small\n"
             "medium_flavor_id: m1.medium\n"
             "large_flavor_id: m1.large\n' > templatesvar.ini && "
-            "cd sahara && "
+            "cd sahara-scenario && "
             "echo 'concurrency: 2' >> "
             "etc/scenario/8.0/credentials.yaml.mako && "
-            "tox -e venv -- sahara scenario --verbose -V ~/templatesvar.ini "
+            "tox -e venv -- sahara-scenario --verbose -V ~/templatesvar.ini "
             "etc/scenario/8.0/credentials.yaml.mako "
             "etc/scenario/8.0/edp.yaml.mako "
-            "etc/scenario/8.0/vanilla-2.7.1.yaml.mako " % (self.controller_ip))
+            "etc/scenario/8.0/vanilla-2.7.1.yaml.mako \"" % auth_url)
 
-        os.system(cmd)
+        p = Popen(cmd, shell=True)
+        out, error = p.communicate()
+
+
