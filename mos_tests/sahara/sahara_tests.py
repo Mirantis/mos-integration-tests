@@ -43,15 +43,16 @@ class SaharaScenarioTests(unittest.TestCase):
         out, error = p.communicate()
         auth_url = os.environ.get('OS_AUTH_URL')
         cmd = (
-            "bash -c \"sudo apt-get install -y git python-pip python-tox libpq-dev && "
+            "bash -c \"sudo apt-get install -y git python-pip "
+            "python-tox libpq-dev && "
             "rm -rf ~/sahara-scenario && "
             "git clone https://github.com/openstack/sahara-scenario && "
             "mkdir ~/sahara-scenario/etc/scenario/8.0 &&"
-            "cp -R ~/sahara-scenario/etc/scenario/sahara-ci/{credentials.yaml.mako,"
-            "edp.yaml.mako,vanilla-2.7.1.yaml.mako,ambari-2.3.yaml.mako,"
-            "cdh-5.4.0.yaml.mako,mapr-5.0.0.mrv2.yaml.mako,"
-            "spark-1.3.1.yaml.mako,transient.yaml.mako} "
-            "~/sahara-scenario/etc/scenario/8.0 && "
+            "cp ~/sahara-scenario/etc/scenario/sahara-ci/"
+            "{credentials.yaml.mako,edp.yaml.mako,vanilla-2.7.1.yaml.mako,"
+            "ambari-2.3.yaml.mako,cdh-5.4.0.yaml.mako,"
+            "mapr-5.0.0.mrv2.yaml.mako,spark-1.3.1.yaml.mako,"
+            "transient.yaml.mako} ~/sahara-scenario/etc/scenario/8.0 && "
             "echo '[DEFAULT]\n"
             "OS_USERNAME: admin\n"
             "OS_PASSWORD: admin\n"
