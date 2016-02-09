@@ -77,5 +77,3 @@ class SaharaScenarioTests(unittest.TestCase):
 
         p = Popen(cmd, shell=True)
         out, error = p.communicate()
-
-
