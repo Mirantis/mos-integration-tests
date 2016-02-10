@@ -178,8 +178,8 @@ class NovaIntegrationTests(OpenStackTestCase):
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
 
-        volume = \
-            common_functions.create_volume(self.cinder, image_id, timeout=60)
+        volume = common_functions.create_volume(self.cinder, image_id,
+                                                timeout=60)
         self.volumes.append(volume)
 
         # 2. Create instance from newly created volume, associate floating_ip
