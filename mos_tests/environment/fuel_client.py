@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from itertools import groupby
 import logging
 import os
 
@@ -42,6 +43,9 @@ class NodeProxy(object):
 
     def __ne__(self, other):
         return not(self == other)
+
+    def __repr__(self):
+        return '<{name}({ip})>'.format(**self.data)
 
     @property
     def ip_list(self):
@@ -118,7 +122,6 @@ class Environment(EnvironmentBase):
         return True
 
     def wait_for_ostf_pass(self):
-        logger.info("Wait for OpenStack is waking up")
         wait(self.is_ostf_tests_pass, timeout_seconds=20 * 60,
              sleep_seconds=20,
              waiting_for='OpenStack pass OSTF tests')
@@ -178,18 +181,22 @@ class Environment(EnvironmentBase):
         return non_primary_controllers
 
     def destroy_nodes(self, devops_nodes):
-        wait_msg = 'the nodes get offline state'
-        logger.info('wait until {}'.format(wait_msg))
         node_ips = [node.get_ip_address_by_network_name('admin')
                     for node in devops_nodes]
         for node in devops_nodes:
             node.destroy()
         wait(lambda: self.check_nodes_get_offline_state(node_ips),
              timeout_seconds=10 * 60,
-             waiting_for=wait_msg)
-        for node in self.get_all_nodes():
-            logger.info('online={1} for node {0}'
-                        .format(node.data['name'], node.data['online']))
+             waiting_for='the nodes get offline state')
+
+        def keyfunc(node):
+            return node.data['online']
+
+        all_nodes = self.get_all_nodes()
+        all_nodes.sort(key=keyfunc)
+        for online, nodes in groupby(all_nodes, keyfunc):
+            logger.info('online is {0} for nodes {1}'
+                        .format(online, list(nodes)))
 
     def warm_shutdown_nodes(self, devops_nodes):
         for node in devops_nodes:

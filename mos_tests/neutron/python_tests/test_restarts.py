@@ -54,7 +54,8 @@ class TestRestarts(TestBase):
         self.router = self.os_conn.create_router(name="router01")['router']
         self.os_conn.router_gateway_add(router_id=self.router['id'],
                                         network_id=ext_network['id'])
-        logger.info('router {} was created'.format(self.router['id']))
+        logger.info(
+            'router {name}({id}) was created'.format(**self.router))
 
         # create networks by amount of the compute hosts
         for hostname in self.hosts:
@@ -95,6 +96,20 @@ class TestRestarts(TestBase):
                                self.os_conn.neutron.list_agents(
                                    binary='neutron-dhcp-agent')['agents']]
 
+    def check_no_routers_on_l3_agent(self, l3_agent_id):
+        """Check that no routers on l3 agent, else fail"""
+        __tracebackhide__ = True
+
+        routers_on_agent = self.os_conn.neutron.list_routers_on_l3_agent(
+            l3_agent_id)['routers']
+        if len(routers_on_agent) > 0:
+            pytest.fail("There are routers on l3_agent({0}):\n{1}".format(
+                l3_agent_id,
+                '\n'.join(
+                    '{name}({id})'.format(**r) for r in routers_on_agent)
+            ))
+
+    @pytest.mark.check_env_('not(is_l3_ha) and not(is_dvr)')
     @pytest.mark.testrail_id('542612')
     def test_shutdown_primary_controller_with_l3_agt(self):
         """[Neutron VLAN and VXLAN] Shut down primary controller
@@ -120,31 +135,30 @@ class TestRestarts(TestBase):
 
         self._prepare_openstack()
         # Get current L3 agent on router01
-        router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
+        l3_agent = self.os_conn.neutron.list_l3_agent_hosting_routers(
                         self.router['id'])['agents'][0]
         # Check if the agent is not on the primary controller
         # Reschedule if needed
-        if router_agt['host'] != self.primary_host:
+        if l3_agent['host'] != self.primary_host:
 
             self.os_conn.reschedule_router_to_primary_host(self.router['id'],
                                                            self.primary_host)
-            router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
+            l3_agent = self.os_conn.neutron.list_l3_agent_hosting_routers(
                             self.router['id'])['agents'][0]
 
         # virsh destroy of the primary controller
         self.env.destroy_nodes([self.primary_node])
 
-        # Excluding the id of the router_agt from the list
+        # Excluding the id of the l3_agent from the list
         # since it will stay on the destroyed controller
         # and remain disabled
-        self.l3_agent_ids.remove(router_agt['id'])
+        self.l3_agent_ids.remove(l3_agent['id'])
 
         # Then check that the rest l3 agents are alive
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
         # Check that there are no routers on the first agent
-        assert len(self.os_conn.neutron.list_routers_on_l3_agent(
-            router_agt['id'])['routers']) == 0
+        self.check_no_routers_on_l3_agent(l3_agent['id'])
 
         self.os_conn.add_server(self.networks[0],
                                 self.instance_keypair.name,
@@ -153,6 +167,7 @@ class TestRestarts(TestBase):
         # Create one more server and check connectivity
         self.check_vm_connectivity()
 
+    @pytest.mark.check_env_('not(is_l3_ha) and not(is_dvr)')
     @pytest.mark.testrail_id('542611')
     def test_restart_primary_controller_with_l3_agt(self):
         """[Neutron VLAN and VXLAN] Reset primary controller and check l3-agent
@@ -193,8 +208,7 @@ class TestRestarts(TestBase):
         self.os_conn.wait_agents_alive(self.l3_agent_ids)
 
         # Check that there are no routers on the first agent
-        assert len(self.os_conn.neutron.list_routers_on_l3_agent(
-                        router_agt['id'])['routers']) == 0
+        self.check_no_routers_on_l3_agent(router_agt['id'])
 
         # Create one more server and check connectivity
         self.os_conn.add_server(self.networks[0],
@@ -203,6 +217,7 @@ class TestRestarts(TestBase):
                                 self.security_group.id)
         self.check_vm_connectivity()
 
+    @pytest.mark.check_env_('not(is_l3_ha) and not(is_dvr)')
     @pytest.mark.testrail_id('542613')
     def test_kill_active_l3_agt(self):
         """[Neutron VLAN and VXLAN] Kill l3-agent process

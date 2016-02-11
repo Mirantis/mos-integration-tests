@@ -602,8 +602,11 @@ def wait(*args, **kwargs):
     __tracebackhide__ = True
     waiting_for = kwargs.get('waiting_for', args[0].__name__)
     logger.info('waiting for {}'.format(waiting_for))
+
     try:
-        return base_wait(*args, **kwargs)
+        result = base_wait(*args, **kwargs)
+        logger.info('{} now'.format(waiting_for))
+        return result
     except TimeoutExpired as e:
         raise e
 

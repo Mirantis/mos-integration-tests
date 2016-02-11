@@ -18,7 +18,7 @@ import time
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
-from heatclient.v1.client import Client as heat_client
+from heatclient.v1.client import Client as HeatClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
 from keystoneclient.v2_0 import Client as KeystoneClient
 from neutronclient.common.exceptions import NeutronClientException
@@ -76,7 +76,6 @@ class OpenStackActions(object):
                                                  ca_cert=path_to_cert)
 
         token = self.keystone.auth_token
-        logger.debug('Token is {0}'.format(token))
         glance_endpoint = self.keystone.service_catalog.url_for(
             service_type='image', endpoint_type='publicURL')
         logger.debug('Glance endpoint is {0}'.format(glance_endpoint))
@@ -88,7 +87,7 @@ class OpenStackActions(object):
         heat_endpoint = self.keystone.service_catalog.url_for(
             service_type='orchestration', endpoint_type='publicURL')
         logger.debug('Heat endpoint is {0}'.format(heat_endpoint))
-        self.heat = heat_client(endpoint=heat_endpoint,
+        self.heat = HeatClient(endpoint=heat_endpoint,
                                 token=token,
                                 cacert=path_to_cert,
                                 ca_file=path_to_cert)
@@ -174,7 +173,7 @@ class OpenStackActions(object):
 
         wait(lambda: self.is_server_active(srv),
              timeout_seconds=timeout, sleep_seconds=5,
-             waiting_for='instance {0} status change to ACTIVE'.format(name))
+             waiting_for='instance {0} changes status to ACTIVE'.format(name))
 
         # wait for ssh ready
         if self.env is not None:
@@ -615,26 +614,25 @@ class OpenStackActions(object):
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60,
-             waiting_for='the agents get alive')
+             waiting_for='agents is alive')
 
     def wait_agents_down(self, agt_ids_to_check):
         wait(lambda: all(not agt['alive'] for agt in
                          self.neutron.list_agents()['agents']
                          if agt['id'] in agt_ids_to_check),
              timeout_seconds=5 * 60,
-             waiting_for='the agents go down')
+             waiting_for='agents go down')
 
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
         network = self.create_network(name='net%02d' % i)['network']
-        logger.info('network with id {} is created'.
-                    format(network['id']))
+        logger.info('network {name}({id}) is created'.format(**network))
         subnet = self.create_subnet(
             network_id=network['id'],
             name='net%02d__subnet' % i,
             cidr="192.168.%d.0/24" % i)
-        logger.info('subnet with id {} is created'.
-                    format(subnet['subnet']['id']))
+        logger.info('subnet {name}({id}) is created'.format(
+            **subnet['subnet']))
         self.router_interface_add(
             router_id=router_id,
             subnet_id=subnet['subnet']['id'])
@@ -674,7 +672,7 @@ class OpenStackActions(object):
                                             {"router_id": router_id})
 
         wait(lambda: self.neutron.list_l3_agent_hosting_routers(router_id),
-             timeout_seconds=5 * 60)
+             timeout_seconds=5 * 60, waiting_for="router moved to new agent")
 
     def reschedule_dhcp_agent(self, net_id, controller_fqdn):
         agent_list = self.neutron.list_agents(
@@ -693,4 +691,5 @@ class OpenStackActions(object):
         self.neutron.add_network_to_dhcp_agent(new_dhcp_agt_id,
                                                {'network_id': net_id})
         wait(lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
-             timeout_seconds=5 * 60)
+             timeout_seconds=5 * 60,
+             waiting_for="network reschedule to new dhcp agent")

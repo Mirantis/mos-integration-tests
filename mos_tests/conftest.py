@@ -177,7 +177,6 @@ def get_os_conn(environment):
          timeout_seconds=60 * 5,
          expected_exceptions=Exception,
          waiting_for="OpenStack nova computes is ready")
-    logger.info("OpenStack is ready")
     return os_connection
 
 
