@@ -489,6 +489,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                 image_id=image_id,
                                                 key_name='key_2238776',
                                                 inst_list=self.instances)
+		self.instances.append(inst.id)
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip, i=10)
         self.assertTrue(ping, "Instance is not reachable")
