@@ -186,7 +186,7 @@ class TestOVSRestartTwoVms(OvsBase):
         ).values()[0]
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+                                self.server2_ip, timeout=3 * 60)
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [
@@ -250,7 +250,7 @@ class TestOVSRestartTwoVms(OvsBase):
             time.sleep(30)
 
             self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                    self.server2_ip, timeout=2 * 60)
+                                    self.server2_ip, timeout=3 * 60)
 
             # check all agents are alive
             assert all([agt['alive'] for agt in
@@ -299,7 +299,7 @@ class TestOVSRestartTwoVms(OvsBase):
         time.sleep(30)
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+                                self.server2_ip, timeout=3 * 60)
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
@@ -554,7 +554,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         ).values()[0]
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+                                self.server2_ip, timeout=3 * 60)
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [
@@ -612,7 +612,7 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         time.sleep(30)
 
         self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=2 * 60)
+                                self.server2_ip, timeout=3 * 60)
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
