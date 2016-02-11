@@ -572,7 +572,7 @@ class OpenStackActions(object):
         return result
 
     def ssh_to_instance(self, env, vm, vm_keypair=None, username='cirros',
-                        password=None):
+                        password=None, proxy_node=None):
         """Returns direct ssh client to instance via proxy"""
         logger.debug('Try to connect to vm {0}'.format(vm.name))
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
@@ -580,12 +580,13 @@ class OpenStackActions(object):
         net_id = self.neutron.list_networks(
             name=net_name)['networks'][0]['id']
         dhcp_namespace = "qdhcp-{0}".format(net_id)
-        devops_nodes = self.get_node_with_dhcp_for_network(net_id)
-        if not devops_nodes:
-            raise Exception("Nodes with dhcp for network with id:{}"
-                            " not found.".format(net_id))
-        devops_node = random.choice(devops_nodes)
-        ip = env.find_node_by_fqdn(devops_node).data['ip']
+        if proxy_node is None:
+            devops_nodes = self.get_node_with_dhcp_for_network(net_id)
+            if not devops_nodes:
+                raise Exception("Nodes with dhcp for network with id:{}"
+                                " not found.".format(net_id))
+            proxy_node = random.choice(devops_nodes)
+        ip = env.find_node_by_fqdn(proxy_node).data['ip']
         key_paths = []
         for i, key in enumerate(env.admin_ssh_keys):
             keyfile = gen_temp_file(prefix="fuel_key_", suffix=".rsa")

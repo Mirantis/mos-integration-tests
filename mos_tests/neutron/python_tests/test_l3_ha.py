@@ -145,7 +145,8 @@ class TestL3HA(TestBase):
             result['sent'] = ping_info.sent
 
     @contextmanager
-    def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50):
+    def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50,
+                        proxy_node=None):
         """Start ping from `vm` to `ip_to_ping` before enter and stop it after
 
         Return dict with ping stat
@@ -161,7 +162,8 @@ class TestL3HA(TestBase):
             'sent': 0,
         }
 
-        with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair) as remote:
+        with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair,
+                                          proxy_node=proxy_node) as remote:
             t = PingThread(remote=remote, ip_to_ping=ip_to_ping)
             logger.info('Start ping on {0}'.format(ip_to_ping))
             t.start()
@@ -839,13 +841,19 @@ class TestL3HA(TestBase):
         router_id = router['router']['id']
         agents = self.get_active_l3_agents_for_router(router_id)
         l3_agent_controller = self.env.find_node_by_fqdn(agents[0]['host'])
-        controller = self.env.primary_controller
+        primary_controller = self.env.primary_controller
+        for node in self.env.get_nodes_by_role('controller'):
+            if node != primary_controller:
+                proxy_node = node.data['fqdn']
+                break
+        else:
+            raise Exception("Can't find non primary controller")
         server1 = self.os_conn.nova.servers.find(name="server01")
         server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
 
         # Reschedule active l3 agent to primary if needed
-        self.reschedule_active_l3_agt(router_id, controller,
+        self.reschedule_active_l3_agt(router_id, primary_controller,
                                       l3_agent_controller)
 
         from_node = l3_agent_controller.data['fqdn']
@@ -856,17 +864,18 @@ class TestL3HA(TestBase):
         # Start ping in background and reset the node
         with self.background_ping(vm=server1,
                                   vm_keypair=self.instance_keypair,
-                                  ip_to_ping=server2_ip) as ping_result:
+                                  ip_to_ping=server2_ip,
+                                  proxy_node=proxy_node) as ping_result:
 
             devops_node = DevopsClient.get_node_by_mac(
-                env_name=env_name, mac=controller.data['mac'])
+                env_name=env_name, mac=primary_controller.data['mac'])
             devops_node.reset()
 
         assert ping_result['sent'] - ping_result['received'] < 10
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
-                                     from_node=controller.data['fqdn'],
+                                     from_node=primary_controller.data['fqdn'],
                                      timeout_seconds=5 * 60)
 
         self.check_l3_ha_agent_states(router_id)
