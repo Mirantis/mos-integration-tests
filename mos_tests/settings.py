@@ -37,5 +37,6 @@ PUBLIC_TEST_IP = os.environ.get('PUBLIC_TEST_IP', '8.8.8.8')
 TEST_IMAGE_PATH = os.path.expanduser('~/images')
 UBUNTU_IPERF_QCOW2 = 'ubuntu-iperf.qcow2'
 FEDORA_DOCKER_QCOW2 = 'fedora-software-config.qcow2'
+WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)

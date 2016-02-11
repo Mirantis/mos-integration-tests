@@ -21,6 +21,7 @@ import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +34,9 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
     def setUp(self):
         super(self.__class__, self).setUp()
 
-        # Get path on node to 'templates' dir
-        self.templates_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'templates')
         # Get path on node to 'images' dir
-        self.images_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'images')
+        self.image_name = os.path.join(settings.TEST_IMAGE_PATH,
+                                       settings.WIN_SERVER_QCOW2)
 
         self.uid_list = []
 
@@ -52,7 +48,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         self.image = None
         self.our_own_flavor_was_created = False
         self.expected_flavor_id = 3
-        self.node_to_boot = None
+        self.instance = None
         self.security_group_name = "ms_compatibility"
         # protect for multiple definition of the same group
         for sg in self.nova.security_groups.list():
@@ -102,9 +98,10 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             name='MyTestSystem',
             disk_format='qcow2',
             container_format='bare')
-        self.glance.images.upload(
-            self.image.id,
-            open('/tmp/trusty-server-cloudimg-amd64-disk1.img', 'rb'))
+        with open(self.image_name, 'rb') as win_image_file:
+            self.glance.images.upload(
+                self.image.id,
+                win_image_file)
         # check that required image in active state
         is_activated = False
         while not is_activated:
@@ -129,7 +126,9 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # TODO(mlaptev) add check flavor parameters vs. vm parameters
         # Collect information about the medium flavor and create a copy of it
         for flavor in self.nova.flavors.list():
-            if 'medium' in flavor.name and 'copy.of.' not in flavor.name:
+            # TODO(rpromyshlennikov): change flavor to medium if we will have
+            # memory issues on windows and CI will be ready for it
+            if 'small' in flavor.name and 'copy.of.' not in flavor.name:
                 new_flavor_name = "copy.of." + flavor.name
                 new_flavor_id = common_functions.get_flavor_id_by_name(
                     self.nova,
@@ -149,29 +148,26 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         logger.info("Starting with flavor {}".format(
             self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
-        self.node_to_boot = common_functions.create_instance(
+        self.instance = common_functions.create_instance(
             nova_client=self.nova,
             inst_name="MyTestSystemWithNova",
             flavor_id=self.expected_flavor_id,
             net_id=network_id,
             security_groups=[self.the_security_group.name, 'default'],
             image_id=self.image.id)
-        # check that boot returns expected results
-        self.assertEqual(self.node_to_boot.status, 'ACTIVE',
-                         "The node not in active state!")
 
         logger.info("Using following floating ip {}".format(
             self.floating_ip.ip))
 
-        self.node_to_boot.add_floating_ip(self.floating_ip)
+        self.instance.add_floating_ip(self.floating_ip)
 
         self.assertTrue(common_functions.check_ip(self.nova,
-                                                  self.node_to_boot.id,
+                                                  self.instance.id,
                                                   self.floating_ip.ip))
 
     def tearDown(self):
-        if self.node_to_boot is not None:
-            common_functions.delete_instance(self.nova, self.node_to_boot.id)
+        if self.instance is not None:
+            common_functions.delete_instance(self.nova, self.instance.id)
         if self.image is not None:
             common_functions.delete_image(self.glance, self.image.id)
         if self.our_own_flavor_was_created:
@@ -224,28 +220,28 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Paused state check
-        self.node_to_boot.pause()
+        self.instance.pause()
         # Make sure that the VM in 'Paused' state
         ping_result = common_functions.ping_command(self.floating_ip.ip,
                                                     should_be_available=False)
         self.assertTrue(ping_result, "Instance is reachable")
         # Unpaused state check
-        self.node_to_boot.unpause()
+        self.instance.unpause()
         # Make sure that the VM in 'Unpaused' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Reboot the VM and make sure that we can ping it
-        self.node_to_boot.reboot(reboot_type='HARD')
+        self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
             self.nova,
-            self.node_to_boot.id,
+            self.instance.id,
             'ACTIVE')
-        self.node_to_boot = [s for s in self.nova.servers.list()
-                             if s.id == self.node_to_boot.id][0]
+        self.instance = [s for s in self.nova.servers.list()
+                         if s.id == self.instance.id][0]
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.node_to_boot.status))
+                    self.instance.status))
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -272,7 +268,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Suspend state check
-        self.node_to_boot.suspend()
+        self.instance.suspend()
         # Make sure that the VM in 'Suspended' state
         ping_result = common_functions.ping_command(
             self.floating_ip.ip,
@@ -280,22 +276,22 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         )
         self.assertTrue(ping_result, "Instance is reachable")
         # Resume state check
-        self.node_to_boot.resume()
+        self.instance.resume()
         # Make sure that the VM in 'Resume' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Reboot the VM and make sure that we can ping it
-        self.node_to_boot.reboot(reboot_type='HARD')
+        self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
             self.nova,
-            self.node_to_boot.id,
+            self.instance.id,
             'ACTIVE')
-        self.node_to_boot = [s for s in self.nova.servers.list()
-                             if s.id == self.node_to_boot.id][0]
+        self.instance = [s for s in self.nova.servers.list()
+                         if s.id == self.instance.id][0]
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.node_to_boot.status))
+                    self.instance.status))
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -326,45 +322,45 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         self.assertTrue(ping_result, "Instance is not reachable")
         hypervisors = {h.hypervisor_hostname: h for h
                        in self.nova.hypervisors.list()}
-        old_hyper = getattr(self.node_to_boot,
+        old_hyper = getattr(self.instance,
                             hypervisor_hostname_attribute)
         logger.info("Old hypervisor is: {}".format(old_hyper))
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.info("New hypervisor is: {}".format(new_hyper))
         # Execute the live migrate
-        self.node_to_boot.live_migrate(new_hyper)
+        self.instance.live_migrate(new_hyper)
 
-        self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+        self.instance = self.nova.servers.get(self.instance.id)
         end_time = time.time() + 60 * self.hypervisor_timeout
         debug_string = "Waiting for changes."
         is_timeout = False
-        while getattr(self.node_to_boot,
+        while getattr(self.instance,
                       hypervisor_hostname_attribute) != new_hyper:
             if time.time() > end_time:
                 is_timeout = True
             time.sleep(30)
             debug_string += "."
-            self.node_to_boot = self.nova.servers.get(self.node_to_boot.id)
+            self.instance = self.nova.servers.get(self.instance.id)
         logger.info(debug_string)
         if is_timeout:
             raise AssertionError(
                 "Hypervisor is not changed after live migration")
-        self.assertEqual(self.node_to_boot.status, 'ACTIVE')
+        self.assertEqual(self.instance.status, 'ACTIVE')
         # Ping the Virtual Machine
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
         # Reboot the VM and make sure that we can ping it
-        self.node_to_boot.reboot(reboot_type='HARD')
+        self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
             self.nova,
-            self.node_to_boot.id,
+            self.instance.id,
             'ACTIVE')
-        self.node_to_boot = [s for s in self.nova.servers.list()
-                             if s.id == self.node_to_boot.id][0]
+        self.instance = [s for s in self.nova.servers.list()
+                         if s.id == self.instance.id][0]
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.node_to_boot.status))
+                    self.instance.status))
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
