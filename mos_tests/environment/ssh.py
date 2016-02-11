@@ -196,7 +196,7 @@ class SSHClient(object):
         if errors:
             raise CalledProcessError(command, errors)
 
-    def execute(self, command, verbose=False):
+    def execute(self, command, verbose=True):
         chan, stdin, stdout, stderr = self.execute_async(command)
         result = {
             'stdout': [],
@@ -205,17 +205,20 @@ class SSHClient(object):
         }
         for line in stdout:
             result['stdout'].append(line)
-            if verbose:
-                logger.info(line)
         for line in stderr:
             result['stderr'].append(line)
-            if verbose:
-                logger.info(line)
         result['exit_code'] = chan.recv_exit_status()
         stdin.close()
         stdout.close()
         stderr.close()
         chan.close()
+        if verbose:
+            logger.debug("'{0}' exit_code is {1}".format(
+                command, result['exit_code']))
+            if len(result['stdout']) > 0:
+                logger.debug('Stdout:\n{0}'.format(''.join(result['stdout'])))
+            if len(result['stderr']) > 0:
+                logger.debug('Stderr:\n{0}'.format(''.join(result['stderr'])))
         return result
 
     def execute_async(self, command):
