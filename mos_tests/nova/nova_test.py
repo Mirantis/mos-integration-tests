@@ -426,7 +426,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
                                 stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=False,
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
                                        disk_over_commit=False)
         inst = self.nova.servers.get(inst.id)
         timeout = 5
@@ -514,7 +514,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
                                 stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=False,
+        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
                                        disk_over_commit=False)
         inst = self.nova.servers.get(inst.id)
         timeout = 10
