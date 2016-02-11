@@ -76,7 +76,6 @@ class TestDVRBase(base.TestBase):
         :returns: controller node with SNAT
         """
         all_controllers = self.env.get_nodes_by_role('controller')
-        controller_with_snat = None
         for controller in all_controllers:
             if controller.data['fqdn'] in excluded:
                 continue
@@ -84,9 +83,7 @@ class TestDVRBase(base.TestBase):
                 cmd = 'ip net | grep snat-{}'.format(router_id)
                 res = remote.execute(cmd)
                 if res['exit_code'] == 0:
-                    controller_with_snat = controller
-                    break
-        return controller_with_snat
+                    return controller
 
     def shut_down_br_ex_on_controllers(self):
         """Shut down br-ex for all controllers"""
@@ -690,7 +687,7 @@ class TestDVRTypeChange(TestDVRBase):
         self.os_conn.router_gateway_add(
             router_id=router['id'],
             network_id=self.os_conn.ext_network['id'])
-        logger.info('router {} was created'.format(router['id']))
+        logger.info('router {name}({id}) was created'.format(**router))
         return router
 
     def create_net_and_vm(self, router_id):
@@ -830,41 +827,58 @@ class TestDVRTypeChange(TestDVRBase):
 
         Steps:
             1.  Find controller with SNAT-namespace:
-                ip net | grep snat on all controller
+                `ip net | grep snat` on all controller
             2.  Reschedule router to another controller
             3.  Check that SNAT-namespace moved to another controller
             4.  Go to the vm_1 with ssh and floating IP and Ping 8.8.8.8
         """
-        # TODO: rewrite this test
-
         router_id = dvr_router['id']
         self.create_net_and_vm(router_id)
 
         # Find the current controller with snat namespace
-        current_l3_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                             router_id)['agents'][0]
-        current_snat_controller = self.get_snat_controller(
-                                      current_l3_agt['host'], router_id)
-        err_msg = "Can't find controller with snat namespace"
-        assert current_snat_controller, err_msg
+        snat_controller = self.find_snat_controller(router_id)
 
-        # Reschedule the router to any other available controller
-        self.os_conn.force_l3_reschedule(router_id)
-        new_l3_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                         router_id)['agents'][0]
+        logger.info('Old SNAT on {fqdn}'.format(**snat_controller.data))
 
-        # Find the new controller where the snat namespace should appear
-        new_snat_controller = self.get_snat_controller(
-                                      new_l3_agt['host'], router_id)
-        err_msg = "Can't find controller with snat namespace"
-        assert new_snat_controller, err_msg
+        # Find all another controllers fqdn
+        other_controllers_fqdn = [x.data['fqdn'] for x in
+                                  self.env.get_nodes_by_role('controller')
+                                  if x != snat_controller]
 
-        # Check that the router and the snat namespace
-        # are really moved to other controller
-        err_msg = 'SNAT namepspace and router were not moved!'
-        old_host = current_snat_controller.data['fqdn']
-        new_host = new_snat_controller.data['fqdn']
-        assert old_host != new_host, err_msg
+        l3_agents = self.os_conn.get_l3_for_router(router_id)['agents']
+
+        # Get current l3 agent with snat
+        current_l3_agt = [x for x in l3_agents
+                          if x['host'] == snat_controller.data['fqdn']][0]
+
+        # Get router's l3 agents ids
+        l3_agent_ids = [x['id'] for x in l3_agents]
+
+        # Search l3 agent on another controller, and hot hosted router
+        for l3_agent in self.os_conn.list_l3_agents():
+            if (l3_agent['host'] in other_controllers_fqdn and
+                l3_agent['id'] not in l3_agent_ids
+            ):
+                break
+        else:
+            raise Exception("Can't find new l3 agent to reschedule router")
+
+        logger.info('Choosed new l3_agent {id}({host})'.format(**l3_agent))
+
+        # Reschedule the router to new l3 agent
+        self.os_conn.force_l3_reschedule(
+            router_id, new_l3_agt_id=l3_agent['id'],
+            current_l3_agt_id=current_l3_agt['id'])
+
+        def get_new_snat_controller():
+            new_controller = self.find_snat_controller(router_id)
+            if new_controller is None:
+                return
+            if new_controller != snat_controller:
+                return new_controller
+
+        wait(get_new_snat_controller, timeout_seconds=30, sleep_seconds=5,
+             waiting_for='reschedule l3_agent with snat')
 
         # Check pings
         self.check_vm_connectivity()

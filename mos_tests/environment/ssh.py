@@ -58,6 +58,24 @@ class CalledProcessError(Exception):
         return message
 
 
+class CommandResult(dict):
+
+    @property
+    def is_ok(self):
+        return self['exit_code'] == 0
+
+    def _list_to_string(self, key):
+        return (''.join(self[key])).strip()
+
+    @property
+    def stdout_string(self):
+        return self._list_to_string('stdout')
+
+    @property
+    def stderr_string(self):
+        return self._list_to_string('stderr')
+
+
 class SSHClient(object):
 
     def __repr__(self):
@@ -198,11 +216,11 @@ class SSHClient(object):
 
     def execute(self, command, verbose=True):
         chan, stdin, stdout, stderr = self.execute_async(command)
-        result = {
+        result = CommandResult({
             'stdout': [],
             'stderr': [],
             'exit_code': 0
-        }
+        })
         for line in stdout:
             result['stdout'].append(line)
         for line in stderr:
@@ -216,9 +234,9 @@ class SSHClient(object):
             logger.debug("'{0}' exit_code is {1}".format(
                 command, result['exit_code']))
             if len(result['stdout']) > 0:
-                logger.debug('Stdout:\n{0}'.format(''.join(result['stdout'])))
+                logger.debug('Stdout:\n{0}'.format(result.stdout_string))
             if len(result['stderr']) > 0:
-                logger.debug('Stderr:\n{0}'.format(''.join(result['stderr'])))
+                logger.debug('Stderr:\n{0}'.format(result.stderr_string))
         return result
 
     def execute_async(self, command):
