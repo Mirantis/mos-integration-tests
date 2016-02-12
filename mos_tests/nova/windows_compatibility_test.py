@@ -328,23 +328,23 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.info("New hypervisor is: {}".format(new_hyper))
         # Execute the live migrate
-        self.instance.live_migrate(new_hyper)
+        self.instance.live_migrate(new_hyper, block_migration=True)
 
         self.instance = self.nova.servers.get(self.instance.id)
         end_time = time.time() + 60 * self.hypervisor_timeout
         debug_string = "Waiting for changes."
-        is_timeout = False
         while getattr(self.instance,
                       hypervisor_hostname_attribute) != new_hyper:
             if time.time() > end_time:
-                is_timeout = True
+                # it can fail because of this issue
+                # https://bugs.launchpad.net/mos/+bug/1544564
+                logger.info(debug_string)
+                raise AssertionError(
+                    "Hypervisor is not changed after live migration")
             time.sleep(30)
             debug_string += "."
             self.instance = self.nova.servers.get(self.instance.id)
         logger.info(debug_string)
-        if is_timeout:
-            raise AssertionError(
-                "Hypervisor is not changed after live migration")
         self.assertEqual(self.instance.status, 'ACTIVE')
         # Ping the Virtual Machine
         ping_result = common_functions.ping_command(self.floating_ip.ip)
