@@ -45,7 +45,7 @@ class TestFailoverRestarts(TestBase):
 
     @pytest.mark.testrail_id('542818')
     def test_restart_galera_services_with_replicaton(self):
-        """ Restart all Galera services with data replication
+        """Restart all Galera services with data replication
 
         Scenario:
             1. 'pcs resource disable clone_p_mysql' for stop Galera service.
@@ -95,7 +95,7 @@ class TestFailoverRestarts(TestBase):
 
     @pytest.mark.testrail_id('542817')
     def test_restart_rabbitmq_services_with_replicaton(self):
-        """ Restart all RabbitMQ services with data replication
+        """Restart all RabbitMQ services with data replication
         Scenario
             1. Login to the first Openstack controller node
                and disable RabbitMQ service:
@@ -162,7 +162,7 @@ class TestFailoverRestarts(TestBase):
 
     @pytest.mark.testrail_id('542815')
     def test_instance_folder_after_hard_reboot(self, clean_os):
-        """ Re-creating instance folder after hard reboot
+        """Re-creating instance folder after hard reboot
 
         Scenario:
             1. Deploy cloud with at least 1 compute node and 3 controllers

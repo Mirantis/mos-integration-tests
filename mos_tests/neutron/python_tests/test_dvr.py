@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from collections import defaultdict
+from datetime import datetime
 import logging
 import time
 
@@ -44,21 +44,6 @@ class TestDVRBase(base.TestBase):
 
     def reset_computes(self, hostnames, env_name):
 
-        def get_hypervisors():
-            return [x for x in self.os_conn.nova.hypervisors.list()
-                    if x.hypervisor_hostname in hostnames]
-
-        node_states = defaultdict(list)
-
-        def is_nodes_started():
-            for hypervisor in get_hypervisors():
-                state = hypervisor.state
-                prev_states = node_states[hypervisor.hypervisor_hostname]
-                if len(prev_states) == 0 or state != prev_states[-1]:
-                    prev_states.append(state)
-
-            return all(x[-2:] == ['down', 'up'] for x in node_states.values())
-
         logger.info('Resetting computes {}'.format(hostnames))
         for hostname in hostnames:
             node = self.env.find_node_by_fqdn(hostname)
@@ -66,7 +51,51 @@ class TestDVRBase(base.TestBase):
                                                        mac=node.data['mac'])
             devops_node.reset()
 
-        wait(is_nodes_started, timeout_seconds=10 * 60)
+        def get_agents_on_hosts():
+            agents = self.os_conn.neutron.list_agents()['agents']
+            hosts_agents = [x for x in agents if x['host'] in hostnames]
+            for agent in hosts_agents:
+                agent['updated'] = datetime.strptime(
+                    agent['heartbeat_timestamp'], "%Y-%m-%d %H:%M:%S")
+            return hosts_agents
+
+        last_updated = max(x['updated'] for x in get_agents_on_hosts())
+
+        def is_neutron_agents_alive():
+            computes_agents = get_agents_on_hosts()
+            fresh_checked = [x for x in computes_agents
+                             if x['updated'] > last_updated]
+            alive = [x for x in fresh_checked if x['alive']]
+            for agent in fresh_checked:
+                state = ['is NOT', 'is'][int(agent['alive'])]
+                logger.debug('{agent_type} on {host} {state} alive'.format(
+                             state=state, **agent))
+            return len(computes_agents) == len(alive)
+
+        def is_nova_hypervisors_alive():
+            hypervisors = [x for x in self.os_conn.nova.hypervisors.list()
+                           if x.hypervisor_hostname in hostnames]
+            for hypervisor in hypervisors:
+                logger.debug('hypervisor on {0.hypervisor_hostname} is '
+                             '{0.state}'.format(hypervisor))
+            return all(x.state == 'up' for x in hypervisors)
+
+        wait(is_neutron_agents_alive, timeout_seconds=10 * 60,
+             sleep_seconds=10,
+             waiting_for="nodes {0} neutron agents are up".format(hostnames))
+
+        # Restart autodisabled nova-compute services
+        for hostname in hostnames:
+            hypervisor = self.os_conn.nova.hypervisors.find(
+                hypervisor_hostname=hostname)
+            if hypervisor.status == 'disabled':
+                node = self.env.find_node_by_fqdn(hostname)
+                with node.ssh() as remote:
+                    remote.check_call('service nova-compute restart')
+
+        wait(is_nova_hypervisors_alive, timeout_seconds=10 * 60,
+             sleep_seconds=10,
+             waiting_for="hypervisors on {0} are alive".format(hostnames))
 
     def find_snat_controller(self, router_id, excluded=()):
         """Find controller with SNAT service.
@@ -194,8 +223,6 @@ class TestDVR(TestDVRBase):
         compute_hostname = getattr(self.server, 'OS-EXT-SRV-ATTR:host')
         self.reset_computes([compute_hostname], env_name)
 
-        time.sleep(60)
-
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('542778')
@@ -229,14 +256,13 @@ class TestDVR(TestDVRBase):
             env_name=env_name, mac=controller_with_snat.data['mac'])
         self.env.destroy_nodes([devops_node])
         # Wait for SNAT reschedule
-        wait_msg = "Waiting for snat is rescheduled"
         new_controller_with_snat = wait(
             lambda: self.find_snat_controller(
                 self.router_id,
                 excluded=[controller_with_snat.data['fqdn']]),
             timeout_seconds=60 * 3,
             sleep_seconds=(1, 60, 5),
-            waiting_for=wait_msg)
+            waiting_for="snat is rescheduled")
         # Check external ping and proper SNAT rescheduling
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
         assert (
@@ -426,7 +452,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                 ip_to_ping=self.server2_ip)
 
     @pytest.mark.testrail_id('542766')
-    def test_routing_after_reset_computes(self, prepare_openstack, env_name):
+    def test_routing_after_reset_computes(self, env_name, prepare_openstack):
         """Check East-West connectivity after reset compute nodes
 
         Scenario:
@@ -449,8 +475,6 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
         self.reset_computes(self.compute_nodes, env_name)
 
-        time.sleep(60)
-
         # Check ping after reset
         self.check_ping_from_vm(vm=self.server2,
                                 vm_keypair=self.instance_keypair,
@@ -458,8 +482,8 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')
-    def test_east_west_connectivity_after_destroy_controller(
-            self, prepare_openstack, env_name):
+    def test_east_west_connectivity_after_destroy_controller(self, env_name,
+            prepare_openstack):
         """Check East-West connectivity after destroy controller
 
         Scenario:
