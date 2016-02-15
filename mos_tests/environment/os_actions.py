@@ -313,8 +313,8 @@ class OpenStackActions(object):
             port_id = flip['floatingip']['port_id']
             wait(lambda: self.neutron.show_port(port_id)['port']['status'] ==
                     "ACTIVE",
-                timeout_seconds=60,
-                waiting_for="floating_ip port is active")
+                 timeout_seconds=60,
+                 waiting_for="floating_ip port is active")
             return flip['floatingip']
 
         fl_ips_pool = self.nova.floating_ip_pools.list()
