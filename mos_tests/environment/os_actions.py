@@ -658,11 +658,16 @@ class OpenStackActions(object):
                              if agt['host'] == primary_host][0]
         self.force_l3_reschedule(router_id, agt_id_to_move_on)
 
-    def force_l3_reschedule(self, router_id, new_l3_agt_id=''):
+    def force_l3_reschedule(self, router_id, new_l3_agt_id=None,
+                            current_l3_agt_id=None):
         logger.info('going to reschedule the router on new agent')
-        current_l3_agt_id = self.neutron.list_l3_agent_hosting_routers(
-                                 router_id)['agents'][0]['id']
-        if not new_l3_agt_id:
+        if current_l3_agt_id is None:
+            l3_agents = self.neutron.list_l3_agent_hosting_routers(
+                                     router_id)['agents']
+            if len(l3_agents) != 1:
+                raise Exception("Can't determine l3 agent to move router from")
+            current_l3_agt_id = l3_agents[0]['id']
+        if new_l3_agt_id is None:
             all_l3_agts = self.neutron.list_agents(
                               binary='neutron-l3-agent')['agents']
             available_l3_agts = [agt for agt in all_l3_agts
