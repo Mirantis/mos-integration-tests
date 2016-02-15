@@ -79,11 +79,12 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
         self.nova.security_groups.delete(self.sec_group)
 
+    @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
     @pytest.mark.testrail_id('543358')
     def test_nova_launch_v_m_from_image_with_all_flavours(self):
         """This test case checks creation of instance from image with all
-        types of flavor. For this test needs 2 nodes with compute role:
-        20Gb RAM and 150GB disk for each
+        types of flavor. For this test we need node with compute role:
+        8 VCPUs, 16+GB RAM and 160+GB disk for any compute
 
         Steps:
             1. Create a floating ip
@@ -112,19 +113,19 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                     [self.sec_group.name],
                                                     image_id=image_id,
                                                     inst_list=self.instances)
-            inst_id = inst.id
-            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
-            self.assertTrue(common_functions.check_ip(self.nova, inst_id,
+            self.assertTrue(common_functions.check_ip(self.nova, inst.id,
                                                       floating_ip.ip))
             ping = common_functions.ping_command(floating_ip.ip)
+            common_functions.delete_instance(self.nova, inst.id)
             self.assertTrue(ping, "Instance is not reachable")
 
+    @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
     @pytest.mark.testrail_id('543360')
     def test_nova_launch_v_m_from_volume_with_all_flavours(self):
         """This test case checks creation of instance from volume with all
-        types of flavor. For this test needs 2 nodes with compute role:
-        20Gb RAM and 150GB disk for each
+        types of flavor. For this test we need node with compute role:
+        8 VCPUs, 16+GB RAM and 160+GB disk for any compute
 
         Steps:
             1. Create bootable volume
@@ -141,14 +142,14 @@ class NovaIntegrationTests(OpenStackTestCase):
         networks = self.neutron.list_networks()['networks']
         net = [net['id'] for net in networks if not net['router:external']][0]
         flavor_list = self.nova.flavors.list()
+        volume = common_functions.create_volume(self.cinder, image_id)
+        self.volumes.append(volume)
+        bdm = {'vda': volume.id}
         for flavor in flavor_list:
             floating_ip = self.nova.floating_ips.create()
             self.floating_ips.append(floating_ip)
             self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
                                            self.nova.floating_ips.list()])
-            volume = common_functions.create_volume(self.cinder, image_id)
-            self.volumes.append(volume)
-            bdm = {'vda': volume.id}
             inst = common_functions.create_instance(self.nova,
                                                     "inst_543360_{}"
                                                     .format(flavor.name),
@@ -156,12 +157,11 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                     [self.sec_group.name],
                                                     block_device_mapping=bdm,
                                                     inst_list=self.instances)
-            inst_id = inst.id
-            self.instances.append(inst_id)
             inst.add_floating_ip(floating_ip.ip)
-            self.assertTrue(common_functions.check_ip(self.nova, inst_id,
+            self.assertTrue(common_functions.check_ip(self.nova, inst.id,
                                                       floating_ip.ip))
             ping = common_functions.ping_command(floating_ip.ip)
+            common_functions.delete_instance(self.nova, inst.id)
             self.assertTrue(ping, "Instance is not reachable")
 
     @pytest.mark.testrail_id('543355')

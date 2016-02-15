@@ -219,6 +219,26 @@ def has_3_or_more_computes(env):
     return len(env.get_nodes_by_role('compute')) >= 3
 
 
+def is_any_compute_suitable_for_max_flavor(env):
+    attrs_to_check = {
+        "vcpus": 8,
+        "free_disk_gb": 160,
+        "free_ram_mb": 16000,
+    }
+
+    def check_hypervisor_fit(hv):
+        hv_result = all(
+            [getattr(hv, attr) >= value
+             for attr, value in attrs_to_check.items()])
+        return hv_result
+
+    os_connection = get_os_conn(env)
+    result = any(
+        check_hypervisor_fit(hv)
+        for hv in os_connection.nova.hypervisors.list())
+    return result
+
+
 def is_vlan(env):
     """Env deployed with vlan segmentation"""
     return env.network_segmentation_type == 'vlan'
