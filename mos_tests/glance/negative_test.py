@@ -73,6 +73,28 @@ def test_remove_deleted_image(glance, message):
     """Checks error message on delete already deleted image"""
     image = parser.details(glance('image-create'))
     glance('image-delete {id}'.format(**image))
+
     out = glance('image-delete {id}'.format(**image), fail_ok=True,
                  merge_stderr=True)
     assert message.format(**image) in out
+
+
+@pytest.mark.parametrize('command', (
+    'image-download {id}',
+    'image-download {id} --progress')
+)
+@pytest.mark.parametrize('glance, message', (
+    (1, 'Image {id} is not active (HTTP 404)'),
+    (2, 'The requested image is in status queued. Image data download is '
+        'forbidden. (HTTP 403)'),
+), indirect=['glance'])
+def test_download_zero_size_image(glance, command, message):
+    image = parser.details(glance('image-create'))
+
+    out = glance(command.format(**image), fail_ok=True, merge_stderr=True)
+    assert message.format(**image) in out
+
+    glance('image-delete {id}'.format(**image))
+
+    images = parser.listing(glance('image-list'))
+    assert image['id'] not in [x['ID'] for x in images]
