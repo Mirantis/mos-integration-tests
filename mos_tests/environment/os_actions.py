@@ -42,14 +42,20 @@ class OpenStackActions(object):
         logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
+        self.username = user
+        self.password = password
+        self.tenant = tenant
+
         if cert is None:
             auth_url = 'http://{0}:5000/v2.0/'.format(self.controller_ip)
-            path_to_cert = None
+            self.path_to_cert = None
+            self.insecure = True
         else:
             auth_url = 'https://{0}:5000/v2.0/'.format(self.controller_ip)
             with gen_temp_file(prefix="fuel_cert_", suffix=".pem") as f:
                 f.write(cert)
-            path_to_cert = f.name
+            self.path_to_cert = f.name
+            self.insecure = False
 
         logger.debug('Auth URL is {0}'.format(auth_url))
         self.nova = nova_client.Client(version=2,
@@ -57,23 +63,23 @@ class OpenStackActions(object):
                                        api_key=password,
                                        project_id=tenant,
                                        auth_url=auth_url,
-                                       cacert=path_to_cert)
+                                       cacert=self.path_to_cert)
 
         self.cinder = cinderclient.Client(2, user, password,
                                           tenant, auth_url,
-                                          cacert=path_to_cert)
+                                          cacert=self.path_to_cert)
 
         self.neutron = neutronclient.Client(username=user,
                                             password=password,
                                             tenant_name=tenant,
                                             auth_url=auth_url,
-                                            ca_cert=path_to_cert)
+                                            ca_cert=self.path_to_cert)
 
         self.keystone = self._get_keystoneclient(username=user,
                                                  password=password,
                                                  tenant_name=tenant,
                                                  auth_url=auth_url,
-                                                 ca_cert=path_to_cert)
+                                                 ca_cert=self.path_to_cert)
 
         token = self.keystone.auth_token
         glance_endpoint = self.keystone.service_catalog.url_for(
@@ -82,15 +88,15 @@ class OpenStackActions(object):
 
         self.glance = GlanceClient(endpoint=glance_endpoint,
                                    token=token,
-                                   cacert=path_to_cert)
+                                   cacert=self.path_to_cert)
 
         heat_endpoint = self.keystone.service_catalog.url_for(
             service_type='orchestration', endpoint_type='publicURL')
         logger.debug('Heat endpoint is {0}'.format(heat_endpoint))
         self.heat = HeatClient(endpoint=heat_endpoint,
                                 token=token,
-                                cacert=path_to_cert,
-                                ca_file=path_to_cert)
+                                cacert=self.path_to_cert,
+                                ca_file=self.path_to_cert)
         self.env = env
 
     def _get_keystoneclient(self, username, password, tenant_name, auth_url,
