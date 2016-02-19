@@ -88,9 +88,10 @@ def revert_snapshot(env_name, snapshot_name):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_session(env_name, snapshot_name):
+def setup_session(request, env_name, snapshot_name):
     """Revert Fuel devops snapshot before test session"""
     if not all([env_name, snapshot_name]):
+        setattr(request.session, 'reverted', False)
         return
     revert_snapshot(env_name, snapshot_name)
 
@@ -144,7 +145,8 @@ def fuel(fuel_master_ip):
 def env(request, fuel):
     """Environment instance"""
     env = fuel.get_last_created_cluster()
-    if getattr(request.node, 'reverted', True):
+    if getattr(request.node, 'reverted',
+               getattr(request.session, 'reverted', True)):
         env.wait_for_ostf_pass()
     return env
 
