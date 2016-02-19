@@ -111,8 +111,9 @@ def cleanup(request, env_name, snapshot_name):
     destructive = 'undestructive' not in item.keywords
     reverted = False
     if failed or (not skipped and destructive):
-        revert_snapshot(env_name, snapshot_name)
-        reverted = True
+        if all([env_name, snapshot_name]):
+            revert_snapshot(env_name, snapshot_name)
+            reverted = True
     setattr(item.nextitem, 'reverted', reverted)
 
 

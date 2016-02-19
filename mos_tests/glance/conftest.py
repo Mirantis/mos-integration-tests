@@ -20,6 +20,11 @@ from tempest_lib.cli import base
 
 
 @pytest.fixture
+def suffix():
+    return str(uuid.uuid4())
+
+
+@pytest.fixture
 def cli(os_conn):
     return base.CLIClient(username=os_conn.username,
                           password=os_conn.password,
@@ -42,3 +47,21 @@ def image_file():
         f.seek(10 * (1024 ** 2))  # 10 MB
         f.write(' ')
         yield f.name
+
+
+@pytest.yield_fixture
+def tenant(os_conn, suffix):
+    tenant_name = "tenant_{}".format(suffix[:6])
+    tenant = os_conn.tenant_create(tenant_name)
+    yield tenant
+    os_conn.tenant_delete(tenant_name)
+
+
+@pytest.yield_fixture
+def user(os_conn, suffix, tenant):
+    name = "user_{}".format(suffix[:6])
+    password = "password"
+    user = os_conn.user_create(name=name, password=password,
+                               tenant=tenant['id'])
+    yield user
+    os_conn.user_delete(name)

@@ -27,6 +27,7 @@ from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
 import six
+from tempest_lib.cli import output_parser
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
@@ -103,19 +104,14 @@ class OpenStackActions(object):
                             retries=3, ca_cert=None):
         keystone = None
         for i in range(retries):
+            kwargs = dict(auth_url=auth_url,
+                          username=username,
+                          password=password,
+                          tenant_name=tenant_name)
+            if ca_cert is not None:
+                kwargs['cacert'] = ca_cert
             try:
-                if ca_cert:
-                    keystone = KeystoneClient(username=username,
-                                              password=password,
-                                              tenant_name=tenant_name,
-                                              auth_url=auth_url,
-                                              cacert=ca_cert)
-
-                else:
-                    keystone = KeystoneClient(username=username,
-                                              password=password,
-                                              tenant_name=tenant_name,
-                                              auth_url=auth_url)
+                keystone = KeystoneClient(**kwargs)
                 break
             except KeyStoneException as e:
                 err = "Try nr {0}. Could not get keystone client, error: {1}"
@@ -706,3 +702,31 @@ class OpenStackActions(object):
         wait(lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
              timeout_seconds=5 * 60,
              waiting_for="network reschedule to new dhcp agent")
+
+    def _keystone_run(self, command, *args, **kwargs):
+        controller = self.env.get_nodes_by_role('controller')[0]
+        args
+        kwargs_tuple = tuple("--{0} '{1}'".format(k, v)
+                             for k, v in kwargs.items())
+        args = args + kwargs_tuple
+        with controller.ssh() as remote:
+            return remote.check_call(
+                '. openrc && keystone {command} {args}'.format(
+                    command=command, args=' '.join(args)))
+
+    def tenant_create(self, name):
+        output = self._keystone_run('tenant-create', name=name)
+        return output_parser.details(''.join(output['stdout']))
+
+    def tenant_delete(self, name):
+        return self._keystone_run('tenant-delete', name)
+
+    def user_create(self, name, password, tenant=None):
+        kwargs = {'name': name, 'pass': password}
+        if tenant is not None:
+            kwargs['tenant'] = tenant
+        output = self._keystone_run('user-create', **kwargs)
+        return output_parser.details(''.join(output['stdout']))
+
+    def user_delete(self, name):
+        return self._keystone_run('user-delete', name)
