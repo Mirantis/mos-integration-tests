@@ -142,6 +142,12 @@ def fuel(fuel_master_ip):
     return get_fuel_client(fuel_master_ip)
 
 
+def get_os_conn(environment):
+    return OpenStackActions(
+        controller_ip=environment.get_primary_controller_ip(),
+        cert=environment.certificate, env=environment)
+
+
 @pytest.fixture
 def env(request, fuel):
     """Environment instance"""
@@ -149,6 +155,11 @@ def env(request, fuel):
     if getattr(request.node, 'reverted',
                getattr(request.session, 'reverted', True)):
         env.wait_for_ostf_pass()
+        os_conn = get_os_conn(env)
+        wait(os_conn.is_nova_ready,
+             timeout_seconds=60 * 5,
+             expected_exceptions=Exception,
+             waiting_for="OpenStack nova computes is ready")
     return env
 
 
@@ -169,18 +180,6 @@ def set_openstack_environ(fuel_master_ip):
             if v == 'internalURL':
                 v = 'publicURL'
             os.environ[k] = v
-
-
-def get_os_conn(environment):
-    os_connection = OpenStackActions(
-        controller_ip=environment.get_primary_controller_ip(),
-        cert=environment.certificate, env=environment)
-
-    wait(os_connection.is_nova_ready,
-         timeout_seconds=60 * 5,
-         expected_exceptions=Exception,
-         waiting_for="OpenStack nova computes is ready")
-    return os_connection
 
 
 @pytest.fixture(scope='class')

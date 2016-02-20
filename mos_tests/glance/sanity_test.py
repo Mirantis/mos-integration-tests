@@ -15,6 +15,12 @@
 import pytest
 from tempest_lib.cli import output_parser as parser
 
+from mos_tests.functions.common import wait
+from mos_tests import settings
+
+
+pytestmark = pytest.mark.undestructive
+
 
 def check_image_in_list(glance, image):
     __tracebackhide__ = True
@@ -69,16 +75,16 @@ def test_update_raw_data_in_image(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
-def test_share_glance_image(glance, user, tenant, image_file, suffix):
-    """Check sharing glance image to another tenant
+def test_share_glance_image(glance, user, project, image_file, suffix):
+    """Check sharing glance image to another project
 
     Scenario:
         1. Create image from `image_file`
         2. Check that image is present in list and image status is `active`
-        3. Bind another tenant to image
-        4. Check that binded tenant id is present in image member list
-        5. Unbind tenant from image
-        6. Check that tenant id is not present in image member list
+        3. Bind another project to image
+        4. Check that binded project id is present in image member list
+        5. Unbind project from image
+        6. Check that project id is not present in image member list
         7. Delete image
         8. Check that image deleted
     """
@@ -91,19 +97,72 @@ def test_share_glance_image(glance, user, tenant, image_file, suffix):
 
     check_image_in_list(glance, image)
 
-    glance('member-create {id} {tenant_id}'.format(tenant_id=tenant['id'],
+    glance('member-create {id} {project_id}'.format(project_id=project['id'],
                                                    **image))
 
     member_list = parser.listing(glance('member-list --image-id {id}'.format(
         **image)))
-    assert tenant['id'] in [x['Member ID'] for x in member_list]
+    assert project['id'] in [x['Member ID'] for x in member_list]
 
-    glance('member-delete {id} {tenant_id}'.format(tenant_id=tenant['id'],
+    glance('member-delete {id} {project_id}'.format(project_id=project['id'],
                                                    **image))
 
     member_list = parser.listing(glance('member-list --image-id {id}'.format(
         **image)))
-    assert tenant['id'] not in [x['Member ID'] for x in member_list]
+    assert project['id'] not in [x['Member ID'] for x in member_list]
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
+
+
+def test_image_create_delete_from_file(glance, image_file, suffix):
+    """Checks image creation and deletion from file
+
+    Scenario:
+        1. Create image from file
+        2. Check that image exists and has `active` status
+        3. Delete image
+        4. Check that image deleted
+    """
+    name = 'Test_{}'.format(suffix)
+    cmd = ('image-create --name {name} --container-format bare '
+           '--disk-format qcow2 --file {source} --progress'.format(
+                name=name, source=image_file))
+
+    image = parser.details(glance(cmd))
+
+    check_image_active(glance, image)
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
+
+
+@pytest.mark.parametrize('glance', [1], indirect=['glance'])
+@pytest.mark.parametrize('option', ('--location', '--copy-from'))
+def test_image_create_delete_from_url(glance, suffix, option):
+    """Check image creation and deletion from URL
+
+    Scenario:
+        1. Create image from URL
+        2. Wait until image has active `status`
+        3. Delete image
+        4. Check that image deleted
+    """
+    name = 'Test_{}'.format(suffix)
+    image_url = settings.GLANCE_IMAGE_URL
+    cmd = ('image-create --name {name} --container-format bare '
+           '--disk-format qcow2 {option} {image_url} --progress'.format(
+                name=name, option=option, image_url=image_url))
+
+    image = parser.details(glance(cmd))
+
+    def is_image_active():
+        image_data = parser.details(glance('image-show {id}'.format(**image)))
+        return image_data['status'] == 'active'
+
+    wait(is_image_active, timeout_seconds=60, waiting_for='image is active')
 
     glance('image-delete {id}'.format(**image))
 

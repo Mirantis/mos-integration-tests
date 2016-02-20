@@ -14,9 +14,12 @@
 
 from functools import partial
 import tempfile
+import uuid
 
 import pytest
 from tempest_lib.cli import base
+
+from mos_tests.functions import os_cli
 
 
 @pytest.fixture
@@ -42,26 +45,34 @@ def glance(request, os_conn, cli):
 
 
 @pytest.yield_fixture
-def image_file():
+def image_file(request):
+    size = getattr(request, 'param', 100)
     with tempfile.NamedTemporaryFile(delete=True) as f:
-        f.seek(10 * (1024 ** 2))  # 10 MB
+        f.seek(size * (1024 ** 2))
         f.write(' ')
+        f.flush()
         yield f.name
 
 
 @pytest.yield_fixture
-def tenant(os_conn, suffix):
-    tenant_name = "tenant_{}".format(suffix[:6])
-    tenant = os_conn.tenant_create(tenant_name)
-    yield tenant
-    os_conn.tenant_delete(tenant_name)
+def openstack_client(env):
+    with env.get_nodes_by_role('controller')[0].ssh() as remote:
+        yield os_cli.OpenStack(remote)
 
 
 @pytest.yield_fixture
-def user(os_conn, suffix, tenant):
+def project(openstack_client, suffix):
+    project_name = "project_{}".format(suffix[:6])
+    project = openstack_client.project_create(project_name)
+    yield project
+    openstack_client.project_delete(project['id'])
+
+
+@pytest.yield_fixture
+def user(openstack_client, suffix, project):
     name = "user_{}".format(suffix[:6])
     password = "password"
-    user = os_conn.user_create(name=name, password=password,
-                               tenant=tenant['id'])
+    user = openstack_client.user_create(name=name, password=password,
+                                project=project['id'])
     yield user
-    os_conn.user_delete(name)
+    openstack_client.user_delete(user['id'])

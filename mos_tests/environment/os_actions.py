@@ -27,11 +27,11 @@ from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
 import six
-from tempest_lib.cli import output_parser
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
+from mos_tests.functions import os_cli
 
 logger = logging.getLogger(__name__)
 
@@ -703,30 +703,28 @@ class OpenStackActions(object):
              timeout_seconds=5 * 60,
              waiting_for="network reschedule to new dhcp agent")
 
-    def _keystone_run(self, command, *args, **kwargs):
-        controller = self.env.get_nodes_by_role('controller')[0]
-        args
-        kwargs_tuple = tuple("--{0} '{1}'".format(k, v)
-                             for k, v in kwargs.items())
-        args = args + kwargs_tuple
-        with controller.ssh() as remote:
-            return remote.check_call(
-                '. openrc && keystone {command} {args}'.format(
-                    command=command, args=' '.join(args)))
+    def _get_controller(self):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        return self.env.get_nodes_by_role('controller')[0]
 
     def tenant_create(self, name):
-        output = self._keystone_run('tenant-create', name=name)
-        return output_parser.details(''.join(output['stdout']))
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).tenant_create(name=name)
 
     def tenant_delete(self, name):
-        return self._keystone_run('tenant-delete', name)
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).tenant_delete(name=name)
 
     def user_create(self, name, password, tenant=None):
-        kwargs = {'name': name, 'pass': password}
-        if tenant is not None:
-            kwargs['tenant'] = tenant
-        output = self._keystone_run('user-create', **kwargs)
-        return output_parser.details(''.join(output['stdout']))
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).user_create(name=name,
+                                                       password=password,
+                                                       tenant=tenant)
 
     def user_delete(self, name):
-        return self._keystone_run('user-delete', name)
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).user_delete(name=name)

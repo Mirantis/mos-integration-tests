@@ -40,3 +40,8 @@ FEDORA_DOCKER_QCOW2 = 'fedora-software-config.qcow2'
 WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
+
+# Glance tests settings
+GLANCE_IMAGE_URL = os.environ.get(
+    'GLANCE_IMAGE_URL',
+    'http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img')
