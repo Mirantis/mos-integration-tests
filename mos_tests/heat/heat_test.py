@@ -320,8 +320,8 @@ class HeatIntegrationTests(OpenStackTestCase):
         representation.
         """
         stack_name = 'empty_stack'
-        timeout = 60
-        parameter = "some_string"
+        timeout = 20
+        parameter = 'some_string'
         if common_functions.is_stack_exists(stack_name, self.heat):
             uid = common_functions.get_stack_id(self.heat, stack_name)
             common_functions.delete_stack(self.heat, uid)
@@ -333,10 +333,9 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.uid_list.append(uid)
         self.assertTrue(common_functions.check_stack_status(stack_name,
                                                             self.heat,
-                                                            'CREATE_COMPLETE'))
-        stack_dict = {s.stack_name: s.id for s in self.heat.stacks.list()}
-        stack_id = stack_dict[stack_name]
-        stack_template = self.heat.stacks.template(stack_id)
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        stack_template = self.heat.stacks.template(uid)
         self.assertIsInstance(stack_template, dict)
 
     @pytest.mark.testrail_id('631873')
