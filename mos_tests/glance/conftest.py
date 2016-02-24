@@ -37,7 +37,7 @@ def cli(os_conn):
                           insecure=os_conn.insecure)
 
 
-@pytest.fixture(params=['1', '2'], ids=['api v1', 'api v2'])
+@pytest.fixture(params=['1', '2'], ids=['api_v1', 'api_v2'])
 def glance(request, os_conn, cli):
     flags = '--os-cacert {0.path_to_cert} --os-image-api-version {1}'.format(
         os_conn, request.param)

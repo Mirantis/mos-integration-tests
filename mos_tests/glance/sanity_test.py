@@ -12,6 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import hashlib
+import tempfile
+
 import pytest
 from tempest_lib.cli import output_parser as parser
 
@@ -43,6 +46,14 @@ def check_image_active(glance, image):
     if image_data['status'] != 'active':
         pytest.fail('Image {id} status is {status} (not active)'.format(
             **image_data))
+
+
+def calc_md5(filename):
+    with open(filename, 'r') as f:
+        md5 = hashlib.md5()
+        for chunk in iter(lambda: f.read(1024), ''):
+            md5.update(chunk)
+    return md5.hexdigest()
 
 
 @pytest.mark.parametrize('glance', [1], indirect=['glance'])
@@ -167,3 +178,30 @@ def test_image_create_delete_from_url(glance, suffix, option):
     glance('image-delete {id}'.format(**image))
 
     check_image_not_in_list(glance, image)
+
+
+def test_image_file_equal(glance, image_file, suffix):
+    """Check that after upload-download image file are not changed
+
+    Scenario:
+        1. Create image from file
+        2. Download image to new file
+        3. Compare file and new file
+        4. Delete image
+    """
+    name = 'Test_{}'.format(suffix)
+    cmd = ('image-create --name {name} --container-format bare '
+           '--disk-format qcow2 --file {source} --progress'.format(
+                name=name, source=image_file))
+
+    image = parser.details(glance(cmd))
+
+    with tempfile.NamedTemporaryFile() as new_file:
+        new_file.write(glance('image-download {id}'.format(**image)))
+        new_file.flush()
+        original_md5 = calc_md5(image_file)
+        new_md5 = calc_md5(new_file.name)
+
+    assert original_md5 == new_md5, 'MD5 sums of images are different'
+
+    glance('image-delete {id}'.format(**image))
