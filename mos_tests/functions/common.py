@@ -615,3 +615,11 @@ def gen_temp_file(prefix='tmp', suffix=''):
     tempdir = os.path.join(os.path.dirname(__file__), '../../temp')
     return NamedTemporaryFile(prefix=prefix, suffix=suffix, dir=tempdir,
                               delete=False)
+
+
+def get_os_conn(environment):
+    from mos_tests.environment.os_actions import OpenStackActions
+
+    return OpenStackActions(
+        controller_ip=environment.get_primary_controller_ip(),
+        cert=environment.certificate, env=environment)

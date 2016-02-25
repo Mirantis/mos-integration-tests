@@ -17,7 +17,7 @@ import hashlib
 import tempfile
 
 import pytest
-from tempest_lib.cli import output_parser as parser
+from tempest.lib.cli import output_parser as parser
 
 from mos_tests.functions.common import wait
 from mos_tests import settings
@@ -57,6 +57,7 @@ def calc_md5(filename):
     return md5.hexdigest()
 
 
+@pytest.mark.testrail_id('542892')
 @pytest.mark.parametrize('glance', [1], indirect=['glance'])
 def test_update_raw_data_in_image(glance, image_file, suffix):
     """Checks updating raw data in Glance image
@@ -87,6 +88,9 @@ def test_update_raw_data_in_image(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('542893', params={'glance': 1})
+@pytest.mark.testrail_id('542913', params={'glance': 2})
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
 def test_share_glance_image(glance, user, project, image_file, suffix):
     """Check sharing glance image to another project
 
@@ -128,6 +132,9 @@ def test_share_glance_image(glance, user, project, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('542882', params={'glance': 1})
+@pytest.mark.testrail_id('542898', params={'glance': 2})
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
 def test_image_create_delete_from_file(glance, image_file, suffix):
     """Checks image creation and deletion from file
 
@@ -151,6 +158,10 @@ def test_image_create_delete_from_file(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('542883',
+                         params={'glance': 1, 'option': '--copy-from'})
+@pytest.mark.testrail_id('542884',
+                         params={'glance': 1, 'option': '--location'})
 @pytest.mark.parametrize('glance', [1], indirect=['glance'])
 @pytest.mark.parametrize('option', ('--location', '--copy-from'))
 def test_image_create_delete_from_url(glance, suffix, option):
@@ -211,7 +222,10 @@ def test_image_file_equal(glance, image_file, suffix):
 
 
 # TODO(gdyuldin) Replace glance_remote with glance fixture after
-# https://review.openstack.org/282631 will be merged
+# https://review.openstack.org/284355 will be merged
+@pytest.mark.testrail_id('542894', params={'glance_remote': 1})
+@pytest.mark.testrail_id('542914', params={'glance_remote': 2})
+@pytest.mark.parametrize('glance_remote', [1, 2], indirect=['glance_remote'])
 def test_unicode_support(glance_remote, suffix):
     """Check support of unicode symbols in image name
 
@@ -233,6 +247,34 @@ def test_unicode_support(glance_remote, suffix):
 
     glance_remote('image-delete {id}'.format(**image))
     check_image_not_in_list(glance_remote, image)
+
+
+@pytest.mark.testrail_id('775840', params={'glance': 1})
+@pytest.mark.testrail_id('775842', params={'glance': 2})
+@pytest.mark.usefixtures('short_lifetime_keystone')
+@pytest.mark.parametrize('image_file', [5 * 1024], indirect=['image_file'])
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
+def test_upload_image_with_token_expiration(glance, image_file, suffix):
+    """Check that big image uploaded succcess if token expired during uploading
+
+    Scenario:
+        1. Create image from big file
+        2. Check that created image is in list and has status `active`
+        3. Delete image
+        4. Check that image deleted
+    """
+    name = u"Test_{0}".format(suffix[:6])
+    cmd = ('image-create --name {name} --container-format bare '
+           '--disk-format qcow2 --file {source} --progress'.format(
+                name=name, source=image_file))
+
+    image = parser.details(glance(cmd))
+
+    check_image_active(glance, image)
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
 
 
 @pytest.mark.parametrize('glance, key_name', (

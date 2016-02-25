@@ -23,8 +23,8 @@ from six.moves import configparser
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
-from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions.common import gen_temp_file
+from mos_tests.functions.common import get_os_conn
 from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli
 from mos_tests.settings import KEYSTONE_PASS
@@ -172,12 +172,6 @@ def credentials(setup_session, fuel_master_ip):
 def fuel(fuel_master_ip):
     """Initialized fuel client"""
     return get_fuel_client(fuel_master_ip)
-
-
-def get_os_conn(environment):
-    return OpenStackActions(
-        controller_ip=environment.get_primary_controller_ip(),
-        cert=environment.certificate, env=environment)
 
 
 @pytest.fixture
@@ -367,13 +361,20 @@ def env_requirements(request, env):
 
 
 def pytest_collection_modifyitems(config, items):
+    """Add marker to test name, if test marked with `testrail_id` marker
+
+    If optional argument `params` passed - test parameters should be a
+    superset of `params` to mark be applied
+    """
     for item in items:
         markers = item.get_marker('testrail_id') or []
         suffix_string = ''
         for marker in markers:
             test_id = marker.args[0]
             params = marker.kwargs.get('params', {})
-            if len(params) > 0 and item.callspec.params != params:
+            params_in_callspec = all(param in item.callspec.params.items()
+                                     for param in params.items())
+            if len(params) > 0 and not params_in_callspec:
                 continue
             suffix_string = '[({})]'.format(test_id)
             break

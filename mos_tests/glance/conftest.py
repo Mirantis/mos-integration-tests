@@ -17,14 +17,55 @@ import tempfile
 import uuid
 
 import pytest
-from tempest_lib.cli import base
+from six.moves import configparser
+from tempest.lib.cli import base
 
+from mos_tests.functions import common
 from mos_tests.functions import os_cli
 
 
 @pytest.fixture
 def suffix():
     return str(uuid.uuid4())
+
+
+@pytest.yield_fixture
+def short_lifetime_keystone(env):
+    """Change keystone token lifetime to 30s"""
+
+    def set_lifetime(node):
+        with node.ssh() as remote:
+            remote.check_call('service apache2 stop')
+            remote.check_call('mv /etc/keystone/keystone.conf '
+                              '/etc/keystone/keystone.conf.orig')
+            with remote.open('/etc/keystone/keystone.conf.orig') as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+                parser.set('token', 'expiration', 30)
+                with remote.open('/etc/keystone/keystone.conf', 'w') as new_f:
+                    parser.write(new_f)
+            remote.check_call('service apache2 start')
+
+    def reset_lifetime(node):
+        with node.ssh() as remote:
+            remote.check_call('service apache2 stop')
+            remote.check_call('mv /etc/keystone/keystone.conf.orig '
+                              '/etc/keystone/keystone.conf')
+            remote.check_call('service apache2 start')
+
+    def wait_keystone_alive():
+        common.wait(lambda: common.get_os_conn(env), timeout_seconds=60 * 3,
+                    waiting_for='keystone available',
+                    expected_exceptions=Exception)
+
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        set_lifetime(controller)
+    wait_keystone_alive()
+    yield
+    for controller in controllers:
+        reset_lifetime(controller)
+    wait_keystone_alive()
 
 
 @pytest.fixture
@@ -38,7 +79,7 @@ def cli(os_conn):
                           prefix='env PYTHONIOENCODING=UTF-8')
 
 
-@pytest.fixture(params=['1', '2'], ids=['api_v1', 'api_v2'])
+@pytest.fixture
 def glance(request, os_conn, cli):
     flags = '--os-cacert {0.path_to_cert} --os-image-api-version {1}'.format(
         os_conn, request.param)
@@ -47,7 +88,7 @@ def glance(request, os_conn, cli):
 
 @pytest.yield_fixture
 def image_file(request):
-    size = getattr(request, 'param', 100)
+    size = getattr(request, 'param', 100)  # Size in MB
     with tempfile.NamedTemporaryFile(delete=True) as f:
         f.seek(size * (1024 ** 2))
         f.write(' ')
@@ -69,7 +110,7 @@ def openstack_client(controller_remote):
 @pytest.fixture(params=['1', '2'], ids=['api v1', 'api v2'])
 def glance_remote(request, controller_remote):
     # TODO(gdyuldin) Replace with glance fixture after
-    # https://review.openstack.org/282631 will be merged
+    # https://review.openstack.org/284355 will be merged
     flags = '--os-image-api-version {0.param}'.format(request)
     return partial(os_cli.Glance(controller_remote), flags=flags,
                    prefix='env PYTHONIOENCODING=UTF-8')
