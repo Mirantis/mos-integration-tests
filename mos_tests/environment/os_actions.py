@@ -31,6 +31,7 @@ import six
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
+from mos_tests.functions import os_cli
 
 logger = logging.getLogger(__name__)
 
@@ -103,19 +104,14 @@ class OpenStackActions(object):
                             retries=3, ca_cert=None):
         keystone = None
         for i in range(retries):
+            kwargs = dict(auth_url=auth_url,
+                          username=username,
+                          password=password,
+                          tenant_name=tenant_name)
+            if ca_cert is not None:
+                kwargs['cacert'] = ca_cert
             try:
-                if ca_cert:
-                    keystone = KeystoneClient(username=username,
-                                              password=password,
-                                              tenant_name=tenant_name,
-                                              auth_url=auth_url,
-                                              cacert=ca_cert)
-
-                else:
-                    keystone = KeystoneClient(username=username,
-                                              password=password,
-                                              tenant_name=tenant_name,
-                                              auth_url=auth_url)
+                keystone = KeystoneClient(**kwargs)
                 break
             except KeyStoneException as e:
                 err = "Try nr {0}. Could not get keystone client, error: {1}"
@@ -706,3 +702,29 @@ class OpenStackActions(object):
         wait(lambda: self.neutron.list_dhcp_agent_hosting_networks(net_id),
              timeout_seconds=5 * 60,
              waiting_for="network reschedule to new dhcp agent")
+
+    def _get_controller(self):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        return self.env.get_nodes_by_role('controller')[0]
+
+    def tenant_create(self, name):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).tenant_create(name=name)
+
+    def tenant_delete(self, name):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).tenant_delete(name=name)
+
+    def user_create(self, name, password, tenant=None):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).user_create(name=name,
+                                                       password=password,
+                                                       tenant=tenant)
+
+    def user_delete(self, name):
+        # TODO(gdyuldin) remove this methods after moving to functions.os_cli
+        with self._get_controller().ssh() as remote:
+            return os_cli.OpenStack(remote).user_delete(name=name)
