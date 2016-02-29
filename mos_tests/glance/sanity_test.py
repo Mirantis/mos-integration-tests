@@ -212,7 +212,7 @@ def test_image_file_equal(glance, image_file, suffix):
     (2, 'key'),
 ), indirect=['glance'])
 def test_update_properties_of_image(glance, image_file, suffix, key_name):
-    """Check updating properties of glance image for api version 1
+    """Check updating properties of glance image
 
     Scenario:
         1. Create image from `image_file`
