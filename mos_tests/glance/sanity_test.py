@@ -205,3 +205,65 @@ def test_image_file_equal(glance, image_file, suffix):
     assert original_md5 == new_md5, 'MD5 sums of images are different'
 
     glance('image-delete {id}'.format(**image))
+
+
+@pytest.mark.parametrize('glance', [1], indirect=['glance'])
+def test_update_properties_of_glance_image_v1(glance, image_file, suffix):
+    """Check updating properties of glance image for api version 1
+
+    Scenario:
+        1. Create image from `image_file`
+        2. Check that image is present in list and image status is `active`
+        3. Update image with property key=test
+        4. Check that image has attribute "Property 'key'" = test
+        5. Delete image
+        6. Check that image deleted
+    """
+    name = "Test_{0}".format(suffix[:6])
+    cmd = ("image-create --name {name} --container-format bare --disk-format "
+           "qcow2 --file {file} --progress".format(name=name, file=image_file))
+    image = parser.details(glance(cmd))
+
+    check_image_active(glance, image)
+
+    check_image_in_list(glance, image)
+
+    glance('image-update {id} --property key=test'.format(**image))
+
+    image_data = parser.details(glance('image-show {id}'.format(**image)))
+    assert image_data["Property 'key'"] == 'test'
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
+
+
+@pytest.mark.parametrize('glance', [2], indirect=['glance'])
+def test_update_properties_of_glance_image_v2(glance, image_file, suffix):
+    """Check updating properties of glance image for api version 2
+
+    Scenario:
+        1. Create image from `image_file`
+        2. Check that image is present in list and image status is `active`
+        3. Update image with property key=test
+        4. Check that image has property 'key' = test
+        5. Delete image
+        6. Check that image deleted
+    """
+    name = "Test_{0}".format(suffix[:6])
+    cmd = ("image-create --name {name} --container-format bare --disk-format "
+           "qcow2 --file {file} --progress".format(name=name, file=image_file))
+    image = parser.details(glance(cmd))
+
+    check_image_active(glance, image)
+
+    check_image_in_list(glance, image)
+
+    glance('image-update {id} --property key=test'.format(**image))
+
+    image_data = parser.details(glance('image-show {id}'.format(**image)))
+    assert image_data['key'] == 'test'
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
