@@ -114,3 +114,31 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
         for pkg_name in settings.MURANO_PACKAGE_DEPS_NAMES:
             self.check_element_on_page(
                 by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    def test_import_package_from_repo(self):
+        """Test package importing via fqn from repo with dependent apps."""
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Package Definitions')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_name")
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-repo_name']")
+        el.send_keys(settings.MURANO_PACKAGE_WITH_DEPS_FQN)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        for el in self.driver.find_elements_by_class_name('alert'):
+            el.find_element_by_class_name('close').click()
+
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+
+        for pkg_name in settings.MURANO_PACKAGE_DEPS_NAMES:
+            self.check_element_on_page(
+                by.By.XPATH, c.AppPackages.format(pkg_name))

@@ -47,6 +47,7 @@ GLANCE_IMAGE_URL = os.environ.get(
     'http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img')
 
 MURANO_PACKAGE_WITH_DEPS_URL = "http://storage.apps.openstack.org/apps/io.murano.apps.docker.DockerApp.zip"  # noqa
+MURANO_PACKAGE_WITH_DEPS_FQN = "io.murano.apps.docker.DockerApp"
 MURANO_PACKAGE_DEPS_NAMES = (
     'Docker Container',
     'Docker Interface Library',
