@@ -138,7 +138,7 @@ class TestVxlanBase(TestBase):
         return router
 
 
-@pytest.mark.need_tshark
+@pytest.mark.requires_('tshark')
 class TestVxlan(TestVxlanBase):
     """Simple Vxlan tests"""
 
@@ -298,7 +298,7 @@ class TestVxlanL2pop(TestVxlanBase):
         '542633', params={'tcpdump_args': '-vvni any port 4789'})
     @pytest.mark.testrail_id(
         '542637', params={'tcpdump_args': '-n src host {source_ip} -i any'})
-    @pytest.mark.need_tshark
+    @pytest.mark.requires_('tshark')
     @pytest.mark.check_env_('has_2_or_more_computes')
     @pytest.mark.parametrize('tcpdump_args', [
         '-vvni any port 4789',
@@ -509,7 +509,7 @@ class TestVxlanL2pop(TestVxlanBase):
                 assert any([x in stdout for x in compute3.ip_list])
 
     @pytest.mark.testrail_id('542638')
-    @pytest.mark.need_tshark
+    @pytest.mark.requires_('tshark')
     @pytest.mark.check_env_('has_2_or_more_computes')
     def test_broadcast_traffic_propagation_single_net(self, router):
         """Check broadcast traffic between instances placed in a single
