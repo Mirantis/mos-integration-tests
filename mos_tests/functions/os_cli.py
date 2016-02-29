@@ -1,4 +1,4 @@
-#    Copyright 2015 Mirantis, Inc.
+#    Copyright 2016 Mirantis, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -15,6 +15,7 @@
 import json
 
 from tempest.lib import exceptions
+from tempest_lib.cli import output_parser as parser
 
 
 def os_execute(remote, command, fail_ok=False, merge_stderr=False):
@@ -49,6 +50,9 @@ class CLICLient(object):
         return os_execute(self.remote, command, fail_ok=fail_ok,
                           merge_stderr=merge_stderr)
 
+
+    def details_table(self, output):
+        return parser.listing(output)
 
 class OpenStack(CLICLient):
     command = 'openstack'
