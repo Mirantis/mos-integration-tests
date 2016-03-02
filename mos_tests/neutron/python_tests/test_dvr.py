@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.check_env_('is_dvr')
-@pytest.mark.usefixtures("setup")
 class TestDVRBase(base.TestBase):
     """DVR specific test base class"""
 
@@ -344,6 +343,46 @@ class TestDVR(TestDVRBase):
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
+
+    @pytest.mark.testrail_id('638467')
+    def test_ban_l3_agent_on_snat_node(self):
+        """Check North-South connectivity without floating after ban l3 agent
+            on node with snat
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. Ban agent on node from previous step:
+                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+            7. Wait some time while snat is rescheduling
+            8. Check that snat have moved to another controller
+            9. Check that ping 8.8.8.8 available from vm
+        """
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        controller_with_snat = self.find_snat_controller(self.router_id)
+
+        with controller_with_snat.ssh() as remote:
+            remote.check_call(
+                'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                    **controller_with_snat.data))
+
+        # Wait for SNAT reschedule
+        new_controller_with_snat = wait(
+            lambda: self.find_snat_controller(
+                self.router_id,
+                excluded=[controller_with_snat.data['fqdn']]),
+            timeout_seconds=60 * 3,
+            sleep_seconds=(1, 60, 5),
+            waiting_for="snat is rescheduled")
+        # Check external ping and proper SNAT rescheduling
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        assert (
+            controller_with_snat.data['fqdn'] !=
+            new_controller_with_snat.data['fqdn'])
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
