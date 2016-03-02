@@ -344,8 +344,10 @@ class TestDVR(TestDVRBase):
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
-    @pytest.mark.testrail_id('638467')
-    def test_ban_l3_agent_on_snat_node(self):
+    @pytest.mark.testrail_id('638467', params={'count': 1})
+    @pytest.mark.testrail_id('638469', params={'count': 2})
+    @pytest.mark.parametrize('count', [1, 2])
+    def test_ban_l3_agent_on_snat_node(self, count):
         """Check North-South connectivity without floating after ban l3 agent
             on node with snat
         Scenario:
@@ -359,30 +361,33 @@ class TestDVR(TestDVRBase):
                 pcs resource ban p_neutron-l3-agent node-x.domain.tld
             7. Wait some time while snat is rescheduling
             8. Check that snat have moved to another controller
-            9. Check that ping 8.8.8.8 available from vm
+            9. Repest steps 5-8 `count` times
+            10. Check that ping 8.8.8.8 available from vm
         """
+
         self._prepare_openstack_env(assign_floating_ip=False)
 
         controller_with_snat = self.find_snat_controller(self.router_id)
 
-        with controller_with_snat.ssh() as remote:
-            remote.check_call(
-                'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
-                    **controller_with_snat.data))
+        for _ in range(count):
 
-        # Wait for SNAT reschedule
-        new_controller_with_snat = wait(
-            lambda: self.find_snat_controller(
-                self.router_id,
-                excluded=[controller_with_snat.data['fqdn']]),
-            timeout_seconds=60 * 3,
-            sleep_seconds=(1, 60, 5),
-            waiting_for="snat is rescheduled")
-        # Check external ping and proper SNAT rescheduling
+            with controller_with_snat.ssh() as remote:
+                remote.check_call(
+                    'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                        **controller_with_snat.data))
+
+            # Wait for SNAT reschedule
+            new_controller_with_snat = wait(
+                lambda: self.find_snat_controller(
+                    self.router_id,
+                    excluded=[controller_with_snat.data['fqdn']]),
+                timeout_seconds=60 * 3,
+                sleep_seconds=10,
+                waiting_for="snat is rescheduled")
+            assert controller_with_snat != new_controller_with_snat
+            controller_with_snat = new_controller_with_snat
+
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
-        assert (
-            controller_with_snat.data['fqdn'] !=
-            new_controller_with_snat.data['fqdn'])
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
