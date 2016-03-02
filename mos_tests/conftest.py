@@ -26,6 +26,7 @@ from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
+from mos_tests.functions import os_cli
 from mos_tests.settings import KEYSTONE_PASS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import SERVER_ADDRESS
@@ -379,3 +380,9 @@ def pytest_collection_modifyitems(config, items):
         item.name += suffix_string
         if item.cls is not None and issubclass(item.cls, unittest.TestCase):
             setattr(item.cls, item.name, item.function)
+
+
+@pytest.yield_fixture
+def openstack_client(env):
+    with env.get_nodes_by_role('controller')[0].ssh() as remote:
+        yield os_cli.OpenStack(remote)

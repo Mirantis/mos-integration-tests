@@ -154,7 +154,8 @@ class OpenStackActions(object):
             raise Exception('Server {} status is error'.format(server.name))
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
-                      files=None, key_name=None, timeout=300, **kwargs):
+                      files=None, key_name=None, timeout=300,
+                      wait_for_active=True, wait_for_avaliable=True, **kwargs):
         try:
             if scenario:
                 with open(scenario, "r+") as f:
@@ -173,16 +174,19 @@ class OpenStackActions(object):
                                        key_name=key_name,
                                        **kwargs)
 
-        wait(lambda: self.is_server_active(srv),
-             timeout_seconds=timeout, sleep_seconds=5,
-             waiting_for='instance {0} changes status to ACTIVE'.format(name))
+        if wait_for_active:
+            wait(lambda: self.is_server_active(srv),
+                 timeout_seconds=timeout, sleep_seconds=5,
+                 waiting_for='instance {0} changes status to ACTIVE'.format(
+                    name))
 
         # wait for ssh ready
-        if self.env is not None:
-            wait(lambda: self.is_server_ssh_ready(srv),
-                 timeout_seconds=timeout,
-                 waiting_for='server available via ssh')
-        logger.info('the server {0} is ready'.format(srv.name))
+        if wait_for_avaliable:
+            if self.env is not None:
+                wait(lambda: self.is_server_ssh_ready(srv),
+                     timeout_seconds=timeout,
+                     waiting_for='server available via ssh')
+            logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
 
     def is_server_ssh_ready(self, server):
@@ -276,18 +280,28 @@ class OpenStackActions(object):
     def get_l3_for_router(self, router_id):
         return self.neutron.list_l3_agent_hosting_routers(router_id)
 
-    def create_network(self, name):
+    def create_network(self, name, tenant_id=None):
         network = {'name': name, 'admin_state_up': True}
+        if tenant_id is not None:
+            network['tenant_id'] = tenant_id
         return self.neutron.create_network({'network': network})
 
-    def create_subnet(self, network_id, name, cidr):
+    def delete_network(self, id):
+        return self.neutron.delete_network(id)
+
+    def create_subnet(self, network_id, name, cidr, tenant_id=None):
         subnet = {
             "network_id": network_id,
             "ip_version": 4,
             "cidr": cidr,
             "name": name
         }
+        if tenant_id is not None:
+            subnet['tenant_id'] = tenant_id
         return self.neutron.create_subnet({'subnet': subnet})
+
+    def delete_subnet(self, id):
+        return self.neutron.delete_subnet(id)
 
     def list_networks(self):
         return self.neutron.list_networks()
@@ -408,8 +422,10 @@ class OpenStackActions(object):
         return secgroup
 
     def create_key(self, key_name):
-        logger.debug('Try to create key {0}'.format(key_name))
         return self.nova.keypairs.create(key_name)
+
+    def delete_key(self, key_name):
+        return self.nova.keypairs.delete(key_name)
 
     def get_port_by_fixed_ip(self, ip):
         """Returns neutron port by instance fixed ip"""
@@ -580,8 +596,9 @@ class OpenStackActions(object):
         logger.debug('Try to connect to vm {0}'.format(vm.name))
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
         vm_ip = vm.addresses[net_name][0]['addr']
-        net_id = self.neutron.list_networks(
-            name=net_name)['networks'][0]['id']
+        vm_mac = vm.addresses[net_name][0]['OS-EXT-IPS-MAC:mac_addr']
+        net_id = self.neutron.list_ports(
+            mac_address=vm_mac)['ports'][0]['network_id']
         dhcp_namespace = "qdhcp-{0}".format(net_id)
         if proxy_node is None:
             devops_nodes = self.get_node_with_dhcp_for_network(net_id)
@@ -590,12 +607,7 @@ class OpenStackActions(object):
                                 " not found.".format(net_id))
             proxy_node = random.choice(devops_nodes)
         ip = env.find_node_by_fqdn(proxy_node).data['ip']
-        key_paths = []
-        for i, key in enumerate(env.admin_ssh_keys):
-            keyfile = gen_temp_file(prefix="fuel_key_", suffix=".rsa")
-            path = keyfile.name
-            key.write_private_key_file(path)
-            key_paths.append(path)
+        key_paths = env.admin_ssh_keys_paths
         proxy_command = (
             "ssh {keys} -o 'StrictHostKeyChecking no' "
             "root@{node_ip} 'ip netns exec {ns} "
