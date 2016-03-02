@@ -12,9 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from distutils.spawn import find_executable
 import logging
 import os
 import unittest
+from collections import namedtuple
 
 import pytest
 from six.moves import configparser
@@ -23,6 +25,7 @@ from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions.common import wait
+from mos_tests.functions.common import gen_temp_file
 from mos_tests.settings import KEYSTONE_PASS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import SERVER_ADDRESS
@@ -134,6 +137,34 @@ def get_fuel_client(fuel_ip):
                       password=KEYSTONE_PASS,
                       ssh_login=SSH_CREDENTIALS['login'],
                       ssh_password=SSH_CREDENTIALS['password'])
+
+
+@pytest.fixture(scope="session")
+def credentials(setup_session, fuel_master_ip):
+    Credentials = namedtuple(
+        'Credentials',
+        ['fuel_ip', 'controller_ip', 'keystone_url', 'username', 'password',
+            'project', 'cert'])
+
+    fuel = get_fuel_client(fuel_master_ip)
+    env = fuel.get_last_created_cluster()
+    controller_ip = env.get_primary_controller_ip()
+    cert = env.certificate
+    if cert is None:
+        keystone_url = 'http://{0}:5000/v2.0/'.format(controller_ip)
+        path_to_cert = None
+    else:
+        keystone_url = 'https://{0}:5000/v2.0/'.format(controller_ip)
+        with gen_temp_file(prefix="fuel_cert_", suffix=".pem") as f:
+            f.write(cert)
+        path_to_cert = f.name
+    return Credentials(fuel_ip=fuel_master_ip,
+                       controller_ip=controller_ip,
+                       keystone_url=keystone_url,
+                       username='admin',
+                       password='admin',
+                       project='admin',
+                       cert=path_to_cert)
 
 
 @pytest.fixture
@@ -287,6 +318,16 @@ def is_l3_ha(env):
     with env.get_ssh_to_node(controller.data['ip']) as remote:
         with remote.open('/etc/neutron/neutron.conf') as f:
             return get_config_option(f, 'l3_ha', bool) is True
+
+
+@pytest.fixture(autouse=True)
+def executable_requirements(request, env_name):
+    marker = request.node.get_marker('requires_')
+    if marker:
+        for arg in marker.args:
+            path = find_executable(arg)
+            if path is None:
+                pytest.skip('requires {arg} executable'.format(arg=arg))
 
 
 @pytest.fixture(autouse=True)
