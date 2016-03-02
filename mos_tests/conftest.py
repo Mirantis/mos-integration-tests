@@ -12,11 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import namedtuple
 from distutils.spawn import find_executable
 import logging
 import os
 import unittest
-from collections import namedtuple
 
 import pytest
 from six.moves import configparser
@@ -24,8 +24,8 @@ from six.moves import configparser
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.environment.os_actions import OpenStackActions
-from mos_tests.functions.common import wait
 from mos_tests.functions.common import gen_temp_file
+from mos_tests.functions.common import wait
 from mos_tests.settings import KEYSTONE_PASS
 from mos_tests.settings import KEYSTONE_USER
 from mos_tests.settings import SERVER_ADDRESS

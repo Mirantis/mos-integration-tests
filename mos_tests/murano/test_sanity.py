@@ -14,15 +14,15 @@
 
 import logging
 
-import pytest
-from six.moves.urllib import parse as urlparse
 from keystoneclient.v2_0 import client as ksclient
+from muranoclient import client as mclient
 from muranodashboard.tests.functional import base
 from muranodashboard.tests.functional.config import config as cfg
 from muranodashboard.tests.functional import consts as c
+import pytest
 from selenium.webdriver.common import by
 from selenium.webdriver.support import ui
-from muranoclient import client as mclient
+from six.moves.urllib import parse as urlparse
 from xvfbwrapper import Xvfb
 
 from mos_tests import settings
