@@ -18,6 +18,7 @@ from tempest_lib import exceptions
 
 
 def os_execute(remote, command, fail_ok=False, merge_stderr=False):
+    command = command.encode('utf-8')
     command = '. openrc && {}'.format(command)
     result = remote.execute(command)
     if not fail_ok and not result.is_ok:
@@ -39,12 +40,12 @@ class CLICLient(object):
         self.remote = remote
         super(CLICLient, self).__init__()
 
-    def build_command(self, action, flags='', params=''):
-        return ' '.join([self.command, flags, action, params])
+    def build_command(self, action, flags='', params='', prefix=''):
+        return u' '.join([prefix, self.command, flags, action, params])
 
-    def execute(self, action, flags='', params='', fail_ok=False,
+    def __call__(self, action, flags='', params='', prefix='', fail_ok=False,
                 merge_stderr=False):
-        command = self.build_command(action, flags, params)
+        command = self.build_command(action, flags, params, prefix)
         return os_execute(self.remote, command, fail_ok=fail_ok,
                           merge_stderr=merge_stderr)
 
@@ -56,20 +57,28 @@ class OpenStack(CLICLient):
     command = 'openstack'
 
     def project_create(self, name):
-        output = self.execute('project create',
-                              params='{} -f json'.format(name))
+        output = self('project create', params='{} -f json'.format(name))
         return self.details(output)
 
     def project_delete(self, name):
-        return self.execute('project delete', params=name)
+        return self('project delete', params=name)
 
     def user_create(self, name, password, project=None):
         params = '{name} --password {password} -f json'.format(
             name=name, password=password)
         if project is not None:
             params += ' --project {}'.format(project)
-        output = self.execute('user create', params=params)
+        output = self('user create', params=params)
         return self.details(output)
 
     def user_delete(self, name):
-        return self.execute('user delete', params=name)
+        return self('user delete', params=name)
+
+
+class Glance(CLICLient):
+    command = 'glance'
+
+    def build_command(self, action, flags='', params='', prefix=''):
+        # disable stdin
+        params += u' <&-'
+        return super(Glance, self).build_command(action, flags, params, prefix)
