@@ -5,6 +5,7 @@ pytest-xdist
 python-glanceclient==1.1.0
 python-keystoneclient>1.3.3,<2.0.0
 python-novaclient>=2.27.0,<3.0.0
+python-ceilometerclient>=2.3.0
 python-cinderclient>=1.0.5
 python-neutronclient>=2.0,<4.0.0
 python-heatclient>=0.2.12
