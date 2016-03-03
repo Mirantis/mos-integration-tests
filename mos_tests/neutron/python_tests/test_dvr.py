@@ -361,6 +361,58 @@ class TestDVR(TestDVRBase):
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
 
+    @pytest.mark.testrail_id('674297')
+    def test_connectivity_after_ban_l3_agent_many_times(self, count=40):
+        """Check North-South connectivity without floating after ban l3 agent
+            many times
+
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. Ban other l3-agents
+            7. Ban l3-agent on for node with snat:
+                pcs resource ban p_neutron-l3-agent <controller>
+            8. Wait 10 seconds
+            9. Clear l3-agent on for node with snat:
+                pcs resource clear p_neutron-l3-agent <controller>
+            10. Repeat steps 7-9 `count` times
+            11. Check that ping 8.8.8.8 available from vm
+        """
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        controller = self.find_snat_controller(self.router_id)
+        controllers = self.env.get_nodes_by_role('controller')
+
+        # Ban all l3 agents
+        with controller.ssh() as remote:
+            logger.info('Ban all l3 agents, except placed on {}'.format(
+                controller))
+            for agent in self.os_conn.list_l3_agents():
+                if agent['host'] not in [x.data['fqdn'] for x in controllers]:
+                    continue
+                if agent['host'] == controller.data['fqdn']:
+                    continue
+                remote.check_call(
+                    'pcs resource ban p_neutron-l3-agent {host}'.format(
+                        **agent))
+
+        cmd = 'pcs resource {{action}} p_neutron-l3-agent {fqdn}'.format(
+                **controller.data)
+        with controller.ssh() as remote:
+            for i in range(1, 41):
+                logger.info('Ban/clear l3 agent on {node} - {i}'.format(
+                    node=controller, i=i))
+                remote.check_call(cmd.format(action='ban'))
+                time.sleep(10)
+                remote.check_call(cmd.format(action='clear'))
+                time.sleep(10)
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+
     @pytest.mark.testrail_id('542774')
     def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
         """Check North-South connectivity with floatingIP after ban and
