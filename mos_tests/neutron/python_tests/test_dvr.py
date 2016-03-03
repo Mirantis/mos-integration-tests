@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.check_env_('is_dvr')
-@pytest.mark.usefixtures("setup")
 class TestDVRBase(base.TestBase):
     """DVR specific test base class"""
 
@@ -458,6 +457,134 @@ class TestDVR(TestDVRBase):
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
+
+    @pytest.mark.testrail_id('638467', params={'count': 1})
+    @pytest.mark.testrail_id('638469', params={'count': 2})
+    @pytest.mark.parametrize('count', [1, 2])
+    def test_ban_l3_agent_on_snat_node(self, count):
+        """Check North-South connectivity without floating after ban l3 agent
+            on node with snat
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. Ban agent on node from previous step:
+                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+            7. Wait some time while snat is rescheduling
+            8. Check that snat have moved to another controller
+            9. Repest steps 5-8 `count` times
+            10. Check that ping 8.8.8.8 available from vm
+        """
+
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        controller_with_snat = self.find_snat_controller(self.router_id)
+
+        for _ in range(count):
+
+            with controller_with_snat.ssh() as remote:
+                remote.check_call(
+                    'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                        **controller_with_snat.data))
+
+            # Wait for SNAT reschedule
+            new_controller_with_snat = wait(
+                lambda: self.find_snat_controller(
+                    self.router_id,
+                    excluded=[controller_with_snat.data['fqdn']]),
+                timeout_seconds=60 * 3,
+                sleep_seconds=20,
+                waiting_for="snat is rescheduled")
+            assert controller_with_snat != new_controller_with_snat
+            controller_with_snat = new_controller_with_snat
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+
+    @pytest.mark.testrail_id('638473', params={'node_to_clear_key': 'first'})
+    @pytest.mark.testrail_id('638471', params={'node_to_clear_key': 'last'})
+    @pytest.mark.parametrize('node_to_clear_key', ['first', 'last'])
+    def test_ban_and_clear_l3_agent_on_snat_node(self, node_to_clear_key):
+        """Check North-South connectivity without floating after ban all
+            l3 agent on nodes with snat and then clear one
+
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. Ban agent on node from previous step:
+                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+            7. Wait some time while snat is rescheduling
+            8. Check that snat have moved to another controller
+            9. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            10. Ban agent on node from previous step:
+                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+            11. Wait some time while snat is rescheduling
+            12. Check that snat have moved to another controller
+            13. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            14. Ban agent on node from previous step:
+                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+            15. Wait some time while agent is alive
+            16. Clear one agent (last or first):
+                pcs resource clear p_neutron-l3-agent node-<node_id>
+            17. Wait while agent isn't alive
+            18. Check that snat have moved to another controller
+            19. Check that ping 8.8.8.8 available from vm
+        """
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        controller_with_snat = self.find_snat_controller(self.router_id)
+
+        banned_nodes = {'first': controller_with_snat}
+
+        for i in range(3):
+            logging.info('Banning step {i}: {node}'.format(
+                i=i, node=controller_with_snat))
+            with controller_with_snat.ssh() as remote:
+                remote.check_call(
+                    'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                        **controller_with_snat.data))
+
+            if i < 2:
+                # Wait for SNAT reschedule
+                new_controller_with_snat = wait(
+                    lambda: self.find_snat_controller(
+                        self.router_id,
+                        excluded=[controller_with_snat.data['fqdn']]),
+                    timeout_seconds=60 * 3,
+                    sleep_seconds=20,
+                    waiting_for="snat is rescheduled")
+                assert controller_with_snat != new_controller_with_snat
+                controller_with_snat = new_controller_with_snat
+            else:
+                # Wait for SNAT leave controller
+                wait(lambda: self.find_snat_controller(self.router_id) is None,
+                    timeout_seconds=60 * 3, sleep_seconds=10,
+                    waiting_for="snat leave {}".format(controller_with_snat))
+
+        banned_nodes['last'] = controller_with_snat
+
+        node_to_clear = banned_nodes[node_to_clear_key]
+
+        with node_to_clear.ssh() as remote:
+            remote.check_call(
+                'pcs resource clear p_neutron-l3-agent {fqdn}'.format(
+                    **node_to_clear.data))
+
+            # Wait for SNAT back to node
+            wait(lambda: self.find_snat_controller(
+                    self.router_id) == node_to_clear,
+                 timeout_seconds=60 * 3, sleep_seconds=20,
+                 waiting_for="snat go back to {}".format(node_to_clear))
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')

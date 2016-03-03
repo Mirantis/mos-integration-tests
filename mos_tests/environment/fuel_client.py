@@ -39,6 +39,8 @@ class NodeProxy(object):
         return getattr(self._orig_node, name)
 
     def __eq__(self, other):
+        if type(other) != type(self):
+            return False
         return self.data['ip'] == other.data['ip']
 
     def __ne__(self, other):
