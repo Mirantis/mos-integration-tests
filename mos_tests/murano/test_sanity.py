@@ -14,6 +14,7 @@
 
 import logging
 import types
+import uuid
 
 from muranodashboard.tests.functional import base
 from muranodashboard.tests.functional.config import config as cfg
@@ -140,3 +141,65 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
         for pkg_name in settings.MURANO_PACKAGE_DEPS_NAMES:
             self.check_element_on_page(
                 by.By.XPATH, c.AppPackages.format(pkg_name))
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
+@pytest.mark.usefixtures('screen')
+@murano_test_patch
+class TestDeployEnvInNetwork(base.ApplicationTestCase):
+    @classmethod
+    def _create_network_with_subnet(cls, net_name, subnet_name,
+                                    cidr=None):
+        """Create network with subnet."""
+        if cidr is None:
+            cidr = '192.168.1.0/24'
+
+        network = cls.os_conn.create_network(name=net_name)
+        subnet = cls.os_conn.create_subnet(
+            network_id=network['network']['id'],
+            name=subnet_name,
+            cidr=cidr,
+            dns_nameservers=['8.8.8.8'])
+        return network, subnet
+
+    @classmethod
+    def _create_router_between_nets(cls, router_name, ext_net, subnet):
+        """Create router between external network and sub network."""
+        router = cls.os_conn.create_router(name=router_name)
+        cls.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=ext_net['id'])
+
+        cls.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+        return router
+
+    @staticmethod
+    def gen_random_resource_name(prefix=None, reduce_by=None):
+        random_name = str(uuid.uuid4()).replace('-', '')[::reduce_by]
+        if prefix:
+            random_name = prefix + '_' + random_name
+        return random_name
+
+    @classmethod
+    @pytest.fixture(scope='class')
+    def prepare(cls, os_conn_for_unittests):
+        cls.net_name = cls.gen_random_resource_name(prefix='net')
+        cls.subnet_name = cls.gen_random_resource_name(prefix='subnet')
+        cls.router_name = cls.gen_random_resource_name(prefix='router')
+
+        _, subnet = cls._create_network_with_subnet(
+            net_name=cls.net_name,
+            subnet_name=cls.subnet_name)
+
+        cls._create_router_between_nets(
+            router_name=cls.router_name,
+            ext_net=cls.os_conn.ext_network,
+            subnet=subnet)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.os_conn.cleanup_network()
+        super(TestDeployEnvInNetwork, cls).tearDownClass()
