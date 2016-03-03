@@ -14,8 +14,8 @@
 
 import json
 
-from tempest.lib import exceptions
 from tempest_lib.cli import output_parser as parser
+from tempest_lib import exceptions
 
 
 def os_execute(remote, command, fail_ok=False, merge_stderr=False):

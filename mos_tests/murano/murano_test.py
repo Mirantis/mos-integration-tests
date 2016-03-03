@@ -28,7 +28,8 @@ def rand_num(a=1, b=1000):
 
 def user_env(user, password, project):
     """Add this env before you command if you need to perform actions
-    under another user"""
+    under another user
+    """
     env = ('env OS_TENANT_NAME="{2}" OS_PROJECT_NAME="{2}" '
            'OS_USERNAME="{0}" OS_PASSWORD="{1}" ').format(
             user, password, project)
@@ -93,9 +94,6 @@ def test_user_with_permissions_can_share_pkg(
                 'project': 'services'}
     new_user_env = user_env(new_user['name'], new_user['password'],
                             new_user['project'])
-
-    # WA for '1543135'
-    # wa_for_1543135(env)
 
     # Create role
     role = openstack_client('role create {0} -f json'.format(role_name))
