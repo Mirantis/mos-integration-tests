@@ -22,6 +22,7 @@ from fuelclient.objects.environment import Environment as EnvironmentBase
 from paramiko import RSAKey
 
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
 
 
@@ -67,6 +68,18 @@ class Environment(EnvironmentBase):
     """Extended fuelclient Environment model with some helpful methods"""
 
     admin_ssh_keys = None
+    _admin_ssh_keys_paths = None
+
+    @property
+    def admin_ssh_keys_paths(self):
+        if self._admin_ssh_keys_paths is None:
+            self._admin_ssh_keys_paths = []
+            for key in self.admin_ssh_keys:
+                keyfile = gen_temp_file(prefix="fuel_key_", suffix=".rsa")
+                path = keyfile.name
+                key.write_private_key_file(path)
+                self._admin_ssh_keys_paths.append(path)
+        return self._admin_ssh_keys_paths
 
     def get_all_nodes(self):
         nodes = super(Environment, self).get_all_nodes()
