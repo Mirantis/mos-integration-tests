@@ -261,6 +261,14 @@ class OpenStackActions(object):
     def remove_network_from_dhcp_agent(self, agent_id, network_id):
         self.neutron.remove_network_from_dhcp_agent(agent_id, network_id)
 
+    def add_router_to_l3_agent(self, router_id, l3_agent_id):
+        return self.neutron.add_router_to_l3_agent(l3_agent_id,
+                                                   {'router_id': router_id})
+
+    def remove_router_from_l3_agent(self, router_id, l3_agent_id):
+        return self.neutron.remove_router_from_l3_agent(router_id=router_id,
+                                                        l3_agent=l3_agent_id)
+
     def list_ports_for_network(self, network_id, device_owner):
         return self.neutron.list_ports(
             network_id=network_id, device_owner=device_owner)['ports']

@@ -34,7 +34,8 @@ def cli(os_conn):
                           tenant_name=os_conn.tenant,
                           uri=os_conn.keystone.auth_url,
                           cli_dir='.tox/glance/bin',
-                          insecure=os_conn.insecure)
+                          insecure=os_conn.insecure,
+                          prefix='env PYTHONIOENCODING=UTF-8')
 
 
 @pytest.fixture(params=['1', '2'], ids=['api_v1', 'api_v2'])
@@ -55,9 +56,23 @@ def image_file(request):
 
 
 @pytest.yield_fixture
-def openstack_client(env):
+def controller_remote(env):
     with env.get_nodes_by_role('controller')[0].ssh() as remote:
-        yield os_cli.OpenStack(remote)
+        yield remote
+
+
+@pytest.fixture
+def openstack_client(controller_remote):
+    return os_cli.OpenStack(controller_remote)
+
+
+@pytest.fixture(params=['1', '2'], ids=['api v1', 'api v2'])
+def glance_remote(request, controller_remote):
+    # TODO(gdyuldin) Replace with glance fixture after
+    # https://review.openstack.org/282631 will be merged
+    flags = '--os-image-api-version {0.param}'.format(request)
+    return partial(os_cli.Glance(controller_remote), flags=flags,
+                   prefix='env PYTHONIOENCODING=UTF-8')
 
 
 @pytest.yield_fixture

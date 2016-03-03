@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #    Copyright 2016 Mirantis, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -180,6 +181,8 @@ def test_image_create_delete_from_url(glance, suffix, option):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('542890', params={'glance': 1})
+@pytest.mark.testrail_id('542911', params={'glance': 2})
 def test_image_file_equal(glance, image_file, suffix):
     """Check that after upload-download image file are not changed
 
@@ -207,35 +210,26 @@ def test_image_file_equal(glance, image_file, suffix):
     glance('image-delete {id}'.format(**image))
 
 
-@pytest.mark.parametrize('glance, key_name', (
-    (1, "Property 'key'"),
-    (2, 'key'),
-), indirect=['glance'])
-def test_update_properties_of_image(glance, image_file, suffix, key_name):
-    """Check updating properties of glance image
+# TODO(gdyuldin) Replace glance_remote with glance fixture after
+# https://review.openstack.org/282631 will be merged
+def test_unicode_support(glance_remote, suffix):
+    """Check support of unicode symbols in image name
 
     Scenario:
-        1. Create image from `image_file`
-        2. Check that image is present in list and image status is `active`
-        3. Update image with property key=test
-        4. Check that image has property 'key' = test
-        5. Delete image
-        6. Check that image deleted
+        1. Create image with name 試験画像
+        2. Check that created image is in list and has status `queued`
+        3. Delete image
+        4. Check that image deleted
     """
-    name = "Test_{0}".format(suffix[:6])
-    cmd = ("image-create --name {name} --container-format bare --disk-format "
-           "qcow2 --file {file} --progress".format(name=name, file=image_file))
-    image = parser.details(glance(cmd))
+    name = u"試験画像_{0}".format(suffix[:6])
+    cmd = (u"image-create --name {name}".format(name=name))
+    image = parser.details(glance_remote(cmd))
 
-    check_image_active(glance, image)
+    check_image_in_list(glance_remote, image)
 
-    check_image_in_list(glance, image)
+    image_data = parser.details(
+        glance_remote('image-show {id}'.format(**image)))
+    assert image_data['status'] == 'queued'
 
-    glance('image-update {id} --property key=test'.format(**image))
-
-    image_data = parser.details(glance('image-show {id}'.format(**image)))
-    assert image_data[key_name] == 'test'
-
-    glance('image-delete {id}'.format(**image))
-
-    check_image_not_in_list(glance, image)
+    glance_remote('image-delete {id}'.format(**image))
+    check_image_not_in_list(glance_remote, image)

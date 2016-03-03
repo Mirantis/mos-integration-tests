@@ -13,35 +13,19 @@
 #    under the License.
 
 import logging
+import types
 
-import pytest
-from six.moves.urllib import parse as urlparse
-from keystoneclient.v2_0 import client as ksclient
 from muranodashboard.tests.functional import base
 from muranodashboard.tests.functional.config import config as cfg
 from muranodashboard.tests.functional import consts as c
+import pytest
 from selenium.webdriver.common import by
 from selenium.webdriver.support import ui
-from muranoclient import client as mclient
 from xvfbwrapper import Xvfb
 
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def set_config(credentials):
-    cfg.common.horizon_url = 'http://{0.controller_ip}/horizon'.format(
-        credentials)
-    cfg.common.user = credentials.username
-    cfg.common.password = credentials.password
-    cfg.common.tenant = credentials.project
-    cfg.common.keystone_url = credentials.keystone_url
-    cfg.common.murano_url = 'http://{0.controller_ip}:8082/'.format(
-        credentials)
-    cfg.common.ca_cert = credentials.cert
-    TestImportPackageWithDepencies.set_up_class()
 
 
 @pytest.yield_fixture(scope='class')
@@ -52,40 +36,54 @@ def screen():
     vdisplay.stop()
 
 
+def murano_test_patch(cls):
+    """Class decorator to make setUpClass method lazy"""
+
+    def lazySetUpClass(cls):  # noqa
+        return super(cls, cls).setUpClass()
+
+    def setUpClass(cls):
+        pass
+
+    @pytest.fixture(scope="class", autouse=True)
+    def set_config(self, credentials):
+        cfg.common.horizon_url = 'http://{0.controller_ip}/horizon'.format(
+            credentials)
+        cfg.common.user = credentials.username
+        cfg.common.password = credentials.password
+        cfg.common.tenant = credentials.project
+        cfg.common.keystone_url = credentials.keystone_url
+        cfg.common.murano_url = 'http://{0.controller_ip}:8082/'.format(
+            credentials)
+        cfg.common.ca_cert = credentials.cert
+        self.lazySetUpClass()
+
+    def switch_to_project(self, name):
+        pass
+
+    if 'setUpClass' in cls.__dict__:
+        method = cls.setUpClass
+    else:
+        method = types.MethodType(lazySetUpClass, cls, cls)
+    setattr(cls, 'lazySetUpClass', method)
+    setattr(cls, 'setUpClass', types.MethodType(setUpClass, cls, cls))
+    setattr(cls, 'set_config', set_config)
+    setattr(cls, 'switch_to_project', switch_to_project)
+
+    return cls
+
+
 @pytest.mark.requires_('firefox', 'xvfb-run')
 @pytest.mark.undestructive
 @pytest.mark.usefixtures('screen')
+@murano_test_patch
 class TestImportPackageWithDepencies(base.PackageTestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        """Disable original method to prevent early setup with undefined cfg"""
-        pass
-
-    @classmethod
-    def set_up_class(cls):
-        """Real setup class method"""
-        super(TestImportPackageWithDepencies, cls).setUpClass()
-        cls.keystone_client = ksclient.Client(username=cfg.common.user,
-                                              password=cfg.common.password,
-                                              tenant_name=cfg.common.tenant,
-                                              auth_url=cfg.common.keystone_url,
-                                              cacert=cfg.common.ca_cert)
-        cls.murano_client = mclient.Client(
-            '1', endpoint=cfg.common.murano_url,
-            token=cls.keystone_client.auth_token)
-        cls.url_prefix = urlparse.urlparse(cfg.common.horizon_url).path or ''
-        if cls.url_prefix.endswith('/'):
-            cls.url_prefix = cls.url_prefix[:-1]
 
     def tearDown(self):
         for pkg in self.murano_client.packages.list():
             if pkg.name in settings.MURANO_PACKAGE_DEPS_NAMES:
                 self.murano_client.packages.delete(pkg.id)
         super(TestImportPackageWithDepencies, self).tearDown()
-
-    def switch_to_project(self, name):
-        pass
 
     def test_import_package_by_url(self):
         """Test package importing via url."""

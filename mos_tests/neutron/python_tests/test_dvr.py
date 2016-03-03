@@ -222,6 +222,68 @@ class TestDVR(TestDVRBase):
 
         self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
+    @pytest.mark.testrail_id('638477')
+    def test_connectivity_after_reset_primary_controller_with_snat(self,
+            env_name):
+        """Check North-South connectivity without floating after resetting
+            primary controller with snat
+
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. If node with snat isn't the primary controller
+                (pcs cluster status), manually recshedule router:
+                neutron l3-agent-router-remove agent_id_where_is_snat router1
+                neutron l3-agent-network-add on_primary_agent_id router1
+                and wait some time while snat is rescheduling
+            7. Reset primary controller
+            8. Wait some time while snat is rescheduling
+            9. Check that snat have moved to another controller
+            10. Check that ping 8.8.8.8 available from vm
+        """
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+
+        leader_controller = self.env.leader_controller
+
+        # Check l3 agent with SNAT placed on leader_controller
+        controller_with_snat = self.find_snat_controller(self.router_id)
+        if controller_with_snat != leader_controller:
+            logger.info('Moving router to leader {}'.format(leader_controller))
+            l3_agents = self.os_conn.get_l3_for_router(
+                self.router_id)['agents']
+            snat_agent = [x for x in l3_agents
+                          if x['host'] == controller_with_snat.data['fqdn']][0]
+            new_l3_agent = [x for x in l3_agents
+                            if x['host'] == leader_controller.data['fqdn']][0]
+            self.os_conn.remove_router_from_l3_agent(router_id=self.router_id,
+                l3_agent_id=snat_agent['id'])
+            self.os_conn.add_router_to_l3_agent(router_id=self.router_id,
+                l3_agent_id=new_l3_agent['id'])
+
+        devops_node = DevopsClient.get_node_by_mac(
+            env_name=env_name, mac=leader_controller.data['mac'])
+        devops_node.reset()
+
+        new_controller_with_snat = wait(
+            lambda: self.find_snat_controller(
+                self.router_id,
+                excluded=[leader_controller.data['fqdn']]),
+            timeout_seconds=60 * 3,
+            sleep_seconds=(1, 60, 5),
+            waiting_for="snat is rescheduled")
+
+        assert (
+            leader_controller.data['fqdn'] !=
+            new_controller_with_snat.data['fqdn'])
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+
     @pytest.mark.testrail_id('542778')
     def test_shutdown_snat_controller(self, env_name):
         """Shutdown controller with SNAT-namespace and check it reschedules.
@@ -298,6 +360,58 @@ class TestDVR(TestDVRBase):
         self.check_ping_from_vm_with_ip(ip, vm_keypair=self.instance_keypair,
                                         ip_to_ping='8.8.8.8',
                                         ping_count=10, vm_login='cirros')
+
+    @pytest.mark.testrail_id('674297')
+    def test_connectivity_after_ban_l3_agent_many_times(self, count=40):
+        """Check North-South connectivity without floating after ban l3 agent
+            many times
+
+        Scenario:
+            1. Create net1, subnet1
+            2. Create DVR router router1, set gateway and add interface to net1
+            3. Boot vm in net1
+            4. Check that ping 8.8.8.8 available from vm
+            5. Find node with snat for router1:
+                ip net | grep snat-<id_router> on each controller
+            6. Ban other l3-agents
+            7. Ban l3-agent on for node with snat:
+                pcs resource ban p_neutron-l3-agent <controller>
+            8. Wait 10 seconds
+            9. Clear l3-agent on for node with snat:
+                pcs resource clear p_neutron-l3-agent <controller>
+            10. Repeat steps 7-9 `count` times
+            11. Check that ping 8.8.8.8 available from vm
+        """
+        self._prepare_openstack_env(assign_floating_ip=False)
+
+        controller = self.find_snat_controller(self.router_id)
+        controllers = self.env.get_nodes_by_role('controller')
+
+        # Ban all l3 agents
+        with controller.ssh() as remote:
+            logger.info('Ban all l3 agents, except placed on {}'.format(
+                controller))
+            for agent in self.os_conn.list_l3_agents():
+                if agent['host'] not in [x.data['fqdn'] for x in controllers]:
+                    continue
+                if agent['host'] == controller.data['fqdn']:
+                    continue
+                remote.check_call(
+                    'pcs resource ban p_neutron-l3-agent {host}'.format(
+                        **agent))
+
+        cmd = 'pcs resource {{action}} p_neutron-l3-agent {fqdn}'.format(
+                **controller.data)
+        with controller.ssh() as remote:
+            for i in range(1, 41):
+                logger.info('Ban/clear l3 agent on {node} - {i}'.format(
+                    node=controller, i=i))
+                remote.check_call(cmd.format(action='ban'))
+                time.sleep(10)
+                remote.check_call(cmd.format(action='clear'))
+                time.sleep(10)
+
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('542774')
     def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
