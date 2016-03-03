@@ -65,7 +65,7 @@ class CommandResult(dict):
         return self['exit_code'] == 0
 
     def _list_to_string(self, key):
-        return (''.join(self[key])).strip()
+        return (''.join(self[key])).decode('utf-8').strip()
 
     @property
     def stdout_string(self):
@@ -214,8 +214,9 @@ class SSHClient(object):
         if errors:
             raise CalledProcessError(command, errors)
 
-    def execute(self, command, verbose=True):
-        chan, stdin, stdout, stderr = self.execute_async(command)
+    def execute(self, command, verbose=True, merge_stderr=False):
+        chan, stdin, stdout, stderr = self.execute_async(
+            command, merge_stderr=merge_stderr)
         result = CommandResult({
             'stdout': [],
             'stderr': [],
@@ -234,14 +235,15 @@ class SSHClient(object):
             logger.debug("'{0}' exit_code is {1}".format(
                 command, result['exit_code']))
             if len(result['stdout']) > 0:
-                logger.debug('Stdout:\n{0}'.format(result.stdout_string))
+                logger.debug(u'Stdout:\n{0}'.format(result.stdout_string))
             if len(result['stderr']) > 0:
-                logger.debug('Stderr:\n{0}'.format(result.stderr_string))
+                logger.debug(u'Stderr:\n{0}'.format(result.stderr_string))
         return result
 
-    def execute_async(self, command):
+    def execute_async(self, command, merge_stderr=False):
         logger.debug("Executing command: '%s'" % command.rstrip())
         chan = self._ssh.get_transport().open_session(timeout=self.timeout)
+        chan.set_combine_stderr(merge_stderr)
         stdin = chan.makefile('wb')
         stdout = chan.makefile('rb')
         stderr = chan.makefile_stderr('rb')

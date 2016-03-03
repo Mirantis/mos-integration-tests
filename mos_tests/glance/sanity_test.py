@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #    Copyright 2016 Mirantis, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -180,6 +181,8 @@ def test_image_create_delete_from_url(glance, suffix, option):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('542890', params={'glance': 1})
+@pytest.mark.testrail_id('542911', params={'glance': 2})
 def test_image_file_equal(glance, image_file, suffix):
     """Check that after upload-download image file are not changed
 
@@ -205,6 +208,31 @@ def test_image_file_equal(glance, image_file, suffix):
     assert original_md5 == new_md5, 'MD5 sums of images are different'
 
     glance('image-delete {id}'.format(**image))
+
+
+# TODO(gdyuldin) Replace glance_remote with glance fixture after
+# https://review.openstack.org/282631 will be merged
+def test_unicode_support(glance_remote, suffix):
+    """Check support of unicode symbols in image name
+
+    Scenario:
+        1. Create image with name 試験画像
+        2. Check that created image is in list and has status `queued`
+        3. Delete image
+        4. Check that image deleted
+    """
+    name = u"試験画像_{0}".format(suffix[:6])
+    cmd = (u"image-create --name {name}".format(name=name))
+    image = parser.details(glance_remote(cmd))
+
+    check_image_in_list(glance_remote, image)
+
+    image_data = parser.details(
+        glance_remote('image-show {id}'.format(**image)))
+    assert image_data['status'] == 'queued'
+
+    glance_remote('image-delete {id}'.format(**image))
+    check_image_not_in_list(glance_remote, image)
 
 
 @pytest.mark.parametrize('glance, key_name', (
