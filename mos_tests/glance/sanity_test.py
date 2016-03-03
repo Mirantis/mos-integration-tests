@@ -233,3 +233,37 @@ def test_unicode_support(glance_remote, suffix):
 
     glance_remote('image-delete {id}'.format(**image))
     check_image_not_in_list(glance_remote, image)
+
+
+@pytest.mark.parametrize('glance, key_name', (
+    (1, "Property 'key'"),
+    (2, 'key'),
+), indirect=['glance'])
+def test_update_properties_of_image(glance, image_file, suffix, key_name):
+    """Check updating properties of glance image
+
+    Scenario:
+        1. Create image from `image_file`
+        2. Check that image is present in list and image status is `active`
+        3. Update image with property key=test
+        4. Check that image has property 'key' = test
+        5. Delete image
+        6. Check that image deleted
+    """
+    name = "Test_{0}".format(suffix[:6])
+    cmd = ("image-create --name {name} --container-format bare --disk-format "
+           "qcow2 --file {file} --progress".format(name=name, file=image_file))
+    image = parser.details(glance(cmd))
+
+    check_image_active(glance, image)
+
+    check_image_in_list(glance, image)
+
+    glance('image-update {id} --property key=test'.format(**image))
+
+    image_data = parser.details(glance('image-show {id}'.format(**image)))
+    assert image_data[key_name] == 'test'
+
+    glance('image-delete {id}'.format(**image))
+
+    check_image_not_in_list(glance, image)
