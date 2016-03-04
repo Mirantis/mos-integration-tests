@@ -55,3 +55,5 @@ MURANO_PACKAGE_DEPS_NAMES = (
     'Kubernetes Cluster',
     'Kubernetes Pod',
 )
+MURANO_IMAGE_URL = 'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'  # noqa
+MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
