@@ -213,6 +213,7 @@ def os_conn_for_unittests(request, fuel_master_ip):
     fuel_client = get_fuel_client(fuel_master_ip)
     environment = fuel_client.get_last_created_cluster()
     request.cls.env = environment
+    request.cls.os_conn = get_os_conn(environment)
 
 
 @pytest.fixture

@@ -297,7 +297,8 @@ class OpenStackActions(object):
     def delete_network(self, id):
         return self.neutron.delete_network(id)
 
-    def create_subnet(self, network_id, name, cidr, tenant_id=None):
+    def create_subnet(self, network_id, name, cidr, tenant_id=None,
+                      dns_nameservers=None):
         subnet = {
             "network_id": network_id,
             "ip_version": 4,
@@ -306,6 +307,8 @@ class OpenStackActions(object):
         }
         if tenant_id is not None:
             subnet['tenant_id'] = tenant_id
+        if dns_nameservers is not None:
+            subnet['dns_nameservers'] = dns_nameservers
         return self.neutron.create_subnet({'subnet': subnet})
 
     def delete_subnet(self, id):
@@ -465,7 +468,7 @@ class OpenStackActions(object):
             if router['name'] == 'router04':
                 continue
             try:
-                self.neutron.delete_router(router)
+                self.neutron.delete_router(router['id'])
             except NeutronClientException:
                 logger.info('the router {} is not deletable'.format(router))
 
