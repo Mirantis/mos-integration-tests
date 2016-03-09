@@ -49,12 +49,15 @@ class CLICLient(object):
         return os_execute(self.remote, command, fail_ok=fail_ok,
                           merge_stderr=merge_stderr)
 
-    def details(self, output):
-        return {x['Field']: x['Value'] for x in json.loads(output)}
-
 
 class OpenStack(CLICLient):
     command = 'openstack'
+
+    def details(self, output):
+        data = json.loads(output)
+        if isinstance(data, list):
+            data = {x['Field']: x['Value'] for x in data}
+        return data
 
     def project_create(self, name):
         output = self('project create', params='{} -f json'.format(name))
