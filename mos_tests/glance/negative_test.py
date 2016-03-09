@@ -16,12 +16,15 @@
 import uuid
 
 import pytest
-from tempest_lib.cli import output_parser as parser
+from tempest.lib.cli import output_parser as parser
 
 
 pytestmark = pytest.mark.undestructive
 
 
+@pytest.mark.testrail_id('542896', params={'glance': 1})
+@pytest.mark.testrail_id('542924', params={'glance': 2})
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
 def test_upload_image_wo_disk_format_and_container_format(image_file, glance):
     """Checks that disk-format and container-format are required"""
     name = 'Test_{0}'.format(str(uuid.uuid4())[:6])
@@ -36,6 +39,8 @@ def test_upload_image_wo_disk_format_and_container_format(image_file, glance):
     assert name not in [x['Name'] for x in images]
 
 
+@pytest.mark.testrail_id('542895', params={'glance': 1})
+@pytest.mark.testrail_id('542923', params={'glance': 2})
 @pytest.mark.parametrize('glance, message', (
     (1, "No image with an ID of '{id}' exists"),
     (2, "No image found with ID {id} (HTTP 404)"),
@@ -50,20 +55,19 @@ def test_remove_deleted_image(glance, message):
     assert message.format(**image) in out
 
 
-@pytest.mark.parametrize('command', (
-    'image-download {id}',
-    'image-download {id} --progress')
-)
+@pytest.mark.testrail_id('542897', params={'glance': 1})
+@pytest.mark.testrail_id('542925', params={'glance': 2})
 @pytest.mark.parametrize('glance, message', (
     (1, 'Image {id} is not active (HTTP 404)'),
     (2, 'The requested image is in status queued. Image data download is '
         'forbidden. (HTTP 403)'),
 ), indirect=['glance'])
-def test_download_zero_size_image(glance, command, message):
+def test_download_zero_size_image(glance, message):
     image = parser.details(glance('image-create'))
 
-    out = glance(command.format(**image), fail_ok=True, merge_stderr=True)
-    assert message.format(**image) in out
+    for command in ('image-download {id}', 'image-download {id} --progress'):
+        out = glance(command.format(**image), fail_ok=True, merge_stderr=True)
+        assert message.format(**image) in out
 
     glance('image-delete {id}'.format(**image))
 
