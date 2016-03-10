@@ -31,6 +31,35 @@ logger = logging.getLogger(__name__)
 class OvsBase(TestBase):
     """Common functions for ovs tests"""
 
+    ovs_agent_name = None
+    ovs_agent_service = None
+
+    @pytest.fixture(autouse=True)
+    def detect_ovs_agent_names(self, env):
+        cls = self.__class__
+        if cls.ovs_agent_name is not None:
+            return
+        with env.get_nodes_by_role('controller')[0].ssh() as remote:
+            for name in ['p_neutron-plugin-openvswitch-agent',
+                         'p_neutron-openvswitch-agent']:
+                result = remote.execute('pcs resource show {}'.format(name))
+                if result.is_ok:
+                    cls.ovs_agent_name = name
+                    break
+            else:
+                raise Exception("Can't detect OVS agent name")
+        if cls.ovs_agent_service is not None:
+            return
+        with env.get_nodes_by_role('controller')[0].ssh() as remote:
+            for name in ['neutron-plugin-openvswitch-agent',
+                         'neutron-openvswitch-agent']:
+                result = remote.execute('service {} status'.format(name))
+                if result.is_ok:
+                    cls.ovs_agent_service = name
+                    break
+            else:
+                raise Exception("Can't detect OVS agent name")
+
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
         default_sec_group = [
@@ -67,12 +96,8 @@ class OvsBase(TestBase):
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
-            result = remote.check_call(
-                '. openrc && pcs resource disable '
-                'p_neutron-plugin-openvswitch-agent --wait')
-            cmd_exit_code = result['exit_code']
-            if cmd_exit_code != 0:
-                logger.error(result['stderr'])
+            remote.check_call(
+                'pcs resource disable {}'.format(self.ovs_agent_name))
 
     def restart_ovs_agents_on_computes(self):
         """Restart openvswitch-agents on all computes."""
@@ -80,45 +105,36 @@ class OvsBase(TestBase):
 
         for node in computes:
             with node.ssh() as remote:
-                result = remote.check_call(
-                    'service neutron-plugin-openvswitch-agent restart')
-                cmd_exit_code = result['exit_code']
-                if cmd_exit_code != 0:
-                    logger.error(result['stderr'])
+                remote.check_call(
+                    'service {} restart'.format(self.ovs_agent_service))
 
     def enable_ovs_agents_on_controllers(self):
         """Enable openvswitch-agents on a controller."""
         controller = self.env.get_nodes_by_role('controller')[0]
 
         with controller.ssh() as remote:
-            result = remote.check_call(
-                '. openrc && pcs resource enable '
-                'p_neutron-plugin-openvswitch-agent --wait')
-            cmd_exit_code = result['exit_code']
-            if cmd_exit_code != 0:
-                logger.error(result['stderr'])
+            remote.check_call(
+                'pcs resource enable {}'.format(self.ovs_agent_name))
 
     def ban_ovs_agents_controllers(self):
         """Ban openvswitch-agents on all controllers."""
         controllers = self.env.get_nodes_by_role('controller')
 
-        for node in controllers:
-            with node.ssh() as remote:
-                result = remote.execute(
-                    'pcs resource '
-                    'ban p_neutron-plugin-openvswitch-agent {}'.format(
-                        node.data['fqdn']))
-                assert result['exit_code'] == 0
+        with controllers[0].ssh() as remote:
+            for node in controllers:
+                remote.check_call(
+                    'pcs resource ban {resource_name} {fqdn}'.format(
+                        resource_name=self.ovs_agent_name, **node.data))
 
     def clear_ovs_agents_controllers(self):
         """Clear openvswitch-agents on all controllers."""
         controllers = self.env.get_nodes_by_role('controller')
 
-        for node in controllers:
-            with node.ssh() as remote:
-                result = remote.execute(
-                    'pcs resource clear p_neutron-plugin-openvswitch-agent')
-                assert result['exit_code'] == 0
+        with controllers[0].ssh() as remote:
+            for node in controllers:
+                remote.check_call(
+                    'pcs resource clear {resource_name} {fqdn}'.format(
+                        resource_name=self.ovs_agent_name, **node.data))
 
     def get_current_cookie(self, compute):
         """Get the value of the cookie parameter for br-int or br-tun bridge.
@@ -351,8 +367,7 @@ class TestPortTags(TestBase):
             ovs_cfg = {}
             for node in nodes:
                 with node.ssh() as remote:
-                    result = remote.execute('ovs-vsctl show')
-                    assert result['exit_code'] == 0
+                    result = remote.check_call('ovs-vsctl show')
                     ports_tags = self.get_ports_tags_data(result['stdout'])
                     ovs_cfg[node.data['fqdn']] = ports_tags
             return ovs_cfg
@@ -364,17 +379,17 @@ class TestPortTags(TestBase):
 
         # ban and clear ovs-agents on controllers
         controller = self.env.get_nodes_by_role('controller')[0]
+        cmd = "pcs resource {{action}} {resource}".format(
+            resource=self.ovs_agent_name)
         with controller.ssh() as remote:
-            cmd = "pcs resource disable p_neutron-plugin-openvswitch-agent"
-            assert remote.execute(cmd)['exit_code'] == 0
-            cmd = "pcs resource enable p_neutron-plugin-openvswitch-agent"
-            assert remote.execute(cmd)['exit_code'] == 0
+            remote.check_call(cmd.format(action='disable'))
+            remote.check_call(cmd.format(action='enable'))
 
         # restart ovs-agents on computes
         for node in self.env.get_nodes_by_role('compute'):
             with node.ssh() as remote:
-                cmd = 'service neutron-plugin-openvswitch-agent restart'
-                assert remote.execute(cmd)['exit_code'] == 0
+                cmd = 'service {} restart'.format(self.ovs_agent_service)
+                remote.check_call(cmd)
 
         # wait for 30 seconds
         time.sleep(30)
