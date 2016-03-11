@@ -173,6 +173,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
             el.find_element_by_class_name('close').click()
 
         # No application data modification is needed
+        self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
@@ -200,6 +201,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
         for el in self.driver.find_elements_by_class_name('alert'):
             el.find_element_by_class_name('close').click()
 
+        self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
@@ -211,7 +213,6 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
-@pytest.mark.undestructive
 @pytest.mark.usefixtures('screen')
 @murano_test_patch
 class TestPackageSizeLimit(base.PackageTestCase):
@@ -241,6 +242,7 @@ class TestPackageSizeLimit(base.PackageTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         for el in self.driver.find_elements_by_class_name('alert'):
             el.find_element_by_class_name('close').click()
+        self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.wait_for_alert_message()
@@ -354,9 +356,24 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 
     @pytest.yield_fixture
     def apache_package(self, apache_image):
-        app_name = 'Apache'
+        app_name = 'ApacheHTTPServer'
         data = {"categories": ["Web"], "tags": ["tag"]}
-        files = {app_name: request.urlopen(settings.MURANO_PACKAGE_URL)}
+        tmp_dir = tempfile.mkdtemp()
+
+        archive_path = os.path.join(tmp_dir, app_name)
+        package_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                   'packages', app_name)
+
+        with zipfile.ZipFile(archive_path, 'w') as zip_file:
+            for root, dirs, files in os.walk(package_dir):
+                for f in files:
+                    zip_file.write(
+                        os.path.join(root, f),
+                        arcname=os.path.join(
+                            os.path.relpath(root, package_dir), f)
+                    )
+
+        files = {app_name: open(archive_path, 'rb')}
         package = self.murano_client.packages.create(data, files)
         self.apache_id = package.id
 
@@ -379,17 +396,41 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
             EC.presence_of_element_located(locator))
         el.click()
 
-    def add_component(self, app_id, env_id, app_name='TestApp'):
+    def create_env(self, env_name, net_name=None, submenu='Environments'):
+        if submenu == 'Environments':
+            create_env_locator = (by.By.ID, c.ConfirmCreateEnvironment)
+        elif submenu == 'Applications':
+            create_env_locator = (by.By.XPATH, c.InputSubmit)
+        else:
+            raise ValueError("Submenu can be 'Environments' or "
+                             "'Applications'.")
+
+        self.go_to_submenu(submenu)
+        self.driver.find_element_by_xpath(
+            "//a[contains(@href, 'murano/create_environment')]").click()
+        self.fill_field(by.By.ID, 'id_name', env_name)
+        if net_name:
+            self.select_net(net_name=net_name)
+
+        self.driver.find_element(*create_env_locator).click()
+        self.wait_for_alert_message()
+
+        return self.murano_client.environments.find(name=env_name).id
+
+    def add_component(self, app_id, env_id):
+        self.go_to_submenu('Environments')
+        self.driver.find_element_by_id(
+            "environments__row_{0}__action_show".format(env_id)).click()
+
         self.driver.find_element_by_xpath(
             "//a[@id='services__action_AddApplication']").click()
         self.driver.find_element_by_xpath(
             ".//a[contains(@href, 'murano/catalog/add/"
             "{app_id}/{env_id}')]".format(app_id=app_id, env_id=env_id)
         ).click()
-        field_id = "{0}_0-name".format(app_id)
-        self.fill_field(by.By.ID, field_id, value=app_name)
         self.driver.find_element_by_xpath(c.ButtonSubmit).click()
 
+        self.select_from_list('flavor', 'm1.small')
         self.select_from_list('osImage', self.apache_image_id)
         self.fill_field(by.By.NAME, '1-unitNamingPattern', value=self.env_name)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
@@ -397,19 +438,34 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.wait_for_alert_message()
 
-    def _deploy_env(self):
-        self.go_to_submenu('Environments')
-        self.driver.find_element_by_css_selector(
-            c.CreateEnvironment).click()
-        self.fill_field(by.By.ID, 'id_name', self.env_name)
-        self.select_net(net_name=self.net_name)
-        self.driver.find_element_by_id(c.ConfirmCreateEnvironment).click()
+    def add_component_with_changed_net(self, env_id, net_id):
+        self.go_to_submenu('Applications')
+        self.driver.find_element_by_xpath(
+            ".//a[contains(@href, 'murano/catalog/add/"
+            "{app_id}/{env_id}')]".format(app_id=self.apache_id, env_id=env_id)
+        ).click()
+        self.driver.find_element_by_xpath(c.ButtonSubmit).click()
+
+        self.select_from_list('flavor', 'm1.small')
+        self.select_from_list('osImage', self.apache_image_id)
+        self.fill_field(by.By.NAME, '1-unitNamingPattern', value=self.env_name)
+
+        locator = (by.By.XPATH,
+                   "//select[contains(@name, '{0}')]"
+                   "/option[contains(@value, '{1}')]".format(
+                       'network', net_id))
+        el = ui.WebDriverWait(self.driver, 10).until(
+            EC.presence_of_element_located(locator))
+        el.click()
+
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.wait_for_alert_message()
 
-        env_id = self.murano_client.environments.find(name=self.env_name).id
-
-        self.add_component(app_id=self.apache_id, env_id=env_id,
-                           app_name=self.app_name)
+    def deploy_env(self, env_id):
+        self.go_to_submenu('Environments')
+        self.driver.find_element_by_id(
+            "environments__row_{0}__action_show".format(env_id)).click()
 
         self.driver.find_element_by_xpath(
             "//button[@id='services__action_deploy_env']").click()
@@ -419,15 +475,16 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         common.wait(
             lambda: self.murano_client.environments.get(
                 env_id).status != 'deploying',
-            timeout_seconds=5 * 60,
+            timeout_seconds=10 * 60,
             waiting_for='environment deployed')
 
     @pytest.mark.usefixtures('init', 'apache_package', 'prepare_24')
     def test_particular_network(self):
-
-        self._deploy_env()
-
-        env_id = self.murano_client.environments.find(name=self.env_name).id
+        """Deploy Murano environment in particular network"""
+        env_id = self.create_env(env_name=self.env_name,
+                                 net_name=self.net_name)
+        self.add_component(app_id=self.apache_id, env_id=env_id)
+        self.deploy_env(env_id)
 
         self.assertEqual(self.murano_client.environments.get(env_id).status,
                          'ready')
@@ -438,14 +495,55 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 
     @pytest.mark.usefixtures('init', 'apache_package', 'prepare_30')
     def test_particular_network_no_free_ip(self):
-
-        self._deploy_env()
+        """Deploy Murano environment in network with empty ip"""
+        app_name = 'Apache HTTP Server'
+        env_id = self.create_env(env_name=self.env_name,
+                                 net_name=self.net_name)
+        self.add_component(app_id=self.apache_id, env_id=env_id)
+        self.deploy_env(env_id)
 
         self.driver.refresh()
 
         status_el = self.driver.find_element_by_xpath(
-            "//table[@id='services']//td[.//*[contains(text(), '{0}')]]"
+            "//table[@id='services']//tr//td[contains(text(), '{0}')]"
             "/following-sibling::td[contains(@class, 'status_down')]".format(
-                self.app_name))
+                app_name))
 
         self.assertEqual(status_el.text, 'Deploy FAILURE')
+
+    @pytest.mark.usefixtures('init', 'apache_package', 'prepare_24')
+    def test_change_network_for_app_from_app_page(self):
+        """Change network for Murano application"""
+        # create net, subnet and router
+        net_name = self.gen_random_resource_name(prefix='net')
+        subnet_name = self.gen_random_resource_name(prefix='subnet')
+        router_name = self.gen_random_resource_name(prefix='router')
+
+        net, subnet = self._create_network_with_subnet(
+            net_name=net_name,
+            subnet_name=subnet_name,
+            cidr='192.168.2.0/24')
+
+        self._create_router_between_nets(
+            router_name=router_name,
+            ext_net=self.os_conn.ext_network,
+            subnet=subnet)
+
+        # create new env
+        env_id = self.create_env(env_name=self.env_name,
+                                 net_name=self.net_name,
+                                 submenu='Applications')
+
+        # add application to env
+        self.add_component_with_changed_net(env_id, net['network']['id'])
+
+        # deploy env
+        self.deploy_env(env_id)
+        self.assertEqual(self.murano_client.environments.get(env_id).status,
+                         'ready')
+
+        # check that application was deployed in the second network
+        instance = [x for x in self.os_conn.nova.servers.findall()
+                    if self.env_name in x.name][0]
+        self.assertIn(net_name, instance.addresses.keys())
+        self.assertNotIn(self.net_name, instance.addresses.keys())
