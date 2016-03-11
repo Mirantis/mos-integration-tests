@@ -17,6 +17,7 @@ from distutils.spawn import find_executable
 import logging
 import os
 import unittest
+import uuid
 
 import pytest
 from six.moves import configparser
@@ -74,6 +75,11 @@ def pytest_runtest_makereport(item, call):
 
 def pytest_runtest_teardown(item, nextitem):
     setattr(item, "nextitem", nextitem)
+
+
+@pytest.fixture
+def suffix():
+    return str(uuid.uuid4())
 
 
 @pytest.fixture(scope="session")
@@ -248,6 +254,11 @@ def has_3_or_more_computes(env):
     return len(env.get_nodes_by_role('compute')) >= 3
 
 
+def has_ironic_conductor(env):
+    """Env deployed with at least one ironic conductor node"""
+    return len(env.get_nodes_by_role('ironic')) >= 1
+
+
 def is_any_compute_suitable_for_max_flavor(env):
     attrs_to_check = {
         "vcpus": 8,
@@ -359,6 +370,15 @@ def env_requirements(request, env):
     if not eval(marker_str_evalued):
         pytest.skip('Requires criteria: {}, computed instead: {}'.format(
             marker_str, marker_str_evalued))
+
+
+@pytest.fixture(autouse=True)
+def devops_requirements(request, env_name):
+    if request.node.get_marker('need_devops'):
+        try:
+            DevopsClient.get_env(env_name=env_name)
+        except Exception:
+            pytest.skip('requires devops env to be defined')
 
 
 def pytest_collection_modifyitems(config, items):

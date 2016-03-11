@@ -18,8 +18,10 @@ import os
 
 from fuelclient import client
 from fuelclient import fuelclient_settings
-from fuelclient.objects.environment import Environment as EnvironmentBase
+from fuelclient.objects import environment
+from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
+from paramiko import ssh_exception
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
@@ -63,8 +65,18 @@ class NodeProxy(object):
             private_keys=self._env.admin_ssh_keys
         )
 
+    def is_ssh_avaliable(self):
+        try:
+            with self.ssh() as remote:
+                remote.check_call('uname')
+        except (ssh_exception.SSHException,
+                ssh_exception.NoValidConnectionsError):
+            return False
+        else:
+            return True
 
-class Environment(EnvironmentBase):
+
+class Environment(environment.Environment):
     """Extended fuelclient Environment model with some helpful methods"""
 
     admin_ssh_keys = None
@@ -114,7 +126,7 @@ class Environment(EnvironmentBase):
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
 
-    def is_ostf_tests_pass(self):
+    def is_ostf_tests_pass(self, *test_groups):
         """Check for OpenStack tests pass"""
 
         def test_is_done():
@@ -122,12 +134,12 @@ class Environment(EnvironmentBase):
             if res['status'] == 'finished':
                 return res
 
-        logger.info('[Re]start OSTF tests')
-        if self.is_ha:
-            self.run_test_sets(['ha'])
-        else:
-            self.run_test_sets(['sanity'])
-        result = wait(test_is_done, timeout_seconds=10 * 60)
+        if len(test_groups) == 0:
+            test_groups = ('ha',)
+        logger.info('[Re]start OSTF tests {}'.format(test_groups))
+        self.run_test_sets(test_groups)
+        result = wait(test_is_done, timeout_seconds=10 * 60,
+                      waiting_for='OSTF tests to finish')
         for test in result['tests']:
             if test['status'] != 'success':
                 logger.warning(
@@ -139,7 +151,18 @@ class Environment(EnvironmentBase):
     def wait_for_ostf_pass(self):
         wait(self.is_ostf_tests_pass, timeout_seconds=20 * 60,
              sleep_seconds=20,
-             waiting_for='OpenStack pass OSTF tests')
+             waiting_for='OpenStack to pass OSTF tests')
+
+    def wait_network_verification(self):
+        data = self.verify_network()
+        t = fuel_task.Task(data['id'])
+
+        def is_ready():
+            if t.is_finished:
+                return t
+        return wait(is_ready, timeout_seconds=3 * 60,
+                    waiting_for='network verification to finish',
+                    sleep_seconds=5)
 
     @property
     def is_operational(self):

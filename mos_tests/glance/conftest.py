@@ -14,7 +14,6 @@
 
 from functools import partial
 import tempfile
-import uuid
 
 import pytest
 from six.moves import configparser
@@ -25,10 +24,6 @@ from mos_tests.functions import os_cli
 
 
 @pytest.fixture
-def suffix():
-    return str(uuid.uuid4())
-
-
 @pytest.yield_fixture
 def short_lifetime_keystone(env):
     """Change keystone token lifetime to 30s"""
@@ -68,7 +63,6 @@ def short_lifetime_keystone(env):
     wait_keystone_alive()
 
 
-@pytest.fixture
 def cli(os_conn):
     return base.CLIClient(username=os_conn.username,
                           password=os_conn.password,
