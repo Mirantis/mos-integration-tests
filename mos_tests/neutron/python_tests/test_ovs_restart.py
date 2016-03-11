@@ -323,7 +323,7 @@ class TestOVSRestartTwoVms(OvsBase):
 
 
 @pytest.mark.check_env_('is_vlan')
-class TestPortTags(TestBase):
+class TestPortTags(OvsBase):
     """Check that port tags aren't change after ovs-agent restart"""
 
     def get_ports_tags_data(self, lines):
