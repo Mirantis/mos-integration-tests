@@ -41,7 +41,10 @@ WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
 
-# Glance tests settings
+#########################
+# Glance tests settings #
+#########################
+
 GLANCE_IMAGE_URL = os.environ.get(
     'GLANCE_IMAGE_URL',
     'http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img')
@@ -57,3 +60,24 @@ MURANO_PACKAGE_DEPS_NAMES = (
 )
 MURANO_IMAGE_URL = 'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'  # noqa
 MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
+
+###################
+# Ironic settings #
+###################
+
+IRONIC_IMAGE_URL = 'https://cloud-images.ubuntu.com/trusty/current/trusty-server-cloudimg-amd64.tar.gz'  # noqa
+IRONIC_GLANCE_DISK_INFO = [{
+    "name": "vda",
+    "extra": [],
+    "free_space": 11000,
+    "type": "disk",
+    "id": "vda",
+    "size": 11000,
+    "volumes": [{
+        "mount": "/",
+        "type": "partition",
+        "file_system": "ext4",
+        "size": 10000
+    }]
+}]
+IRONIC_DISK_GB = 50

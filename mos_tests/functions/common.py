@@ -605,7 +605,7 @@ def wait(*args, **kwargs):
 
     try:
         result = base_wait(*args, **kwargs)
-        logger.info('{} now'.format(waiting_for))
+        logger.info('waiting for {} ... done'.format(waiting_for))
         return result
     except TimeoutExpired as e:
         raise e

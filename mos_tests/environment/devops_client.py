@@ -74,10 +74,10 @@ class DevopsClient(object):
                     slaves_count))
 
     @classmethod
-    def get_node_by_mac(cls, env_name, mac):
+    def get_node_by_mac(cls, env_name, mac, interface='admin'):
         env = cls.get_env(env_name=env_name)
         for node in env.nodes().slaves:
-            interfaces = node.interface_by_network_name('admin')
+            interfaces = node.interface_by_network_name(interface)
             mac_addresses = [x.mac_address for x in interfaces]
             if mac in mac_addresses:
                 return node
