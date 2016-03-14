@@ -26,6 +26,7 @@ from six.moves import urllib
 
 from mos_tests.environment import devops_client
 from mos_tests.functions import common
+from mos_tests.functions import os_cli
 from mos_tests import settings
 
 
@@ -163,18 +164,31 @@ def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
+@pytest.mark.parametrize('boot_instance_before', [True, False])
 def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
-                          flavor, keypair, env_name):
+                          flavor, keypair, env_name, boot_instance_before):
     """Check ironic state after restart conductor node
 
     Scenario:
-        1. Reboot Ironic conductor.
-        2. Wait 5-10 minutes.
-        3. Run network verification.
-        4. Run OSTF including Ironic tests.
-        5. Verify that CLI ironicclient can list nodes, ports, chassis, drivers
-        6. Boot new Ironic instance.
+        1. Boot Ironic instance (if `boot_instance_before`)
+        2. Reboot Ironic conductor.
+        3. Wait 5-10 minutes.
+        4. Run network verification.
+        5. Run OSTF including Ironic tests.
+        6. Verify that CLI ironicclient can list nodes, ports, chassis, drivers
+        7. Boot new Ironic instance (if not `boot_instance_before`).
     """
+
+    def boot_instance():
+        baremetal_net = os_conn.nova.networks.find(label='baremetal')
+        return os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
+                                     flavor=flavor.id, key_name=keypair.name,
+                                     nics=[{'net-id': baremetal_net.id}],
+                                     timeout=60 * 10)
+
+    if boot_instance_before:
+        instance = boot_instance()
+
     conductor = env.get_nodes_by_role('ironic')[0]
 
     devops_node = devops_client.DevopsClient.get_node_by_mac(
@@ -205,11 +219,16 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
                 timeout_seconds=60 * 5,
                 waiting_for='OSTF sanity tests to pass')
 
-    baremetal_net = os_conn.nova.networks.find(label='baremetal')
-    instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
-                                     flavor=flavor.id, key_name=keypair.name,
-                                     nics=[{'net-id': baremetal_net.id}],
-                                     timeout=60 * 10)
+    with env.get_nodes_by_role('controller')[0].ssh() as remote:
+        ironic_cli = os_cli.Ironic(remote)
+        for cmd in ['node-list', 'port-list', 'chassis-list', 'driver-list']:
+            ironic_cli(cmd)
+
+    if not boot_instance_before:
+        instance = boot_instance()
+
+    assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
+
     instance.delete()
 
     common.wait(lambda: len(os_conn.nova.servers.findall(id=instance.id)) == 0,

@@ -113,5 +113,9 @@ class Glance(CLICLient):
         return super(Glance, self).build_command(action, flags, params, prefix)
 
 
+class Ironic(CLICLient):
+    command = 'ironic'
+
+
 class Murano(CLICLient):
     command = 'murano'
