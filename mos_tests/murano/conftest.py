@@ -15,7 +15,6 @@
 import pytest
 
 from mos_tests.functions import os_cli
-from mos_tests.murano.murano_test import execute_on_all_controllers
 
 
 @pytest.yield_fixture
@@ -27,15 +26,3 @@ def controller_remote(env):
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)
-
-
-@pytest.fixture
-def cli_to_controller(controller_remote):
-    return os_cli.CLICLient(controller_remote)
-
-
-@pytest.yield_fixture
-def restore_murano_policy(env):
-    yield
-    cmd = 'mv /etc/murano/policy.json_orig /etc/murano/policy.json'
-    execute_on_all_controllers(env, cmd)
