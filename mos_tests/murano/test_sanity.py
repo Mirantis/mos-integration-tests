@@ -451,9 +451,8 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         self.fill_field(by.By.NAME, '1-unitNamingPattern', value=self.env_name)
 
         locator = (by.By.XPATH,
-                   "//select[contains(@name, '{0}')]"
-                   "/option[contains(@value, '{1}')]".format(
-                       'network', net_id))
+                   "//select[contains(@name, 'network')]"
+                   "/option[contains(@value, '{0}')]".format(net_id))
         el = ui.WebDriverWait(self.driver, 10).until(
             EC.presence_of_element_located(locator))
         el.click()
