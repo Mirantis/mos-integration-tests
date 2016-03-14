@@ -1,4 +1,4 @@
-#    Copyright 2015 Mirantis, Inc.
+#    Copyright 2016 Mirantis, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,7 +14,19 @@
 
 import json
 
+from tempest.lib.cli import output_parser as parser
 from tempest.lib import exceptions
+
+
+class Result(unicode):
+    def listing(self):
+        return parser.listing(self)
+
+    def details(self):
+        return parser.details(self)
+
+    def __add__(self, other):
+        return self.__class__(super(Result, self).__add__(other))
 
 
 def os_execute(remote, command, fail_ok=False, merge_stderr=False):
@@ -26,7 +38,7 @@ def os_execute(remote, command, fail_ok=False, merge_stderr=False):
                                        command,
                                        result.stdout_string,
                                        result.stderr_string)
-    output = ''
+    output = Result()
     if merge_stderr:
         output += result.stderr_string
     return output + result.stdout_string
@@ -77,6 +89,20 @@ class OpenStack(CLICLient):
     def user_delete(self, name):
         return self('user delete', params=name)
 
+    def role_create(self, name):
+        output = self('role create', params='{} -f json'.format(name))
+        return self.details(output)
+
+    def role_delete(self, name):
+        return self('role delete', params=name)
+
+    def assign_role_to_user(self, role_name, user, project):
+        output = self(
+            'role add',
+            params='{name} --user {user} --project {project} -f json'.format(
+                name=role_name, user=user, project=project))
+        return self.details(output)
+
 
 class Glance(CLICLient):
     command = 'glance'
@@ -85,3 +111,7 @@ class Glance(CLICLient):
         # disable stdin
         params += u' <&-'
         return super(Glance, self).build_command(action, flags, params, prefix)
+
+
+class Murano(CLICLient):
+    command = 'murano'
