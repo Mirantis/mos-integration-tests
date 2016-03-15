@@ -259,6 +259,11 @@ def has_ironic_conductor(env):
     return len(env.get_nodes_by_role('ironic')) >= 1
 
 
+def has_2_or_more_ironic_conductors(env):
+    """Env deployed with at least two ironic conductor nodes"""
+    return len(env.get_nodes_by_role('ironic')) >= 2
+
+
 def is_any_compute_suitable_for_max_flavor(env):
     attrs_to_check = {
         "vcpus": 8,

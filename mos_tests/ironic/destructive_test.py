@@ -233,3 +233,55 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
 
     common.wait(lambda: len(os_conn.nova.servers.findall(id=instance.id)) == 0,
                 timeout_seconds=60, waiting_for='instance to be deleted')
+
+
+@pytest.mark.check_env_('has_2_or_more_ironic_conductors')
+@pytest.mark.need_devops
+def test_reboot_all_ironic_conductors(env, env_name):
+    """Check ironic state after restart all conductor nodes
+
+    Scenario:
+        1. Ensure ironic conductor service works correctly on each conductor
+            node (e.g., ensure "ironic driver-list" returns correct list of
+            drivers)
+        2. Shutdown all ironic conductor nodes
+        3. Turn on all ironic conductor nodes
+        4. SSH to every conductor and ensure conductor service works fine.
+    """
+
+    controller = env.get_nodes_by_role('controller')[0]
+    with controller.ssh() as remote:
+        with remote.open('/root/openrc') as f:
+            openrc = f.read()
+
+    conductors = env.get_nodes_by_role('ironic')
+    drivers = None
+    for conductor in conductors:
+        with conductor.ssh() as remote:
+            with remote.open('/root/openrc', 'w') as f:
+                f.write(openrc)
+            drivers_data = os_cli.Ironic(remote)('driver-list').listing()
+            assert len(drivers_data) > 0
+            if drivers is None:
+                drivers = drivers_data
+            else:
+                assert drivers == drivers_data
+
+    devops_nodes = [devops_client.DevopsClient.get_node_by_mac(
+                    env_name=env_name, mac=x.data['mac']) for x in conductors]
+
+    for node in devops_nodes:
+        node.destroy()
+
+    for node in devops_nodes:
+        node.start()
+
+    common.wait(lambda: all(x.is_ssh_avaliable() for x in conductors),
+                timeout_seconds=10 * 60, waiting_for='conductor nodes to boot')
+
+    for conductor in conductors:
+        with conductor.ssh() as remote:
+            with remote.open('/root/openrc', 'w') as f:
+                f.write(openrc)
+            ironic = os_cli.Ironic(remote)
+            assert ironic('driver-list').listing() == drivers
