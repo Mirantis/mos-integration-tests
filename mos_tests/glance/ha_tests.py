@@ -16,7 +16,7 @@
 import logging
 
 import pytest
-from tempest_lib.cli import output_parser as parser
+from tempest.lib.cli import output_parser as parser
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.neutron.python_tests.base import TestBase

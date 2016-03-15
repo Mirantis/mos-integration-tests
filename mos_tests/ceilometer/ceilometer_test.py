@@ -16,7 +16,7 @@ import os
 
 import pytest
 
-from tempest_lib.cli import output_parser as parser
+from tempest.lib.cli import output_parser as parser
 
 
 def scripts_dir_path():
@@ -27,14 +27,15 @@ def scripts_dir_path():
 
 @pytest.mark.testrail_id('631854')
 def test_limits_feature(env):
-    """Test case for Ceilometer mandatory limits feature. (QA-2039)
+    """Test case for Ceilometer mandatory limits feature.
+
     Actions:
-    1. Generate data in MongoDB with a help of 'mongo-generator.py';
-    2. Run 'ceilometer meter-list' and check that number of items == 100;
-    3. Run 'ceilometer sample-list' and check that number of items == 100;
-    4. Run 'ceilometer resource-list' and check that number of items == 100;
-    5. Run 'ceilometer event-list --no-traits' and check that number
-        of items == 100;
+        1. Generate data in MongoDB with a help of 'mongo-generator.py'
+        2. Run 'ceilometer meter-list' and check that number of items == 100
+        3. Run 'ceilometer sample-list' and check that number of items == 100
+        4. Run 'ceilometer resource-list' and check that number of items == 100
+        5. Run 'ceilometer event-list --no-traits' and check that number
+            of items == 100
     """
     script_name = 'mongo-generator.py'
     script_path = scripts_dir_path() + script_name

@@ -12,12 +12,15 @@ Contents:
    :maxdepth: 2
 
    mos_tests/common
+   mos_tests/ceilometer
    mos_tests/cinder
+   mos_tests/glance
    mos_tests/heat
    mos_tests/ironic
    mos_tests/murano
    mos_tests/neutron
    mos_tests/nova
+   mos_tests/sahara
 
 
 
