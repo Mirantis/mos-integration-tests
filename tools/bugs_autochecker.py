@@ -49,7 +49,7 @@ lp = Launchpad.login_with('autocheck', 'production', cache_dir)
 def _check_bug(bug):
     check_flag = True
     for check in CHECKS:
-        if check not in bug.description:
+        if check not in bug.description.lower():
             check_flag = False
     if check_flag:
         if TAG in bug.tags:
