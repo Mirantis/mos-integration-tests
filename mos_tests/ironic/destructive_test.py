@@ -112,8 +112,15 @@ def flavor(baremetal_node, os_conn):
     flavor.delete()
 
 
+@pytest.yield_fixture(scope='module')
+def image_file():
+    image_file = common.gen_temp_file(prefix='image', suffix='img')
+    yield image_file
+    image_file.unlink(image_file.name)
+
+
 @pytest.yield_fixture
-def ubuntu_image(os_conn):
+def ubuntu_image(os_conn, image_file):
     image = os_conn.glance.images.create(
         name='ironic_trusty',
         disk_format='raw',
@@ -122,10 +129,18 @@ def ubuntu_image(os_conn):
         cpu_arch='x86_64',
         fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
 
-    src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
-    with tarfile.open(fileobj=src, mode='r|gz') as tar:
-        img = tar.extractfile(tar.firstmember)
-        os_conn.glance.images.upload(image.id, img)
+    if not image_file.file.closed:
+        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
+        with tarfile.open(fileobj=src, mode='r|gz') as tar:
+            img = tar.extractfile(tar.firstmember)
+            while True:
+                data = img.read(1024)
+                if not data:
+                    break
+                image_file.file.write(data)
+            image_file.file.close()
+    with open(image_file.name) as f:
+        os_conn.glance.images.upload(image.id, f)
     src.close()
 
     yield image
@@ -158,12 +173,20 @@ def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
     mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
     port = ironic.port.create(node_uuid=node.uuid, address=mac)
     yield node
+    instance_uuid = ironic.node.get(node.uuid).instance_uuid
+    if instance_uuid:
+        os_conn.nova.servers.delete(instance_uuid)
+        common.wait(lambda: len(os_conn.nova.servers.findall(
+                        id=instance_uuid)) == 0,
+                    timeout_seconds=60, waiting_for='instance to be deleted')
     ironic.port.delete(port.uuid)
     ironic.node.delete(node.uuid)
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
+@pytest.mark.testrail_id('631921', params={'boot_instance_before': False})
+@pytest.mark.testrail_id('631922', params={'boot_instance_before': True})
 @pytest.mark.parametrize('boot_instance_before', [True, False])
 def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
                           flavor, keypair, env_name, boot_instance_before):
@@ -229,14 +252,10 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
-    instance.delete()
-
-    common.wait(lambda: len(os_conn.nova.servers.findall(id=instance.id)) == 0,
-                timeout_seconds=60, waiting_for='instance to be deleted')
-
 
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')
 @pytest.mark.need_devops
+@pytest.mark.testrail_id('638353')
 def test_reboot_all_ironic_conductors(env, env_name):
     """Check ironic state after restart all conductor nodes
 
@@ -285,3 +304,60 @@ def test_reboot_all_ironic_conductors(env, env_name):
                 f.write(openrc)
             ironic = os_cli.Ironic(remote)
             assert ironic('driver-list').listing() == drivers
+
+
+@pytest.mark.check_env_('has_2_or_more_ironic_conductors')
+@pytest.mark.need_devops
+@pytest.mark.testrail_id('675246')
+def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
+                                flavor, keypair, env_name):
+    """Kill ironic-conductor service with one bare-metal node
+
+    Scenario:
+        1. Launch baremetal instance
+        2. Kill Ironic-conductor service for conductor node that had booted
+            instance
+        3. Wait some time
+        4. Baremetal node must be reassigned to another Ironic-conductor
+        5. Run OSTF including Ironic tests.
+        6. Check that Ironic instance still ACTIVE and operable
+    """
+
+    def find_conductor_node(ironic_node_uuid, conductors):
+        cmd = 'ls /var/log/remote/ironic/{0}/'.format(ironic_node_uuid)
+        for conductor in conductors:
+            with conductor.ssh() as remote:
+                result = remote.execute(cmd)
+                if result.is_ok:
+                    return conductor
+
+    baremetal_net = os_conn.nova.networks.find(label='baremetal')
+    instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
+                                     flavor=flavor.id, key_name=keypair.name,
+                                     nics=[{'net-id': baremetal_net.id}],
+                                     timeout=60 * 10)
+
+    conductors = env.get_nodes_by_role('ironic')
+    conductor = find_conductor_node(ironic_node.uuid, conductors)
+    if conductor is None:
+        raise Exception("Can't find conductor node booted istance")
+
+    with conductor.ssh() as remote:
+        remote.check_call('service ironic-conductor stop')
+
+    conductors.remove(conductor)
+    common.wait(lambda: find_conductor_node(
+                    ironic_node.uuid, conductors) not in (conductor, None),
+                timeout_seconds=10 * 60,
+                waiting_for='node to migrate to another conductor',
+                sleep_seconds=20)
+
+    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
+                timeout_seconds=5 * 60,
+                waiting_for='OSTF sanity tests to pass')
+
+    assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
+
+    with os_conn.ssh_to_instance(env, instance, vm_keypair=keypair,
+                                 username='ubuntu') as remote:
+        remote.check_call('uname')
