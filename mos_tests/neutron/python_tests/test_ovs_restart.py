@@ -777,7 +777,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                 on all computes, and enable them back.
             5. Check that all ovs-agents are in alive state
             6. Check that iperf traffic wasn't interrupted during ovs restart,
-                and not more than 10% datagrams are lost
+                and not more than 20% datagrams are lost
         """
         self._prepare_openstack()
         # Launch iperf server on server2
@@ -828,8 +828,8 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         lost = wait(get_lost, timeout_seconds=5 * 60, sleep_seconds=5,
                     waiting_for='interrupt iperf traffic')
 
-        err_msg = "{0}% datagrams lost. Should be < 10%".format(lost)
-        assert lost < 10, err_msg
+        err_msg = "{0}% datagrams lost. Should be < 20%".format(lost)
+        assert lost < 20, err_msg
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
