@@ -17,6 +17,9 @@ import logging
 import pytest
 
 from mos_tests.functions import common
+from mos_tests.functions import os_cli
+from mos_tests.glance.conftest import project  # noqa
+from mos_tests.glance.conftest import user  # noqa
 from mos_tests import settings
 
 
@@ -41,7 +44,13 @@ def chassis(ironic):
     ironic.chassis.delete(chassis.uuid)
 
 
+@pytest.fixture
+def ironic_cli(controller_remote):
+    return os_cli.Ironic(controller_remote)
+
+
 @pytest.mark.testrail_id('631901')
+@pytest.mark.check_env_('has_ironic_conductor')
 def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
                          ironic, cleanup_ironic, chassis):
     """Test CRUD operations for ironic node
@@ -161,3 +170,26 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
                 timeout_seconds=2 * 60, sleep_seconds=10,
                 waiting_for='ironic hypervisor to disappear in nova '
                             'hypervisors list')
+
+
+@pytest.mark.testrail_id('631902')  # noqa
+@pytest.mark.check_env_('has_ironic_conductor')
+def test_use_cli_with_not_admin_permissions(ironic_cli, project, user):
+    """Try to use Ironic CLI with non-admin permissions
+
+    Scenario:
+        1. Create new user
+        2. Run `ironic node-list` with this user credentials
+        3. Check that 'Forbidden (HTTP 403)' in output
+    """
+
+    env = dict(
+        OS_USERNAME=user['name'],
+        OS_PASSWORD='password',
+        OS_PROJECT_NAME=project['name'],
+        OS_TENANT_NAME=project['name']
+    )
+    env_string = ' '.join(['{0}={1}'.format(*item) for item in env.items()])
+    result = ironic_cli('node-list', prefix='env {}'.format(env_string),
+                        fail_ok=True, merge_stderr=True)
+    assert 'Forbidden (HTTP 403)' in result
