@@ -53,22 +53,23 @@ def _check_bug(bug):
             check_flag = False
     if check_flag:
         if TAG in bug.tags:
+            # launchpadlib cannot working with tags like tuples
             tags = bug.tags
             tags.remove(TAG)
             bug.tags = tags
             bug.lp_save()
     else:
         if TAG not in bug.tags:
+            # launchpadlib cannot working with tags like tuples
             bug.tags = bug.tags + [TAG]
             bug.lp_save()
-        flag_comment = True
+        flag_comment = False
         for comment in range(1, bug.message_count):
             if bug.messages[comment].subject is SUBJECT:
-                flag_comment = False
-        if flag_comment:
+                flag_comment = True
+        if not flag_comment:
             bug.newMessage(subject=SUBJECT,
                            content=MESSAGE_FOR_INCOMPLETE)
-
 
 def get_project_bugs(project_name, milestones=[]):
     project = lp.projects[project_name]
@@ -76,10 +77,9 @@ def get_project_bugs(project_name, milestones=[]):
         current_milestone = project.getMilestone(
             name=milestone)
         bugs_for_checking = project.searchTasks(
-            milestone=current_milestone)
+            milestone=current_milestone, status=STATUSES_FOR_CHECK)
         for bug_task in bugs_for_checking:
-            if bug_task.status in STATUSES_FOR_CHECK:
-                bug = lp.bugs[bug_task.web_link.split('/')[-1]]
-                _check_bug(bug)
+            import pdb; pdb.set_trace()
+            _check_bug(bug_task.bug)
 
 get_project_bugs("test-autochecker", ["first-m"])
