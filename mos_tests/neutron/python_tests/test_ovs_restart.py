@@ -31,34 +31,8 @@ logger = logging.getLogger(__name__)
 class OvsBase(TestBase):
     """Common functions for ovs tests"""
 
-    ovs_agent_name = None
-    ovs_agent_service = None
-
-    @pytest.fixture(autouse=True)
-    def detect_ovs_agent_names(self, env):
-        cls = self.__class__
-        if cls.ovs_agent_name is not None:
-            return
-        with env.get_nodes_by_role('controller')[0].ssh() as remote:
-            for name in ['p_neutron-plugin-openvswitch-agent',
-                         'p_neutron-openvswitch-agent']:
-                result = remote.execute('pcs resource show {}'.format(name))
-                if result.is_ok:
-                    cls.ovs_agent_name = name
-                    break
-            else:
-                raise Exception("Can't detect OVS agent name")
-        if cls.ovs_agent_service is not None:
-            return
-        with env.get_nodes_by_role('controller')[0].ssh() as remote:
-            for name in ['neutron-plugin-openvswitch-agent',
-                         'neutron-openvswitch-agent']:
-                result = remote.execute('service {} status'.format(name))
-                if result.is_ok:
-                    cls.ovs_agent_service = name
-                    break
-            else:
-                raise Exception("Can't detect OVS agent name")
+    ovs_agent_name = 'neutron-openvswitch-agent'
+    ovs_agent_service = 'neutron-openvswitch-agent'
 
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
