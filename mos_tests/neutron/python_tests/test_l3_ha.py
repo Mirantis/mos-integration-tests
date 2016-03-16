@@ -306,7 +306,7 @@ class TestL3HA(TestBase):
                 with self.env.get_ssh_to_node(controller_ip) as remote:
                     logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                     remote.check_call(
-                        "pcs resource ban p_neutron-l3-agent {0}".format(
+                        "pcs resource ban neutron-l3-agent {0}".format(
                             node_to_ban))
                     new_agent = self.wait_router_rescheduled(
                         router_id=router['router']['id'],
@@ -326,9 +326,9 @@ class TestL3HA(TestBase):
             3. Boot vm1 in network1
             4. Boot vm2 in network2 and associate floating ip
             5. Add rules for ping
-            6. Disable all p_neutron-l3-agent
+            6. Disable all neutron-l3-agent
             7. Wait until all agents died
-            8. Enable all p_neutron-l3-agent
+            8. Enable all neutron-l3-agent
             9. Wait until all agents alive
             10. Check ping vm2 from vm1 by floating ip
         """
@@ -341,10 +341,10 @@ class TestL3HA(TestBase):
         controller = self.env.get_nodes_by_role('controller')[0]
         with controller.ssh() as remote:
             logger.info('disable all l3 agents')
-            remote.check_call('pcs resource disable p_neutron-l3-agent')
+            remote.check_call('pcs resource disable neutron-l3-agent')
             self.os_conn.wait_agents_down(agent_ids)
             logger.info('enable all l3 agents')
-            remote.check_call('pcs resource enable p_neutron-l3-agent')
+            remote.check_call('pcs resource enable neutron-l3-agent')
             self.os_conn.wait_agents_alive(agent_ids)
 
         self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
@@ -423,13 +423,13 @@ class TestL3HA(TestBase):
             with primary_controller.ssh() as remote:
                 for node in other_controllers:
                     remote.check_call(
-                        'pcs resource ban p_neutron-l3-agent {}'.format(
+                        'pcs resource ban neutron-l3-agent {}'.format(
                             node.data['fqdn']))
                 self.wait_router_migrate(router_id,
                                          primary_controller.data['fqdn'])
                 for node in other_controllers:
                     remote.check_call(
-                        'pcs resource clear p_neutron-l3-agent {}'.format(
+                        'pcs resource clear neutron-l3-agent {}'.format(
                             node.data['fqdn']))
 
         server1 = self.os_conn.nova.servers.find(name="server01")
@@ -514,7 +514,7 @@ class TestL3HA(TestBase):
             with self.env.leader_controller.ssh() as remote:
                 logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                 remote.check_call(
-                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                    "pcs resource ban neutron-l3-agent {0}".format(
                         node_to_ban))
                 new_agent = self.wait_router_rescheduled(
                     router_id=router['router']['id'],
@@ -554,7 +554,7 @@ class TestL3HA(TestBase):
             with self.env.get_ssh_to_node(controller_ip) as remote:
                 logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                 remote.check_call(
-                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                    "pcs resource ban neutron-l3-agent {0}".format(
                         node_to_ban))
                 self.wait_router_rescheduled(
                     router_id=router['router']['id'],
@@ -698,7 +698,7 @@ class TestL3HA(TestBase):
             with controllers[0].ssh() as remote:
                 logger.info("Ban active l3 agent")
                 remote.check_call(
-                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                    "pcs resource ban neutron-l3-agent {0}".format(
                         active_hostname))
                 new_active_agent = self.wait_router_rescheduled(
                     router_id=router['router']['id'],
@@ -734,7 +734,7 @@ class TestL3HA(TestBase):
                     # Ban l3 agents on all controllers
                     # except the one to which it is going to be migrated
                     remote.check_call(
-                        'pcs resource ban p_neutron-l3-agent {}'.format(
+                        'pcs resource ban neutron-l3-agent {}'.format(
                             node.data['fqdn']))
                 # Wait until the agent is migrated
                 # to the destination controller
@@ -742,7 +742,7 @@ class TestL3HA(TestBase):
                                          to_controller.data['fqdn'])
                 for node in other_controllers:
                     remote.check_call(
-                        'pcs resource clear p_neutron-l3-agent {}'.format(
+                        'pcs resource clear neutron-l3-agent {}'.format(
                             node.data['fqdn']))
 
     def check_l3_ha_agent_states(self, router_id):

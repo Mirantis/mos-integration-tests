@@ -28,7 +28,7 @@ def clear_l3_ban(env, os_conn):
     ip = controllers[0].data['ip']
     with env.get_ssh_to_node(ip) as remote:
         for node in controllers:
-            remote.execute("pcs resource clear p_neutron-l3-agent {0}".format(
+            remote.execute("pcs resource clear neutron-l3-agent {0}".format(
                 node.data['fqdn']))
 
 
