@@ -2,7 +2,7 @@
 
 . openrc
 
-screen -S SERVER_SIG -d -m -- sh -c 'tailf /var/log/neutron/server.log > log_server'
+screen -S SERVER_SIG -d -m -- sh -c 'tail -f /var/log/neutron/server.log | tee log_server'
 TEST_FAILED=0
 echo "Get a pid of a process for neutron-server"
 string1=$(pstree -up | grep neutron-server | awk '{print $1}')
