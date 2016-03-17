@@ -14,6 +14,7 @@ Contents:
    mos_tests/common
    mos_tests/cinder
    mos_tests/heat
+   mos_tests/ironic
    mos_tests/murano
    mos_tests/neutron
    mos_tests/nova
