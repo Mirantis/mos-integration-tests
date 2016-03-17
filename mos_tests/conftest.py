@@ -312,16 +312,15 @@ def is_l2pop(env):
     controller = env.get_nodes_by_role('controller')[0]
     with env.get_ssh_to_node(controller.data['ip']) as remote:
         with remote.open('/etc/neutron/plugin.ini') as f:
-            return get_config_option(f, 'l2_population', bool) is True
+            return get_config_option(f, 'l2_population', bool)
 
 
 def is_dvr(env):
     """Env deployed with enabled distributed routers support"""
     controller = env.get_nodes_by_role('controller')[0]
     with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/plugin.ini') as f:
-            return get_config_option(
-                f, 'enable_distributed_routing', bool) is True
+        with remote.open('/etc/neutron/neutron.conf') as f:
+            return get_config_option(f, 'router_distributed', bool)
 
 
 def is_l3_ha(env):
@@ -329,7 +328,7 @@ def is_l3_ha(env):
     controller = env.get_nodes_by_role('controller')[0]
     with env.get_ssh_to_node(controller.data['ip']) as remote:
         with remote.open('/etc/neutron/neutron.conf') as f:
-            return get_config_option(f, 'l3_ha', bool) is True
+            return get_config_option(f, 'l3_ha', bool)
 
 
 @pytest.fixture(autouse=True)
