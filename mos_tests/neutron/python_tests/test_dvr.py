@@ -374,10 +374,10 @@ class TestDVR(TestDVRBase):
                 ip net | grep snat-<id_router> on each controller
             6. Ban other l3-agents
             7. Ban l3-agent on for node with snat:
-                pcs resource ban p_neutron-l3-agent <controller>
+                pcs resource ban neutron-l3-agent <controller>
             8. Wait 10 seconds
             9. Clear l3-agent on for node with snat:
-                pcs resource clear p_neutron-l3-agent <controller>
+                pcs resource clear neutron-l3-agent <controller>
             10. Repeat steps 7-9 `count` times
             11. Check that ping 8.8.8.8 available from vm
         """
@@ -396,10 +396,10 @@ class TestDVR(TestDVRBase):
                 if agent['host'] == controller.data['fqdn']:
                     continue
                 remote.check_call(
-                    'pcs resource ban p_neutron-l3-agent {host}'.format(
+                    'pcs resource ban neutron-l3-agent {host}'.format(
                         **agent))
 
-        cmd = 'pcs resource {{action}} p_neutron-l3-agent {fqdn}'.format(
+        cmd = 'pcs resource {{action}} neutron-l3-agent {fqdn}'.format(
                 **controller.data)
         with controller.ssh() as remote:
             for i in range(1, 41):
@@ -472,7 +472,7 @@ class TestDVR(TestDVRBase):
             5. Find node with snat for router1:
                 ip net | grep snat-<id_router> on each controller
             6. Ban agent on node from previous step:
-                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+                pcs resource ban neutron-l3-agent node-x.domain.tld
             7. Wait some time while snat is rescheduling
             8. Check that snat have moved to another controller
             9. Repest steps 5-8 `count` times
@@ -487,7 +487,7 @@ class TestDVR(TestDVRBase):
 
             with controller_with_snat.ssh() as remote:
                 remote.check_call(
-                    'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                    'pcs resource ban neutron-l3-agent {fqdn}'.format(
                         **controller_with_snat.data))
 
             # Wait for SNAT reschedule
@@ -518,22 +518,22 @@ class TestDVR(TestDVRBase):
             5. Find node with snat for router1:
                 ip net | grep snat-<id_router> on each controller
             6. Ban agent on node from previous step:
-                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+                pcs resource ban neutron-l3-agent node-x.domain.tld
             7. Wait some time while snat is rescheduling
             8. Check that snat have moved to another controller
             9. Find node with snat for router1:
                 ip net | grep snat-<id_router> on each controller
             10. Ban agent on node from previous step:
-                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+                pcs resource ban neutron-l3-agent node-x.domain.tld
             11. Wait some time while snat is rescheduling
             12. Check that snat have moved to another controller
             13. Find node with snat for router1:
                 ip net | grep snat-<id_router> on each controller
             14. Ban agent on node from previous step:
-                pcs resource ban p_neutron-l3-agent node-x.domain.tld
+                pcs resource ban neutron-l3-agent node-x.domain.tld
             15. Wait some time while agent is alive
             16. Clear one agent (last or first):
-                pcs resource clear p_neutron-l3-agent node-<node_id>
+                pcs resource clear neutron-l3-agent node-<node_id>
             17. Wait while agent isn't alive
             18. Check that snat have moved to another controller
             19. Check that ping 8.8.8.8 available from vm
@@ -549,7 +549,7 @@ class TestDVR(TestDVRBase):
                 i=i, node=controller_with_snat))
             with controller_with_snat.ssh() as remote:
                 remote.check_call(
-                    'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                    'pcs resource ban neutron-l3-agent {fqdn}'.format(
                         **controller_with_snat.data))
 
             if i < 2:
@@ -575,7 +575,7 @@ class TestDVR(TestDVRBase):
 
         with node_to_clear.ssh() as remote:
             remote.check_call(
-                'pcs resource clear p_neutron-l3-agent {fqdn}'.format(
+                'pcs resource clear neutron-l3-agent {fqdn}'.format(
                     **node_to_clear.data))
 
             # Wait for SNAT back to node

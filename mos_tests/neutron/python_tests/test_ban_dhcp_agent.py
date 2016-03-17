@@ -75,28 +75,24 @@ class TestBaseDHCPAgent(base.TestBase):
 
         # ban dhcp agent on provided node
         with self.env.get_ssh_to_node(host) as remote:
-            remote.execute(
-                "pcs resource ban p_neutron-dhcp-agent {0}".format(
+            remote.check_call(
+                "pcs resource ban neutron-dhcp-agent {0}".format(
                     node_to_ban))
-
-        logger.info("Ban DHCP agent on node {0}".format(node_to_ban))
 
         # Wait to die banned dhcp agent
         if wait_for_die:
-            err_msg = "Awaiting ban of DHCP agent: {0}"
             wait(
                 lambda: (node_to_ban not in list_dhcp_agents()),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
-                waiting_for=err_msg.format(node_to_ban))
+                waiting_for='DHCP agent on {0} to ban'.format(node_to_ban))
         # Wait to reschedule dhcp agent
         if wait_for_rescheduling:
-            err_msg = "New DHCP agent wasn't rescheduled"
             wait(
                 lambda: (set(list_dhcp_agents()) - set(current_agents)),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
-                waiting_for=err_msg)
+                waiting_for="DHCP agent to reschedule")
         return node_to_ban
 
     def clear_dhcp_agent(self, node_to_clear, host, network_name=None,
@@ -120,21 +116,18 @@ class TestBaseDHCPAgent(base.TestBase):
 
         # clear dhcp agent on provided node
         with self.env.get_ssh_to_node(host) as remote:
-            remote.execute(
-                "pcs resource clear p_neutron-dhcp-agent {0}".format(
+            remote.check_call(
+                "pcs resource clear neutron-dhcp-agent {0}".format(
                     node_to_clear))
-
-        logger.info("Clear DHCP agent on node {0}".format(node_to_clear))
 
         # Wait to reschedule dhcp agent
         if wait_for_rescheduling:
-            err_msg = (
-                "Wait for DHCP agent ({0}) rescheduling after clear from ban")
             wait(
                 lambda: (node_to_clear in list_dhcp_agents()),
                 timeout_seconds=60 * 3,
                 sleep_seconds=(1, 60, 5),
-                waiting_for=err_msg.format(node_to_clear))
+                waiting_for="DHCP agent {0} to reschedule".format(
+                    node_to_clear))
         return node_to_clear
 
     def kill_dnsmasq(self, host):
@@ -237,7 +230,7 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
             6. Look on what DHCP-agents chosen network is:
                neutron dhcp-agent-list-hosting-net <network_name>
             7. Ban one DHCP-agent on what chosen network is:
-               pcs resource ban p_neutron-dhcp-agent <node>
+               pcs resource ban neutron-dhcp-agent <node>
             8. Run dhcp-client in instance's console: sudo cirros-dhcpc up eth0
             9. Check that this network is on other dhcp-agent and
                other health dhcp-agent:
@@ -286,8 +279,8 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
             6. Look on what DHCP-agents chosen network is:
                neutron dhcp-agent-list-hosting-net <network_name>
             7. Ban both DHCP-agent on what chosen network is:
-               pcs resource ban p_neutron-dhcp-agent <node1>
-               pcs resource ban p_neutron-dhcp-agent <node2>
+               pcs resource ban neutron-dhcp-agent <node1>
+               pcs resource ban neutron-dhcp-agent <node2>
             8. Check that network is on other DHCP-agent(s)
             9. Ban other DHCP-agent(s)
             10. Clear last banned DHCP-agent
@@ -382,22 +375,22 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
             6. Look on what DHCP-agents chosen network is:
                ``neutron dhcp-agent-list-hosting-net <network_name>``
             7. Clear all DHCP-agents on all controllers:
-               ``pcs resource clear p_neutron-dhcp-agent node-1``
-               ``pcs resource clear p_neutron-dhcp-agent node-2``
-               ``pcs resource clear p_neutron-dhcp-agent node-3``
+               ``pcs resource clear neutron-dhcp-agent node-1``
+               ``pcs resource clear neutron-dhcp-agent node-2``
+               ``pcs resource clear neutron-dhcp-agent node-3``
             8. Ban DHCP-agent on what chosen network is NOT and wait it dies:
                from primary controller:
-               ``pcs resource ban p_neutron-dhcp-agent node-3``
+               ``pcs resource ban neutron-dhcp-agent node-3``
                from node-3:
                ``killall dnsmasq``
             9. Kill other DHCP-agents on which instance's net is
                without waiting from primary controller:
-               ``pcs resource ban p_neutron-dhcp-agent node-1``
-               ``pcs resource ban p_neutron-dhcp-agent node-2``
+               ``pcs resource ban neutron-dhcp-agent node-1``
+               ``pcs resource ban neutron-dhcp-agent node-2``
                from node-1 and node-2:
                ``killall dnsmasq``
             10. Unban(clear) first banned DHCP-agent and wait it get up:
-                ``pcs resource clear p_neutron-dhcp-agent node-3``
+                ``pcs resource clear neutron-dhcp-agent node-3``
             11. Repeat 7-11 steps for 18 times
             12. Run dhcp-client in instance's console:
                 ``sudo cirros-dhcpc up eth0``
@@ -501,11 +494,11 @@ class TestBanDHCPAgent(TestBaseDHCPAgent):
             6. Look on what DHCP-agents chosen network is:
                ``neutron dhcp-agent-list-hosting-net <network_name>``
             7. Ban DHCP-agent on what chosen network is NOT and wait it dies:
-               ``pcs resource ban p_neutron-dhcp-agent node-3``
+               ``pcs resource ban neutron-dhcp-agent node-3``
             8. Ban one of DHCP-agents on which instance's net is:
-               ``pcs resource ban p_neutron-dhcp-agent node-1``
+               ``pcs resource ban neutron-dhcp-agent node-1``
             9. Unban (clear) last banned DHCP-agent and wait it get up:
-                ``pcs resource clear p_neutron-dhcp-agent node-1``
+                ``pcs resource clear neutron-dhcp-agent node-1``
             10. Repeat 8-10 steps for 40 times
             11. Run dhcp-client in instance's console:
                 ``sudo cirros-dhcpc up eth0``
@@ -663,7 +656,7 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
                 param=param, value=value, path=path)
         )
         restart_service = "service neutron-server restart"
-        res = remote.execute(
+        res = remote.check_call(
             '{} && {}'.format(param_change_value, restart_service))
         logger.info(
             'Applied new neutron config value {} for param {}'.format(value,
@@ -694,12 +687,11 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
                     'stdout {stdout}, stderr {stderr}').format(**res)
                 assert 0 == res['exit_code'], error_msg
 
-        wait_msg = "Waiting for neutron is up"
         wait(
             lambda: _check_neutron_restart(),
             timeout_seconds=60 * 3,
             sleep_seconds=(1, 60, 5),
-            waiting_for=wait_msg)
+            waiting_for='neutron to be up')
 
         self._prepare_openstack_state()
 
@@ -725,16 +717,16 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
             7. Look on what DHCP-agents chosen network is:
                ``neutron dhcp-agent-list-hosting-net <network_name>``
             8. Ban DHCP-agent on which instance's net is:
-               ``pcs resource ban p_neutron-dhcp-agent node-x``
+               ``pcs resource ban neutron-dhcp-agent node-x``
             9. Run dhcp-client in instance's console:
                ``sudo cirros-dhcpc up eth0``
             10. Repeat previous 3 steps two times.
             11. Check that all networks is on last dhcp-agent:
                 ``neutron net-list-on-dhcp-agent <id_clr_agnt>``
             12. Ban last DHCP-agent on which instance's net is:
-                ``pcs resource ban p_neutron-dhcp-agent node-3``
+                ``pcs resource ban neutron-dhcp-agent node-3``
             13. Clear first banned DHCP-agent
-                ``pcs resource clear p_neutron-dhcp-agent node-1``
+                ``pcs resource clear neutron-dhcp-agent node-1``
             14. Check that all networks is on cleared dhcp-agent:
                 ``neutron net-list-on-dhcp-agent <id_clr_agnt>|grep net|wc -l``
             15. Run dhcp-client in instance's console:
