@@ -11,12 +11,75 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-"""Virtual test env setup and so on."""
+
 import logging
 
 from devops.models import Environment
 
 logger = logging.getLogger(__name__)
+
+
+class EnvProxy(object):
+    """Devops environment proxy model with some helpful methods"""
+
+    def __init__(self, env):
+        self._env = env
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+    def add_node(self, name, memory=1024, vcpu=1, networks=None, disks=(),
+                 role='fuel_slave'):
+        """Add new slave node to cluster
+
+        :param name: name of node
+        :param memory: memory in MB
+        :param vcpu: CPU count
+        :param networks: names of networks to assign to node. If None - will
+            assign default networks (admin, private, public, storage,
+            management)
+        :type networks: tuple or list or None
+        :param disks: sizes of disk devices in GB to attach to node
+        :param role: may be one of fuel_maste, fuel_slave, ironic_slave
+        :return: created and started Node object
+        :rtype: devops.models.node.Node
+        """
+        node = self._env.add_node(vcpu=vcpu, memory=memory, name=name,
+                                  role=role)
+        for i, size in enumerate(disks, 1):
+            disk_dev = self._env.add_empty_volume(
+                node, '{name}_drive{i}'.format(name=name, i=i),
+                size * (1024 ** 3))
+            disk_dev.volume.define()
+        node.attach_to_networks(networks)
+        node.define()
+        node.start()
+
+        return node
+
+    def del_node(self, node):
+        """Add new slave node to cluster
+
+        :param node: node object to destroy and delete
+        :type node: devops.models.node.Node
+        """
+        node.destroy()
+        for disk in node.disk_devices:
+            disk.volume.erase()
+            disk.delete()
+        node.erase()
+
+    def get_node_by_mac(self, mac, interface='admin'):
+        """Return devops node by mac
+
+        :return: matched node
+        :rtype: devops.models.node.Node
+        """
+        for node in self.nodes().all:
+            interfaces = node.interface_by_network_name(interface)
+            mac_addresses = [x.mac_address for x in interfaces]
+            if mac in mac_addresses:
+                return node
 
 
 class DevopsClient(object):
@@ -26,7 +89,7 @@ class DevopsClient(object):
     def get_env(cls, env_name):
         """Find and return env by name."""
         try:
-            return Environment.get(name=env_name)
+            return EnvProxy(Environment.get(name=env_name))
         except Exception as e:
             logger.error('failed to find the last created environment{}'.
                          format(e))
@@ -76,11 +139,7 @@ class DevopsClient(object):
     @classmethod
     def get_node_by_mac(cls, env_name, mac, interface='admin'):
         env = cls.get_env(env_name=env_name)
-        for node in env.nodes().slaves:
-            interfaces = node.interface_by_network_name(interface)
-            mac_addresses = [x.mac_address for x in interfaces]
-            if mac in mac_addresses:
-                return node
+        return env.get_node_by_mac(mac, interface)
 
     @classmethod
     def get_devops_node(cls, node_name='', env_name=''):

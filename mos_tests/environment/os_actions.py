@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class OpenStackActions(object):
+    """OpenStack base services clients and helper actions"""
 
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None, env=None):

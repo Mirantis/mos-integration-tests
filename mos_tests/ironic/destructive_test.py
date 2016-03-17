@@ -12,107 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
-import tarfile
 import time
 
 import pytest
-from six.moves import urllib
 
 from mos_tests.environment import devops_client
 from mos_tests.functions import common
 from mos_tests.functions import os_cli
-from mos_tests import settings
-
-
-@pytest.yield_fixture
-def keypair(os_conn):
-    keypair = os_conn.create_key(key_name='ironic-key')
-    yield keypair
-    os_conn.delete_key(key_name=keypair.name)
-
-
-@pytest.yield_fixture
-def flavor(baremetal_node, os_conn):
-    flavor = os_conn.nova.flavors.create(name=baremetal_node.name,
-                                         ram=baremetal_node.memory,
-                                         vcpus=baremetal_node.vcpu,
-                                         disk=settings.IRONIC_DISK_GB)
-
-    yield flavor
-
-    flavor.delete()
-
-
-@pytest.yield_fixture(scope='module')
-def image_file():
-    image_file = common.gen_temp_file(prefix='image', suffix='img')
-    yield image_file
-    image_file.unlink(image_file.name)
-
-
-@pytest.yield_fixture
-def ubuntu_image(os_conn, image_file):
-    image = os_conn.glance.images.create(
-        name='ironic_trusty',
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
-
-    if not image_file.file.closed:
-        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            while True:
-                data = img.read(1024)
-                if not data:
-                    break
-                image_file.file.write(data)
-            image_file.file.close()
-    with open(image_file.name) as f:
-        os_conn.glance.images.upload(image.id, f)
-    src.close()
-
-    yield image
-    os_conn.glance.images.delete(image.id)
-
-
-@pytest.yield_fixture
-def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
-
-    def get_image(name):
-        return os_conn.nova.images.find(name=name)
-
-    driver_info = {
-        'ssh_address': server_ssh_credentials['ip'],
-        'ssh_username': server_ssh_credentials['username'],
-        'ssh_key_contents': server_ssh_credentials['key'],
-        'ssh_virt_type': 'virsh',
-        'deploy_kernel': get_image('ironic-deploy-linux').id,
-        'deploy_ramdisk': get_image('ironic-deploy-initramfs').id,
-        'deploy_squashfs': get_image('ironic-deploy-squashfs').id,
-    }
-    properties = {
-        'cpus': baremetal_node.vcpu,
-        'memory_mb': baremetal_node.memory,
-        'local_gb': settings.IRONIC_DISK_GB,
-        'cpu_arch': 'x86_64',
-    }
-    node = ironic.node.create(driver='fuel_ssh', driver_info=driver_info,
-                              properties=properties)
-    mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
-    port = ironic.port.create(node_uuid=node.uuid, address=mac)
-    yield node
-    instance_uuid = ironic.node.get(node.uuid).instance_uuid
-    if instance_uuid:
-        os_conn.nova.servers.delete(instance_uuid)
-        common.wait(lambda: len(os_conn.nova.servers.findall(
-                        id=instance_uuid)) == 0,
-                    timeout_seconds=60, waiting_for='instance to be deleted')
-    ironic.port.delete(port.uuid)
-    ironic.node.delete(node.uuid)
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
@@ -134,36 +40,34 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
         7. Boot new Ironic instance (if not `boot_instance_before`).
     """
 
-    def boot_instance():
-        baremetal_net = os_conn.nova.networks.find(label='baremetal')
-        return os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
-                                     flavor=flavor.id, key_name=keypair.name,
-                                     nics=[{'net-id': baremetal_net.id}],
-                                     timeout=60 * 10)
-
     if boot_instance_before:
-        instance = boot_instance()
+        instance = ironic.boot_instance(image=ubuntu_image,
+                                        flavor=flavor,
+                                        keypair=keypair)
 
     conductor = env.get_nodes_by_role('ironic')[0]
 
     devops_node = devops_client.DevopsClient.get_node_by_mac(
-        env_name=env_name, mac=conductor.data['mac'])
+        env_name=env_name,
+        mac=conductor.data['mac'])
     devops_node.reset()
 
     time.sleep(10)
 
-    common.wait(conductor.is_ssh_avaliable, timeout_seconds=60 * 5,
+    common.wait(conductor.is_ssh_avaliable,
+                timeout_seconds=60 * 5,
                 sleep_seconds=20,
                 waiting_for='ironic conductor node to reboot')
 
     def is_ironic_available():
         try:
-            ironic.driver.list()
+            ironic.client.driver.list()
             return True
         except Exception:
             return False
 
-    common.wait(is_ironic_available, timeout_seconds=60 * 5,
+    common.wait(is_ironic_available,
+                timeout_seconds=60 * 5,
                 sleep_seconds=20,
                 waiting_for='ironic conductor service to start')
 
@@ -180,7 +84,9 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
             ironic_cli(cmd)
 
     if not boot_instance_before:
-        instance = boot_instance()
+        instance = ironic.boot_instance(image=ubuntu_image,
+                                        flavor=flavor,
+                                        keypair=keypair)
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
@@ -219,7 +125,8 @@ def test_reboot_all_ironic_conductors(env, env_name):
                 assert drivers == drivers_data
 
     devops_nodes = [devops_client.DevopsClient.get_node_by_mac(
-                    env_name=env_name, mac=x.data['mac']) for x in conductors]
+        env_name=env_name,
+        mac=x.data['mac']) for x in conductors]
 
     for node in devops_nodes:
         node.destroy()
@@ -228,21 +135,22 @@ def test_reboot_all_ironic_conductors(env, env_name):
         node.start()
 
     common.wait(lambda: all(x.is_ssh_avaliable() for x in conductors),
-                timeout_seconds=10 * 60, waiting_for='conductor nodes to boot')
+                timeout_seconds=10 * 60,
+                waiting_for='conductor nodes to boot')
 
     for conductor in conductors:
         with conductor.ssh() as remote:
             with remote.open('/root/openrc', 'w') as f:
                 f.write(openrc)
-            ironic = os_cli.Ironic(remote)
-            assert ironic('driver-list').listing() == drivers
+            ironic_cli = os_cli.Ironic(remote)
+            assert ironic_cli('driver-list').listing() == drivers
 
 
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('675246')
 def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
-                                flavor, keypair, env_name):
+                                flavor, keypair, env_name, ironic):
     """Kill ironic-conductor service with one bare-metal node
 
     Scenario:
@@ -263,11 +171,9 @@ def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
                 if result.is_ok:
                     return conductor
 
-    baremetal_net = os_conn.nova.networks.find(label='baremetal')
-    instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
-                                     flavor=flavor.id, key_name=keypair.name,
-                                     nics=[{'net-id': baremetal_net.id}],
-                                     timeout=60 * 10)
+    instance = ironic.boot_instance(image=ubuntu_image,
+                                    flavor=flavor,
+                                    keypair=keypair)
 
     conductors = env.get_nodes_by_role('ironic')
     conductor = find_conductor_node(ironic_node.uuid, conductors)
@@ -278,11 +184,12 @@ def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
         remote.check_call('service ironic-conductor stop')
 
     conductors.remove(conductor)
-    common.wait(lambda: find_conductor_node(
-                    ironic_node.uuid, conductors) not in (conductor, None),
-                timeout_seconds=10 * 60,
-                waiting_for='node to migrate to another conductor',
-                sleep_seconds=20)
+    common.wait(
+        lambda: (find_conductor_node(ironic_node.uuid, conductors)
+                 not in (conductor, None)),  # yapf: disable
+        timeout_seconds=10 * 60,
+        waiting_for='node to migrate to another conductor',
+        sleep_seconds=20)
 
     common.wait(lambda: env.is_ostf_tests_pass('sanity'),
                 timeout_seconds=5 * 60,
@@ -290,6 +197,8 @@ def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
-    with os_conn.ssh_to_instance(env, instance, vm_keypair=keypair,
+    with os_conn.ssh_to_instance(env,
+                                 instance,
+                                 vm_keypair=keypair,
                                  username='ubuntu') as remote:
         remote.check_call('uname')

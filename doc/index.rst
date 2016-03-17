@@ -12,6 +12,7 @@ Contents:
    :maxdepth: 2
 
    mos_tests/common
+   mos_tests/environment
    mos_tests/ceilometer
    mos_tests/cinder
    mos_tests/glance
