@@ -1,43 +1,21 @@
 from launchpadlib.launchpad import Launchpad
 
 STATUSES_FOR_CHECK = ["Incomplete", "Confirmed", "New"]
-CHECKS = ["iso", "env", "expected result", "actual result"]
+CHECKS = {
+    "version": ["iso", "env", "version"],
+    "expected result": ["expected result"],
+    "steps to reproduce": ["steps to reproduce"],
+    "actual result": ["actual result"]
+}
 SUBJECT = 'Autochecker'
 MESSAGE_FOR_INCOMPLETE = (
-    "Attention: \n"
-    "field 'Further information' needs corrections as it contains not all "
-    "the data required for effective reproducing, investigation, and fixing "
-    "the issue you reported. \n"
-    "Please, make sure that this field contains the following sections filled "
-    "in with the appropriate data related to the bug you are describing: \n\n"
-    "Detailed bug description:\n"
-    " <put your information here>\n"
-    "Steps to reproduce:\n"
-    " <put your information here>\n"
-    "Expected results:\n"
-    " <put your information here>\n"
-    "Actual result:\n"
-    " <put your information here>\n"
-    "Reproducibility:\n"
-    " <put your information here>\n"
-    "Workaround:\n"
-    " <put your information here>\n"
-    "Impact:\n"
-    " <put your information here>\n"
-    "Description of the environment: \n"
-    "- Operation system: <put your information here>\n"
-    "- Versions of components: <put your information here>\n"
-    "- Reference architecture: <put your information here>\n"
-    "- Network model: <put your information here>\n"
-    "- Related projects installed: <put your information here>\n"
-    "Additional information:\n"
-    " <put your information here>\n\n"
+    "(This check performed automatically)\n"
+    "Please, make sure that bug description contains the following sections "
+    "filled in with the appropriate data related to the bug you are "
+    "describing: \n\n%s\n\n"
     "For more detailed information on the contents of each of the listed "
     "sections see https://wiki.openstack.org/wiki/Fuel/How_to_contribute#"
-    "Here_is_how_you_file_a_bug\n"
-    "Remember: lack of provided information will lead to decreasing priority "
-    "of the bug and substantial delays with defect fixing.\n")
-
+    "Here_is_how_you_file_a_bug\n")
 
 TAG = 'need-info'
 
@@ -47,29 +25,51 @@ lp = Launchpad.login_with('autocheck', 'production', cache_dir)
 
 
 def _check_bug(bug):
-    check_flag = True
+    incomplete = []
     for check in CHECKS:
-        if check not in bug.description.lower():
-            check_flag = False
-    if check_flag:
+        current_check = CHECKS[check]
+        for field in current_check:
+            if field not in bug.description.lower():
+                incomplete.append("%s\n" % check)
+            break
+    if not incomplete:
         if TAG in bug.tags:
-            # launchpadlib cannot working with tags like tuples
-            tags = bug.tags
-            tags.remove(TAG)
-            bug.tags = tags
-            bug.lp_save()
+            _remove_tag(bug)
     else:
         if TAG not in bug.tags:
-            # launchpadlib cannot working with tags like tuples
-            bug.tags = bug.tags + [TAG]
-            bug.lp_save()
-        flag_comment = False
-        for comment in range(1, bug.message_count):
-            if bug.messages[comment].subject is SUBJECT:
-                flag_comment = True
-        if not flag_comment:
-            bug.newMessage(subject=SUBJECT,
-                           content=MESSAGE_FOR_INCOMPLETE)
+            _add_tag(bug)
+            _post_comment(bug, incomplete)
+
+
+def _generate_string(array_fields):
+    msg = ''
+    for field in array_fields:
+        msg += '%s\n' % field
+    return MESSAGE_FOR_INCOMPLETE % msg
+
+
+# launchpadlib cannot working with tags like tuples
+def _add_tag(bug):
+    bug.tags = bug.tags + [TAG]
+    bug.lp_save()
+
+
+def _remove_tag(bug):
+    tags = bug.tags
+    tags.remove(TAG)
+    bug.tags = tags
+    bug.lp_save()
+
+
+def _post_comment(bug, fields):
+    flag_comment = False
+    for comment in range(1, bug.message_count):
+        if bug.messages[comment].subject is SUBJECT:
+            flag_comment = True
+    if not flag_comment:
+        bug.newMessage(subject=SUBJECT,
+                       content=_generate_string(fields))
+
 
 def get_project_bugs(project_name, milestones=[]):
     project = lp.projects[project_name]
@@ -79,7 +79,10 @@ def get_project_bugs(project_name, milestones=[]):
         bugs_for_checking = project.searchTasks(
             milestone=current_milestone, status=STATUSES_FOR_CHECK)
         for bug_task in bugs_for_checking:
-            import pdb; pdb.set_trace()
             _check_bug(bug_task.bug)
 
-get_project_bugs("test-autochecker", ["first-m"])
+
+if __name__=='__main__':
+    test_milestone = ['9.0']
+    get_project_bugs("fuel", test_milestone)
+    get_project_bugs("mos", test_milestone)
