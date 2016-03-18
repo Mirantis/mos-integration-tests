@@ -751,3 +751,21 @@ class OpenStackActions(object):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
         with self._get_controller().ssh() as remote:
             return os_cli.OpenStack(remote).user_delete(name=name)
+
+    def server_hard_reboot(self, server):
+        try:
+            self.nova.servers.reboot(server.id, reboot_type='HARD')
+        except NovaClientException:
+            logger.info("nova server {} can't be rebooted".format(server))
+
+    def server_start(self, server):
+        try:
+            self.nova.servers.start(server.id)
+        except NovaClientException:
+            logger.info("nova server {} can't be started".format(server))
+
+    def server_stop(self, server):
+        try:
+            self.nova.servers.stop(server.id)
+        except NovaClientException:
+            logger.info("nova server {} can't be stopped".format(server))
