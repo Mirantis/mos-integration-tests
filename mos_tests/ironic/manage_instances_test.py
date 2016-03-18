@@ -139,6 +139,7 @@ def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
                                      flavor=flavor.id, key_name=keypair.name,
                                      nics=[{'net-id': baremetal_net.id}],
                                      timeout=60 * 10)
+
     instance.delete()
     common.wait(lambda: not os_conn.nova.servers.list().count(instance),
                 timeout_seconds=60, waiting_for="instance is terminated")
