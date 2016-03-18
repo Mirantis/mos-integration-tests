@@ -17,22 +17,20 @@ import pytest
 from mos_tests.functions import common
 
 
-@pytest.yield_fixture
+@pytest.fixture
 def instance(os_conn, ubuntu_image, flavor, keypair):
     baremetal_net = os_conn.nova.networks.find(label='baremetal')
     instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
                                      flavor=flavor.id, key_name=keypair.name,
                                      nics=[{'net-id': baremetal_net.id}],
                                      timeout=60 * 10)
-    yield instance
-    instance.delete()
+    return instance
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
-@pytest.mark.need_devops
 @pytest.mark.testrail_id('631920')
 def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
-                            flavor, keypair):
+                            flavor, keypair, instance):
     """Check terminate instance
 
     Scenario:
@@ -40,20 +38,12 @@ def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
         2. Terminate Ironic instance
         3. Wait and check that instance not present in nova list
     """
-
-    baremetal_net = os_conn.nova.networks.find(label='baremetal')
-    instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
-                                     flavor=flavor.id, key_name=keypair.name,
-                                     nics=[{'net-id': baremetal_net.id}],
-                                     timeout=60 * 10)
-
     instance.delete()
     common.wait(lambda: not os_conn.nova.servers.list().count(instance),
                 timeout_seconds=60, waiting_for="instance is terminated")
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
-@pytest.mark.need_devops
 @pytest.mark.testrail_id('631919')
 def test_instance_rebuild(env, ironic, os_conn, ironic_node, ubuntu_image,
                           flavor, keypair, instance):
