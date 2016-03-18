@@ -90,12 +90,6 @@ def image_file(request):
         yield f.name
 
 
-@pytest.yield_fixture
-def controller_remote(env):
-    with env.get_nodes_by_role('controller')[0].ssh() as remote:
-        yield remote
-
-
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)

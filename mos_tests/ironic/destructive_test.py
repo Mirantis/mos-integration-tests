@@ -13,14 +13,9 @@
 #    under the License.
 
 import json
-import os
-import shutil
-import socket
 import tarfile
 import time
 
-from Crypto.PublicKey import RSA
-from ironicclient import client
 import pytest
 from six.moves import urllib
 
@@ -31,73 +26,10 @@ from mos_tests import settings
 
 
 @pytest.yield_fixture
-def server_ssh_credentials():
-    # determine server ip
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 53))
-    server_ip = s.getsockname()[0]
-    s.close()
-
-    # backup original authorized_keys file
-    ssh_folder = os.path.expanduser('~/.ssh')
-    if not os.path.exists(ssh_folder):
-        os.mkdir(ssh_folder)
-    authorized_keys = os.path.join(ssh_folder, 'authorized_keys')
-    authorized_keys_backup = os.path.join(ssh_folder, 'authorized_keys.backup')
-    if os.path.exists(authorized_keys):
-        shutil.copy(authorized_keys, authorized_keys_backup)
-
-    # make ssh key pair
-    key = RSA.generate(2048)
-    with open(authorized_keys, 'a+') as f:
-        f.write(key.publickey().exportKey('OpenSSH'))
-        f.write('\n')
-
-    credentials = {
-        'username': os.getlogin(),
-        'ip': server_ip,
-        'key': key.exportKey('PEM')
-    }
-
-    yield credentials
-
-    # revert authorized_keys
-    os.unlink(authorized_keys)
-    if os.path.exists(authorized_keys_backup):
-        shutil.move(authorized_keys_backup, authorized_keys)
-
-
-@pytest.yield_fixture
 def keypair(os_conn):
     keypair = os_conn.create_key(key_name='ironic-key')
     yield keypair
     os_conn.delete_key(key_name=keypair.name)
-
-
-@pytest.fixture
-def ironic(os_conn):
-    token = os_conn.keystone.auth_token
-    ironic_endpoint = os_conn.keystone.service_catalog.url_for(
-        service_type='baremetal', endpoint_type='publicURL')
-    return client.get_client(api_version=1, os_auth_token=token,
-                             ironic_url=ironic_endpoint)
-
-
-@pytest.yield_fixture
-def baremetal_node(env_name, suffix):
-    devops_env = devops_client.DevopsClient.get_env(env_name=env_name)
-    node = devops_env.add_node(
-        memory=1024, name='baremetal_{}'.format(suffix[:4]))
-    disk = node.attach_disk('system', settings.IRONIC_DISK_GB * (1024 ** 3))
-    disk.volume.define()
-    node.attach_to_networks(['baremetal'])
-    node.define()
-    node.start()
-    yield node
-    node.destroy()
-    node.erase()
-    disk.volume.erase()
-    disk.delete()
 
 
 @pytest.yield_fixture
