@@ -12,121 +12,26 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
-import tarfile
-
 import pytest
-from six.moves import urllib
 
 from mos_tests.functions import common
-from mos_tests import settings
 
 
-@pytest.yield_fixture
-def keypair(os_conn):
-    keypair = os_conn.create_key(key_name='ironic-key')
-    yield keypair
-    os_conn.delete_key(key_name=keypair.name)
-
-
-@pytest.yield_fixture
-def flavor(baremetal_node, os_conn):
-    flavor = os_conn.nova.flavors.create(name=baremetal_node.name,
-                                         ram=baremetal_node.memory,
-                                         vcpus=baremetal_node.vcpu,
-                                         disk=settings.IRONIC_DISK_GB)
-
-    yield flavor
-
-    flavor.delete()
-
-
-@pytest.yield_fixture(scope='module')
-def image_file():
-    image_file = common.gen_temp_file(prefix='image', suffix='img')
-    yield image_file
-    image_file.unlink(image_file.name)
-
-
-@pytest.yield_fixture
-def ubuntu_image(os_conn, image_file):
-    image = os_conn.glance.images.create(
-        name='ironic_trusty',
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
-
-    if not image_file.file.closed:
-        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            while True:
-                data = img.read(1024)
-                if not data:
-                    break
-                image_file.file.write(data)
-            image_file.file.close()
-    with open(image_file.name) as f:
-        os_conn.glance.images.upload(image.id, f)
-    src.close()
-
-    yield image
-    os_conn.glance.images.delete(image.id)
-
-
-@pytest.yield_fixture
-def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
-
-    def get_image(name):
-        return os_conn.nova.images.find(name=name)
-
-    driver_info = {
-        'ssh_address': server_ssh_credentials['ip'],
-        'ssh_username': server_ssh_credentials['username'],
-        'ssh_key_contents': server_ssh_credentials['key'],
-        'ssh_virt_type': 'virsh',
-        'deploy_kernel': get_image('ironic-deploy-linux').id,
-        'deploy_ramdisk': get_image('ironic-deploy-initramfs').id,
-        'deploy_squashfs': get_image('ironic-deploy-squashfs').id,
-    }
-    properties = {
-        'cpus': baremetal_node.vcpu,
-        'memory_mb': baremetal_node.memory,
-        'local_gb': settings.IRONIC_DISK_GB,
-        'cpu_arch': 'x86_64',
-    }
-    node = ironic.node.create(driver='fuel_ssh', driver_info=driver_info,
-                              properties=properties)
-    mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
-    port = ironic.port.create(node_uuid=node.uuid, address=mac)
-    yield node
-    instance_uuid = ironic.node.get(node.uuid).instance_uuid
-    if instance_uuid:
-        os_conn.nova.servers.delete(instance_uuid)
-        common.wait(lambda: len(os_conn.nova.servers.findall(
-                        id=instance_uuid)) == 0,
-                    timeout_seconds=60, waiting_for='instance to be deleted')
-    ironic.port.delete(port.uuid)
-    ironic.node.delete(node.uuid)
-
-
-@pytest.yield_fixture
+@pytest.fixture
 def instance(os_conn, ubuntu_image, flavor, keypair):
     baremetal_net = os_conn.nova.networks.find(label='baremetal')
     instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
                                      flavor=flavor.id, key_name=keypair.name,
                                      nics=[{'net-id': baremetal_net.id}],
                                      timeout=60 * 10)
-    yield instance
-    instance.delete()
+    return instance
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
+@pytest.mark.testrail_id('631916')
 def test_instance_hard_reboot(env, ironic, os_conn, ironic_node, ubuntu_image,
-                              flavor, keypair, env_name, instance):
+                              flavor, keypair, instance):
     """Check instance state after hard reboot
 
     Scenario:
@@ -148,16 +53,19 @@ def test_instance_hard_reboot(env, ironic, os_conn, ironic_node, ubuntu_image,
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
-def test_instance_restart(env, ironic, os_conn, ironic_node, ubuntu_image,
-                          flavor, keypair, env_name, instance):
+@pytest.mark.testrail_id('631917', params={'start_instance': False})
+@pytest.mark.testrail_id('631918', params={'start_instance': True})
+@pytest.mark.parametrize('start_instance', [True, False])
+def test_instance_stop_start(env, ironic, os_conn, ironic_node, ubuntu_image,
+                          flavor, keypair, instance, start_instance):
     """Check instance statuses during instance restart
 
     Scenario:
         1. Boot Ironic instance
-        2. Shut down Ironic instance.
+        2. Shut down Ironic instance
         3. Check Ironic instance status
-        4. Start Ironic instance.
-        5. Check that instance is back in ACTIVE status
+        4. Start Ironic instance (if 'start_instance')
+        5. Check that instance is back in ACTIVE status (if 'start_instance')
     """
 
     os_conn.server_stop(instance)
@@ -172,14 +80,15 @@ def test_instance_restart(env, ironic, os_conn, ironic_node, ubuntu_image,
     assert getattr(os_conn.nova.servers.get(instance.id),
                    "OS-EXT-STS:vm_state") == 'stopped'
 
-    os_conn.server_start(instance)
+    if start_instance:
+        os_conn.server_start(instance)
 
-    def is_instance_active():
-        return os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
+        def is_instance_active():
+            return os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
-    common.wait(is_instance_active, timeout_seconds=60 * 5,
-                sleep_seconds=20,
-                waiting_for="instance's state is ACTIVE after start")
+        common.wait(is_instance_active, timeout_seconds=60 * 5,
+                    sleep_seconds=20,
+                    waiting_for="instance's state is ACTIVE after start")
 
-    assert getattr(os_conn.nova.servers.get(instance.id),
-                   "OS-EXT-STS:vm_state") == 'active'
+        assert getattr(os_conn.nova.servers.get(instance.id),
+                       "OS-EXT-STS:vm_state") == 'active'
