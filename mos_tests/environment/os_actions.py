@@ -751,3 +751,9 @@ class OpenStackActions(object):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
         with self._get_controller().ssh() as remote:
             return os_cli.OpenStack(remote).user_delete(name=name)
+
+    def rebuild_server(self, server, image):
+        srv = server.rebuild(image)
+        wait(lambda: self.nova.servers.get(srv).status == 'REBUILD',
+             timeout_seconds=60, waiting_for='start of instance rebuild')
+        return srv
