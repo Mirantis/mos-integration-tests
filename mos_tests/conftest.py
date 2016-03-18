@@ -331,6 +331,16 @@ def is_l3_ha(env):
             return get_config_option(f, 'l3_ha', bool)
 
 
+def is_ironic_enabled(env):
+    data = env.get_settings_data()['editable']['additional_components']
+    return data['ironic']['value']
+
+
+def is_ceph_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['volumes_ceph']['value']
+
+
 @pytest.fixture(autouse=True)
 def executable_requirements(request, env_name):
     marker = request.node.get_marker('requires_')

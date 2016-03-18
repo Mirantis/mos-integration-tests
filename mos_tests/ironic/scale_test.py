@@ -54,10 +54,22 @@ def cleanup_nodes(env_name):
             devops_env.del_node(node)
 
 
-@pytest.mark.testrail_id('631895')
-@pytest.mark.check_env_('has_ironic_conductor')
+def idfn(val):
+    if isinstance(val, (list, tuple)):
+        return ','.join(val)
+
+
+@pytest.mark.testrail_id('631895', params={'roles': ['ironic']})
+@pytest.mark.testrail_id('631897', params={'roles': ['ironic', 'controller']})
+@pytest.mark.testrail_id('631899',
+                         params={'roles': ['ironic', 'controller', 'ceph']})
+@pytest.mark.check_env_('has_ironic_conductor', 'is_ceph_enabled')
+@pytest.mark.parametrize(
+    'roles',
+    [['ironic'], ['ironic', 'controller'], ['ironic', 'controller', 'ceph']],
+    ids=idfn)
 def test_add_node(env, env_name, suffix, cleanup_nodes, os_conn, ubuntu_image,
-                  flavor, keypair, ironic, ironic_node):
+                  flavor, keypair, ironic, ironic_node, roles):
     """Test ironic work after add new ironic-conductor node to deployed cluster
 
     Scenario:
@@ -84,7 +96,7 @@ def test_add_node(env, env_name, suffix, cleanup_nodes, os_conn, ubuntu_image,
     # Rename node
     fuel_node.set({'name': 'new_ironic'})
 
-    env.assign([fuel_node], ['ironic'])
+    env.assign([fuel_node], roles)
 
     # Make devops network.id -> fuel networks mapping
     controller = env.get_nodes_by_role('controller')[0]
@@ -130,9 +142,8 @@ def test_add_node(env, env_name, suffix, cleanup_nodes, os_conn, ubuntu_image,
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
-# def test_another():
-#     env.unassign([fuel_node.id])
-
-#     task = env.deploy_changes()
-#     common.wait(lambda: is_task_ready(task), timeout_seconds=20 * 60,
-#                 sleep_seconds=30, waiting_for='changes to be deployed')
+    if 'ceph' in roles:
+        with fuel_node.ssh() as remote:
+            result = remote.check_call('ceph -s')
+    stdout = result.stdout_string
+    assert 'HEALTH_OK' in stdout or 'HEALTH_WARN' in stdout

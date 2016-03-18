@@ -13,6 +13,7 @@
 #    under the License.
 
 import json
+import logging
 import os
 import pytest
 import shutil
@@ -26,6 +27,8 @@ from mos_tests.environment import devops_client
 from mos_tests.functions import common
 from mos_tests.ironic import actions
 from mos_tests import settings
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture
@@ -117,6 +120,7 @@ def image_file():
 
 @pytest.yield_fixture
 def ubuntu_image(os_conn, image_file):
+    logger.info('Creating ubuntu image')
     image = os_conn.glance.images.create(
         name='ironic_trusty',
         disk_format='raw',
@@ -139,6 +143,7 @@ def ubuntu_image(os_conn, image_file):
     with open(image_file.name) as f:
         os_conn.glance.images.upload(image.id, f)
 
+    logger.info('Creating ubuntu image ... done')
     yield image
     os_conn.glance.images.delete(image.id)
 

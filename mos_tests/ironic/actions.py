@@ -37,10 +37,15 @@ class IronicActions(object):
     def get_provisioned_node(self):
         """Return ironic node wich have non zero vcpu in hypervisor
 
+        Raises exception, if not ironic node registered
+
         :rtype: ironicclient.v1.node.Node
         :return: provisioned ironic node
         """
-        for node in self.client.node.list():
+        nodes = self.client.node.list()
+        if len(nodes) == 0:
+            raise Exception("No ironic node registered")
+        for node in nodes:
             try:
                 hypervisor = self.os_conn.nova.hypervisors.find(
                     hypervisor_hostname=node.uuid)
@@ -64,7 +69,7 @@ class IronicActions(object):
         :rtype: novaclient.v2.servers.Server
         """
         common.wait(self.get_provisioned_node,
-                    timeout_seconds=2 * 60,
+                    timeout_seconds=3 * 60,
                     sleep_seconds=15,
                     waiting_for='ironic node to be provisioned')
         baremetal_net = self.os_conn.nova.networks.find(label='baremetal')
