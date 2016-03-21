@@ -15,7 +15,6 @@ import json
 import os
 import pytest
 import shutil
-from six.moves import urllib
 import socket
 import tarfile
 
