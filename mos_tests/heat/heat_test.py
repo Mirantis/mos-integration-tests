@@ -61,7 +61,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                               "DockerInc::Docker::Container",
                               "AWS::S3::Bucket"]
 
-        self.assertTrue(len(resource_types) >= len(required_resources))
+        self.assertGreaterEqual(len(resource_types), len(required_resources))
 
         for resource in required_resources:
             self.assertIn(resource, resource_types,
