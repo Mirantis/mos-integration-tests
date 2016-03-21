@@ -13,6 +13,7 @@
 #    under the License.
 import json
 import os
+import pytest
 import shutil
 from six.moves import urllib
 import socket
@@ -20,7 +21,7 @@ import tarfile
 
 from Crypto.PublicKey import RSA
 from ironicclient import client
-import pytest
+from six.moves import urllib
 
 from mos_tests.environment import devops_client
 from mos_tests.functions import common

@@ -100,8 +100,8 @@ class TestL3Agent(TestBase):
 
         # ban l3 agent on this node
         with self.env.get_ssh_to_node(_ip) as remote:
-            remote.execute(
-                "pcs resource ban p_neutron-l3-agent {0}".format(node_with_l3))
+            remote.check_call(
+                "pcs resource ban neutron-l3-agent {0}".format(node_with_l3))
 
         logger.info("Ban L3 agent on node {0}".format(node_with_l3))
 
@@ -137,8 +137,8 @@ class TestL3Agent(TestBase):
         router = self.os_conn.neutron.list_routers(
             name=router_name)['routers'][0]
         with self.env.get_ssh_to_node(_ip) as remote:
-            remote.execute(
-                "pcs resource clear p_neutron-l3-agent {0}".format(node))
+            remote.check_call(
+                "pcs resource clear neutron-l3-agent {0}".format(node))
 
         logger.info("Clear L3 agent on node {0}".format(node))
 
@@ -205,7 +205,7 @@ class TestL3Agent(TestBase):
             7. ping 8.8.8.8, vm1 (both ip) and vm2 (fixed ip) from each other
             8. get node with l3 agent on what is router1
             9. ban this l3 agent on the node with pcs
-                (e.g. pcs resource ban p_neutron-l3-agent
+                (e.g. pcs resource ban neutron-l3-agent
                 node-3.test.domain.local)
             10. wait some time (about 20-30) while pcs resource and
                 neutron agent-list will show that it is dead
