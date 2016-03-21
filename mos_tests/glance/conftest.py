@@ -63,6 +63,7 @@ def short_lifetime_keystone(env):
     wait_keystone_alive()
 
 
+@pytest.fixture
 def cli(os_conn):
     return base.CLIClient(username=os_conn.username,
                           password=os_conn.password,
