@@ -194,6 +194,7 @@ def test_image_create_delete_from_url(glance, suffix, option):
 
 @pytest.mark.testrail_id('542890', params={'glance': 1})
 @pytest.mark.testrail_id('542911', params={'glance': 2})
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
 def test_image_file_equal(glance, image_file, suffix):
     """Check that after upload-download image file are not changed
 
