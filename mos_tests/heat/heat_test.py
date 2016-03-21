@@ -57,11 +57,11 @@ class HeatIntegrationTests(OpenStackTestCase):
         """
         resource_types = [r.resource_type for r in
                           self.heat.resource_types.list()]
-        self.assertEqual(len(resource_types), 96)
-
         required_resources = ["OS::Nova::Server", "AWS::EC2::Instance",
                               "DockerInc::Docker::Container",
                               "AWS::S3::Bucket"]
+
+        self.assertTrue(len(resource_types) >= len(required_resources))
 
         for resource in required_resources:
             self.assertIn(resource, resource_types,
@@ -85,22 +85,17 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Be sure that this template file will be put on
         # controller during test preparation
         # File with template for stack creation
-        file_name = './mos_tests/heat/templates/empty_heat_template_v2.yaml'
         # Like: 'Test_1449484927'
         new_stack_name = 'Test_{0}'.format(str(time.time())[0:10:])
         # - 1 -
         # Read Heat stack-create template from file
-        try:
-            with open(file_name, 'r') as template:
-                template_content = template.read()
-        except IOError:
-            raise Exception("ERROR: can not find template-file [{0}]"
-                            "on controller or read data".format(file_name))
+        template = common_functions.read_template(
+            self.templates_dir, 'empty_heat_template_v2.yaml')
         # - 2 -
         # Create new stack
         uid_of_new_stack = common_functions.create_stack(self.heat,
                                                          new_stack_name,
-                                                         template_content)
+                                                         template)
         self.uid_list.append(uid_of_new_stack)
 
     @pytest.mark.testrail_id('631868')
@@ -358,7 +353,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         stack_status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
         even_list = self.heat.events.list(stack_id)
         self.assertTrue(even_list, "NOK, event list is empty")
-        event_to_show = even_list[-1]
+        event_to_show = even_list[0]
         resource_name, event_id = event_to_show.resource_name, event_to_show.id
         event_info = self.heat.events.get(stack_id, resource_name, event_id)
         self.assertEqual(event_info.resource_name, stack_name,
