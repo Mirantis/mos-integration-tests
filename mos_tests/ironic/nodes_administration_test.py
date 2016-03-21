@@ -20,7 +20,6 @@ from mos_tests.functions import common
 from mos_tests.functions import os_cli
 from mos_tests.glance.conftest import project  # noqa
 from mos_tests.glance.conftest import user  # noqa
-from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
@@ -50,8 +49,8 @@ def ironic_cli(controller_remote):
 
 @pytest.mark.testrail_id('631901')
 @pytest.mark.check_env_('has_ironic_conductor')
-def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
-                         ironic, cleanup_ironic, chassis):
+def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
+                         os_conn, ironic, cleanup_ironic, chassis):
     """Test CRUD operations for ironic node
 
     Scenario:
@@ -72,12 +71,7 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
             nova hypervisor-list
     """
     fake_driver_info = {'A1': 'A1', 'B1': 'B1', 'B2': 'B2'}
-    node_properties = {
-        'cpus': baremetal_node.vcpu,
-        'memory_mb': baremetal_node.memory,
-        'local_gb': settings.IRONIC_DISK_GB,
-        'cpu_arch': 'x86_64',
-    }
+    node_properties = ironic_drivers_params[0]['node_properties']
 
     # Create node
     node = ironic.client.node.create(driver='fake',
@@ -129,7 +123,7 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
     node = ironic.client.node.update(node.uuid, patch=patch)
     assert node.driver == 'fuel_ssh'
 
-    mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
+    mac = ironic_drivers_params[0]['mac_address']
     ironic.client.port.create(node_uuid=node.uuid, address=mac)
 
     def updated_hypervisor():

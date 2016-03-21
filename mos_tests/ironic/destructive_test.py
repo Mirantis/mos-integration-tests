@@ -26,8 +26,8 @@ from mos_tests.functions import os_cli
 @pytest.mark.testrail_id('631921', params={'boot_instance_before': False})
 @pytest.mark.testrail_id('631922', params={'boot_instance_before': True})
 @pytest.mark.parametrize('boot_instance_before', [True, False])
-def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
-                          flavor, keypair, env_name, boot_instance_before):
+def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
+                          flavors, keypair, env_name, boot_instance_before):
     """Check ironic state after restart conductor node
 
     Scenario:
@@ -42,7 +42,7 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
 
     if boot_instance_before:
         instance = ironic.boot_instance(image=ubuntu_image,
-                                        flavor=flavor,
+                                        flavor=flavors[0],
                                         keypair=keypair)
 
     conductor = env.get_nodes_by_role('ironic')[0]
@@ -85,7 +85,7 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
 
     if not boot_instance_before:
         instance = ironic.boot_instance(image=ubuntu_image,
-                                        flavor=flavor,
+                                        flavor=flavors[0],
                                         keypair=keypair)
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
@@ -149,8 +149,8 @@ def test_reboot_all_ironic_conductors(env, env_name):
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('675246')
-def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
-                                flavor, keypair, env_name, ironic):
+def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
+                                flavors, keypair, env_name, ironic):
     """Kill ironic-conductor service with one bare-metal node
 
     Scenario:
@@ -162,6 +162,7 @@ def test_kill_conductor_service(env, os_conn, ironic_node, ubuntu_image,
         5. Run OSTF including Ironic tests.
         6. Check that Ironic instance still ACTIVE and operable
     """
+    flavor, ironic_node = zip(flavors, ironic_nodes)[0]
 
     def find_conductor_node(ironic_node_uuid, conductors):
         cmd = 'ls /var/log/remote/ironic/{0}/'.format(ironic_node_uuid)

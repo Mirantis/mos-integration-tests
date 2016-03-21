@@ -18,9 +18,9 @@ from mos_tests.functions import common
 
 
 @pytest.fixture
-def instance(ubuntu_image, flavor, keypair, ironic_node, ironic):
+def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic):
     instance = ironic.boot_instance(image=ubuntu_image,
-                                    flavor=flavor,
+                                    flavor=flavors[0],
                                     keypair=keypair)
     return instance
 

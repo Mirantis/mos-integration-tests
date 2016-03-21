@@ -15,7 +15,6 @@
 from ironicclient import client
 
 from mos_tests.functions import common
-from mos_tests import settings
 
 
 class IronicActions(object):
@@ -81,38 +80,32 @@ class IronicActions(object):
                                           timeout=60 * 10,
                                           **kwargs)
 
-    def create_node(self, baremetal_node, server_ssh_credentials):
+    def create_node(self, driver, driver_info, node_properties, mac_address):
         """Create ironic node with port
 
-        :param baremetal_node: devops node to associate with new ironic node
-        :type baremetal_node: devops.models.node.Node
-        :param server_ssh_credentials: SSH credentials to access server
-        :type server_ssh_credentials: dict
+        :param driver: driver name
+        :type driver: str
+        :param driver_info: driver parameters (like ssh_username or
+            ipmi_password)
+        :type driver_info: dict
+        :param node_properties: node properties (cpu, ram, etc)
+        :type node_properties: dict
+        :param mac_address: MAC address to port assign
+        :type mac_address: str
         :return: created ironic node object
         :rtype: ironicclient.v1.node.Node
         """
 
-        driver_info = {
-            'ssh_address': server_ssh_credentials['ip'],
-            'ssh_username': server_ssh_credentials['username'],
-            'ssh_key_contents': server_ssh_credentials['key'],
-            'ssh_virt_type': 'virsh',
+        driver_info.update({
             'deploy_kernel': self._get_image('ironic-deploy-linux').id,
             'deploy_ramdisk': self._get_image('ironic-deploy-initramfs').id,
             'deploy_squashfs': self._get_image('ironic-deploy-squashfs').id,
-        }
-        properties = {
-            'cpus': baremetal_node.vcpu,
-            'memory_mb': baremetal_node.memory,
-            'local_gb': settings.IRONIC_DISK_GB,
-            'cpu_arch': 'x86_64',
-        }
+        })
+
         node = self.client.node.create(driver='fuel_ssh',
                                        driver_info=driver_info,
-                                       properties=properties)
-        mac = baremetal_node.interface_by_network_name('baremetal')[
-            0].mac_address
-        self.client.port.create(node_uuid=node.uuid, address=mac)
+                                       properties=node_properties)
+        self.client.port.create(node_uuid=node.uuid, address=mac_address)
         return node
 
     def delete_node(self, node):

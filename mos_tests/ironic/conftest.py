@@ -22,6 +22,7 @@ import tarfile
 
 from Crypto.PublicKey import RSA
 from six.moves import urllib
+import yaml
 
 from mos_tests.environment import devops_client
 from mos_tests.functions import common
@@ -31,7 +32,7 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
-@pytest.yield_fixture
+@pytest.yield_fixture(scope='session')
 def server_ssh_credentials():
     # determine server ip
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -69,27 +70,25 @@ def server_ssh_credentials():
 
 
 @pytest.fixture
-def wait_sanity_test(env):
-    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
-                timeout_seconds=60 * 5,
-                waiting_for='OSTF sanity tests to pass')
-
-
-@pytest.fixture
-def ironic(os_conn, wait_sanity_test):
+def ironic(os_conn):
     return actions.IronicActions(os_conn)
 
 
-@pytest.yield_fixture
-def baremetal_node(env_name, suffix):
-    devops_env = devops_client.DevopsClient.get_env(env_name=env_name)
-    node = devops_env.add_node(name='baremetal_{}'.format(suffix[:4]),
-                               memory=1024,
-                               networks=['baremetal'],
-                               disks=[settings.IRONIC_DISK_GB],
-                               role='ironic_slave')
-    yield node
-    devops_env.del_node(node)
+@pytest.fixture(scope='session')
+def ironic_drivers_params(server_ssh_credentials):
+    base_dir = os.path.dirname(__file__)
+    with open(os.path.join(base_dir, 'ironic_nodes.yaml')) as f:
+        config = yaml.load(f)
+    for i, node in enumerate(config):
+        if node['driver'] != 'fuel_ssh':
+            continue
+        driver_info = node['driver_info']
+        if driver_info['ssh_address'] is None:
+            driver_info['ssh_address'] = server_ssh_credentials['ip']
+        if driver_info['ssh_username'] is None:
+            driver_info['ssh_username'] = server_ssh_credentials['username']
+            driver_info['ssh_key_contents'] = server_ssh_credentials['key']
+    return config
 
 
 @pytest.yield_fixture
@@ -100,15 +99,20 @@ def keypair(os_conn):
 
 
 @pytest.yield_fixture
-def flavor(baremetal_node, os_conn):
-    flavor = os_conn.nova.flavors.create(name=baremetal_node.name,
-                                         ram=baremetal_node.memory,
-                                         vcpus=baremetal_node.vcpu,
-                                         disk=settings.IRONIC_DISK_GB)
+def flavors(ironic_drivers_params, os_conn):
+    flavors = []
+    for i, config in enumerate(ironic_drivers_params):
+        flavor = os_conn.nova.flavors.create(
+            name='baremetal_{}'.format(i),
+            ram=config['node_properties']['memory_mb'],
+            vcpus=config['node_properties']['cpus'],
+            disk=config['node_properties']['local_gb'])
+        flavors.append(flavor)
 
-    yield flavor
+    yield flavors
 
-    flavor.delete()
+    for flavor in flavors:
+        flavor.delete()
 
 
 @pytest.yield_fixture(scope='module')
@@ -149,7 +153,37 @@ def ubuntu_image(os_conn, image_file):
 
 
 @pytest.yield_fixture
-def ironic_node(baremetal_node, ironic, server_ssh_credentials):
-    node = ironic.create_node(baremetal_node, server_ssh_credentials)
-    yield node
-    ironic.delete_node(node)
+def ironic_nodes(request, env, ironic_drivers_params, ironic, env_name):
+    devops_env = devops_client.DevopsClient.get_env(env_name=env_name)
+
+    node_count = getattr(request, 'param', 1)
+    devops_nodes = []
+    nodes = []
+    for i, config in enumerate(ironic_drivers_params[:node_count]):
+        if config['driver'] == 'fuel_ssh':
+            devops_node = devops_env.add_node(
+                name='baremetal_{i}'.format(i=i),
+                vcpu=config['node_properties']['cpus'],
+                memory=config['node_properties']['memory_mb'],
+                disks=[config['node_properties']['local_gb']],
+                networks=['baremetal'],
+                role='ironic_slave')
+            devops_nodes.append(devops_node)
+            mac = devops_node.interface_by_network_name(
+                'baremetal')[0].mac_address
+            config['mac_address'] = mac
+        node = ironic.create_node(config['driver'], config['driver_info'],
+                                  config['node_properties'],
+                                  config['mac_address'])
+        nodes.append(node)
+
+    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
+                timeout_seconds=60 * 5,
+                waiting_for='OSTF sanity tests to pass')
+    yield nodes
+
+    for node in nodes:
+        ironic.delete_node(node)
+
+    for node in devops_nodes:
+        devops_env.del_node(node)

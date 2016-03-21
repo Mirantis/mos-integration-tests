@@ -69,7 +69,7 @@ def idfn(val):
     [['ironic'], ['ironic', 'controller'], ['ironic', 'controller', 'ceph']],
     ids=idfn)
 def test_add_node(env, env_name, suffix, cleanup_nodes, os_conn, ubuntu_image,
-                  flavor, keypair, ironic, ironic_node, roles):
+                  flavors, keypair, ironic, ironic_nodes, roles):
     """Test ironic work after add new ironic-conductor node to deployed cluster
 
     Scenario:
@@ -137,7 +137,7 @@ def test_add_node(env, env_name, suffix, cleanup_nodes, os_conn, ubuntu_image,
         remote.check_call('service ironic-conductor status | grep running')
 
     instance = ironic.boot_instance(image=ubuntu_image,
-                                    flavor=flavor,
+                                    flavor=flavors[0],
                                     keypair=keypair)
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
