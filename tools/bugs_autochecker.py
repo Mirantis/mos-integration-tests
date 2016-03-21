@@ -91,6 +91,5 @@ def get_project_bugs(project_name, milestones=[]):
 
 
 if __name__=='__main__':
-    test_milestone = ['9.0']
-    get_project_bugs("fuel", test_milestone)
-    get_project_bugs("mos", test_milestone)
+    test_milestone = ['first-m']
+    get_project_bugs("test-autochecker", test_milestone)
