@@ -60,7 +60,7 @@ def check_stack_status(stack_name, heat, status, timeout=60):
         start_time = time()
         stack_status = [s.stack_status for s in heat.stacks.list()
                         if s.stack_name == stack_name][0]
-        while 'IN_PROGRESS' not in stack_status \
+        while 'IN_PROGRESS' in stack_status \
                 and time() < start_time + 60 * timeout:
             sleep(1)
             stack_status = [s.stack_status for s in heat.stacks.list()
