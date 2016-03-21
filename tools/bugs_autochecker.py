@@ -3,9 +3,9 @@ from launchpadlib.launchpad import Launchpad
 STATUSES_FOR_CHECK = ["Incomplete", "Confirmed", "New"]
 CHECKS = {
     "version": ["iso", "env", "version"],
-    "expected result": ["expected result"],
-    "steps to reproduce": ["steps to reproduce"],
-    "actual result": ["actual result"]
+    "expected result": ["expected"],
+    "steps to reproduce": ["steps"],
+    "actual result": ["actual"]
 }
 SUBJECT = 'Autochecker'
 MESSAGE_FOR_INCOMPLETE = (
@@ -17,6 +17,7 @@ MESSAGE_FOR_INCOMPLETE = (
     "sections see https://wiki.openstack.org/wiki/Fuel/How_to_contribute#"
     "Here_is_how_you_file_a_bug\n")
 
+SKIP_TAGS = ['docs', 'area-docs']
 TAG = 'need-info'
 
 
@@ -67,6 +68,7 @@ def _post_comment(bug, fields):
         if bug.messages[comment].subject is SUBJECT:
             flag_comment = True
     if not flag_comment:
+        print "Comment added to %s" % bug.web_link
         bug.newMessage(subject=SUBJECT,
                        content=_generate_string(fields))
 
@@ -79,7 +81,13 @@ def get_project_bugs(project_name, milestones=[]):
         bugs_for_checking = project.searchTasks(
             milestone=current_milestone, status=STATUSES_FOR_CHECK)
         for bug_task in bugs_for_checking:
-            _check_bug(bug_task.bug)
+            skip = False
+            for tag in bug_task.bug.tags:
+                if tag in SKIP_TAGS:
+                    _remove_tag(bug_task.bug)
+                    skip = True
+            if not skip:
+                _check_bug(bug_task.bug)
 
 
 if __name__=='__main__':
