@@ -32,6 +32,22 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
+def pytest_runtest_makereport(item, call):
+    if "incremental" in item.keywords:
+        if call.excinfo is not None:
+            parent = item.parent
+            parent._previousfailed = {str(item.callspec.params): item}
+
+
+def pytest_runtest_setup(item):
+    if "incremental" in item.keywords:
+        previousfailed_info = getattr(item.parent, "_previousfailed", {})
+        previousfailed = previousfailed_info.get(str(item.callspec.params))
+        if previousfailed is not None:
+            pytest.xfail(
+                "previous test failed ({0.name})".format(previousfailed))
+
+
 @pytest.yield_fixture(scope='session')
 def server_ssh_credentials():
     # determine server ip
@@ -122,34 +138,42 @@ def image_file():
     image_file.unlink(image_file.name)
 
 
-@pytest.yield_fixture
-def ubuntu_image(os_conn, image_file):
-    logger.info('Creating ubuntu image')
-    image = os_conn.glance.images.create(
-        name='ironic_trusty',
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
+@pytest.yield_fixture(params=['create', 'delete'])
+def ubuntu_image(request, os_conn, image_file):
+    actions = request.param
+    image_name = 'ironic_trusty'
 
-    if not image_file.file.closed:
-        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            while True:
-                data = img.read(1024)
-                if not data:
-                    break
-                image_file.file.write(data)
-            image_file.file.close()
-        src.close()
-    with open(image_file.name) as f:
-        os_conn.glance.images.upload(image.id, f)
+    if 'create' in actions:
+        logger.info('Creating ubuntu image')
+        image = os_conn.glance.images.create(
+            name=image_name,
+            disk_format='raw',
+            container_format='bare',
+            hypervisor_type='baremetal',
+            cpu_arch='x86_64',
+            fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
 
-    logger.info('Creating ubuntu image ... done')
+        if not image_file.file.closed:
+            src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
+            with tarfile.open(fileobj=src, mode='r|gz') as tar:
+                img = tar.extractfile(tar.firstmember)
+                while True:
+                    data = img.read(1024)
+                    if not data:
+                        break
+                    image_file.file.write(data)
+                image_file.file.close()
+            src.close()
+        with open(image_file.name) as f:
+            os_conn.glance.images.upload(image.id, f)
+        logger.info('Creating ubuntu image ... done')
+    else:
+        image = os_conn.nova.images.find(name=image_name)
+
     yield image
-    os_conn.glance.images.delete(image.id)
+
+    if 'delete' in actions:
+        os_conn.glance.images.delete(image.id)
 
 
 @pytest.yield_fixture

@@ -395,6 +395,7 @@ def devops_requirements(request, env_name):
             pytest.skip('requires devops env to be defined')
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
     """Add marker to test name, if test marked with `testrail_id` marker
 
