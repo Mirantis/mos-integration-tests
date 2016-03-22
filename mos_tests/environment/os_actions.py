@@ -154,23 +154,16 @@ class OpenStackActions(object):
         if status == 'ERROR':
             raise Exception('Server {} status is error'.format(server.name))
 
-    def create_server(self, name, image_id=None, flavor=1, scenario='',
+    def create_server(self, name, image_id=None, flavor=1, userdata=None,
                       files=None, key_name=None, timeout=300,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
-        try:
-            if scenario:
-                with open(scenario, "r+") as f:
-                    scenario = f.read()
-        except Exception as exc:
-            logger.info("Error opening file: %s" % exc)
-            raise Exception()
 
         if image_id is None:
             image_id = self._get_cirros_image().id
         srv = self.nova.servers.create(name=name,
                                        image=image_id,
                                        flavor=flavor,
-                                       userdata=scenario,
+                                       userdata=userdata,
                                        files=files,
                                        key_name=key_name,
                                        **kwargs)
