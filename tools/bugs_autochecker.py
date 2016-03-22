@@ -17,7 +17,10 @@ MESSAGE_FOR_INCOMPLETE = (
     "sections see https://wiki.openstack.org/wiki/Fuel/How_to_contribute#"
     "Here_is_how_you_file_a_bug\n")
 
-SKIP_TAGS = ['docs', 'area-docs']
+SKIP_TAGS = ['docs', 'area-docs', 'area-build', 'area-ci', 'area-devops',
+             'area-infra-apps', 'area-qa', 'covered-by-bp', 'feature',
+             'fuel-devops', 'need-bp', 'non-release', 'system-tests',
+             'tech-debt', 'enhancement']
 TAG = 'need-info'
 
 
