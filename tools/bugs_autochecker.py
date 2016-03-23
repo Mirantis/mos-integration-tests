@@ -29,6 +29,7 @@ lp = Launchpad.login_with('autocheck', 'production', cache_dir)
 
 
 def _check_bug(bug):
+    print "Checking of %s\n" % bug.web_link
     incomplete = []
     for check in CHECKS:
         current_check = CHECKS[check]
@@ -56,6 +57,7 @@ def _generate_string(array_fields):
 def _add_tag(bug):
     bug.tags = bug.tags + [TAG]
     bug.lp_save()
+    print "Tag added to %s\n" % bug.web_link
 
 
 def _remove_tag(bug):
@@ -63,6 +65,7 @@ def _remove_tag(bug):
     tags.remove(TAG)
     bug.tags = tags
     bug.lp_save()
+    print "Tag removed from %s\n" % bug.web_link
 
 
 def _post_comment(bug, fields):
@@ -71,12 +74,13 @@ def _post_comment(bug, fields):
         if bug.messages[comment].subject is SUBJECT:
             flag_comment = True
     if not flag_comment:
-        print "Comment added to %s" % bug.web_link
+        print "Comment added to %s\n" % bug.web_link
         bug.newMessage(subject=SUBJECT,
                        content=_generate_string(fields))
 
 
 def get_project_bugs(project_name, milestones=[]):
+    print "\n\nGetting project %s...\n\n" % project_name
     project = lp.projects[project_name]
     for milestone in milestones:
         current_milestone = project.getMilestone(
