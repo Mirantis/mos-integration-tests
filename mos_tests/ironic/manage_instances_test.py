@@ -21,11 +21,10 @@ from mos_tests import settings
 @pytest.fixture
 def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic, request):
     instance_count = getattr(request, 'param', 1)
-    kwargs = {'min_count': instance_count}
     instance = ironic.boot_instance(image=ubuntu_image,
                                     flavor=flavors[0],
                                     keypair=keypair,
-                                    **kwargs)
+                                    min_count=instance_count)
     return instance
 
 
@@ -162,8 +161,9 @@ def test_boot_nodes_concurrently(env, keypair, os_conn, instance):
         2. Check that instances statuses are ACTIVE
         3. Check that both baremetal instances are available via ssh
     """
-    servers = filter(lambda srv: srv.name.startswith('ironic-server-'),
-                     os_conn.nova.servers.list())
+    servers = [x for x in os_conn.nova.servers.list() if
+               x.name.startswith('ironic-server-')]
+    assert len(servers) == 2
     for server in servers:
         with os_conn.ssh_to_instance(env, server, vm_keypair=keypair,
                                      username='ubuntu') as remote:
@@ -173,8 +173,8 @@ def test_boot_nodes_concurrently(env, keypair, os_conn, instance):
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
 @pytest.mark.testrail_id('631913')
-def test_boot_nodes_consequently(env, os_conn, ubuntu_image, flavors, keypair,
-                                 instance):
+def test_boot_nodes_consequently(env, os_conn, ironic, ubuntu_image, flavors,
+                                 keypair, instance):
     """Check boot several bare-metal nodes consequently
 
     Scenario:
@@ -184,12 +184,10 @@ def test_boot_nodes_consequently(env, os_conn, ubuntu_image, flavors, keypair,
         4. Check that 2nd instance is in ACTIVE status
         5. Check that both baremetal instances are available via ssh
     """
-    baremetal_net = os_conn.nova.networks.find(label='baremetal')
-    srv2 = os_conn.create_server('ironic-server-2', image_id=ubuntu_image.id,
-                                 flavor=flavors[0].id, key_name=keypair.name,
-                                 nics=[{'net-id': baremetal_net.id}],
-                                 timeout=60 * 10)
-    for server in [srv2, instance]:
+    instance2 = ironic.boot_instance(image=ubuntu_image,
+                                     flavor=flavors[0],
+                                     keypair=keypair)
+    for server in [instance, instance2]:
         with os_conn.ssh_to_instance(env, server, vm_keypair=keypair,
                                      username='ubuntu') as remote:
             remote.check_call('uname')
