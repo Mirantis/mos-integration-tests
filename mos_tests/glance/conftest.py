@@ -23,7 +23,6 @@ from mos_tests.functions import common
 from mos_tests.functions import os_cli
 
 
-@pytest.fixture
 @pytest.yield_fixture
 def short_lifetime_keystone(env):
     """Change keystone token lifetime to 30s"""
@@ -91,6 +90,18 @@ def image_file(request):
         yield f.name
 
 
+@pytest.yield_fixture
+def image_file_remote(request, controller_remote, suffix):
+    size = getattr(request, 'param', 100)  # Size in MB
+    filename = '/tmp/{}'.format(suffix[:6])
+    with controller_remote.open(filename, 'w') as f:
+        f.seek(size * (1024 ** 2))
+        f.write(' ')
+        f.flush()
+    yield filename
+    controller_remote.execute('rm -f {}'.format(filename))
+
+
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)
@@ -98,8 +109,6 @@ def openstack_client(controller_remote):
 
 @pytest.fixture(params=['1', '2'], ids=['api v1', 'api v2'])
 def glance_remote(request, controller_remote):
-    # TODO(gdyuldin) Replace with glance fixture after
-    # https://review.openstack.org/284355 will be merged
     flags = '--os-image-api-version {0.param}'.format(request)
     return partial(os_cli.Glance(controller_remote), flags=flags,
                    prefix='env PYTHONIOENCODING=UTF-8')
