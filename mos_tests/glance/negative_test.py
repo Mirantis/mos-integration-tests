@@ -57,8 +57,7 @@ def test_remove_deleted_image(glance_remote):
 @pytest.mark.parametrize(
     'glance_remote, message',
     ((1, 'Image {id} is not active (HTTP 404)'),
-     (2, 'The requested image is in status queued. Image data download is '
-      'forbidden. (HTTP 403)'), ),
+     (2, 'Image {id} has no data.'), ),
     indirect=['glance_remote'])
 def test_download_zero_size_image(glance_remote, message):
     image = parser.details(glance_remote('image-create'))
