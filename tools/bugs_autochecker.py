@@ -62,10 +62,11 @@ def _add_tag(bug):
 
 def _remove_tag(bug):
     tags = bug.tags
-    tags.remove(TAG)
-    bug.tags = tags
-    bug.lp_save()
-    print "Tag removed from %s\n" % bug.web_link
+    if TAG in tags:
+        tags.remove(TAG)
+        bug.tags = tags
+        bug.lp_save()
+        print "Tag removed from %s\n" % bug.web_link
 
 
 def _post_comment(bug, fields):
