@@ -16,6 +16,7 @@ import pytest
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
+from mos_tests import settings
 
 
 @pytest.fixture
@@ -146,6 +147,29 @@ def test_instance_rebuild(env, ironic, os_conn, ironic_node, ubuntu_image,
     server = os_conn.rebuild_server(instance, ubuntu_image.id)
     common.wait(lambda: os_conn.nova.servers.get(server).status == 'ACTIVE',
                 timeout_seconds=60 * 10, waiting_for="instance is active")
+
+
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.need_devops
+@pytest.mark.testrail_id('631916')
+def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair,
+                                      ironic, ironic_nodes, os_conn, env):
+    """Boot Ubuntu14-based virtual-bare-metal instance with user-data
+
+    Scenario:
+        1. Boot ironic instance with user data file user_data.sh
+        2. Check that user_data.sh is present on instance
+        3. Ping 8.8.8.8 from instance
+    """
+    instance = ironic.boot_instance(image=ubuntu_image,
+                                    flavor=flavors[0],
+                                    keypair=keypair,
+                                    userdata='touch /userdata_result')
+
+    with os_conn.ssh_to_instance(env, instance, vm_keypair=keypair,
+                                 username='ubuntu') as remote:
+        remote.check_call('ls /userdata_result')
+        remote.check_call('ping -c1 {}'.format(settings.PUBLIC_TEST_IP))
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
