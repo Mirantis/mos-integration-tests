@@ -14,6 +14,7 @@
 
 import pytest
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
 
 
@@ -23,6 +24,30 @@ def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic):
                                     flavor=flavors[0],
                                     keypair=keypair)
     return instance
+
+
+@pytest.yield_fixture
+def tenants(env, openstack_client):
+    # os_conns = []
+    os_conns = {}
+    for i in range(2):
+        user = 'ironic_user_{}'.format(i)
+        password = 'ironic'
+        project = 'ironic_project_{}'.format(i)
+        openstack_client.project_create(project)
+        openstack_client.user_create(user, password, project)
+        os_conn = OpenStackActions(
+            controller_ip=env.get_primary_controller_ip(),
+            cert=env.certificate, env=env, user=user, password=password,
+            tenant=project)
+        keypair = os_conn.create_key(key_name='ironic-key')
+        os_conns[i] = [os_conn, keypair]
+    yield os_conns
+    for i in range(2):
+        user = 'ironic_user_{}'.format(i)
+        project = 'ironic_project_{}'.format(i)
+        openstack_client.user_delete(user)
+        openstack_client.project_delete(project)
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
@@ -121,3 +146,68 @@ def test_instance_rebuild(env, ironic, os_conn, ironic_node, ubuntu_image,
     server = os_conn.rebuild_server(instance, ubuntu_image.id)
     common.wait(lambda: os_conn.nova.servers.get(server).status == 'ACTIVE',
                 timeout_seconds=60 * 10, waiting_for="instance is active")
+
+
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.need_devops
+@pytest.mark.testrail_id('631912')
+@pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
+def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
+                                             flavors, ironic_nodes, tenants,
+                                             ironic, keypair):
+    """Check instance statuses during instance restart
+
+    Scenario:
+        1. Boot 1st Ironic instance under 1st tenant
+        2. Boot 2nd Ironic instance under 2nd tenant
+        3. Check Ironic instances statuses
+        4. Login via SSH to Ironic instances.
+        5. Check that instances are accessible for each other in baremetal
+        network
+    """
+
+    common.wait(ironic.get_provisioned_node, timeout_seconds=3 * 60,
+                sleep_seconds=15, waiting_for='ironic node to be provisioned')
+    instances = {}
+    for i in range(2):
+        tenant_conn = tenants[i][0]
+        tenant_keypair = tenants[i][1]
+        brm_net = tenant_conn.nova.networks.find(label='baremetal')
+        instance = tenant_conn.create_server('ironic-server-{}'.format(i),
+                                             image_id=ubuntu_image.id,
+                                             flavor=flavors[i].id,
+                                             key_name=tenant_keypair.name,
+                                             nics=[{'net-id': brm_net.id}],
+                                             timeout=60 * 10,
+                                             wait_for_avaliable=False)
+        instances[i] = [instance,
+                        tenant_conn.get_nova_instance_ips(instance)['fixed']]
+
+    for i in range(2):
+        instance = instances[i][0]
+        assert os_conn.is_server_ssh_ready(instance)
+        for j in range(2):
+            if j != i:
+                instances[i].append(
+                    os_conn.get_nova_instance_ips(instances[j][0])['fixed'])
+
+    for i in range(2):
+        instance = instances[i][0]
+        tenant_keypair = tenants[i][1]
+        ip_for_ping = instances[i][2]
+
+        with os_conn.ssh_to_instance(env, instance, vm_keypair=tenant_keypair,
+                                     username='ubuntu') as remote:
+            result = remote.execute('ping -c 10 {}'.format(ip_for_ping))
+            loss_packets = int(result['stdout'][-2].split()[5][:-1])
+            assert loss_packets < 100
+
+    def is_instance_deleted():
+        return instance not in tenant_conn.nova.servers.list()
+
+    for i in range(2):
+        tenant_conn = tenants[i][0]
+        instance = instances[i][0]
+        instance.delete()
+        common.wait(is_instance_deleted, timeout_seconds=60 * 5,
+                    sleep_seconds=20, waiting_for="instance is deleted")
