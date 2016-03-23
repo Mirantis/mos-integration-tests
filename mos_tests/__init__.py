@@ -21,12 +21,29 @@ logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
 logging.getLogger("paramiko.hostkeys").setLevel(logging.INFO)
 logging.getLogger("iso8601.iso8601").setLevel(logging.INFO)
 
+
+class WaitingFormatter(logging.Formatter):
+    waiting_fmt = '%(asctime)s [%(levelname)s] %(message)s'
+
+    def format(self, record):
+        format_orig = self._fmt
+
+        if record.name == 'waiting':
+            self._fmt = self.waiting_fmt
+
+        result = super(WaitingFormatter, self).format(record)
+
+        self._fmt = format_orig
+
+        return result
+
 logging.config.dictConfig({
     'version': 1,
     'disable_existing_loggers': False,
 
     'formatters': {
         'standart': {
+            '()': WaitingFormatter,
             'format':
                 '%(asctime)s [%(levelname)s] %(name)s:%(lineno)s: %(message)s'
         },
@@ -54,5 +71,8 @@ logging.config.dictConfig({
             'handlers': ['console'],
             'level': logging.DEBUG,
         },
+        'waiting': {
+            'handlers': ['console'],
+        }
     }
 })

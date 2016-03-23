@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import inspect
 import logging
 import os
 from tempfile import NamedTemporaryFile
@@ -600,14 +601,22 @@ def delete_keys(nova_client, key_name):
 
 def wait(*args, **kwargs):
     __tracebackhide__ = True
-    waiting_for = kwargs.get('waiting_for', args[0].__name__)
-    logger.info('waiting for {}'.format(waiting_for))
+
+    frame = inspect.stack()[1]
+    called_from = '{0.f_globals[__name__]}:{2}'.format(*frame)
+    event = kwargs.get('waiting_for', args[0].__name__)
+    msg = '{called_from}: waiting for {event}'.format(event=event,
+                                                      called_from=called_from)
+    logger = logging.getLogger('waiting')
+
+    logger.info(msg)
 
     try:
         result = base_wait(*args, **kwargs)
-        logger.info('waiting for {} ... done'.format(waiting_for))
+        logger.info(msg + ' ... done')
         return result
     except TimeoutExpired as e:
+        # prevent shows traceback from waiting package
         raise e
 
 

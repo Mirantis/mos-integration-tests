@@ -19,6 +19,7 @@ import os
 from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects import environment
+from fuelclient.objects.node import Node as FuelNode
 from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
 from paramiko import ssh_exception
@@ -140,8 +141,9 @@ class Environment(environment.Environment):
         self.run_test_sets(test_groups)
         result = wait(test_is_done, timeout_seconds=10 * 60,
                       waiting_for='OSTF tests to finish')
+
         for test in result['tests']:
-            if test['status'] != 'success':
+            if test['status'] not in ('success', 'skipped'):
                 logger.warning(
                     'Test "{name}" status is {status}; {message}'.format(
                         **test))
@@ -277,6 +279,13 @@ class Environment(environment.Environment):
                 controller_ip = node.data['ip']
                 break
         return controller_ip
+
+    def get_node_by_devops_node(self, devops_node, interface='admin'):
+        interfaces = devops_node.interface_by_network_name(interface)
+        for interface in interfaces:
+            for node in FuelNode.get_all():
+                if node._data['mac'] == interface.mac_address:
+                    return NodeProxy(node, self)
 
 
 class FuelClient(object):

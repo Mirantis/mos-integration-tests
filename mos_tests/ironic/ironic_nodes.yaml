@@ -1,0 +1,38 @@
+---
+- &fuel_ssh
+  # Driver name
+  driver: fuel_ssh
+
+  # Driver info. Will extended with kernel, ramdisk, squashfs glance images ids
+  driver_info:
+    # Will be replaced with current machine address if null
+    ssh_address: null
+    # Will be replaced with current user name
+    ssh_username: null
+    # Will be replaced with generated private key
+    ssh_key_contents: null
+    ssh_virt_type: virsh
+
+  # Properties to pass to driver. Also flavor and virsh nodes will creates with this params
+  node_properties:
+    cpus: 1
+    memory_mb: 1024
+    local_gb: 30
+    cpu_arch: x86_64
+  mac_address: 0.0.0.0
+
+  # Another fuel_ssh node
+- *fuel_ssh
+
+# IPMI driver settings template
+# - driver: fuel_ipmitool
+#   driver_info:
+#     ipmi_address: 0.0.0.0
+#     ipmi_username: admin
+#     ipmi_password: admin
+#   node_properties:
+#     cpus: 4
+#     memory_mb: 4096
+#     local_gb: 50
+#     cpu_arch: x86_64
+#   mac_address: 0.0.0.0

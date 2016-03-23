@@ -20,8 +20,6 @@ from mos_tests.functions import common
 from mos_tests.functions import os_cli
 from mos_tests.glance.conftest import project  # noqa
 from mos_tests.glance.conftest import user  # noqa
-from mos_tests import settings
-
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
@@ -29,19 +27,19 @@ pytestmark = pytest.mark.undestructive
 
 @pytest.yield_fixture
 def cleanup_ironic(ironic):
-    exists_nodes = set([x.uuid for x in ironic.node.list()])
+    exists_nodes = [x.uuid for x in ironic.client.node.list()]
     yield
-    for node_uuid in set([x.uuid for x in ironic.node.list()]) - exists_nodes:
-        for port in ironic.node.list_ports():
-            ironic.port.delete(port.uuid)
-        ironic.node.delete(node_uuid)
+    new_nodes = [x for x in ironic.client.node.list()
+                 if x.uuid not in exists_nodes]  # yapf: disable
+    for node in new_nodes:
+        ironic.delete_node(node)
 
 
 @pytest.yield_fixture
 def chassis(ironic):
-    chassis = ironic.chassis.create()
+    chassis = ironic.client.chassis.create()
     yield chassis
-    ironic.chassis.delete(chassis.uuid)
+    ironic.client.chassis.delete(chassis.uuid)
 
 
 @pytest.fixture
@@ -51,8 +49,8 @@ def ironic_cli(controller_remote):
 
 @pytest.mark.testrail_id('631901')
 @pytest.mark.check_env_('has_ironic_conductor')
-def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
-                         ironic, cleanup_ironic, chassis):
+def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
+                         os_conn, ironic, cleanup_ironic, chassis):
     """Test CRUD operations for ironic node
 
     Scenario:
@@ -72,40 +70,33 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
         13. Check that node disappears from ironic node-list and
             nova hypervisor-list
     """
-    fake_driver_info = {
-        'A1': 'A1',
-        'B1': 'B1',
-        'B2': 'B2',
-    }
-    node_properties = {
-        'cpus': baremetal_node.vcpu,
-        'memory_mb': baremetal_node.memory,
-        'local_gb': settings.IRONIC_DISK_GB,
-        'cpu_arch': 'x86_64',
-    }
+    fake_driver_info = {'A1': 'A1', 'B1': 'B1', 'B2': 'B2'}
+    node_properties = ironic_drivers_params[0]['node_properties']
 
     # Create node
-    node = ironic.node.create(driver='fake', driver_info=fake_driver_info,
-                              properties=node_properties)
+    node = ironic.client.node.create(driver='fake',
+                                     driver_info=fake_driver_info,
+                                     properties=node_properties)
 
-    assert node.uuid in [x.uuid for x in ironic.node.list()]
+    assert node.uuid in [x.uuid for x in ironic.client.node.list()]
 
     def get_hypervisor():
         try:
-            return os_conn.nova.hypervisors.find(
-                hypervisor_hostname=node.uuid)
+            return os_conn.nova.hypervisors.find(hypervisor_hostname=node.uuid)
         except Exception as e:
             logger.info(e)
 
     hypervisor = common.wait(
-        get_hypervisor, timeout_seconds=2 * 60, sleep_seconds=10,
+        get_hypervisor,
+        timeout_seconds=2 * 60,
+        sleep_seconds=10,
         waiting_for='ironic node to appear in hypervisors list')
 
     assert hypervisor.vcpus == 0
     assert hypervisor.memory_mb == 0
     assert hypervisor.disk_available_least == 0
 
-    validate_result = ironic.node.validate(node.uuid)
+    validate_result = ironic.client.node.validate(node.uuid)
     for val in validate_result.to_dict().values():
         assert val == {'result': True}
 
@@ -121,17 +112,19 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
         'deploy_ramdisk': get_image('ironic-deploy-initramfs').id,
         'deploy_squashfs': get_image('ironic-deploy-squashfs').id,
     }
+    # yapf: disable
     patch = [
         {'op': 'replace', 'path': '/driver', 'value': 'fuel_ssh'},
         {'op': 'replace', 'path': '/driver_info', 'value': driver_info}
     ]
+    # yapf: enable
 
     # Update node driver
-    node = ironic.node.update(node.uuid, patch=patch)
+    node = ironic.client.node.update(node.uuid, patch=patch)
     assert node.driver == 'fuel_ssh'
 
-    mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
-    ironic.port.create(node_uuid=node.uuid, address=mac)
+    mac = ironic_drivers_params[0]['mac_address']
+    ironic.client.port.create(node_uuid=node.uuid, address=mac)
 
     def updated_hypervisor():
         hypervisor = os_conn.nova.hypervisors.find(
@@ -140,36 +133,40 @@ def test_crud_operations(server_ssh_credentials, baremetal_node, os_conn,
             return hypervisor
 
     hypervisor = common.wait(
-        updated_hypervisor, timeout_seconds=2 * 60, sleep_seconds=10,
+        updated_hypervisor,
+        timeout_seconds=2 * 60,
+        sleep_seconds=10,
         waiting_for='ironic hypevisor to update CPU count')
 
     assert hypervisor.vcpus > 0
     assert hypervisor.memory_mb > 0
     assert hypervisor.disk_available_least > 0
 
-    validate_result = ironic.node.validate(node.uuid)
+    validate_result = ironic.client.node.validate(node.uuid)
     assert validate_result.boot['result'] is None
     assert validate_result.console['result'] is None
     assert validate_result.inspect['result'] is None
     assert validate_result.raid['result'] is None
 
     # Add node to chassis
-    ironic.node.update(node.uuid, [{'op': 'replace',
-                                    'path': '/chassis_uuid',
-                                    'value': chassis.uuid}])
+    ironic.client.node.update(node.uuid, [{'op': 'replace',
+                                           'path': '/chassis_uuid',
+                                           'value': chassis.uuid}])
 
-    assert len(ironic.chassis.list_nodes(chassis.uuid)) == 1
+    assert len(ironic.client.chassis.list_nodes(chassis.uuid)) == 1
 
     # Delete node
-    ironic.node.delete(node.uuid)
+    ironic.delete_node(node)
 
-    assert node.uuid not in [x.uuid for x in ironic.node.list()]
+    assert node.uuid not in [x.uuid for x in ironic.client.node.list()]
 
-    common.wait(lambda: not os_conn.nova.hypervisors.findall(
-                    hypervisor_hostname=node.uuid),
-                timeout_seconds=2 * 60, sleep_seconds=10,
-                waiting_for='ironic hypervisor to disappear in nova '
-                            'hypervisors list')
+    common.wait(
+        lambda: not os_conn.nova.hypervisors.findall(
+            hypervisor_hostname=node.uuid),  # yapf: disable
+        timeout_seconds=2 * 60,
+        sleep_seconds=10,
+        waiting_for='ironic hypervisor to disappear in nova '
+        'hypervisors list')
 
 
 @pytest.mark.testrail_id('631902')  # noqa
@@ -183,13 +180,13 @@ def test_use_cli_with_not_admin_permissions(ironic_cli, project, user):
         3. Check that 'Forbidden (HTTP 403)' in output
     """
 
-    env = dict(
-        OS_USERNAME=user['name'],
-        OS_PASSWORD='password',
-        OS_PROJECT_NAME=project['name'],
-        OS_TENANT_NAME=project['name']
-    )
+    env = dict(OS_USERNAME=user['name'],
+               OS_PASSWORD='password',
+               OS_PROJECT_NAME=project['name'],
+               OS_TENANT_NAME=project['name'])
     env_string = ' '.join(['{0}={1}'.format(*item) for item in env.items()])
-    result = ironic_cli('node-list', prefix='env {}'.format(env_string),
-                        fail_ok=True, merge_stderr=True)
+    result = ironic_cli('node-list',
+                        prefix='env {}'.format(env_string),
+                        fail_ok=True,
+                        merge_stderr=True)
     assert 'Forbidden (HTTP 403)' in result

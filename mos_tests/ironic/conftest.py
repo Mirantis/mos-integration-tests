@@ -11,7 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
 import json
+import logging
 import os
 import pytest
 import shutil
@@ -19,15 +21,34 @@ import socket
 import tarfile
 
 from Crypto.PublicKey import RSA
-from ironicclient import client
 from six.moves import urllib
+import yaml
 
 from mos_tests.environment import devops_client
 from mos_tests.functions import common
+from mos_tests.ironic import actions
 from mos_tests import settings
 
+logger = logging.getLogger(__name__)
 
-@pytest.yield_fixture
+
+def pytest_runtest_makereport(item, call):
+    if "incremental" in item.keywords:
+        if call.excinfo is not None:
+            parent = item.parent
+            parent._previousfailed = {str(item.callspec.params): item}
+
+
+def pytest_runtest_setup(item):
+    if "incremental" in item.keywords:
+        previousfailed_info = getattr(item.parent, "_previousfailed", {})
+        previousfailed = previousfailed_info.get(str(item.callspec.params))
+        if previousfailed is not None:
+            pytest.xfail(
+                "previous test failed ({0.name})".format(previousfailed))
+
+
+@pytest.yield_fixture(scope='session')
 def server_ssh_credentials():
     # determine server ip
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -65,36 +86,25 @@ def server_ssh_credentials():
 
 
 @pytest.fixture
-def wait_sanity_test(env):
-    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
-                timeout_seconds=60 * 5,
-                waiting_for='OSTF sanity tests to pass')
+def ironic(os_conn):
+    return actions.IronicActions(os_conn)
 
 
-@pytest.fixture
-def ironic(os_conn, wait_sanity_test):
-    token = os_conn.keystone.auth_token
-    ironic_endpoint = os_conn.keystone.service_catalog.url_for(
-        service_type='baremetal', endpoint_type='publicURL')
-    return client.get_client(api_version=1, os_auth_token=token,
-                             ironic_url=ironic_endpoint)
-
-
-@pytest.yield_fixture
-def baremetal_node(env_name, suffix):
-    devops_env = devops_client.DevopsClient.get_env(env_name=env_name)
-    node = devops_env.add_node(
-        memory=1024, name='baremetal_{}'.format(suffix[:4]))
-    disk = node.attach_disk('system', settings.IRONIC_DISK_GB * (1024 ** 3))
-    disk.volume.define()
-    node.attach_to_networks(['baremetal'])
-    node.define()
-    node.start()
-    yield node
-    node.destroy()
-    node.erase()
-    disk.volume.erase()
-    disk.delete()
+@pytest.fixture(scope='session')
+def ironic_drivers_params(server_ssh_credentials):
+    base_dir = os.path.dirname(__file__)
+    with open(os.path.join(base_dir, 'ironic_nodes.yaml')) as f:
+        config = yaml.load(f)
+    for i, node in enumerate(config):
+        if node['driver'] != 'fuel_ssh':
+            continue
+        driver_info = node['driver_info']
+        if driver_info['ssh_address'] is None:
+            driver_info['ssh_address'] = server_ssh_credentials['ip']
+        if driver_info['ssh_username'] is None:
+            driver_info['ssh_username'] = server_ssh_credentials['username']
+            driver_info['ssh_key_contents'] = server_ssh_credentials['key']
+    return config
 
 
 @pytest.yield_fixture
@@ -105,82 +115,99 @@ def keypair(os_conn):
 
 
 @pytest.yield_fixture
-def flavor(baremetal_node, os_conn):
-    flavor = os_conn.nova.flavors.create(name=baremetal_node.name,
-                                         ram=baremetal_node.memory,
-                                         vcpus=baremetal_node.vcpu,
-                                         disk=settings.IRONIC_DISK_GB)
+def flavors(ironic_drivers_params, os_conn):
+    flavors = []
+    for i, config in enumerate(ironic_drivers_params):
+        flavor = os_conn.nova.flavors.create(
+            name='baremetal_{}'.format(i),
+            ram=config['node_properties']['memory_mb'],
+            vcpus=config['node_properties']['cpus'],
+            disk=config['node_properties']['local_gb'])
+        flavors.append(flavor)
 
-    yield flavor
-    flavor.delete()
+    yield flavors
+
+    for flavor in flavors:
+        flavor.delete()
 
 
 @pytest.yield_fixture(scope='module')
 def image_file():
-    image_file = common.gen_temp_file(prefix='image', suffix='img')
+    image_file = common.gen_temp_file(prefix='image', suffix='.img')
     yield image_file
     image_file.unlink(image_file.name)
 
 
-@pytest.yield_fixture
-def ubuntu_image(os_conn, image_file):
-    image = os_conn.glance.images.create(
-        name='ironic_trusty',
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
+@pytest.yield_fixture(params=['create', 'delete'])
+def ubuntu_image(request, os_conn, image_file):
+    actions = request.param
+    image_name = 'ironic_trusty'
 
-    if not image_file.file.closed:
-        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            while True:
-                data = img.read(1024)
-                if not data:
-                    break
-                image_file.file.write(data)
-            image_file.file.close()
-        src.close()
-    with open(image_file.name) as f:
-        os_conn.glance.images.upload(image.id, f)
+    if 'create' in actions:
+        logger.info('Creating ubuntu image')
+        image = os_conn.glance.images.create(
+            name=image_name,
+            disk_format='raw',
+            container_format='bare',
+            hypervisor_type='baremetal',
+            cpu_arch='x86_64',
+            fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
+
+        if not image_file.file.closed:
+            src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
+            with tarfile.open(fileobj=src, mode='r|gz') as tar:
+                img = tar.extractfile(tar.firstmember)
+                while True:
+                    data = img.read(1024)
+                    if not data:
+                        break
+                    image_file.file.write(data)
+                image_file.file.close()
+            src.close()
+        with open(image_file.name) as f:
+            os_conn.glance.images.upload(image.id, f)
+        logger.info('Creating ubuntu image ... done')
+    else:
+        image = os_conn.nova.images.find(name=image_name)
 
     yield image
-    os_conn.glance.images.delete(image.id)
+
+    if 'delete' in actions:
+        os_conn.glance.images.delete(image.id)
 
 
 @pytest.yield_fixture
-def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
+def ironic_nodes(request, env, ironic_drivers_params, ironic, env_name):
+    devops_env = devops_client.DevopsClient.get_env(env_name=env_name)
 
-    def get_image(name):
-        return os_conn.nova.images.find(name=name)
+    node_count = getattr(request, 'param', 1)
+    devops_nodes = []
+    nodes = []
+    for i, config in enumerate(ironic_drivers_params[:node_count]):
+        if config['driver'] == 'fuel_ssh':
+            devops_node = devops_env.add_node(
+                name='baremetal_{i}'.format(i=i),
+                vcpu=config['node_properties']['cpus'],
+                memory=config['node_properties']['memory_mb'],
+                disks=[config['node_properties']['local_gb']],
+                networks=['baremetal'],
+                role='ironic_slave')
+            devops_nodes.append(devops_node)
+            mac = devops_node.interface_by_network_name(
+                'baremetal')[0].mac_address
+            config['mac_address'] = mac
+        node = ironic.create_node(config['driver'], config['driver_info'],
+                                  config['node_properties'],
+                                  config['mac_address'])
+        nodes.append(node)
 
-    driver_info = {
-        'ssh_address': server_ssh_credentials['ip'],
-        'ssh_username': server_ssh_credentials['username'],
-        'ssh_key_contents': server_ssh_credentials['key'],
-        'ssh_virt_type': 'virsh',
-        'deploy_kernel': get_image('ironic-deploy-linux').id,
-        'deploy_ramdisk': get_image('ironic-deploy-initramfs').id,
-        'deploy_squashfs': get_image('ironic-deploy-squashfs').id,
-    }
-    properties = {
-        'cpus': baremetal_node.vcpu,
-        'memory_mb': baremetal_node.memory,
-        'local_gb': settings.IRONIC_DISK_GB,
-        'cpu_arch': 'x86_64',
-    }
-    node = ironic.node.create(driver='fuel_ssh', driver_info=driver_info,
-                              properties=properties)
-    mac = baremetal_node.interface_by_network_name('baremetal')[0].mac_address
-    port = ironic.port.create(node_uuid=node.uuid, address=mac)
-    yield node
-    instance_uuid = ironic.node.get(node.uuid).instance_uuid
-    if instance_uuid:
-        os_conn.nova.servers.delete(instance_uuid)
-        common.wait(lambda: len(os_conn.nova.servers.findall(
-                        id=instance_uuid)) == 0,
-                    timeout_seconds=60, waiting_for='instance to be deleted')
-    ironic.port.delete(port.uuid)
-    ironic.node.delete(node.uuid)
+    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
+                timeout_seconds=60 * 5,
+                waiting_for='OSTF sanity tests to pass')
+    yield nodes
+
+    for node in nodes:
+        ironic.delete_node(node)
+
+    for node in devops_nodes:
+        devops_env.del_node(node)

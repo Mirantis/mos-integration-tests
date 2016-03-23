@@ -18,20 +18,17 @@ from mos_tests.functions import common
 
 
 @pytest.fixture
-def instance(os_conn, ubuntu_image, flavor, keypair):
-    baremetal_net = os_conn.nova.networks.find(label='baremetal')
-    instance = os_conn.create_server('ironic-server', image_id=ubuntu_image.id,
-                                     flavor=flavor.id, key_name=keypair.name,
-                                     nics=[{'net-id': baremetal_net.id}],
-                                     timeout=60 * 10)
+def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic):
+    instance = ironic.boot_instance(image=ubuntu_image,
+                                    flavor=flavors[0],
+                                    keypair=keypair)
     return instance
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631916')
-def test_instance_hard_reboot(env, ironic, os_conn, ironic_node, ubuntu_image,
-                              flavor, keypair, instance):
+def test_instance_hard_reboot(os_conn, instance):
     """Check instance state after hard reboot
 
     Scenario:
@@ -56,8 +53,7 @@ def test_instance_hard_reboot(env, ironic, os_conn, ironic_node, ubuntu_image,
 @pytest.mark.testrail_id('631917', params={'start_instance': False})
 @pytest.mark.testrail_id('631918', params={'start_instance': True})
 @pytest.mark.parametrize('start_instance', [True, False])
-def test_instance_stop_start(env, ironic, os_conn, ironic_node, ubuntu_image,
-                          flavor, keypair, instance, start_instance):
+def test_instance_stop_start(os_conn, instance, start_instance):
     """Check instance statuses during instance restart
 
     Scenario:
