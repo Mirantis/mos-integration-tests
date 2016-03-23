@@ -770,3 +770,9 @@ class OpenStackActions(object):
             self.nova.servers.stop(server.id)
         except NovaClientException:
             logger.info("nova server {} can't be stopped".format(server))
+
+    def rebuild_server(self, server, image):
+        srv = server.rebuild(image)
+        wait(lambda: self.nova.servers.get(srv).status == 'REBUILD',
+             timeout_seconds=60, waiting_for='start of instance rebuild')
+        return srv

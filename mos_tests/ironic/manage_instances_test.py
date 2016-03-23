@@ -88,3 +88,36 @@ def test_instance_stop_start(os_conn, instance, start_instance):
 
         assert getattr(os_conn.nova.servers.get(instance.id),
                        "OS-EXT-STS:vm_state") == 'active'
+
+
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.testrail_id('631920')
+def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
+                            flavor, keypair, instance):
+    """Check terminate instance
+
+    Scenario:
+        1. Boot Ironic instance
+        2. Terminate Ironic instance
+        3. Wait and check that instance not present in nova list
+    """
+    instance.delete()
+    common.wait(lambda: not os_conn.nova.servers.list().count(instance),
+                timeout_seconds=60, waiting_for="instance is terminated")
+
+
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.testrail_id('631919')
+def test_instance_rebuild(env, ironic, os_conn, ironic_node, ubuntu_image,
+                          flavor, keypair, instance):
+    """Check rebuild instance
+
+    Scenario:
+        1. Boot Ironic instance
+        2. Rebuild Ironic instance (nova rebuild <server> <image>)
+        3. Check that instance status became REBUILD
+        4. Wait until instance returns back to ACTIVE status.
+    """
+    server = os_conn.rebuild_server(instance, ubuntu_image.id)
+    common.wait(lambda: os_conn.nova.servers.get(server).status == 'ACTIVE',
+                timeout_seconds=60 * 10, waiting_for="instance is active")
