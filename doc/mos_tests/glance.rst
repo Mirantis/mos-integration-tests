@@ -8,7 +8,7 @@ General tests
 
 HA Glance tests
 ---------------
-.. automodule:: mos_tests.glance.ha_tests
+.. automodule:: mos_tests.glance.ha_test
    :members:
 
 Negative Glance tests

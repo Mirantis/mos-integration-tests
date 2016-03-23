@@ -22,7 +22,6 @@ from tempest.lib.cli import output_parser as parser
 from mos_tests.functions.common import wait
 from mos_tests import settings
 
-
 pytestmark = pytest.mark.undestructive
 
 
@@ -58,8 +57,8 @@ def calc_md5(filename):
 
 
 @pytest.mark.testrail_id('542892')
-@pytest.mark.parametrize('glance', [1], indirect=['glance'])
-def test_update_raw_data_in_image(glance, image_file, suffix):
+@pytest.mark.parametrize('glance_remote', [1], indirect=['glance_remote'])
+def test_update_raw_data_in_image(glance_remote, image_file_remote, suffix):
     """Checks updating raw data in Glance image
 
     Scenario:
@@ -73,19 +72,20 @@ def test_update_raw_data_in_image(glance, image_file, suffix):
     name = "Test_{0}".format(suffix[:6])
     cmd = ("image-create --name {name} --container-format bare --disk-format "
            "qcow2".format(name=name))
-    image = parser.details(glance(cmd))
-    image_data = parser.details(glance('image-show {id}'.format(**image)))
+    image = parser.details(glance_remote(cmd))
+    image_data = glance_remote('image-show {id}'.format(**image)).details()
     assert image_data['status'] == 'queued'
 
-    check_image_in_list(glance, image)
+    check_image_in_list(glance_remote, image)
 
-    glance('image-update --file {file} --progress {id}'.format(
-        file=image_file, **image))
-    check_image_active(glance, image)
+    glance_remote('image-update --file {file} --progress {id}'.format(
+        file=image_file_remote,
+        **image))
+    check_image_active(glance_remote, image)
 
-    glance('image-delete {id}'.format(**image))
+    glance_remote('image-delete {id}'.format(**image))
 
-    check_image_not_in_list(glance, image)
+    check_image_not_in_list(glance_remote, image)
 
 
 @pytest.mark.testrail_id('542893', params={'glance': 1})
@@ -106,7 +106,8 @@ def test_share_glance_image(glance, user, project, image_file, suffix):
     """
     name = "Test_{0}".format(suffix[:6])
     cmd = ("image-create --name {name} --container-format bare --disk-format "
-           "qcow2 --file {file} --progress".format(name=name, file=image_file))
+           "qcow2 --file {file} --progress".format(name=name,
+                                                   file=image_file))
     image = parser.details(glance(cmd))
 
     check_image_active(glance, image)
@@ -114,14 +115,14 @@ def test_share_glance_image(glance, user, project, image_file, suffix):
     check_image_in_list(glance, image)
 
     glance('member-create {id} {project_id}'.format(project_id=project['id'],
-                                                   **image))
+                                                    **image))
 
     member_list = parser.listing(glance('member-list --image-id {id}'.format(
         **image)))
     assert project['id'] in [x['Member ID'] for x in member_list]
 
     glance('member-delete {id} {project_id}'.format(project_id=project['id'],
-                                                   **image))
+                                                    **image))
 
     member_list = parser.listing(glance('member-list --image-id {id}'.format(
         **image)))
@@ -147,7 +148,8 @@ def test_image_create_delete_from_file(glance, image_file, suffix):
     name = 'Test_{}'.format(suffix)
     cmd = ('image-create --name {name} --container-format bare '
            '--disk-format qcow2 --file {source} --progress'.format(
-                name=name, source=image_file))
+               name=name,
+               source=image_file))
 
     image = parser.details(glance(cmd))
 
@@ -159,9 +161,11 @@ def test_image_create_delete_from_file(glance, image_file, suffix):
 
 
 @pytest.mark.testrail_id('542883',
-                         params={'glance': 1, 'option': '--copy-from'})
+                         params={'glance': 1,
+                                 'option': '--copy-from'})
 @pytest.mark.testrail_id('542884',
-                         params={'glance': 1, 'option': '--location'})
+                         params={'glance': 1,
+                                 'option': '--location'})
 @pytest.mark.parametrize('glance', [1], indirect=['glance'])
 @pytest.mark.parametrize('option', ('--location', '--copy-from'))
 def test_image_create_delete_from_url(glance, suffix, option):
@@ -177,7 +181,9 @@ def test_image_create_delete_from_url(glance, suffix, option):
     image_url = settings.GLANCE_IMAGE_URL
     cmd = ('image-create --name {name} --container-format bare '
            '--disk-format qcow2 {option} {image_url} --progress'.format(
-                name=name, option=option, image_url=image_url))
+               name=name,
+               option=option,
+               image_url=image_url))
 
     image = parser.details(glance(cmd))
 
@@ -207,7 +213,8 @@ def test_image_file_equal(glance, image_file, suffix):
     name = 'Test_{}'.format(suffix)
     cmd = ('image-create --name {name} --container-format bare '
            '--disk-format qcow2 --file {source} --progress'.format(
-                name=name, source=image_file))
+               name=name,
+               source=image_file))
 
     image = parser.details(glance(cmd))
 
@@ -222,8 +229,6 @@ def test_image_file_equal(glance, image_file, suffix):
     glance('image-delete {id}'.format(**image))
 
 
-# TODO(gdyuldin) Replace glance_remote with glance fixture after
-# https://review.openstack.org/284355 will be merged
 @pytest.mark.testrail_id('542894', params={'glance_remote': 1})
 @pytest.mark.testrail_id('542914', params={'glance_remote': 2})
 @pytest.mark.parametrize('glance_remote', [1, 2], indirect=['glance_remote'])
@@ -242,8 +247,7 @@ def test_unicode_support(glance_remote, suffix):
 
     check_image_in_list(glance_remote, image)
 
-    image_data = parser.details(
-        glance_remote('image-show {id}'.format(**image)))
+    image_data = glance_remote('image-show {id}'.format(**image)).details()
     assert image_data['status'] == 'queued'
 
     glance_remote('image-delete {id}'.format(**image))
@@ -267,7 +271,8 @@ def test_upload_image_with_token_expiration(glance, image_file, suffix):
     name = u"Test_{0}".format(suffix[:6])
     cmd = ('image-create --name {name} --container-format bare '
            '--disk-format qcow2 --file {source} --progress'.format(
-                name=name, source=image_file))
+               name=name,
+               source=image_file))
 
     image = parser.details(glance(cmd))
 
@@ -278,11 +283,12 @@ def test_upload_image_with_token_expiration(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
-@pytest.mark.parametrize('glance, key_name', (
-    (1, "Property 'key'"),
-    (2, 'key'),
-), indirect=['glance'])
-def test_update_properties_of_image(glance, image_file, suffix, key_name):
+@pytest.mark.parametrize('glance_remote, key_name',
+                         ((1, "Property 'key'"),
+                          (2, 'key'), ),
+                         indirect=['glance_remote'])
+def test_update_properties_of_image(glance_remote, image_file_remote, suffix,
+                                    key_name):
     """Check updating properties of glance image
 
     Scenario:
@@ -295,18 +301,19 @@ def test_update_properties_of_image(glance, image_file, suffix, key_name):
     """
     name = "Test_{0}".format(suffix[:6])
     cmd = ("image-create --name {name} --container-format bare --disk-format "
-           "qcow2 --file {file} --progress".format(name=name, file=image_file))
-    image = parser.details(glance(cmd))
+           "qcow2 --file {file} --progress".format(name=name,
+                                                   file=image_file_remote))
+    image = parser.details(glance_remote(cmd))
 
-    check_image_active(glance, image)
+    check_image_active(glance_remote, image)
 
-    check_image_in_list(glance, image)
+    check_image_in_list(glance_remote, image)
 
-    glance('image-update {id} --property key=test'.format(**image))
+    glance_remote('image-update {id} --property key=test'.format(**image))
 
-    image_data = parser.details(glance('image-show {id}'.format(**image)))
+    image_data = glance_remote('image-show {id}'.format(**image)).details()
     assert image_data[key_name] == 'test'
 
-    glance('image-delete {id}'.format(**image))
+    glance_remote('image-delete {id}'.format(**image))
 
-    check_image_not_in_list(glance, image)
+    check_image_not_in_list(glance_remote, image)
