@@ -138,7 +138,7 @@ def image_file():
     image_file.unlink(image_file.name)
 
 
-@pytest.yield_fixture(params=['create', 'delete'])
+@pytest.yield_fixture(params=[['create', 'delete']])
 def ubuntu_image(request, os_conn, image_file):
     actions = request.param
     image_name = 'ironic_trusty'
