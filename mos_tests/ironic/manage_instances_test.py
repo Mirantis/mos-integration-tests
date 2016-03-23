@@ -28,9 +28,8 @@ def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic):
 
 
 @pytest.yield_fixture
-def tenants(env, openstack_client):
-    # os_conns = []
-    os_conns = {}
+def tenants_clients(env, openstack_client):
+    os_conns = []
     for i in range(2):
         user = 'ironic_user_{}'.format(i)
         password = 'ironic'
@@ -41,8 +40,7 @@ def tenants(env, openstack_client):
             controller_ip=env.get_primary_controller_ip(),
             cert=env.certificate, env=env, user=user, password=password,
             tenant=project)
-        keypair = os_conn.create_key(key_name='ironic-key')
-        os_conns[i] = [os_conn, keypair]
+        os_conns.append(os_conn)
     yield os_conns
     for i in range(2):
         user = 'ironic_user_{}'.format(i)
@@ -177,8 +175,8 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair,
 @pytest.mark.testrail_id('631912')
 @pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
 def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
-                                             flavors, ironic_nodes, tenants,
-                                             ironic, keypair):
+                                             ironic_nodes, ironic, flavors,
+                                             tenants_clients):
     """Check instance statuses during instance restart
 
     Scenario:
@@ -192,46 +190,34 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
 
     common.wait(ironic.get_provisioned_node, timeout_seconds=3 * 60,
                 sleep_seconds=15, waiting_for='ironic node to be provisioned')
-    instances = {}
-    for i in range(2):
-        tenant_conn = tenants[i][0]
-        tenant_keypair = tenants[i][1]
+    instances, keypairs, ips = [], [], []
+
+    for flavor, tenant_conn in zip(flavors, tenants_clients):
+        tenant_keypair = tenant_conn.create_key(key_name='ironic-key')
         brm_net = tenant_conn.nova.networks.find(label='baremetal')
-        instance = tenant_conn.create_server('ironic-server-{}'.format(i),
+        instance = tenant_conn.create_server('ironic-server',
                                              image_id=ubuntu_image.id,
-                                             flavor=flavors[i].id,
+                                             flavor=flavor.id,
                                              key_name=tenant_keypair.name,
                                              nics=[{'net-id': brm_net.id}],
                                              timeout=60 * 10,
                                              wait_for_avaliable=False)
-        instances[i] = [instance,
-                        tenant_conn.get_nova_instance_ips(instance)['fixed']]
 
-    for i in range(2):
-        instance = instances[i][0]
-        assert os_conn.is_server_ssh_ready(instance)
-        for j in range(2):
-            if j != i:
-                instances[i].append(
-                    os_conn.get_nova_instance_ips(instances[j][0])['fixed'])
+        keypairs.append(tenant_keypair)
+        instances.append(instance)
+        ips.append(tenant_conn.get_nova_instance_ips(instance)['fixed'])
 
-    for i in range(2):
-        instance = instances[i][0]
-        tenant_keypair = tenants[i][1]
-        ip_for_ping = instances[i][2]
-
+    for instance, tenant_keypair, ip in zip(instances, keypairs, ips[::-1]):
         with os_conn.ssh_to_instance(env, instance, vm_keypair=tenant_keypair,
                                      username='ubuntu') as remote:
-            result = remote.execute('ping -c 10 {}'.format(ip_for_ping))
-            loss_packets = int(result['stdout'][-2].split()[5][:-1])
-            assert loss_packets < 100
+            result = remote.execute('ping -c 10 {}'.format(ip))
+            received_packets = int(result['stdout'][-2].split()[3])
+            assert received_packets > 0
 
     def is_instance_deleted():
         return instance not in tenant_conn.nova.servers.list()
 
-    for i in range(2):
-        tenant_conn = tenants[i][0]
-        instance = instances[i][0]
+    for instance, tenant_conn in zip(instances, tenants_clients):
         instance.delete()
         common.wait(is_instance_deleted, timeout_seconds=60 * 5,
                     sleep_seconds=20, waiting_for="instance is deleted")
