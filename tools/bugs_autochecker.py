@@ -33,10 +33,12 @@ def _check_bug(bug):
     incomplete = []
     for check in CHECKS:
         current_check = CHECKS[check]
+        correct = False
         for field in current_check:
-            if field not in bug.description.lower():
-                incomplete.append("%s\n" % check)
-            break
+            if field in bug.description.lower():
+                correct = True
+        if not correct:
+            incomplete.append("%s\n" % check)
     if not incomplete:
         if TAG in bug.tags:
             _remove_tag(bug)
