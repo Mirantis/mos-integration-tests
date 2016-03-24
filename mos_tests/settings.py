@@ -81,3 +81,10 @@ IRONIC_GLANCE_DISK_INFO = [{
     }]
 }]
 IRONIC_DISK_GB = 50
+
+##############################
+# RabbitMQ and OSLO settings #
+##############################
+
+RABBITOSLO_REPO = 'https://github.com/dmitrymex/oslo.messaging-check-tool.git'
+RABBITOSLO_PKG = 'oslo.messaging-check-tool_1.0-1~u14.04+mos1_all.deb'

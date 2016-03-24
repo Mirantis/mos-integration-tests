@@ -13,10 +13,12 @@
 #    under the License.
 
 import logging
-from random import randint
+import random
 import re
 
 import pytest
+
+from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
@@ -27,11 +29,14 @@ def vars_config(remote):
     :param remote: SSH connection point to controller.
     """
     config_vars = {
-        'repo': 'https://github.com/dmitrymex/oslo.messaging-check-tool.git',
-        'pkg': 'oslo.messaging-check-tool_1.0-1~u14.04+mos1_all.deb',
+        'repo': settings.RABBITOSLO_REPO,
+        'pkg': settings.RABBITOSLO_PKG,
         'root_path': '/root/',
-        'repo_path': '/root/oslo.messaging-check-tool/',
         'nova_user': 'nova'}
+    # like: /root/oslo.messaging-check-tool/
+    config_vars['repo_path'] = '{0}{1}/'.format(
+        config_vars['root_path'], config_vars['repo'].split('/')[-1][:-4])
+    # like: /root/oslo.messaging-check-tool/oslo_msg_check.conf
     config_vars['conf_file_path'] = '{}oslo_msg_check.conf'.format(
         config_vars['repo_path'])
     # get password of nova user (the same on all controllers)
@@ -41,8 +46,9 @@ def vars_config(remote):
 
 
 def install_oslomessagingchecktool(remote, **kwargs):
-    """Install tool on controller
+    """Install 'oslo.messaging-check-tool' on controller.
     https://github.com/dmitrymex/oslo.messaging-check-tool
+    :param remote: SSH connection point to controller
     """
     cmd = ("apt-get update && "
            "apt-get install git python-pip -y && "
@@ -51,16 +57,20 @@ def install_oslomessagingchecktool(remote, **kwargs):
            "cd {repo_path} && "
            "pip install -r requirements.txt -r test-requirements.txt && "
            "dpkg -i {pkg} || "
-           "apt-get -f install -y".format(root_path=kwargs['root_path'],
-                                          repo=kwargs['repo'],
-                                          repo_path=kwargs['repo_path'],
-                                          pkg=kwargs['pkg']))
+           "apt-get -f install -y".format(**kwargs))
     logger.debug('Install "oslo.messaging-check-tool" on controller')
     return remote.check_call(cmd)
 
 
-def configure_oslomessagingchecktool(remote, ctrl_ips, **kwargs):
-    """Write configuration file on controller"""
+def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
+                                     conf_file_path):
+    """Write configuration file on controller
+    :param remote: SSH connection point to controller;
+    :param ctrl_ips: List of controllers IPs;
+    :param nova_user: Name of Rabbit admin;
+    :param nova_pass: Password of Rabbit admin;
+    :param conf_file_path: Path where config file will be written.
+    """
     # Create config file for "oslo.messaging-check-tool"
     configs = (
         "[DEFAULT]\n"
@@ -69,38 +79,61 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, **kwargs):
         "rabbit_hosts = {rabbit_hosts}\n"
         "rabbit_userid = {nova_user}\n"
         "rabbit_password = {nova_pass}\n".format(
-            rabbit_hosts=":5673, ".join(ctrl_ips),
-            nova_user=kwargs['nova_user'],
-            nova_pass=kwargs['nova_pass']))
+            rabbit_hosts=', '.join([(x + ':5673') for x in ctrl_ips]),
+            nova_user=nova_user,
+            nova_pass=nova_pass))
     # Write config to file on controller
     logger.debug('Write "oslo.messaging-check-tool" config file to controller')
-    with remote.open(kwargs['conf_file_path'], 'w') as f:
+    with remote.open(conf_file_path, 'w') as f:
         f.write(configs)
 
 
-def restart_rabbitmq_serv(env, remote=None, restart_all=False):
+def restart_rabbitmq_serv(env, remote=None):
     """Restart rabbitmq-server service on one or all controllers
     :param env: Environment
     :param remote: SSH connection point to controller.
         Leave empty if you want to restart service on all controllers.
-    :param restart_all: Set True to restart on service on all controllers.
-    :return: None
     """
-    restart_cmd = 'service rabbitmq-server restart'
-    # if certain controller not set --> restart rabbitmq on all controllers
+    # 'sleep' is to wait for service startup
+    restart_cmd = 'service rabbitmq-server restart && sleep 20'
     if remote is None:
-        restart_all = True
-    # restart on one controller
-    if remote is not None:
-        logger.debug('Restart RabbinMQ server on one controller')
-        remote.check_call(restart_cmd)
-    # restart on all controllers
-    if restart_all is True:
+        # restart on all controllers
         controllers = env.get_nodes_by_role('controller')
         logger.debug('Restart RabbinMQ server on all controllers')
         for controller in controllers:
             with controller.ssh() as remote:
                 remote.check_call(restart_cmd)
+    else:
+        # restart on one controller
+        logger.debug('Restart RabbinMQ server on one controller')
+        remote.check_call(restart_cmd)
+
+
+def generate_msg(remote, conf_file_path, num_of_msg_to_gen=10000):
+    """Generate messages with oslo_msg_load_generator
+    :param remote: SSH connection point to controller.
+    :param conf_file_path: Path to the config file.
+    :param num_of_msg_to_gen: How many messages to generate.
+    """
+    cmd = ('oslo_msg_load_generator '
+           '--config-file {0} '
+           '--messages-to-send {1} '
+           '--nodebug'.format(
+                conf_file_path, num_of_msg_to_gen))
+    remote.check_call(cmd)
+
+
+def consume_msg(remote, conf_file_path):
+    """Consume messages with oslo_msg_load_consumer
+    :param remote: SSH connection point to controller.
+    :param conf_file_path: Path to the config file.
+    """
+    cmd = ('oslo_msg_load_consumer '
+           '--config-file {0} '
+           '--nodebug'.format(conf_file_path))
+    out_consume = remote.check_call(cmd)['stdout'][0]
+    num_of_msg_consumed = int(re.findall('\d+', out_consume)[0])
+    return num_of_msg_consumed
 
 
 @pytest.mark.undestructive
@@ -119,39 +152,32 @@ def test_load_messages_and_restart_one_controller(env):
     6. Check that number of generated and consumed messages is equal.
     """
     controllers = env.get_nodes_by_role('controller')
-    controller = controllers[(randint(0, len(controllers) - 1))]
+    controller = random.choice(controllers)
 
     # Get IPs of all controllers
     ctrl_ips = []
     for one in controllers:
-        with one.ssh() as remote:
-            out = remote.check_call('hostname -i')['stdout'][0].strip()
-            ctrl_ips.append(out)
+        ip = [x['ip'] for x in one.data['network_data']
+              if x['name'] == 'management'][0]
+        ip = ip.split("/")[0]
+        ctrl_ips.append(ip)
 
-    # Execute all on one controller
+    # Execute everything on one controller
     with controller.ssh() as remote:
         kwargs = vars_config(remote)
         install_oslomessagingchecktool(remote, **kwargs)
-        configure_oslomessagingchecktool(remote, ctrl_ips, **kwargs)
+        configure_oslomessagingchecktool(
+            remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+            kwargs['conf_file_path'], )
 
         # Generate messages
         num_of_msg_to_gen = 10000
-        cmd = ('oslo_msg_load_generator --config-file {0} '
-               '--messages-to-send {1} --nodebug'.format(
-                    kwargs['conf_file_path'], num_of_msg_to_gen))
-        remote.check_call(cmd)
+        generate_msg(remote, kwargs['conf_file_path'], num_of_msg_to_gen)
 
         # Restart RabbinMQ server on one controller
         restart_rabbitmq_serv(env, remote=remote)
 
         # Consume generated messages
-        cmd = 'oslo_msg_load_consumer --config-file {0} --nodebug'.format(
-            kwargs['conf_file_path'])
-        out_consume = remote.check_call(cmd)['stdout'][0]
-        num_of_msg_consumed = re.findall('\d+', out_consume)[0]
+        num_of_msg_consumed = consume_msg(remote, kwargs['conf_file_path'])
 
-    assert (num_of_msg_to_gen == num_of_msg_consumed,
-            "generated != consumed\n"
-            "{0} != {1}".format(
-                num_of_msg_to_gen,
-                num_of_msg_consumed))
+    assert num_of_msg_to_gen == num_of_msg_consumed
