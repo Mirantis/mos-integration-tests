@@ -606,29 +606,33 @@ class OpenStackActions(object):
             mac_address=vm_mac)['ports'][0]['network_id']
         dhcp_namespace = "qdhcp-{0}".format(net_id)
         if proxy_node is None:
-            devops_nodes = self.get_node_with_dhcp_for_network(net_id)
-            if not devops_nodes:
+            proxy_nodes = self.get_node_with_dhcp_for_network(net_id)
+            if not proxy_nodes:
                 raise Exception("Nodes with dhcp for network with id:{}"
                                 " not found.".format(net_id))
-            proxy_node = random.choice(devops_nodes)
-        ip = env.find_node_by_fqdn(proxy_node).data['ip']
-        key_paths = env.admin_ssh_keys_paths
-        proxy_command = (
-            "ssh {keys} -o 'StrictHostKeyChecking no' "
-            "root@{node_ip} 'ip netns exec {ns} "
-            "nc {vm_ip} 22'".format(
-                keys=' '.join('-i {}'.format(k) for k in key_paths),
-                ns=dhcp_namespace,
-                node_ip=ip,
-                vm_ip=vm_ip))
-        logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
+        else:
+            proxy_nodes = [proxy_node]
+
+        proxy_commands = []
+        for node in proxy_nodes:
+            ip = env.find_node_by_fqdn(node).data['ip']
+            key_paths = env.admin_ssh_keys_paths
+            proxy_command = (
+                "ssh {keys} -o 'StrictHostKeyChecking no' "
+                "root@{node_ip} 'ip netns exec {ns} "
+                "nc {vm_ip} 22'".format(
+                    keys=' '.join('-i {}'.format(k) for k in key_paths),
+                    ns=dhcp_namespace,
+                    node_ip=ip,
+                    vm_ip=vm_ip))
+            proxy_commands.append(proxy_command)
         instance_keys = []
         if vm_keypair is not None:
             instance_keys.append(paramiko.RSAKey.from_private_key(
                 six.StringIO(vm_keypair.private_key)))
         return SSHClient(vm_ip, port=22, username=username, password=password,
                          private_keys=instance_keys,
-                         proxy_command=proxy_command)
+                         proxy_commands=proxy_commands)
 
     def wait_agents_alive(self, agt_ids_to_check):
         wait(lambda: all(agt['alive'] for agt in

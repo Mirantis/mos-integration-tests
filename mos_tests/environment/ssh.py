@@ -24,13 +24,19 @@ import time
 logger = logging.getLogger(__name__)
 
 
-def retry(count=10, delay=1):
-    """Retry until no exceptions decorator."""
+def retry(count=10, delay=1, pass_counter=None):
+    """Retry until no exceptions decorator.
+
+    :param pass_counter: argument to pass counter variable in
+    :type pass_counter: None or str
+    """
     def decorator(func):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            for _ in range(count):
+            for i in range(count):
+                if pass_counter is not None:
+                    kwargs[pass_counter] = i
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
@@ -99,7 +105,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_command=None, timeout=120):
+                 private_keys=None, proxy_commands=(), timeout=120):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -111,7 +117,7 @@ class SSHClient(object):
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
         self.timeout = timeout
-        self.proxy_command = proxy_command
+        self.proxy_commands = proxy_commands
         self._ssh = None
         self._sftp_client = None
         self._proxy = None
@@ -172,13 +178,16 @@ class SSHClient(object):
 
         return self._ssh.connect(self.host, **base_kwargs)
 
-    @retry(count=3, delay=3)
-    def reconnect(self):
+    @retry(count=3, delay=3, pass_counter='counter')
+    def reconnect(self, counter):
         self.clear()
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        if self.proxy_command is not None:
-            self._proxy = paramiko.ProxyCommand(self.proxy_command)
+        proxies_count = len(self.proxy_commands)
+        if proxies_count > 0:
+            proxy_command = self.proxy_commands[counter % proxies_count]
+            logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
+            self._proxy = paramiko.ProxyCommand(proxy_command)
             self._proxy.settimeout(self.timeout)
         self.connect()
 
