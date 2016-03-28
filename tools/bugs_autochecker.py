@@ -33,10 +33,12 @@ def _check_bug(bug):
     incomplete = []
     for check in CHECKS:
         current_check = CHECKS[check]
+        correct = False
         for field in current_check:
-            if field not in bug.description.lower():
-                incomplete.append("%s\n" % check)
-            break
+            if field in bug.description.lower():
+                correct = True
+        if not correct:
+            incomplete.append("%s\n" % check)
     if not incomplete:
         if TAG in bug.tags:
             _remove_tag(bug)
@@ -62,10 +64,11 @@ def _add_tag(bug):
 
 def _remove_tag(bug):
     tags = bug.tags
-    tags.remove(TAG)
-    bug.tags = tags
-    bug.lp_save()
-    print "Tag removed from %s\n" % bug.web_link
+    if TAG in tags:
+        tags.remove(TAG)
+        bug.tags = tags
+        bug.lp_save()
+        print "Tag removed from %s\n" % bug.web_link
 
 
 def _post_comment(bug, fields):
