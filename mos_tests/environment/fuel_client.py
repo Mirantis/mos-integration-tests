@@ -315,14 +315,17 @@ class FuelClient(object):
         env.admin_ssh_keys = self.admin_keys
         return env
 
+    def ssh_admin(self):
+        return SSHClient(host=self.admin_ip,
+                         username=self.ssh_login,
+                         password=self.ssh_password)
+
     @property
     def admin_keys(self):
         """Return list with private ssh keys from Fuel master node"""
         if self._admin_keys is None:
             self._admin_keys = []
-            with SSHClient(host=self.admin_ip,
-                           username=self.ssh_login,
-                           password=self.ssh_password) as remote:
+            with self.ssh_admin() as remote:
                 for path in ['/root/.ssh/id_rsa',
                              '/root/.ssh/bootstrap.rsa']:
                     with remote.open(path) as f:
