@@ -12,13 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
 import random
 import re
-import time
 
 import pytest
 
+from mos_tests.functions.common import wait
 from mos_tests import settings
 
 
@@ -32,11 +33,8 @@ def vars_config(remote):
     config_vars = {
         'repo': settings.RABBITOSLO_REPO,
         'pkg': settings.RABBITOSLO_PKG,
-        'root_path': '/root/',
+        'repo_path': '/root/oslo_messaging_check_tool/',
         'nova_user': 'nova'}
-    # like: /root/oslo.messaging-check-tool/
-    config_vars['repo_path'] = '{0}{1}/'.format(
-        config_vars['root_path'], config_vars['repo'].split('/')[-1][:-4])
     # like: /root/oslo.messaging-check-tool/oslo_msg_check.conf
     config_vars['conf_file_path'] = '{}oslo_msg_check.conf'.format(
         config_vars['repo_path'])
@@ -53,8 +51,7 @@ def install_oslomessagingchecktool(remote, **kwargs):
     """
     cmd = ("apt-get update && "
            "apt-get install git python-pip python-dev -y && "
-           "cd {root_path} && "
-           "git clone {repo} && "
+           "git clone {repo} {repo_path} && "
            "cd {repo_path} && "
            "pip install -r requirements.txt -r test-requirements.txt && "
            "dpkg -i {pkg} || "
@@ -65,7 +62,7 @@ def install_oslomessagingchecktool(remote, **kwargs):
 
 def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
                                      conf_file_path):
-    """Write configuration file on controller
+    """Write configuration file on controller.
     :param remote: SSH connection point to controller;
     :param ctrl_ips: List of controllers IPs;
     :param nova_user: Name of Rabbit admin;
@@ -89,6 +86,17 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
         f.write(configs)
 
 
+def get_api_info(remote, api_path):
+    """RabbitMQ HTTP API.
+    Not stable in case of usage right after rabbit service restart
+    """
+    cmd = ('curl -u {nova_user}:{nova_pass} '
+           'http://localhost:15672/api/{api_path}').format(
+                api_path=api_path, **vars_config(remote))
+    out = remote.check_call(cmd)['stdout']
+    return json.loads(out[0])
+
+
 def restart_rabbitmq_serv(env, remote=None, sleep=10):
     """Restart rabbitmq-server service on one or all controllers.
     After each restart, check that rabbit is up and running.
@@ -102,14 +110,14 @@ def restart_rabbitmq_serv(env, remote=None, sleep=10):
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
-        logger.debug('Restart RabbinMQ server on all controllers one-by-one')
+        logger.debug('Restart RabbinMQ server on ALL controllers one-by-one')
         for controller in controllers:
             with controller.ssh() as remote:
                 remote.check_call(restart_cmd)
                 wait_for_rabbit_running_nodes(remote, len(controllers))
     else:
         # restart on one controller
-        logger.debug('Restart RabbinMQ server on one controller')
+        logger.debug('Restart RabbinMQ server on ONE controller')
         remote.check_call(restart_cmd)
         wait_for_rabbit_running_nodes(remote, len(controllers))
 
@@ -119,17 +127,16 @@ def num_of_rabbit_running_nodes(remote, timeout_min=5):
     :param remote: SSH connection point to controller.
     :param timeout_min: Timeout in minutes to wait for successful cmd execution
     """
-    timeout = time.time() + 60 * timeout_min
-    cmd = 'rabbitmqctl cluster_status'
-    while True:
-        out = remote.execute(cmd)
-        if out['exit_code'] == 0 and 'running_nodes' in ''.join(out['stdout']):
-            break
-        elif time.time() > timeout:
-            raise AssertionError('Timeout: "rabbitmqctl cluster_status"')
-        time.sleep(15)
+    def rabbit_status():
+        result = remote.execute('rabbitmqctl cluster_status')
+        if result.is_ok and 'running_nodes' in result.stdout_string:
+            return result['stdout']
+
+    out = wait(rabbit_status,
+               timeout_seconds=60 * timeout_min,
+               sleep_seconds=20,
+               waiting_for='RabbitMQ service start.')
     # Parse output to get only list with 'running_nodes'
-    out = out['stdout']
     out = map(str.strip, out)
     out = out[1:]
     out = ''.join(out)
@@ -146,18 +153,10 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
     :param exp_nodes: Expected number of rabbit nodes.
     :param timeout_min: Timeout in minutes to wait.
     """
-    timeout = time.time() + 60 * timeout_min
-    while True:
-        running_nodes = num_of_rabbit_running_nodes(remote, timeout_min)
-        logger.debug('Get running rabbit nodes. [Got: {0}, Exp: {1}]'.format(
-            running_nodes, exp_nodes))
-        if running_nodes == exp_nodes:
-            break
-        elif time.time() > timeout:
-            raise AssertionError('Expected RabbitMQ running nodes is {0}.\n'
-                                 'Current is {1}'.format(exp_nodes,
-                                                         running_nodes))
-        time.sleep(15)
+    wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='number of running nodes will be %s.' % exp_nodes)
 
 
 def generate_msg(remote, conf_file_path, num_of_msg_to_gen=10000):
@@ -205,6 +204,7 @@ def test_load_messages_and_restart_one_all_controller(
     2. Prepare config file for it;
     3. Generate 10000 messages to RabbitMQ cluster;
     4. Restart RabbitMQ-server on one/all controller(s);
+        If all - restart will be one-by-one, not all together.
     5. Wait until RabbitMQ service will be up and cluster synchronised;
     6. Consume messages;
     7. Check that number of generated and consumed messages is equal.
