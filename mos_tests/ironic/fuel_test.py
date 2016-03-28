@@ -13,6 +13,7 @@
 #    under the License.
 
 import pytest
+import yaml
 
 from mos_tests.environment.fuel_client import Environment
 
@@ -25,11 +26,15 @@ def new_env(fuel, env):
                                  release_id=env.data['release_id'],
                                  net='neutron',
                                  net_segment_type='vlan')
+    yield new_env
+    new_env.delete()
+
+
+@pytest.fixture
+def enable_ironic(new_env):
     data = new_env.get_settings_data()
     data['editable']['additional_components']['ironic']['value'] = True
     new_env.set_settings_data(data)
-    yield new_env
-    new_env.delete()
 
 
 @pytest.yield_fixture
@@ -47,7 +52,7 @@ def check_net_settings_equals(fuel_settings, cli_settings):
 
 
 @pytest.mark.testrail_id('631890')
-def test_baremetal_network_settings(new_env, admin_remote):
+def test_baremetal_network_settings(new_env, enable_ironic, admin_remote):
     """Check baremetal network settings with enabled/disabled Ironic
 
     Scenario:
@@ -94,3 +99,34 @@ def test_baremetal_network_settings(new_env, admin_remote):
     assert 'baremetal' in networks
     check_net_settings_equals(networks['baremetal'],
                               get_baremetal_net_settings_from_cli())
+
+
+@pytest.mark.testrail_id('631890')
+def test_enablink_ironic_role_in_yaml_config(new_env, admin_remote):
+    """Ironic role can be enabled in cluster via yaml config file
+
+    Scenario:
+        1. Create environment with disabled Ironic
+        2. Get environment settings with
+            `fuel settings --env <env id> --download`
+        3. Change Ironic value to true in downloaded file
+        4. Upload changed settings file with
+            `fuel settings --env <env id> --upload`
+        5. Check that Ironic is enabled in Fuel API
+    """
+    api_cofig = new_env.get_settings_data()['editable']
+    assert api_cofig['additional_components']['ironic']['value'] is False
+
+    result = admin_remote.check_call(
+        'fuel --env {0.id} settings --download'.format(new_env))
+    path = result.stdout_string.split()[-1]
+    with admin_remote.open(path, 'r+') as f:
+        data = yaml.load(f)
+        data['editable']['additional_components']['ironic']['value'] = True
+        yaml.dump(data, f)
+
+    admin_remote.check_call('fuel --env {0.id} settings --upload'.format(
+        new_env))
+
+    api_cofig = new_env.get_settings_data()['editable']
+    assert api_cofig['additional_components']['ironic']['value'] is True
