@@ -5,7 +5,7 @@ CHECKS = {
     "version": ["iso", "env", "version"],
     "expected result": ["expected"],
     "steps to reproduce": ["steps"],
-    "actual result": ["actual"]
+    "actual result": ["actual", "observed"]
 }
 SUBJECT = 'Autochecker'
 MESSAGE_FOR_INCOMPLETE = (
