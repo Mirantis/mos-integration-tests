@@ -1,0 +1,96 @@
+#    Copyright 2016 Mirantis, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+import pytest
+
+from mos_tests.environment.fuel_client import Environment
+
+pytestmark = pytest.mark.undestructive
+
+
+@pytest.yield_fixture
+def new_env(fuel, env):
+    new_env = Environment.create(name='test',
+                                 release_id=env.data['release_id'],
+                                 net='neutron',
+                                 net_segment_type='vlan')
+    data = new_env.get_settings_data()
+    data['editable']['additional_components']['ironic']['value'] = True
+    new_env.set_settings_data(data)
+    yield new_env
+    new_env.delete()
+
+
+@pytest.yield_fixture
+def admin_remote(fuel):
+    with fuel.ssh_admin() as remote:
+        yield remote
+
+
+def check_net_settings_equals(fuel_settings, cli_settings):
+    __tracebackhide__ = True
+
+    for key in set(fuel_settings.keys()) & set(cli_settings.keys()):
+        if str(fuel_settings[key]) != cli_settings[key]:
+            pytest.fail('Network settings are not equals')
+
+
+@pytest.mark.testrail_id('631890')
+def test_baremetal_network_settings(new_env, admin_remote):
+    """Check baremetal network settings with enabled/disabled Ironic
+
+    Scenario:
+        1. Create new environment with enabled Ironic
+        2. Check that baremetal network are present
+        3. Check that baremetal network settings are same on API and cli
+        4. Disable Ironic
+        5. Check that baremetal network is not present on API and cli
+        6. Enable Ironic
+        7. Check that baremetal network are present
+        8. Check that baremetal network settings are same on API and cli
+    """
+
+    def get_baremetal_net_settings_from_cli():
+        result = admin_remote.check_call(
+            'fuel network-group --nodegroup {}'.format(new_env.id))
+        headers = [x.strip() for x in result['stdout'][0].split('|')]
+        for row in result['stdout'][2:]:
+            values = [x.strip() for x in row.split('|')]
+            if 'baremetal' in values:
+                return dict(zip(headers, values))
+
+    networks = {x['name']: x for x in new_env.get_network_data()['networks']}
+    assert 'baremetal' in networks
+
+    check_net_settings_equals(networks['baremetal'],
+                              get_baremetal_net_settings_from_cli())
+
+    # Disable Ironic
+    data = new_env.get_settings_data()
+    data['editable']['additional_components']['ironic']['value'] = False
+    new_env.set_settings_data(data)
+
+    networks = {x['name']: x for x in new_env.get_network_data()['networks']}
+    assert 'baremetal' not in networks
+    assert get_baremetal_net_settings_from_cli() is None
+
+    # Enable Ironic
+    data = new_env.get_settings_data()
+    data['editable']['additional_components']['ironic']['value'] = True
+    new_env.set_settings_data(data)
+
+    networks = {x['name']: x for x in new_env.get_network_data()['networks']}
+    assert 'baremetal' in networks
+    check_net_settings_equals(networks['baremetal'],
+                              get_baremetal_net_settings_from_cli())
