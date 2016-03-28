@@ -254,8 +254,7 @@ class TestDVR(TestDVRBase):
         controller_with_snat = self.find_snat_controller(self.router_id)
         if controller_with_snat != leader_controller:
             logger.info('Moving router to leader {}'.format(leader_controller))
-            l3_agents = self.os_conn.get_l3_for_router(
-                self.router_id)['agents']
+            l3_agents = self.os_conn.list_l3_agents()
             snat_agent = [x for x in l3_agents
                           if x['host'] == controller_with_snat.data['fqdn']][0]
             new_l3_agent = [x for x in l3_agents
