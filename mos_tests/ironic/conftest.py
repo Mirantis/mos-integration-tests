@@ -138,7 +138,7 @@ def image_file():
     image_file.unlink(image_file.name)
 
 
-@pytest.yield_fixture(params=['create', 'delete'])
+@pytest.yield_fixture(params=[['create', 'delete']])
 def ubuntu_image(request, os_conn, image_file):
     actions = request.param
     image_name = 'ironic_trusty'
@@ -150,6 +150,7 @@ def ubuntu_image(request, os_conn, image_file):
             disk_format='raw',
             container_format='bare',
             hypervisor_type='baremetal',
+            visibility='public',
             cpu_arch='x86_64',
             fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
 

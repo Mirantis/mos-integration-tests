@@ -14,6 +14,7 @@
 
 import pytest
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
 from mos_tests import settings
 
@@ -24,6 +25,28 @@ def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic):
                                     flavor=flavors[0],
                                     keypair=keypair)
     return instance
+
+
+@pytest.yield_fixture
+def tenants_clients(env, openstack_client):
+    os_conns = []
+    for i in range(2):
+        user = 'ironic_user_{}'.format(i)
+        password = 'ironic'
+        project = 'ironic_project_{}'.format(i)
+        openstack_client.project_create(project)
+        openstack_client.user_create(user, password, project)
+        os_conn = OpenStackActions(
+            controller_ip=env.get_primary_controller_ip(),
+            cert=env.certificate, env=env, user=user, password=password,
+            tenant=project)
+        os_conns.append(os_conn)
+    yield os_conns
+    for i in range(2):
+        user = 'ironic_user_{}'.format(i)
+        project = 'ironic_project_{}'.format(i)
+        openstack_client.user_delete(user)
+        openstack_client.project_delete(project)
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
@@ -145,3 +168,56 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair,
                                  username='ubuntu') as remote:
         remote.check_call('ls /userdata_result')
         remote.check_call('ping -c1 {}'.format(settings.PUBLIC_TEST_IP))
+
+
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.need_devops
+@pytest.mark.testrail_id('631912')
+@pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
+def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
+                                             ironic_nodes, ironic, flavors,
+                                             tenants_clients):
+    """Check instance statuses during instance restart
+
+    Scenario:
+        1. Boot 1st Ironic instance under 1st tenant
+        2. Boot 2nd Ironic instance under 2nd tenant
+        3. Check Ironic instances statuses
+        4. Login via SSH to Ironic instances.
+        5. Check that instances are accessible for each other in baremetal
+        network
+    """
+
+    common.wait(ironic.get_provisioned_node, timeout_seconds=3 * 60,
+                sleep_seconds=15, waiting_for='ironic node to be provisioned')
+    instances, keypairs, ips = [], [], []
+
+    for flavor, tenant_conn in zip(flavors, tenants_clients):
+        tenant_keypair = tenant_conn.create_key(key_name='ironic-key')
+        brm_net = tenant_conn.nova.networks.find(label='baremetal')
+        instance = tenant_conn.create_server('ironic-server',
+                                             image_id=ubuntu_image.id,
+                                             flavor=flavor.id,
+                                             key_name=tenant_keypair.name,
+                                             nics=[{'net-id': brm_net.id}],
+                                             timeout=60 * 10,
+                                             wait_for_avaliable=False)
+
+        keypairs.append(tenant_keypair)
+        instances.append(instance)
+        ips.append(tenant_conn.get_nova_instance_ips(instance)['fixed'])
+
+    for instance, tenant_keypair, ip in zip(instances, keypairs, ips[::-1]):
+        with os_conn.ssh_to_instance(env, instance, vm_keypair=tenant_keypair,
+                                     username='ubuntu') as remote:
+            result = remote.execute('ping -c 10 {}'.format(ip))
+            received_packets = int(result['stdout'][-2].split()[3])
+            assert received_packets > 0
+
+    def is_instance_deleted():
+        return instance not in tenant_conn.nova.servers.list()
+
+    for instance, tenant_conn in zip(instances, tenants_clients):
+        instance.delete()
+        common.wait(is_instance_deleted, timeout_seconds=60 * 5,
+                    sleep_seconds=20, waiting_for="instance is deleted")
