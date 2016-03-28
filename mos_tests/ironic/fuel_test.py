@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import dpath.util
 import pytest
 import yaml
 
@@ -101,8 +102,35 @@ def test_baremetal_network_settings(new_env, enable_ironic, admin_remote):
                               get_baremetal_net_settings_from_cli())
 
 
-@pytest.mark.testrail_id('631890')
-def test_enablink_ironic_role_in_yaml_config(new_env, admin_remote):
+@pytest.mark.testrail_id(
+    '631890',
+    params={'new_config': {'/editable/additional_components/ironic/value': True
+                           }})
+@pytest.mark.testrail_id(
+    '631893',
+    params={'new_config': {'/editable/storage/images_ceph/value': True,
+                           '/editable/storage/objects_ceph/value': True}})
+@pytest.mark.testrail_id(
+    '631894',
+    params={'new_config': {
+        '/editable/additional_components/ironic/value': True,
+        '/editable/storage/images_ceph/value': True,
+        '/editable/storage/objects_ceph/value': True,
+        '/editable/storage/ephemeral_ceph/value': True,
+        '/editable/storage/volumes_ceph/value': True,
+    }})
+@pytest.mark.parametrize('new_config', [
+    {'/editable/additional_components/ironic/value': True},
+    {'/editable/storage/images_ceph/value': True,
+     '/editable/storage/objects_ceph/value': True}, {
+         '/editable/additional_components/ironic/value': True,
+         '/editable/storage/images_ceph/value': True,
+         '/editable/storage/objects_ceph/value': True,
+         '/editable/storage/ephemeral_ceph/value': True,
+         '/editable/storage/volumes_ceph/value': True,
+     }
+])
+def test_edit_config_with_yaml(new_env, admin_remote, new_config):
     """Ironic role can be enabled in cluster via yaml config file
 
     Scenario:
@@ -114,19 +142,22 @@ def test_enablink_ironic_role_in_yaml_config(new_env, admin_remote):
             `fuel settings --env <env id> --upload`
         5. Check that Ironic is enabled in Fuel API
     """
-    api_cofig = new_env.get_settings_data()['editable']
-    assert api_cofig['additional_components']['ironic']['value'] is False
+    old_settings = new_env.get_settings_data()
+    for key, value in new_config.items():
+        assert dpath.util.get(old_settings, key) != value
 
     result = admin_remote.check_call(
         'fuel --env {0.id} settings --download'.format(new_env))
     path = result.stdout_string.split()[-1]
     with admin_remote.open(path, 'r+') as f:
         data = yaml.load(f)
-        data['editable']['additional_components']['ironic']['value'] = True
+        for key, value in new_config.items():
+            dpath.util.set(data, key, value)
         yaml.dump(data, f)
 
     admin_remote.check_call('fuel --env {0.id} settings --upload'.format(
         new_env))
 
-    api_cofig = new_env.get_settings_data()['editable']
-    assert api_cofig['additional_components']['ironic']['value'] is True
+    new_settings = new_env.get_settings_data()
+    for key, value in new_config.items():
+        assert dpath.util.get(new_settings, key) == value
