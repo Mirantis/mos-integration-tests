@@ -1,6 +1,6 @@
 from launchpadlib.launchpad import Launchpad
 
-STATUSES_FOR_CHECK = ["Incomplete", "Confirmed", "New"]
+STATUSES_FOR_CHECK = ["Confirmed", "New"]
 CHECKS = {
     "version": ["iso", "env", "version"],
     "expected result": ["expected"],
