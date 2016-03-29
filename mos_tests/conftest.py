@@ -26,6 +26,7 @@ from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import get_os_conn
+from mos_tests.functions.common import patch_proxy
 from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli
 from mos_tests.settings import KEYSTONE_PASS
@@ -92,22 +93,34 @@ def snapshot_name(request):
     return request.config.getoption("--snapshot")
 
 
-def revert_snapshot(env_name, snapshot_name):
+@pytest.fixture(scope="session")
+def fuel_master_ip(request, env_name, snapshot_name):
+    """Get fuel master ip"""
+    fuel_ip = request.config.getoption("--fuel-ip")
+    if not fuel_ip:
+        fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
+    if not fuel_ip:
+        fuel_ip = SERVER_ADDRESS
+    return fuel_ip
+
+
+def revert_snapshot(env_name, snapshot_name, fuel_master_ip):
     DevopsClient.revert_snapshot(env_name=env_name,
                                  snapshot_name=snapshot_name)
+    patch_proxy(fuel_master_ip)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_session(request, env_name, snapshot_name):
+def setup_session(request, env_name, snapshot_name, fuel_master_ip):
     """Revert Fuel devops snapshot before test session"""
     if not all([env_name, snapshot_name]):
         setattr(request.session, 'reverted', False)
         return
-    revert_snapshot(env_name, snapshot_name)
+    revert_snapshot(env_name, snapshot_name, fuel_master_ip)
 
 
 @pytest.yield_fixture(autouse=True)
-def cleanup(request, env_name, snapshot_name):
+def cleanup(request, env_name, snapshot_name, fuel_master_ip):
     yield
     item = request.node
     if item.nextitem is None:
@@ -122,20 +135,9 @@ def cleanup(request, env_name, snapshot_name):
     reverted = False
     if failed or (not skipped and destructive):
         if all([env_name, snapshot_name]):
-            revert_snapshot(env_name, snapshot_name)
+            revert_snapshot(env_name, snapshot_name, fuel_master_ip)
             reverted = True
     setattr(item.nextitem, 'reverted', reverted)
-
-
-@pytest.fixture(scope="session")
-def fuel_master_ip(request, env_name, snapshot_name):
-    """Get fuel master ip"""
-    fuel_ip = request.config.getoption("--fuel-ip")
-    if not fuel_ip:
-        fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
-    if not fuel_ip:
-        fuel_ip = SERVER_ADDRESS
-    return fuel_ip
 
 
 def get_fuel_client(fuel_ip):
