@@ -44,8 +44,8 @@ def pytest_runtest_setup(item):
         previousfailed_info = getattr(item.parent, "_previousfailed", {})
         previousfailed = previousfailed_info.get(str(item.callspec.params))
         if previousfailed is not None:
-            pytest.xfail(
-                "previous test failed ({0.name})".format(previousfailed))
+            pytest.xfail("previous test failed ({0.name})".format(
+                previousfailed))
 
 
 @pytest.yield_fixture(scope='session')
@@ -184,6 +184,11 @@ def ironic_nodes(request, env, ironic_drivers_params, ironic, env_name):
     node_count = getattr(request, 'param', 1)
     devops_nodes = []
     nodes = []
+
+    baremetal_interface = devops_env.get_interface_by_fuel_name('baremetal',
+                                                                env)
+    baremetal_net_name = baremetal_interface.network.name
+
     for i, config in enumerate(ironic_drivers_params[:node_count]):
         if config['driver'] == 'fuel_ssh':
             devops_node = devops_env.add_node(
@@ -191,11 +196,11 @@ def ironic_nodes(request, env, ironic_drivers_params, ironic, env_name):
                 vcpu=config['node_properties']['cpus'],
                 memory=config['node_properties']['memory_mb'],
                 disks=[config['node_properties']['local_gb']],
-                networks=['baremetal'],
+                networks=[baremetal_net_name],
                 role='ironic_slave')
             devops_nodes.append(devops_node)
-            mac = devops_node.interface_by_network_name(
-                'baremetal')[0].mac_address
+            mac = devops_node.interface_by_network_name(baremetal_net_name)[
+                0].mac_address
             config['mac_address'] = mac
         node = ironic.create_node(config['driver'], config['driver_info'],
                                   config['node_properties'],

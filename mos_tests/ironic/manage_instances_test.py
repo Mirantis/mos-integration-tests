@@ -118,8 +118,8 @@ def test_instance_stop_start(os_conn, instance, start_instance):
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.testrail_id('631920')
-def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
-                            flavor, keypair, instance):
+def test_instance_terminate(env, ironic, os_conn, ironic_nodes, ubuntu_image,
+                            flavors, keypair, instance):
     """Check terminate instance
 
     Scenario:
@@ -134,8 +134,8 @@ def test_instance_terminate(env, ironic, os_conn, ironic_node, ubuntu_image,
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.testrail_id('631919')
-def test_instance_rebuild(env, ironic, os_conn, ironic_node, ubuntu_image,
-                          flavor, keypair, instance):
+def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, ubuntu_image,
+                          flavors, keypair, instance):
     """Check rebuild instance
 
     Scenario:
