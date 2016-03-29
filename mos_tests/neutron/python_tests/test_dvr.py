@@ -96,22 +96,22 @@ class TestDVRBase(base.TestBase):
              sleep_seconds=10,
              waiting_for="hypervisors on {0} are alive".format(hostnames))
 
-    def find_snat_controller(self, router_id, excluded=()):
+    def find_snat_controller(self, router_id, excluded=(), alive_only=False):
         """Find controller with SNAT service.
 
         :param router_id: router id to find SNAT for it
         :param excluded: excluded nodes fqdns
         :returns: controller node with SNAT
         """
-        all_controllers = self.env.get_nodes_by_role('controller')
-        for controller in all_controllers:
-            if controller.data['fqdn'] in excluded:
-                continue
-            with controller.ssh() as remote:
-                cmd = 'ip net | grep snat-{}'.format(router_id)
-                res = remote.execute(cmd)
-                if res['exit_code'] == 0:
-                    return controller
+        agents_with_snat = self.os_conn.neutron.list_l3_agent_hosting_routers(
+            router_id)['agents']
+        assert len(agents_with_snat) == 1
+        agent_with_snat = agents_with_snat[0]
+        if alive_only and not agent_with_snat['alive']:
+            return
+        if agent_with_snat['host'] in excluded:
+            return
+        return self.env.find_node_by_fqdn(agent_with_snat['host'])
 
     def shut_down_br_ex_on_controllers(self):
         """Shut down br-ex for all controllers"""
@@ -280,7 +280,8 @@ class TestDVR(TestDVRBase):
             leader_controller.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair,
+                                timeout=4 * 60)
 
     @pytest.mark.testrail_id('542778')
     def test_shutdown_snat_controller(self, env_name):
@@ -558,15 +559,17 @@ class TestDVR(TestDVRBase):
                         self.router_id,
                         excluded=[controller_with_snat.data['fqdn']]),
                     timeout_seconds=60 * 3,
-                    sleep_seconds=20,
+                    sleep_seconds=10,
                     waiting_for="snat is rescheduled")
                 assert controller_with_snat != new_controller_with_snat
                 controller_with_snat = new_controller_with_snat
-            else:
-                # Wait for SNAT leave controller
-                wait(lambda: self.find_snat_controller(self.router_id) is None,
+            elif node_to_clear_key == 'last':
+                # Wait for SNAT on last controller will die
+                wait(lambda: self.find_snat_controller(
+                        self.router_id, alive_only=True) is None,
                     timeout_seconds=60 * 3, sleep_seconds=10,
-                    waiting_for="snat leave {}".format(controller_with_snat))
+                    waiting_for="snat on {} to die".format(
+                        controller_with_snat))
 
         banned_nodes['last'] = controller_with_snat
 
@@ -579,7 +582,7 @@ class TestDVR(TestDVRBase):
 
             # Wait for SNAT back to node
             wait(lambda: self.find_snat_controller(
-                    self.router_id) == node_to_clear,
+                    self.router_id, alive_only=True) == node_to_clear,
                  timeout_seconds=60 * 3, sleep_seconds=20,
                  waiting_for="snat go back to {}".format(node_to_clear))
 
