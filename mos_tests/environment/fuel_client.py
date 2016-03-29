@@ -190,8 +190,9 @@ class Environment(environment.Environment):
         controllers = self.get_nodes_by_role('controller')
         controller_ip = controllers[0].data['ip']
         with self.get_ssh_to_node(controller_ip) as remote:
-            response = remote.execute('pcs status cluster')
-        stdout = ' '.join(response['stdout'])
+            response = remote.check_call(
+                'pcs status cluster | grep "Current DC:"')
+        stdout = response.stdout_string
         for controller in controllers:
             if controller.data['fqdn'] in stdout:
                 return controller
