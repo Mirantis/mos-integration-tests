@@ -41,6 +41,9 @@ WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
 
+# Openstack Apache proxy config file
+PROXY_CONFIG_FILE = '/etc/apache2/sites-enabled/25-apache_api_proxy.conf'
+
 #########################
 # Glance tests settings #
 #########################

@@ -1198,8 +1198,8 @@ class TestDVRTypeChange(TestDVRBase):
                 f.write(cert)
             path_to_cert = f.name
 
-        auth_url = self.os_conn.keystone.auth_url
-        tenant_name = self.os_conn.keystone.project_name
+        auth_url = self.os_conn.session.auth.auth_url
+        tenant_name = self.os_conn.session.auth.tenant_name
         neutron = neutronclient.Client(username=username,
                                        password=userpass,
                                        tenant_name=tenant_name,
