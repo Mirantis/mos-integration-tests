@@ -15,8 +15,6 @@
 import inspect
 import logging
 import os
-import re
-import requests
 from tempfile import NamedTemporaryFile
 from time import sleep
 from time import time
@@ -25,9 +23,6 @@ import urllib2
 from waiting import TimeoutExpired
 from waiting import wait as base_wait
 import yaml
-
-from mos_tests.environment.ssh import SSHClient
-from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
@@ -634,38 +629,6 @@ def gen_temp_file(prefix='tmp', suffix=''):
 def get_os_conn(environment):
     from mos_tests.environment.os_actions import OpenStackActions
 
-    proxy_session = requests.Session()
-
-    with environment.get_nodes_by_role('controller')[0].ssh() as remote:
-        with remote.open(settings.PROXY_CONFIG_FILE, 'r') as f:
-            data = f.read()
-            ip = re.search(
-                r'<VirtualHost (?P<ip>[^:]+):8888>', data).group('ip')
-
-    proxy_session.proxies.update({
-        'http': 'http://{ip}:8888/'.format(ip=ip),
-        'https': 'https://{ip}:8888/'.format(ip=ip),
-    })
-
     return OpenStackActions(
         controller_ip=environment.get_primary_controller_ip(),
-        cert=environment.certificate, env=environment,
-        proxy_session=proxy_session)
-
-
-def patch_proxy(fuel_master_ip):
-    cmd = (
-        r"iptables -A INPUT -p tcp --dport 8888 -j ACCEPT &&"
-        r" sed -i.bak -r 's/(AllowCONNECT .+)/\1 35357/' {file} &&"
-        r" sed -i.bak -rz 's/(<Proxy \*>).+(\n\s+<\/Proxy>)/\1\2/' {file} &&"
-        r" service apache2 stop &&"
-        r" service apache2 start"
-    ).format(file=settings.PROXY_CONFIG_FILE)
-    with SSHClient(host=fuel_master_ip,
-                   username=settings.SSH_CREDENTIALS['login'],
-                   password=settings.SSH_CREDENTIALS['password']) as remote:
-        result = remote.check_call(
-            "fuel node | grep controller | awk '{  print $1 }'")
-        for n in result['stdout']:
-            n = n.strip()
-            remote.check_call('ssh node-{n} "{cmd}"'.format(n=n, cmd=cmd))
+        cert=environment.certificate, env=environment)

@@ -26,7 +26,6 @@ from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import get_os_conn
-from mos_tests.functions.common import patch_proxy
 from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli
 from mos_tests.settings import KEYSTONE_PASS
@@ -104,23 +103,22 @@ def fuel_master_ip(request, env_name, snapshot_name):
     return fuel_ip
 
 
-def revert_snapshot(env_name, snapshot_name, fuel_master_ip):
+def revert_snapshot(env_name, snapshot_name):
     DevopsClient.revert_snapshot(env_name=env_name,
                                  snapshot_name=snapshot_name)
-    patch_proxy(fuel_master_ip)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_session(request, env_name, snapshot_name, fuel_master_ip):
+def setup_session(request, env_name, snapshot_name):
     """Revert Fuel devops snapshot before test session"""
     if not all([env_name, snapshot_name]):
         setattr(request.session, 'reverted', False)
         return
-    revert_snapshot(env_name, snapshot_name, fuel_master_ip)
+    revert_snapshot(env_name, snapshot_name)
 
 
 @pytest.yield_fixture(autouse=True)
-def cleanup(request, env_name, snapshot_name, fuel_master_ip):
+def cleanup(request, env_name, snapshot_name):
     yield
     item = request.node
     if item.nextitem is None:
@@ -135,7 +133,7 @@ def cleanup(request, env_name, snapshot_name, fuel_master_ip):
     reverted = False
     if failed or (not skipped and destructive):
         if all([env_name, snapshot_name]):
-            revert_snapshot(env_name, snapshot_name, fuel_master_ip)
+            revert_snapshot(env_name, snapshot_name)
             reverted = True
     setattr(item.nextitem, 'reverted', reverted)
 
