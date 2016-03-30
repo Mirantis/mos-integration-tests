@@ -54,12 +54,14 @@ def install_oslomessagingchecktool(remote, **kwargs):
     :param remote: SSH connection point to controller
     """
     cmd1 = ("apt-get update ; "
-            "apt-get install git python-pip python-dev -y && "
+            "apt-get install git dpkg-dev debhelper dh-systemd "
+            "openstack-pkg-tools po-debconf python-all python-pbr "
+            "python-setuptools python-sphinx python-babel "
+            "python-eventlet python-flask python-oslo.config "
+            "python-oslo.log python-oslo.messaging python-oslosphinx -y && "
             "rm -rf {repo_path} && "
             "git clone {repo} {repo_path} && "
-            "cd {repo_path} && "
-            "pip install -r requirements.txt -r test-requirements.txt ;"
-            ).format(**kwargs)
+            "cd {repo_path} ;").format(**kwargs)
     cmd2 = ("cd {repo_path} && "
             "dpkg -i {pkg} || "
             "apt-get -f install -y").format(**kwargs)
