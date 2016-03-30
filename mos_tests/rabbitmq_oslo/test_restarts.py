@@ -97,15 +97,27 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
             parser.write(new_f)
 
 
-def get_api_info(remote, api_path):
+def get_api_info(remote, api_path, host='localhost', port='15672'):
     """RabbitMQ HTTP API.
     Not stable in case of usage right after rabbit service restart
     """
     cmd = ('curl -u {nova_user}:{nova_pass} '
-           'http://localhost:15672/api/{api_path}').format(
-                api_path=api_path, **vars_config(remote))
+           'http://{host}:{port}/api/{api_path}').format(
+                api_path=api_path, host=host, port=port, **vars_config(remote))
     out = remote.check_call(cmd)['stdout']
     return json.loads(out[0])
+
+
+def get_mngmnt_ip_of_ctrllrs(env):
+    """Get host IP of management network from all controllers"""
+    controllers = env.get_nodes_by_role('controller')
+    ctrl_ips = []
+    for one in controllers:
+        ip = [x['ip'] for x in one.data['network_data']
+              if x['name'] == 'management'][0]
+        ip = ip.split("/")[0]
+        ctrl_ips.append(ip)
+    return ctrl_ips
 
 
 def disable_enable_all_eth_interf(remote, sleep_sec=60):
@@ -197,6 +209,11 @@ def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
     :param cfg_file_path: Path to the config file.
     :param num_of_msg_to_gen: How many messages to generate.
     """
+    # Clean if some messages were left after previous failed tests
+    cmd = ('oslo_msg_load_consumer '
+           '--config-file {0} '
+           '--nodebug'.format(cfg_file_path))
+    remote.execute(cmd)
     cmd = ('oslo_msg_load_generator '
            '--config-file {0} '
            '--messages-to-send {1} '
@@ -216,6 +233,8 @@ def consume_msg(remote, cfg_file_path):
     out_consume = remote.check_call(cmd)['stdout'][0]
     num_of_msg_consumed = int(re.findall('\d+', out_consume)[0])
     return num_of_msg_consumed
+
+# ----------------------------------------------------------------------------
 
 
 @pytest.mark.undestructive
@@ -247,17 +266,14 @@ def test_load_messages_and_restart_one_all_controller(
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
 
-    # Get IPs of all controllers
-    ctrl_ips = []
-    for one in controllers:
-        ip = [x['ip'] for x in one.data['network_data']
-              if x['name'] == 'management'][0]
-        ip = ip.split("/")[0]
-        ctrl_ips.append(ip)
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
 
     # Install tool on one controller and generate messages
     with controller.ssh() as remote:
         kwargs = vars_config(remote)
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
@@ -299,24 +315,22 @@ def test_load_messages_and_shutdown_eth_on_all(env):
     3. Generate 10000 messages to RabbitMQ cluster;
     4. Stop all eth interfaces on all controllers and wait several minutes;
     5. Start all eth interfaces on all controllers;
-    6. Consume messages;
-    7. Check that number of generated and consumed messages is equal.
+    6. Wait until RabbitMQ service will be up and cluster synchronised;
+    7. Consume messages;
+    8. Check that number of generated and consumed messages is equal.
     """
     sleep_min = 2  # (minutes) Time to shutdown eth interfaces on controllers
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
 
-    # Get IPs of all controllers
-    ctrl_ips = []
-    for one in controllers:
-        ip = [x['ip'] for x in one.data['network_data']
-              if x['name'] == 'management'][0]
-        ip = ip.split("/")[0]
-        ctrl_ips.append(ip)
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
 
     # Install tool on one controller and generate messages
     with controller.ssh() as remote:
         kwargs = vars_config(remote)
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
@@ -337,6 +351,10 @@ def test_load_messages_and_shutdown_eth_on_all(env):
          sleep_seconds=30,
          waiting_for='controller to be available.')
 
+    # Wait when rabbit will be ok after interfaces down/up
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
     # Consume generated messages
     with controller.ssh() as remote:
         kwargs = vars_config(remote)
@@ -345,3 +363,54 @@ def test_load_messages_and_shutdown_eth_on_all(env):
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
          'after eth interfaces shutdown.')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('838288', params={'restart_ctrlr': 'primary'})
+@pytest.mark.testrail_id('838287', params={'restart_ctrlr': 'non_primary'})
+@pytest.mark.parametrize('restart_ctrlr', ['primary', 'non_primary'])
+def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
+    """Load 10000 messages to RabbitMQ cluster and restart primary OR
+    non-primary controller.
+
+    Actions:
+    1. Install "oslo.messaging-check-tool" on primary OR non-primary ctrllr;
+    2. Prepare config file for it;
+    3. Generate 10000 messages to RabbitMQ cluster;
+    4. Restart RabbitMQ-server on primary OR non-primary controller;
+    5. Wait until RabbitMQ service will be up and cluster synchronised;
+    6. Consume messages;
+    7. Check that number of generated and consumed messages is equal.
+    """
+    controllers = env.get_nodes_by_role('controller')
+    if restart_ctrlr == 'primary':
+        controller = env.primary_controller
+    elif restart_ctrlr == 'non_primary':
+        controller = random.choice(env.non_primary_controllers)
+
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
+
+    # Install tool on one controller and generate messages
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(
+            remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+        # Generate messages
+        num_of_msg_to_gen = 10000
+        generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
+
+        # Restart RabbinMQ server on (non)primary controller
+        restart_rabbitmq_serv(env, remote=remote)
+
+        # Consume generated messages
+        num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+
+    assert num_of_msg_to_gen == num_of_msg_consumed, \
+        ('Generated and consumed number of messages is different for restart '
+         'of %s controller.' % restart_ctrlr)
