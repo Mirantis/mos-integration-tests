@@ -49,16 +49,23 @@ class EnvProxy(object):
         :return: created and started Node object
         :rtype: devops.models.node.Node
         """
+
+        if self._env.node_set.filter(name=name).exists():
+            node = self._env.get_node(name=name)
+            node.erase()
         node = self._env.add_node(vcpu=vcpu,
                                   memory=memory,
                                   name=name,
                                   role=role)
+
         for i, size in enumerate(disks, 1):
-            disk_dev = self._env.add_empty_volume(
-                node,
-                '{name}_drive{i}'.format(name=name,
-                                         i=i),
-                size * (1024**3))
+            volume_name = '{name}_drive{i}'.format(name=name, i=i)
+            if self._env.volume_set.filter(name=volume_name).exists():
+                volume = self._env.get_volume(name=volume_name)
+                volume.erase()
+
+            disk_dev = self._env.add_empty_volume(node, volume_name,
+                                                  size * (1024**3))
             disk_dev.volume.define()
         node.attach_to_networks(networks)
         node.define()
@@ -109,8 +116,7 @@ class EnvProxy(object):
         assert len(node_interfaces) == 1
         interface_mac = node_interfaces[0]['mac']
         devops_node = self.get_node_by_mac(controller.data['mac'])
-        return devops_node.interfaces.get(
-            mac_address=interface_mac)
+        return devops_node.interfaces.get(mac_address=interface_mac)
 
 
 class DevopsClient(object):
