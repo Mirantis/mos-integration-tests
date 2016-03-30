@@ -66,10 +66,10 @@ class OpenStackActions(object):
                                 auth_url=auth_url,
                                 tenant_name=tenant)
 
-        self.session = session.Session(auth=auth, verify=self.path_to_cert,
-                                       session=proxy_session)
+        self.session = session.Session(auth=auth, verify=self.path_to_cert)
 
         self.keystone = KeystoneClient(session=self.session)
+        self.keystone.management_url = auth_url
 
         self.nova = nova_client.Client(version=2, session=self.session)
 
