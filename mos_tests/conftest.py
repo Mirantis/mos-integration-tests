@@ -87,6 +87,11 @@ def env_name(request):
     return request.config.getoption("--env")
 
 
+@pytest.fixture(scope='session')
+def devops_env(env_name):
+    return DevopsClient.get_env(env_name=env_name)
+
+
 @pytest.fixture(scope="session")
 def snapshot_name(request):
     return request.config.getoption("--snapshot")

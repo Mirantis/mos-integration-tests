@@ -17,7 +17,6 @@ import logging
 import os
 import pytest
 import shutil
-import socket
 import tarfile
 
 from Crypto.PublicKey import RSA
@@ -49,12 +48,9 @@ def pytest_runtest_setup(item):
 
 
 @pytest.yield_fixture(scope='session')
-def server_ssh_credentials():
+def server_ssh_credentials(devops_env):
     # determine server ip
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 53))
-    server_ip = s.getsockname()[0]
-    s.close()
+    server_ip = str(devops_env.get_network(name='public').default_gw)
 
     # backup original authorized_keys file
     ssh_folder = os.path.expanduser('~/.ssh')
