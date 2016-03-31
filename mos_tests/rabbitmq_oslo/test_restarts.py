@@ -16,6 +16,7 @@ import json
 import logging
 import random
 import re
+import requests
 import sys
 
 import pytest
@@ -238,28 +239,29 @@ def consume_msg(remote, cfg_file_path):
 
 def rabbit_rpc_server_start(remote, cfg_file_path):
     logger.debug('Start [oslo_msg_check_server] on %s.' % remote.host)
-    cmd = 'oslo_msg_check_server --nodebug --config-file {0}'.format(
-        cfg_file_path)
-    remote.execute_async(cmd)
+    background = '<&- >/dev/null 2>&1 &'
+    cmd = 'oslo_msg_check_server --nodebug --config-file {0} {1}'.format(
+        cfg_file_path, background)
+    remote.execute(cmd)
 
 
 def rabbit_rpc_client_start(remote, cfg_file_path):
     logger.debug('Start [oslo_msg_check_client] on %s.' % remote.host)
-    cmd = 'oslo_msg_check_client --nodebug --config-file {0}'.format(
-        cfg_file_path)
-    remote.execute_async(cmd)
+    background = '<&- >/dev/null 2>&1 &'
+    cmd = 'oslo_msg_check_client --nodebug --config-file {0} {1}'.format(
+        cfg_file_path, background)
+    remote.execute(cmd)
     return remote.host
 
 
-def rabbit_rpc_curl(remote, host, port=5000):
+def get_http_code(host_ip, port=5000):
     # curl to client
-    cmd = 'curl -w %{http_code} -s -o /dev/null http://{host}:{port}'.format(
-        http_code='{http_code}', host=host, port=port)
-    out = remote.check_call(cmd)['stdout'][0]
-    if out.isdigit() is True:
-        return int(out)
-    else:
-        raise ValueError('Curl returned non-digit response code')
+    url = 'http://{host}:{port}'.format(host=host_ip, port=port)
+    try:  # server may not be ready yet
+        status_code = requests.get(url).status_code
+        return status_code
+    except Exception:
+        return False
 
 # ----------------------------------------------------------------------------
 
@@ -449,7 +451,8 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
 @pytest.mark.testrail_id('838290', params={'restart_ctrlr': 'all'})
 @pytest.mark.parametrize('restart_ctrlr', ['one', 'all'])
 def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
-        env, restart_ctrlr, fixt_open_5000_port_on_nodes):
+        env, restart_ctrlr, fixt_open_5000_port_on_nodes,
+        fixt_kill_rpc_server_client):
     """Tests:
     Start RabbitMQ RPC server and client and restart RabbitMQ on one controller
     Start RabbitMQ RPC server and client and restart RabbitMQ on all
@@ -472,7 +475,6 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
     exp_resp = 200   # expected response code from curl from RPC client
     timeout_min = 2  # (minutes) time to wait for RPC server/client start
 
-    all_nodes = env.get_all_nodes()
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
     compute = random.choice(env.get_nodes_by_role('compute'))
@@ -500,15 +502,13 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
     with controller.ssh() as remote:
         rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
 
-    # node -> client: Check GET before controller(s) restart
-    node = random.choice(all_nodes)
-    with node.ssh() as remote:
-        logger.debug('GET: [{0}] -> [{1}]'.format(remote.host, rpc_client_ip))
-        # need to wait for server/client start
-        wait(lambda: rabbit_rpc_curl(remote, rpc_client_ip) == exp_resp,
-             timeout_seconds=60 * timeout_min,
-             sleep_seconds=20,
-             waiting_for='RPC server/client to start')
+    # host srv -> client: Check GET before controller(s) restart
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    # need to wait for server/client start
+    wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='RPC server/client to start')
 
     # Restart RabbinMQ server on one/all controller(s)
     with controller.ssh() as remote:
@@ -517,8 +517,6 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
         elif restart_ctrlr == 'all':
             restart_rabbitmq_serv(env, remote=None)
 
-    # node -> client: Check GET after controller(s) restart
-    node = random.choice(all_nodes)
-    with node.ssh() as remote:
-        logger.debug('GET: [{0}] -> [{1}]'.format(remote.host, rpc_client_ip))
-        assert rabbit_rpc_curl(remote, rpc_client_ip) == exp_resp
+    # host srv -> client: Check GET after controller(s) restart
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    assert get_http_code(rpc_client_ip) == exp_resp

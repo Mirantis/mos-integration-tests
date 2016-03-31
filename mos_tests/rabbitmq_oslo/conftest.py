@@ -17,6 +17,7 @@ import pytest
 
 @pytest.yield_fixture
 def fixt_open_5000_port_on_nodes(env):
+    """Required to be able to send GET request from non management IP"""
     for node in env.get_all_nodes():
         with node.ssh() as remote:
             cmd = 'iptables -A INPUT -p tcp --dport 5000 -j ACCEPT'
@@ -27,3 +28,13 @@ def fixt_open_5000_port_on_nodes(env):
             # delete rule
             cmd = 'iptables -D INPUT -p tcp --dport 5000 -j ACCEPT'
             remote.check_call(cmd)
+
+
+@pytest.yield_fixture
+def fixt_kill_rpc_server_client(env):
+    """Stop oslo_msg_check_server AND oslo_msg_check_client after test"""
+    yield
+    for node in env.get_all_nodes():
+        with node.ssh() as remote:
+            cmd = 'pkill -f oslo_msg_check_'
+            remote.execute(cmd)
