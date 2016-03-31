@@ -22,13 +22,9 @@ class IronicActions(object):
 
     def __init__(self, os_conn):
         self.os_conn = os_conn
-        token = os_conn.keystone.auth_token
-        ironic_endpoint = os_conn.keystone.service_catalog.url_for(
-            service_type='baremetal',
-            endpoint_type='publicURL')
         self.client = client.get_client(api_version=1,
-                                        os_auth_token=token,
-                                        ironic_url=ironic_endpoint)
+                                        session=os_conn.session,
+                                        os_endpoint_type='public')
 
     def _get_image(self, name):
         return self.os_conn.nova.images.find(name=name)
@@ -114,14 +110,16 @@ class IronicActions(object):
         :param node: ironic node to delete
         :type node: ironicclient.v1.node.Node
         """
-        instance_uuid = self.client.node.get(node.uuid).instance_uuid
-        if instance_uuid:
-            self.os_conn.nova.servers.delete(instance_uuid)
+        node = self.client.node.get(node.uuid)
+        if node.instance_uuid:
+            self.os_conn.nova.servers.delete(node.instance_uuid)
             common.wait(
                 lambda: len(self.os_conn.nova.servers.findall(
-                    id=instance_uuid)) == 0,  # yapf: disable
+                    id=node.instance_uuid)) == 0,  # yapf: disable
                 timeout_seconds=60,
                 waiting_for='instance to be deleted')
         for port in self.client.node.list_ports(node.uuid):
             self.client.port.delete(port.uuid)
+        if node.provision_state == 'error':
+            self.client.node.set_provision_state(node.uuid, 'deleted')
         self.client.node.delete(node.uuid)
