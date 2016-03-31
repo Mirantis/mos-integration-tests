@@ -24,6 +24,7 @@ from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
 from paramiko import ssh_exception
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
@@ -76,12 +77,30 @@ class NodeProxy(object):
         else:
             return True
 
+    def get_mac_net_mapping(self):
+        interfaces = self.get_attribute('interfaces')
+        return {x['mac']: [y['name'] for y in x['assigned_networks']]
+                for x in interfaces}
+
 
 class Environment(environment.Environment):
     """Extended fuelclient Environment model with some helpful methods"""
 
     admin_ssh_keys = None
     _admin_ssh_keys_paths = None
+
+    def __init__(self, *args, **kwargs):
+        super(Environment, self).__init__(*args, **kwargs)
+        self._os_conn = None
+
+    @property
+    def os_conn(self):
+        if self._os_conn is None:
+            self._os_conn = OpenStackActions(
+                controller_ip=self.get_primary_controller_ip(),
+                cert=self.certificate,
+                env=self)
+        return self._os_conn
 
     @property
     def admin_ssh_keys_paths(self):
@@ -287,6 +306,49 @@ class Environment(environment.Environment):
             for node in FuelNode.get_all():
                 if node._data['mac'] == interface.mac_address:
                     return NodeProxy(node, self)
+
+    def set_ironic(self, value=True):
+        data = self.get_settings_data()
+        data['editable']['additional_components']['ironic']['value'] = value
+        self.set_settings_data(data)
+
+    def map_interfaces_to_nodes(self, mapping):
+        """Map networks to interfaces
+
+        :param mapping: dict, with mac adddreses as keys and list of
+            fuel network names as values
+        """
+        nodes = self.get_all_nodes()
+
+        node = nodes[0]
+        interfaces = node.get_attribute('interfaces')
+        networks = [x for y in interfaces for x in y['assigned_networks']]
+
+        for node in nodes:
+            interfaces = node.get_attribute('interfaces')
+            for interface in interfaces:
+                net_names = mapping[interface['mac']]
+                nets_to_assign = [x for x in networks
+                                  if x['name'] in net_names]
+                interface['assigned_networks'] = nets_to_assign
+            node.upload_node_attribute('interfaces', interfaces)
+
+        # Verify network
+        result = self.wait_network_verification()
+        assert result.status == 'ready'
+
+    def add_devops_nodes(self, devops_nodes, roles):
+        fuel_nodes = []
+        for devops_node in devops_nodes:
+            fuel_node = wait(
+                lambda: self.get_node_by_devops_node(devops_node),
+                timeout_seconds=10 * 60,
+                sleep_seconds=20,
+                waiting_for='node to be discovered')
+            fuel_nodes.append(fuel_node)
+            fuel_node.set({'name': devops_node.name})
+
+        self.assign(fuel_nodes, roles)
 
 
 class FuelClient(object):

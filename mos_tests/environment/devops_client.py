@@ -41,8 +41,7 @@ class EnvProxy(object):
         :param memory: memory in MB
         :param vcpu: CPU count
         :param networks: names of networks to assign to node. If None - will
-            assign default networks (admin, private, public, storage,
-            management)
+            assign all networks
         :type networks: tuple or list or None
         :param disks: sizes of disk devices in GB to attach to node
         :param role: may be one of fuel_maste, fuel_slave, ironic_slave
@@ -67,6 +66,8 @@ class EnvProxy(object):
             disk_dev = self._env.add_empty_volume(node, volume_name,
                                                   size * (1024**3))
             disk_dev.volume.define()
+        if networks is None:
+            networks = self.get_networks().values_list('name', flat=True)
         node.attach_to_networks(networks)
         node.define()
         node.start()
@@ -117,6 +118,17 @@ class EnvProxy(object):
         interface_mac = node_interfaces[0]['mac']
         devops_node = self.get_node_by_mac(controller.data['mac'])
         return devops_node.interfaces.get(mac_address=interface_mac)
+
+    def get_net_mac_addresses(self, net_name):
+        net = self.get_network(name="private")
+        return net.interfaces.values_list('mac_address', flat=True)
+
+    def get_mac_net_mapping(self):
+        result = {}
+        for net in self.get_networks():
+            addresses = net.interfaces.values_list('mac_address', flat=True)
+            result.update(dict.fromkeys(addresses, net.name))
+        return result
 
 
 class DevopsClient(object):

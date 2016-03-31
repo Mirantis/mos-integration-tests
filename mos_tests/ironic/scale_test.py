@@ -35,16 +35,6 @@ def map_interfaces(devops_env, fuel_node):
     return pairs
 
 
-def is_task_ready(task):
-    logger.debug('Task progress is {0.progress}'.format(task))
-    if task.status == 'ready':
-        return True
-    elif task.status == 'running':
-        return False
-    else:
-        raise Exception('Task is {0.status}. {0.data}'.format(task))
-
-
 @pytest.yield_fixture(scope='class')
 def cleanup_nodes(env_name):
     devops_env = devops_client.DevopsClient.get_env(env_name)
@@ -100,8 +90,6 @@ class TestScale(object):
         devops_node = devops_env.add_node(
             name='new-ironic_{}'.format(suffix[:4]),
             memory=4096,
-            networks=('admin', 'private', 'public', 'storage', 'management',
-                      'baremetal'),
             disks=(50, 50, 50))
 
         fuel_node = common.wait(
@@ -136,7 +124,7 @@ class TestScale(object):
         # Deploy changes
         task = env.deploy_changes()
 
-        common.wait(lambda: is_task_ready(task),
+        common.wait(lambda: common.is_task_ready(task),
                     timeout_seconds=80 * 60,
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')
@@ -190,7 +178,7 @@ class TestScale(object):
         # Deploy changes
         task = env.deploy_changes()
 
-        common.wait(lambda: is_task_ready(task),
+        common.wait(lambda: common.is_task_ready(task),
                     timeout_seconds=40 * 60,
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')

@@ -636,8 +636,14 @@ def gen_temp_file(prefix='tmp', suffix=''):
 
 
 def get_os_conn(environment):
-    from mos_tests.environment.os_actions import OpenStackActions
+    return environment.os_conn
 
-    return OpenStackActions(
-        controller_ip=environment.get_primary_controller_ip(),
-        cert=environment.certificate, env=environment)
+
+def is_task_ready(task):
+    logger.debug('Task progress is {0.progress}'.format(task))
+    if task.status == 'ready':
+        return True
+    elif task.status == 'running':
+        return False
+    else:
+        raise Exception('Task is {0.status}. {0.data}'.format(task))
