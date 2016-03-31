@@ -78,14 +78,14 @@ class TestDHCPAgent(TestBase):
         tenant = self.os_conn.neutron.get_quotas_tenant()
         tenant_id = tenant['tenant']['tenant_id']
         self.os_conn.neutron.update_quota(tenant_id, {'quota':
-                                                      {'network': 1000,
-                                                       'router': 1000,
-                                                       'subnet': 1000,
-                                                       'port': 1000}})
+                                                      {'network': 50,
+                                                       'router': 50,
+                                                       'subnet': 50,
+                                                       'port': 150}})
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        for x in range(30):
+        for x in range(29):
             net_id = self.os_conn.add_net(self.router['id'])
             self.networks.append(net_id)
             logger.info('Total networks created at the moment {}'.format(
@@ -94,7 +94,8 @@ class TestDHCPAgent(TestBase):
                 name='instanseNo{}'.format(x),
                 key_name=self.instance_keypair.name,
                 security_groups=[self.security_group.name],
-                nics=[{'net-id': net_id}])
+                nics=[{'net-id': net_id}],
+                wait_for_avaliable=False)
             logger.info('Delete the server {}'.format(srv.name))
             self.os_conn.nova.servers.delete(srv)
 

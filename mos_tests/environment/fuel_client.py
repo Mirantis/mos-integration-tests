@@ -117,10 +117,10 @@ class Environment(environment.Environment):
         )
 
     def get_ssh_to_vm(self, ip, username=None, password=None,
-                      private_keys=None):
+                      private_keys=None, **kwargs):
         return SSHClient(
             host=ip, username=username, password=password,
-            private_keys=private_keys)
+            private_keys=private_keys, **kwargs)
 
     def get_nodes_by_role(self, role):
         """Returns nodes by assigned role"""

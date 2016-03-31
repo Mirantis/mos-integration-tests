@@ -127,22 +127,26 @@ class TestL3HA(TestBase):
 
         logger.info('Start ping on {0}'.format(ip_to_ping))
         proc = subprocess.Popen(['ping', ip_to_ping], stdout=subprocess.PIPE)
-        proc.stdout.readline()
-        output = []
-        for line_count in range(10):
-            output.append(proc.stdout.readline().strip())
+        try:
+            proc.stdout.readline()
+            output = []
+            for line_count in range(10):
+                output.append(proc.stdout.readline().strip())
 
-        yield result
-        # terminate ping subprocess and fill analyzed result
-        logger.info('Wait for ping restored')
-        for line_count in range(recover_pings):
-            output.append(proc.stdout.readline().strip())
-        proc.terminate()
-        output += proc.communicate()[0].split('\n')
-        groups = ping_groups(output)
-        for ping_info in groups:
-            result['received'] = ping_info.received
-            result['sent'] = ping_info.sent
+            yield result
+            # terminate ping subprocess and fill analyzed result
+            logger.info('Wait for ping restored')
+            for line_count in range(recover_pings):
+                output.append(proc.stdout.readline().strip())
+            proc.terminate()
+            output += proc.communicate()[0].split('\n')
+            groups = ping_groups(output)
+            for ping_info in groups:
+                result['received'] = ping_info.received
+                result['sent'] = ping_info.sent
+        finally:
+            if proc.returncode is None:
+                proc.kill()
 
     @contextmanager
     def background_ping(self, vm, vm_keypair, ip_to_ping, good_pings=50,
@@ -480,13 +484,13 @@ class TestL3HA(TestBase):
         # Create 19 nets, subnets, routers
         for i in range(1, 20):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
-            router = self.os_conn.create_router(name="router01")
+            router = self.os_conn.create_router(name="router{:02d}".format(i))
             self.os_conn.router_interface_add(
                 router_id=router['router']['id'],
                 subnet_id=subnet['subnet']['id'])
 
         # Create 2 networks, subnets, vms, add router between subnets
-        router20_21 = self.os_conn.create_router(name="router01")
+        router20_21 = self.os_conn.create_router(name="router20_21")
         for i in range(20, 22):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             self.os_conn.router_interface_add(
@@ -636,23 +640,16 @@ class TestL3HA(TestBase):
             :param node: node on which start tcpdump
             :param router_id: router id on which start tcpdump
             :param active_qg_iface_id: interface id on which start tcpdump
-            :return: thread with executing command over ssh
             """
             logger.info('Start tcpdump on {0}'.format(node.data['fqdn']))
             cmd_for_tcpdump = (
                 'ip netns exec qrouter-{router_id} '
-                'tcpdump -n -l -tttt -i {qg_port_id} icmp 2>&1 | '
-                'tee /tmp/tcpdump.log'.format(
+                'tcpdump -n -l -tttt -i {qg_port_id} icmp '
+                '<&- >/tmp/tcpdump.log 2>&1 &'.format(
                     router_id=router_id, qg_port_id=active_qg_iface_id))
 
-            def start_tcpdump():
-                with node.ssh() as remote:
-                    res = remote.execute(cmd_for_tcpdump)
-                    return res
-
-            tcpdump_thread = threading.Thread(target=start_tcpdump)
-            tcpdump_thread.start()
-            return tcpdump_thread
+            with node.ssh() as remote:
+                remote.check_call(cmd_for_tcpdump)
 
         def get_last_package_datetime(node):
             """Get last package time from tcpdump log on provided node
@@ -687,11 +684,9 @@ class TestL3HA(TestBase):
             active_l3_qg_port_for_router_id[:11])
 
         # Start tcpdump on all controllers
-        tcpdump_threads = []
         for controller in controllers:
-            tcpdump_threads.append(
-                start_tcpdump_in_background(
-                    controller, router_id, active_qg_iface_id))
+            start_tcpdump_in_background(controller, router_id,
+                                        active_qg_iface_id)
         # Ban l3 agent
         with self.background_ping_from_host(
                 ip_to_ping=instance_ip) as ping_result:
@@ -711,9 +706,7 @@ class TestL3HA(TestBase):
                 controller.data['fqdn']))
             with controller.ssh() as remote:
                 remote.execute('killall tcpdump')
-        # joining threads with ssh execute tcpdump
-        for thread in tcpdump_threads:
-            thread.join(0)
+
         # check that l3 active agents matching with tcpdump results
         last_active_node = self.env.find_node_by_fqdn(active_hostname)
         new_active_node = self.env.find_node_by_fqdn(new_active_hostname)
