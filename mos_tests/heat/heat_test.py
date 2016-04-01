@@ -444,7 +444,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         """
         stack_name = 'empty__543332'
         parameter = 'some_param_string'
-        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+        parameters = {'OS::project_id': self.session.get_project_id(),
                       'OS::stack_id': 'None', 'OS::stack_name': stack_name,
                       'param': parameter}
         correct_data = {'description': 'Sample template',
@@ -652,7 +652,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                             template, timeout=timeout,
                                             parameters={'param': parameter})
         self.uid_list.append(uid)
-        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+        parameters = {'OS::project_id': self.session.get_project_id(),
                       'OS::stack_id': uid,
                       'OS::stack_name': stack_name,
                       'param': parameter}
@@ -721,23 +721,23 @@ class HeatIntegrationTests(OpenStackTestCase):
 
         # Perform cancel-update operation
         # when stack status is 'UPDATE_IN_PROGRESS'
-        timeout = time.time() + 60
-        while True:
-            status = self.heat.stacks.get(stack_id).to_dict()['stack_status']
-            if status == 'UPDATE_IN_PROGRESS':
-                self.heat.actions.cancel_update(stack_id)
-                break
-            elif time.time() > timeout:
-                raise AttributeError(
-                    "Unable to find stack in 'UPDATE_IN_PROGRESS' state. "
-                    "Status '{0}' doesn't allow to perform cancel-update"
-                    .format(status))
-            else:
-                time.sleep(1)
+        common_functions.wait(
+            lambda: self.heat.stacks.get(
+                stack_id).stack_status == 'UPDATE_IN_PROGRESS',
+            timeout_seconds=60,
+            waiting_for="stack status to change to 'UPDATE_IN_PROGRESS'")
+
+        self.heat.actions.cancel_update(stack_id)
 
         # Wait for rollback competed and check
-        self.assertTrue(common_functions.check_stack_status
-                        (stack_name, self.heat, "ROLLBACK_COMPLETE", 120))
+        common_functions.wait(
+            lambda: not self.heat.stacks.get(
+                stack_id).stack_status.endswith('IN_PROGRESS'),
+            timeout_seconds=3 * 60,
+            waiting_for="stack status not to ends with 'IN_PROGRESS'")
+
+        stack = self.heat.stacks.get(stack_id)
+        self.assertEqual(stack.stack_status, 'ROLLBACK_COMPLETE')
 
     @pytest.mark.testrail_id('631884')
     def test_heat_stack_output_list(self):
