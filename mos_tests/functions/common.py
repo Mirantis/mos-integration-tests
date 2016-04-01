@@ -90,7 +90,16 @@ def create_stack(heat_client, stack_name, template, parameters={}, timeout=20,
         parameters=parameters,
         timeout_mins=timeout)
     uid = stack['stack']['id']
-    check_stack_status_complete(heat_client, uid, 'CREATE', timeout)
+
+    def is_stack_created():
+        stack = heat_client.stacks.get(uid)
+        if stack.stack_status == 'CREATE_FAILED':
+            raise Exception(stack.stack_status_reason)
+        elif stack.stack_status == 'CREATE_COMPLETE':
+            return True
+
+    wait(is_stack_created, timeout_seconds=timeout * 60, sleep_seconds=10,
+        waiting_for='stack {} status to be CREATE_COMPLETE'.format(stack_name))
     return uid
 
 
