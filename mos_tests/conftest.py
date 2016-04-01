@@ -309,26 +309,20 @@ def get_config_option(fp, key, res_type):
 
 def is_l2pop(env):
     """Env deployed with vxlan segmentation and l2 population"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/plugin.ini') as f:
-            return get_config_option(f, 'l2_population', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_l2_pop']['value']
 
 
 def is_dvr(env):
     """Env deployed with enabled distributed routers support"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/neutron.conf') as f:
-            return get_config_option(f, 'router_distributed', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_dvr']['value']
 
 
 def is_l3_ha(env):
     """Env deployed with enabled distributed routers support"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/neutron.conf') as f:
-            return get_config_option(f, 'l3_ha', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_l3_ha']['value']
 
 
 def is_ironic_enabled(env):
