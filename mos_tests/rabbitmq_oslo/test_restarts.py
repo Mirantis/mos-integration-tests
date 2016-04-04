@@ -16,6 +16,7 @@ import json
 import logging
 import random
 import re
+import requests
 import sys
 
 import pytest
@@ -60,12 +61,11 @@ def install_oslomessagingchecktool(remote, **kwargs):
             "python-eventlet python-flask python-oslo.config "
             "python-oslo.log python-oslo.messaging python-oslosphinx -y && "
             "rm -rf {repo_path} && "
-            "git clone {repo} {repo_path} && "
-            "cd {repo_path} ;").format(**kwargs)
+            "git clone {repo} {repo_path} ;").format(**kwargs)
     cmd2 = ("cd {repo_path} && "
             "dpkg -i {pkg} || "
             "apt-get -f install -y").format(**kwargs)
-    logger.debug('Install "oslo.messaging-check-tool" on controller %s.' %
+    logger.debug('Install "oslo.messaging-check-tool" on %s.' %
                  remote.host)
     remote.check_call(cmd1)
     remote.check_call(cmd2)
@@ -92,7 +92,7 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
         parser.set('oslo_messaging_rabbit', 'rabbit_password', nova_pass)
         # Dump to cfg file to screen
         parser.write(sys.stdout)
-        logger.debug('Write [{0}] config file to controller {1}.'.format(
+        logger.debug('Write [{0}] config file to {1}.'.format(
             cfg_file_path, remote.host))
         # Write to new cfg file
         with remote.open(cfg_file_path, 'w') as new_f:
@@ -158,6 +158,9 @@ def restart_rabbitmq_serv(env, remote=None, sleep=10):
         logger.debug('Restart RabbinMQ server on ALL controllers one-by-one')
         for controller in controllers:
             with controller.ssh() as remote:
+                # Before and after restart check that rabbit is ok.
+                # Useful if we as restarting all controllers.
+                wait_for_rabbit_running_nodes(remote, len(controllers))
                 remote.check_call(restart_cmd)
                 wait_for_rabbit_running_nodes(remote, len(controllers))
     else:
@@ -235,6 +238,33 @@ def consume_msg(remote, cfg_file_path):
     out_consume = remote.check_call(cmd)['stdout'][0]
     num_of_msg_consumed = int(re.findall('\d+', out_consume)[0])
     return num_of_msg_consumed
+
+
+def rabbit_rpc_server_start(remote, cfg_file_path):
+    logger.debug('Start [oslo_msg_check_server] on %s.' % remote.host)
+    background = '<&- >/dev/null 2>&1 &'
+    cmd = 'oslo_msg_check_server --nodebug --config-file {0} {1}'.format(
+        cfg_file_path, background)
+    remote.execute(cmd)
+
+
+def rabbit_rpc_client_start(remote, cfg_file_path):
+    logger.debug('Start [oslo_msg_check_client] on %s.' % remote.host)
+    background = '<&- >/dev/null 2>&1 &'
+    cmd = 'oslo_msg_check_client --nodebug --config-file {0} {1}'.format(
+        cfg_file_path, background)
+    remote.execute(cmd)
+    return remote.host
+
+
+def get_http_code(host_ip, port=5000):
+    # curl to client
+    url = 'http://{host}:{port}'.format(host=host_ip, port=port)
+    try:  # server may not be ready yet
+        status_code = requests.get(url).status_code
+        return status_code
+    except Exception:
+        return False
 
 # ----------------------------------------------------------------------------
 
@@ -416,3 +446,86 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different for restart '
          'of %s controller.' % restart_ctrlr)
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('838289', params={'restart_ctrlr': 'one'})
+@pytest.mark.testrail_id('838290', params={'restart_ctrlr': 'all'})
+@pytest.mark.parametrize('restart_ctrlr', ['one', 'all', 'prim', 'non_prim'])
+def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
+        env, restart_ctrlr, fixt_open_5000_port_on_nodes,
+        fixt_kill_rpc_server_client):
+    """Tests:
+    Start RabbitMQ RPC server and client and restart RabbitMQ on one controller
+    Start RabbitMQ RPC server and client and restart RabbitMQ on all
+        controllers one-by-one.
+
+    Actions:
+    1. Install "oslo.messaging-check-tool" on controller and compute;
+    2. Prepare config file for both nodes above;
+    3. Run 'oslo_msg_check_client' on compute node;
+    4. Run 'oslo_msg_check_server' on controller node;
+    5. To be able to use port 5000 from any node open it in IPTables;
+    6. Send GET curl request from any node to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    7. Restart RabbitMQ-server on one OR all controller(s) one-by-one;
+    8. Wait until RabbitMQ service will be up and cluster synchronised;
+    9. Send GET curl request from any node to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    10. Remove rule from step (5) from IPTables.
+    """
+    exp_resp = 200   # expected response code from curl from RPC client
+    timeout_min = 2  # (minutes) time to wait for RPC server/client start
+
+    controllers = env.get_nodes_by_role('controller')
+    compute = random.choice(env.get_nodes_by_role('compute'))
+
+    if restart_ctrlr == 'prim':
+        controller = env.primary_controller
+    elif restart_ctrlr == 'non_prim':
+        controller = random.choice(env.non_primary_controllers)
+    else:
+        controller = random.choice(controllers)
+
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
+
+    # Install and configure tool on controller and compute
+    for node in (controller, compute):
+        with node.ssh() as remote:
+            kwargs = vars_config(remote)
+            if 'controller' in node.data['roles']:
+                # wait when rabbit will be ok after snapshot revert
+                wait_for_rabbit_running_nodes(remote, len(controllers))
+            install_oslomessagingchecktool(remote, **kwargs)
+            configure_oslomessagingchecktool(
+                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+
+    # client: run 'oslo_msg_check_client' on compute
+    with compute.ssh() as remote:
+        rpc_client_ip = rabbit_rpc_client_start(
+            remote, kwargs['cfg_file_path'])
+    # server: run 'oslo_msg_check_server' on controller
+    with controller.ssh() as remote:
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+
+    # host srv -> client: Check GET before controller(s) restart
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    # need to wait for server/client start
+    wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='RPC server/client to start')
+
+    # Restart RabbinMQ server on one/all controller(s)
+    with controller.ssh() as remote:
+        if restart_ctrlr in ('one', 'prim', 'non_prim'):
+            restart_rabbitmq_serv(env, remote=remote)
+        elif restart_ctrlr == 'all':
+            restart_rabbitmq_serv(env, remote=None)
+
+    # host srv -> client: Check GET after controller(s) restart
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    assert get_http_code(rpc_client_ip) == exp_resp
