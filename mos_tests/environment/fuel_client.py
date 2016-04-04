@@ -310,11 +310,18 @@ class FuelClient(object):
         fuelclient_settings._SETTINGS = None
         client.APIClient.__init__()
 
+    def get_all_cluster(self):
+        envs = Environment.get_all()
+        for env in envs:
+            env.admin_ssh_keys = self.admin_keys
+        return envs
+
     def get_last_created_cluster(self):
         """Returns Environment instance for latest deployed cluster"""
-        env = Environment.get_all()[-1]
-        env.admin_ssh_keys = self.admin_keys
-        return env
+        return self.get_all_cluster()[-1]
+
+    def get_clustres_by_names(self, names):
+        return [x for x in self.get_all_cluster() if x.data['name'] in names]
 
     def ssh_admin(self):
         return SSHClient(host=self.admin_ip,

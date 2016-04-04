@@ -43,6 +43,8 @@ def pytest_addoption(parser):
                      help="Fuel devops env name")
     parser.addoption("--snapshot", '-S', action="store",
                      help="Fuel devops snapshot name")
+    parser.addoption("--cluster", '-C', action="append",
+                     help="Fuel cluster name to test on it")
 
 
 def pytest_configure(config):
@@ -188,7 +190,15 @@ def fuel(fuel_master_ip):
 @pytest.fixture
 def env(request, fuel):
     """Environment instance"""
-    env = fuel.get_last_created_cluster()
+    names = request.config.getoption('--cluster')
+    if not names:
+        env = fuel.get_last_created_cluster()
+    else:
+        envs = fuel.get_clustres_by_names(names)
+        if len(envs) == 0:
+            raise Exception(
+                "Can't find fuel cluster with name in {}".format(names))
+        env = envs[0]
     if getattr(request.node, 'reverted',
                getattr(request.session, 'reverted', True)):
         env.wait_for_ostf_pass()
