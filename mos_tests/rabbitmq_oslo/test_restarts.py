@@ -132,13 +132,13 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     def_route = remote.check_call(cmd)['stdout'][0].strip()
 
     background = '<&- >/dev/null 2>&1 &'
-    cmd = \
-        ("(list_eth=$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
-         "for i in $list_eth; do ifconfig $i down; done ; "
-         "sleep %s ; "
-         "for i in $list_eth; do ifconfig $i up; done ; "
-         "ip -s -s neigh flush all ; "
-         "ip route add %s ) %s") % (sleep_sec, def_route, background)
+    cmd = ("(list_eth="
+           "$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
+           "for i in $list_eth; do ifconfig $i down; done ; "
+           "sleep %s ; "
+           "for i in $list_eth; do ifconfig $i up; done ; "
+           "ip -s -s neigh flush all ; "
+           "ip route add %s ) %s") % (sleep_sec, def_route, background)
     # "ip route add ..." partial WA for
     #   https://bugs.launchpad.net/fuel/+bug/1563321
     remote.execute(cmd)
@@ -454,6 +454,8 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838289', params={'restart_ctrlr': 'one'})
 @pytest.mark.testrail_id('838290', params={'restart_ctrlr': 'all'})
+@pytest.mark.testrail_id('838293', params={'restart_ctrlr': 'prim'})
+@pytest.mark.testrail_id('838292', params={'restart_ctrlr': 'non_prim'})
 @pytest.mark.parametrize('restart_ctrlr', ['one', 'all', 'prim', 'non_prim'])
 def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
         env, restart_ctrlr, fixt_open_5000_port_on_nodes,
@@ -540,7 +542,22 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
 @pytest.mark.testrail_id('838291')
 def test_start_rpc_srv_client_shutdown_eth_on_all(
         env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client):
+    """Tests:
+    Start RabbitMQ RPC server and client and shutdown eth interfaces on
+        all controllers.
 
+    Actions:
+    2. To be able to use port 5000 from any node open it in IPTables;
+    3. Install 'oslo.messaging-check-tool' on controller and compute;
+    4. Prepare config file for both nodes above;
+    5. Run 'oslo_msg_check_client' on compute node;
+    6. Run 'oslo_msg_check_server' on controller node;
+    7. Shutdown all eth interfaces on all controllers and after sleep
+        enable them.
+    8. Send GET curl request from host server to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    9. Remove all modifications of rules from IPTables and kill serv/client.
+    """
     exp_resp = 200   # expected response code from curl from RPC client
     timeout_min = 2  # (minutes) time to wait for RPC server/client start
     sleep_min = 2    # (minutes) Time to shutdown eth interfaces on controllers
@@ -586,7 +603,7 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
             disable_enable_all_eth_interf(one_remote, sleep_min * 60)
 
     # Wait when eth interface on controllers will be alive
-    wait(lambda: controller.is_ssh_avaliable() is True,
+    wait(controller.is_ssh_avaliable,
          timeout_seconds=60 * (sleep_min + 2),
          sleep_seconds=30,
          waiting_for='controller to be available.')
