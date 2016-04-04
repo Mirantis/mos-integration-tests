@@ -586,7 +586,7 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
             disable_enable_all_eth_interf(one_remote, sleep_min * 60)
 
     # Wait when eth interface on controllers will be alive
-    wait(lambda: controller.is_ssh_avaliable() is True,
+    wait(controller.is_ssh_avaliable,
          timeout_seconds=60 * (sleep_min + 2),
          sleep_seconds=30,
          waiting_for='controller to be available.')
