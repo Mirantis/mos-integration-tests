@@ -158,8 +158,6 @@ class OpenStackActions(object):
             else:
                 logger.debug('Instance unavailable yet: {}'.format(e))
                 return False
-        except Exception as e:
-            logger.error(e)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -560,6 +558,8 @@ class OpenStackActions(object):
     def ssh_to_instance(self, env, vm, vm_keypair=None, username='cirros',
                         password=None, proxy_node=None):
         """Returns direct ssh client to instance via proxy"""
+        # Update vm data
+        vm.get()
         logger.debug('Try to connect to vm {0}'.format(vm.name))
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
         vm_ip = vm.addresses[net_name][0]['addr']
