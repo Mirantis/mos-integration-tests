@@ -132,13 +132,13 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     def_route = remote.check_call(cmd)['stdout'][0].strip()
 
     background = '<&- >/dev/null 2>&1 &'
-    cmd = \
-        ("(list_eth=$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
-         "for i in $list_eth; do ifconfig $i down; done ; "
-         "sleep %s ; "
-         "for i in $list_eth; do ifconfig $i up; done ; "
-         "ip -s -s neigh flush all ; "
-         "ip route add %s ) %s") % (sleep_sec, def_route, background)
+    cmd = ("(list_eth="
+           "$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
+           "for i in $list_eth; do ifconfig $i down; done ; "
+           "sleep %s ; "
+           "for i in $list_eth; do ifconfig $i up; done ; "
+           "ip -s -s neigh flush all ; "
+           "ip route add %s ) %s") % (sleep_sec, def_route, background)
     # "ip route add ..." partial WA for
     #   https://bugs.launchpad.net/fuel/+bug/1563321
     remote.execute(cmd)
