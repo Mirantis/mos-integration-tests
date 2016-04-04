@@ -131,15 +131,17 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     cmd = 'ip route show | grep default'
     def_route = remote.check_call(cmd)['stdout'][0].strip()
 
-    cmd = ("list_eth=$(ip link show|grep 'state UP'|awk -F': ' '{print $2}'); "
+    background = '<&- >/dev/null 2>&1 &'
+    cmd = ("(list_eth="
+           "$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
            "for i in $list_eth; do ifconfig $i down; done ; "
            "sleep %s ; "
            "for i in $list_eth; do ifconfig $i up; done ; "
            "ip -s -s neigh flush all ; "
-           "ip route add %s ;") % (sleep_sec, def_route)
+           "ip route add %s ) %s") % (sleep_sec, def_route, background)
     # "ip route add ..." partial WA for
     #   https://bugs.launchpad.net/fuel/+bug/1563321
-    remote.execute_async(cmd)
+    remote.execute(cmd)
 
 
 def restart_rabbitmq_serv(env, remote=None, sleep=10):
@@ -452,6 +454,8 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838289', params={'restart_ctrlr': 'one'})
 @pytest.mark.testrail_id('838290', params={'restart_ctrlr': 'all'})
+@pytest.mark.testrail_id('838293', params={'restart_ctrlr': 'prim'})
+@pytest.mark.testrail_id('838292', params={'restart_ctrlr': 'non_prim'})
 @pytest.mark.parametrize('restart_ctrlr', ['one', 'all', 'prim', 'non_prim'])
 def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
         env, restart_ctrlr, fixt_open_5000_port_on_nodes,
@@ -525,6 +529,88 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
             restart_rabbitmq_serv(env, remote=remote)
         elif restart_ctrlr == 'all':
             restart_rabbitmq_serv(env, remote=None)
+
+    # host srv -> client: Check GET after controller(s) restart
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    assert get_http_code(rpc_client_ip) == exp_resp
+
+
+# Because of https://bugs.launchpad.net/fuel/+bug/1563321 it is DESTRUCTIVE
+# For e.g. "pcs resource" is not working after test below.
+# @pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('838291')
+def test_start_rpc_srv_client_shutdown_eth_on_all(
+        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client):
+    """Tests:
+    Start RabbitMQ RPC server and client and shutdown eth interfaces on
+        all controllers.
+
+    Actions:
+    2. To be able to use port 5000 from any node open it in IPTables;
+    3. Install 'oslo.messaging-check-tool' on controller and compute;
+    4. Prepare config file for both nodes above;
+    5. Run 'oslo_msg_check_client' on compute node;
+    6. Run 'oslo_msg_check_server' on controller node;
+    7. Shutdown all eth interfaces on all controllers and after sleep
+        enable them.
+    8. Send GET curl request from host server to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    9. Remove all modifications of rules from IPTables and kill serv/client.
+    """
+    exp_resp = 200   # expected response code from curl from RPC client
+    timeout_min = 2  # (minutes) time to wait for RPC server/client start
+    sleep_min = 2    # (minutes) Time to shutdown eth interfaces on controllers
+
+    controllers = env.get_nodes_by_role('controller')
+    compute = random.choice(env.get_nodes_by_role('compute'))
+    controller = random.choice(controllers)
+
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
+
+    # Install and configure tool on controller and compute
+    for node in (controller, compute):
+        with node.ssh() as remote:
+            kwargs = vars_config(remote)
+            if 'controller' in node.data['roles']:
+                # wait when rabbit will be ok after snapshot revert
+                wait_for_rabbit_running_nodes(remote, len(controllers))
+            install_oslomessagingchecktool(remote, **kwargs)
+            configure_oslomessagingchecktool(
+                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+
+    # Client: Run 'oslo_msg_check_client' on compute
+    with compute.ssh() as remote:
+        rpc_client_ip = rabbit_rpc_client_start(
+            remote, kwargs['cfg_file_path'])
+    # Server: Run 'oslo_msg_check_server' on controller
+    with controller.ssh() as remote:
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+
+    # host srv -> client: Check GET before any actions
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    # need to wait for server/client start
+    wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='RPC server/client to start')
+
+    # Shutdown all eth interfaces on all cntrllrs and after sleep enable them
+    for one in controllers:
+        with one.ssh() as one_remote:
+            disable_enable_all_eth_interf(one_remote, sleep_min * 60)
+
+    # Wait when eth interface on controllers will be alive
+    wait(controller.is_ssh_avaliable,
+         timeout_seconds=60 * (sleep_min + 2),
+         sleep_seconds=30,
+         waiting_for='controller to be available.')
+
+    # Wait when rabbit will be ok after interfaces down/up
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
 
     # host srv -> client: Check GET after controller(s) restart
     logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
