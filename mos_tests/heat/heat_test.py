@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 from random import randint
 import re
@@ -21,7 +22,10 @@ import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests.functions import file_cache
 from mos_tests import settings
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
@@ -1093,13 +1097,9 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
-    @pytest.fixture
+    @pytest.fixture(scope="session")
     def fedora_docker_image(self):
-        image_path = os.path.join(settings.TEST_IMAGE_PATH,
-                                  settings.FEDORA_DOCKER_QCOW2)
-        if os.path.exists(image_path):
-            return image_path
-        return None
+        return file_cache.get_file_path(settings.FEDORA_DOCKER_URL)
 
     @pytest.fixture(autouse=True)
     def skip_if_no_ubuntu_docker_image(self, request, fedora_docker_image):
