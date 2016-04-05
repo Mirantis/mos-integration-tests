@@ -179,13 +179,13 @@ def num_of_rabbit_running_nodes(remote, timeout_min=5):
     :param timeout_min: Timeout in minutes to wait for successful cmd execution
     """
     def rabbit_status():
-        result = remote.execute('rabbitmqctl cluster_status')
+        result = remote.execute('rabbitmqctl cluster_status', verbose=False)
         if result.is_ok and 'running_nodes' in result.stdout_string:
             return result['stdout']
 
     out = wait(rabbit_status,
                timeout_seconds=60 * timeout_min,
-               sleep_seconds=20,
+               sleep_seconds=30,
                waiting_for='RabbitMQ service start.')
     # Parse output to get only list with 'running_nodes'
     out = map(str.strip, out)
@@ -206,7 +206,7 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
     """
     wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
          timeout_seconds=60 * timeout_min,
-         sleep_seconds=20,
+         sleep_seconds=30,
          waiting_for='number of running nodes will be %s.' % exp_nodes)
 
 
@@ -267,6 +267,31 @@ def get_http_code(host_ip, port=5000):
         return status_code
     except Exception:
         return False
+
+
+def wait_rabbit_ok_on_all_ctrllrs(env, timeout_min=7):
+    """Wait untill rabbit will be OK on all controllers"""
+    controllers = env.get_nodes_by_role('controller')
+    for one in controllers:
+        with one.ssh() as remote:
+            wait_for_rabbit_running_nodes(
+                remote, len(controllers), timeout_min=timeout_min)
+
+
+def kill_rabbitmq_on_node(remote, timeout_min=7):
+    """Waiting for rabbit startup and got pid, then kill-9 it"""
+    def get_pid():
+        cmd = "rabbitmqctl status | grep '{pid' | tr -dc '0-9'"
+        try:
+            return remote.check_call(cmd)['stdout'][0].strip()
+        except Exception:
+            return None
+    wait(get_pid,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=30,
+         waiting_for='Rabbit get its pid on %s.' % remote.host)
+    cmd = "kill -9 %s" % get_pid()
+    remote.check_call(cmd)
 
 # ----------------------------------------------------------------------------
 
@@ -676,3 +701,98 @@ def test_start_rpc_srv_client_iptables_modify(
          waiting_for='RPC server/client to start')
 
     assert get_http_code(rpc_client_ip) == exp_resp
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('838296')
+def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
+        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client):
+    """Tests:
+    Start RabbitMQ RPC server and client and kill RabbitMQ service
+        with 'kill -9' on different nodes many times.
+
+    Actions:
+    1. To be able to use port 5000 from any node open it in IPTables;
+    2. Install 'oslo.messaging-check-tool' on controller and compute;
+    3. Prepare config file for both nodes above;
+    4. Run 'oslo_msg_check_client' on compute node;
+    5. Run 'oslo_msg_check_server' on controller node;
+    6. Generate 10 000 messages to RabbitMQ cluster;
+    7. Select (num of controllers - 1) controllers and kill several times
+        rabbitmq server process on them;
+    8. Wait when rabbit will be up and running on all controllers;
+    9. Send GET curl request from host server to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    10. Consume messages and check that number of generated and consumed
+        messages is equal;
+    11. Remove all modifications of rules from IPTables and kill serv/client.
+
+    BUG: https://bugs.launchpad.net/mos/+bug/1561894
+    """
+    num_of_rabbit_kill = 3     # how many times kill rabbit on one node
+    num_of_msg_to_gen = 10000  # number of messages to generate with oslo_tool
+    exp_resp = 200   # expected response code from curl from RPC client
+    timeout_min = 3  # (minutes) time to wait for RPC server/client start
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    compute = random.choice(env.get_nodes_by_role('compute'))
+
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
+
+    # Wait when rabbit will be ok on all controllers
+    wait_rabbit_ok_on_all_ctrllrs(env)
+
+    # Install and configure oslo_tool on controller and compute
+    for node in (controller, compute):
+        with node.ssh() as remote:
+            kwargs = vars_config(remote)
+            install_oslomessagingchecktool(remote, **kwargs)
+            configure_oslomessagingchecktool(
+                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+
+    # Client: Run 'oslo_msg_check_client' on compute
+    with compute.ssh() as remote:
+        rpc_client_ip = rabbit_rpc_client_start(
+            remote, kwargs['cfg_file_path'])
+
+    # Server: Run 'oslo_msg_check_server' on controller and generate messages
+    with controller.ssh() as remote:
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+        generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
+
+    # Wait for oslo_tool server/client is ready
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='RPC server/client to start')
+
+    # Randomly select [num of controllers - 1] controllers for kill-9 actions
+    ctrlls_for_kill = []
+    for i in xrange(0, (len(controllers) - 1)):
+        ctrl = random.choice(controllers)
+        while ctrl in ctrlls_for_kill:
+            ctrl = random.choice(controllers)
+        ctrlls_for_kill.append(ctrl)
+
+    # Kill rabbit several times on selected controllers
+    for i in xrange(0, num_of_rabbit_kill):
+        for ctrl in ctrlls_for_kill:
+            logger.debug('Round %s of kill-9 on %s' % (i, ctrl.data['ip']))
+            with ctrl.ssh() as remote:
+                kill_rabbitmq_on_node(remote)
+
+    # Wait when rabbit will be ok on all controllers after kills
+    wait_rabbit_ok_on_all_ctrllrs(env)
+
+    # Check oslo_tool server/client
+    assert exp_resp == get_http_code(rpc_client_ip)
+
+    # Check number of consumed messages
+    with controller.ssh() as remote:
+        num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+    assert num_of_msg_to_gen == num_of_msg_consumed
