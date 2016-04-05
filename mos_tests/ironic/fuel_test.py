@@ -25,17 +25,9 @@ pytestmark = pytest.mark.undestructive
 def new_env(fuel, env):
     new_env = Environment.create(name='test',
                                  release_id=env.data['release_id'],
-                                 net='neutron',
                                  net_segment_type='vlan')
     yield new_env
     new_env.delete()
-
-
-@pytest.fixture
-def enable_ironic(new_env):
-    data = new_env.get_settings_data()
-    data['editable']['additional_components']['ironic']['value'] = True
-    new_env.set_settings_data(data)
 
 
 @pytest.yield_fixture
@@ -53,7 +45,7 @@ def check_net_settings_equals(fuel_settings, cli_settings):
 
 
 @pytest.mark.testrail_id('631890')
-def test_baremetal_network_settings(new_env, enable_ironic, admin_remote):
+def test_baremetal_network_settings(new_env, admin_remote):
     """Check baremetal network settings with enabled/disabled Ironic
 
     Scenario:
@@ -76,6 +68,7 @@ def test_baremetal_network_settings(new_env, enable_ironic, admin_remote):
             if 'baremetal' in values:
                 return dict(zip(headers, values))
 
+    new_env.set_ironic(True)
     networks = {x['name']: x for x in new_env.get_network_data()['networks']}
     assert 'baremetal' in networks
 
@@ -83,18 +76,14 @@ def test_baremetal_network_settings(new_env, enable_ironic, admin_remote):
                               get_baremetal_net_settings_from_cli())
 
     # Disable Ironic
-    data = new_env.get_settings_data()
-    data['editable']['additional_components']['ironic']['value'] = False
-    new_env.set_settings_data(data)
+    new_env.set_ironic(False)
 
     networks = {x['name']: x for x in new_env.get_network_data()['networks']}
     assert 'baremetal' not in networks
     assert get_baremetal_net_settings_from_cli() is None
 
     # Enable Ironic
-    data = new_env.get_settings_data()
-    data['editable']['additional_components']['ironic']['value'] = True
-    new_env.set_settings_data(data)
+    new_env.set_ironic(True)
 
     networks = {x['name']: x for x in new_env.get_network_data()['networks']}
     assert 'baremetal' in networks
