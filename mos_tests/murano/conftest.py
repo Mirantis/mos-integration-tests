@@ -26,3 +26,25 @@ def controller_remote(env):
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)
+
+
+@pytest.yield_fixture
+def environment(os_conn):
+    environment = os_conn.murano.environments.create(
+        {'name': os_conn.rand_name('MuranoEnv')})
+    yield environment
+    os_conn.murano.environments.delete(environment.id)
+
+
+@pytest.yield_fixture
+def session(os_conn, environment):
+    session = os_conn.murano.sessions.configure(environment.id)
+    yield session
+    os_conn.murano.sessions.delete(environment.id, session.id)
+
+
+@pytest.yield_fixture
+def keypair(os_conn):
+    keypair = os_conn.create_key(key_name='murano-key')
+    yield keypair
+    os_conn.delete_key(key_name=keypair.name)

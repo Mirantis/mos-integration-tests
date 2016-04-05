@@ -12,15 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
 import random
 import time
+import yaml
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as HeatClient
 from keystoneclient.exceptions import ClientException as KeyStoneException
 from keystoneclient.v2_0 import Client as KeystoneClient
+from muranoclient import client as muranoclient
 from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 from novaclient import client as nova_client
@@ -99,6 +102,12 @@ class OpenStackActions(object):
                                 token=token,
                                 cacert=self.path_to_cert,
                                 ca_file=self.path_to_cert)
+        murano_endpoint = self.keystone.service_catalog.url_for(
+            service_type='application_catalog', endpoint_type='publicURL')
+        logger.debug('Murano endpoint is {0}'.format(murano_endpoint))
+        self.murano = muranoclient.Client('1', endpoint=murano_endpoint,
+                                          token=token,
+                                          cacert=self.path_to_cert)
         self.env = env
 
     def _get_keystoneclient(self, username, password, tenant_name, auth_url,
@@ -773,3 +782,28 @@ class OpenStackActions(object):
         wait(lambda: self.nova.servers.get(srv).status == 'REBUILD',
              timeout_seconds=60, waiting_for='start of instance rebuild')
         return srv
+
+    def rand_name(self, name):
+        return name + '_' + str(random.randint(1, 0x7fffffff))
+
+    def create_service(self, environment, session, json_data, to_json=True):
+        service = self.murano.services.post(environment.id, path='/',
+                                            data=json_data,
+                                            session_id=session.id)
+        if to_json:
+            service = service.to_dict()
+            service = json.dumps(service)
+            return yaml.load(service)
+        else:
+            return service
+
+    def deploy_environment(self, environment, session):
+        self.murano.sessions.deploy(environment.id, session.id)
+        start_time = time.time()
+        status = self.murano.environments.get(environment.id).status
+        while status != 'ready' and time.time() - start_time < 3800:
+            if status == 'deploy failure':
+                return 0
+            time.sleep(15)
+            status = self.murano.environments.get(environment.id).status
+        return self.murano.environments.get(environment.id)
