@@ -54,33 +54,28 @@ def controller(env):
 @pytest.yield_fixture
 def patch_iptables(controller, request):
     """Apply IPTables rules"""
-
-    def add_ports(tmpl):
-        ports = [4369, 5672, 5673, 25672]
-        return ' '.join(map(lambda portnum: tmpl.format(portnum=portnum),
-                            ports))
+    ports = [4369, 5672, 5673, 25672]
 
     if request.param == 'drop':
-        tbl_modif = add_ports(
-            'iptables -I INPUT -p tcp -m tcp --dport {portnum} -j DROP ;')
-        tbl_modif_del = add_ports(
-            'iptables -D INPUT -p tcp -m tcp --dport {portnum} -j DROP ;')
+        tbl_modif_tmpl = (
+            'iptables -{action} INPUT -p tcp -m tcp --dport {portnum} -j DROP')
     elif request.param == 'reject':
-        tbl_modif = add_ports(
-            'iptables -I INPUT -p tcp -m tcp --dport {portnum} -j REJECT'
-            ' --reject-with icmp-host-prohibited ;')
-        tbl_modif_del = add_ports(
-            'iptables -D INPUT -p tcp -m tcp --dport {portnum} -j REJECT'
-            ' --reject-with icmp-host-prohibited ;')
+        tbl_modif_tmpl = (
+            'iptables -{action} INPUT -p tcp -m tcp --dport {portnum}'
+            ' -j REJECT --reject-with icmp-host-prohibited')
     else:
-        raise ValueError("Does'n know such param [{0}]!".format(request.param))
+        raise ValueError("Don't know such param [{0}]!".format(request.param))
 
     logger.debug('Applying IPTables rules [{0}] to {1}'.format(
         request.param, controller.data['ip']))
-    with controller.ssh() as remote:
-        remote.check_call(tbl_modif)
+    # apply changes
+    for oneport in ports:
+        with controller.ssh() as remote:
+            remote.check_call(tbl_modif_tmpl.format(action='I',
+                                                    portnum=oneport))
     yield
-
     # revert changes
-    with controller.ssh() as remote:
-        remote.check_call(tbl_modif_del)
+    for oneport in ports:
+        with controller.ssh() as remote:
+            remote.check_call(tbl_modif_tmpl.format(action='D',
+                                                    portnum=oneport))
