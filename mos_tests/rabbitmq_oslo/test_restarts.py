@@ -619,15 +619,13 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
-@pytest.mark.testrail_id(
-    '838294', params={'fixt_iptables_drop_reject': 'drop'})
-@pytest.mark.testrail_id(
-    '838295', params={'fixt_iptables_drop_reject': 'reject'})
-@pytest.mark.parametrize('fixt_iptables_drop_reject', ['drop', 'reject'],
-                         indirect=['fixt_iptables_drop_reject'])
+@pytest.mark.testrail_id('838294', params={'patch_iptables': 'drop'})
+@pytest.mark.testrail_id('838295', params={'patch_iptables': 'reject'})
+@pytest.mark.parametrize('patch_iptables', ['drop', 'reject'],
+                         indirect=['patch_iptables'])
 def test_start_rpc_srv_client_iptables_modify(
         env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client,
-        fixt_iptables_drop_reject):
+        patch_iptables, controller):
     """Tests:
     Start RabbitMQ RPC server and client and apply IPTABLES DROP rules
         for RabbitMQ ports on one controller.
@@ -646,15 +644,8 @@ def test_start_rpc_srv_client_iptables_modify(
     """
     exp_resp = 200   # expected response code from curl from RPC client
     timeout_min = 2  # (minutes) time to wait for RPC server/client start
-    i_am_chosen_mark = '/tmp/i_am_chosen_mark.txt'
 
-    controllers = env.get_nodes_by_role('controller')
     compute = random.choice(env.get_nodes_by_role('compute'))
-    # find controller, marked with fixture
-    for controller in controllers:
-        with controller.ssh() as remote:
-            if remote.isfile(i_am_chosen_mark):
-                break
 
     # Get management IPs of all controllers
     ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
@@ -676,7 +667,7 @@ def test_start_rpc_srv_client_iptables_modify(
     with controller.ssh() as remote:
         rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
 
-    # host srv -> client: Check GET before any actions
+    # host srv -> client: Check GET
     logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
     # need to wait for server/client start
     wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
@@ -684,6 +675,4 @@ def test_start_rpc_srv_client_iptables_modify(
          sleep_seconds=20,
          waiting_for='RPC server/client to start')
 
-    # host srv -> client: Check GET after controller(s) restart
-    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
     assert get_http_code(rpc_client_ip) == exp_resp
