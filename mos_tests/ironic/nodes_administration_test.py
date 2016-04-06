@@ -49,8 +49,8 @@ def ironic_cli(controller_remote):
 
 @pytest.mark.testrail_id('631901')
 @pytest.mark.check_env_('has_ironic_conductor')
-def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
-                         os_conn, ironic, cleanup_ironic, chassis):
+def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
+                         cleanup_ironic, chassis):
     """Test CRUD operations for ironic node
 
     Scenario:
@@ -59,7 +59,7 @@ def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
         3. Check that nova hypervisor-list shows one new hypervisor with 0
             values for ram, cpu, disk.
         4. Validate new ironic node: ironic node-validate uuid
-        5. Update node with ssh driver instead of fake one
+        5. Update node with real driver instead of fake one
         6. Check that node driver is updated
         7. Create port with correct MAC for this node
         8. Check that nova hypervisor-show uuid shows non-zero ram|cpu|disk
@@ -71,7 +71,8 @@ def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
             nova hypervisor-list
     """
     fake_driver_info = {'A1': 'A1', 'B1': 'B1', 'B2': 'B2'}
-    node_properties = ironic_drivers_params[0]['node_properties']
+    ironic_driver = ironic_drivers_params[0]
+    node_properties = ironic_driver['node_properties']
 
     # Create node
     node = ironic.client.node.create(driver='fake',
@@ -100,31 +101,18 @@ def test_crud_operations(server_ssh_credentials, ironic_drivers_params,
     for val in validate_result.to_dict().values():
         assert val == {'result': True}
 
-    def get_image(name):
-        return os_conn.nova.images.find(name=name)
-
-    driver_info = {
-        'ssh_address': server_ssh_credentials['ip'],
-        'ssh_username': server_ssh_credentials['username'],
-        'ssh_key_contents': server_ssh_credentials['key'],
-        'ssh_virt_type': 'virsh',
-        'deploy_kernel': get_image('ironic-deploy-linux').id,
-        'deploy_ramdisk': get_image('ironic-deploy-initramfs').id,
-        'deploy_squashfs': get_image('ironic-deploy-squashfs').id,
-    }
-    # yapf: disable
     patch = [
-        {'op': 'replace', 'path': '/driver', 'value': 'fuel_ssh'},
-        {'op': 'replace', 'path': '/driver_info', 'value': driver_info}
+        {'op': 'replace',
+         'path': '/driver',
+         'value': ironic_driver['driver']},
+        {'op': 'replace',
+         'path': '/driver_info',
+         'value': ironic_driver['driver_info']}
     ]
-    # yapf: enable
 
     # Update node driver
     node = ironic.client.node.update(node.uuid, patch=patch)
-    assert node.driver == 'fuel_ssh'
-
-    mac = ironic_drivers_params[0]['mac_address']
-    ironic.client.port.create(node_uuid=node.uuid, address=mac)
+    assert node.driver == ironic_driver['driver']
 
     def updated_hypervisor():
         hypervisor = os_conn.nova.hypervisors.find(

@@ -1,17 +1,12 @@
 ---
-- &fuel_ssh
+- &fuel_libvirt
   # Driver name
-  driver: fuel_ssh
+  driver: fuel_libvirt
 
   # Driver info. Will extended with kernel, ramdisk, squashfs glance images ids
   driver_info:
-    # Will be replaced with current machine address if null
-    ssh_address: null
-    # Will be replaced with current user name
-    ssh_username: null
-    # Will be replaced with generated private key
-    ssh_key_contents: null
-    ssh_virt_type: virsh
+    # Will be replaced with current machine libvirt uri if null
+    libvirt_uri: null
 
   # Properties to pass to driver. Also flavor and virsh nodes will creates with this params
   node_properties:
@@ -21,8 +16,8 @@
     cpu_arch: x86_64
   mac_address: 0.0.0.0
 
-  # Another fuel_ssh node
-- *fuel_ssh
+  # Another fuel_libvirt node
+- *fuel_libvirt
 
 # IPMI driver settings template
 # - driver: fuel_ipmitool
