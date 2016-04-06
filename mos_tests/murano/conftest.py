@@ -16,8 +16,8 @@ import functools
 import pytest
 import uuid
 
-
 from mos_tests.functions import os_cli
+from mos_tests.murano import actions
 
 
 flavor = 'm1.small'
@@ -25,6 +25,11 @@ linux_image = 'debian-8-m-agent.qcow2'
 docker_image = 'debian-8-docker.qcow2'
 kubernetes_image = 'ubuntu14.04-x64-kubernetes'
 labels = "testkey=testvalue"
+
+
+@pytest.fixture
+def murano(os_conn):
+    return actions.MuranoActions(os_conn)
 
 
 @pytest.yield_fixture
@@ -39,9 +44,9 @@ def openstack_client(controller_remote):
 
 
 @pytest.yield_fixture
-def environment(os_conn):
+def environment(murano, os_conn):
     environment = os_conn.murano.environments.create(
-        {'name': os_conn.rand_name('MuranoEnv')})
+        {'name': murano.rand_name('MuranoEnv')})
     yield environment
     os_conn.murano.environments.delete(environment.id)
 
@@ -115,11 +120,12 @@ def docker_data(os_conn, keypair):
 
 
 @pytest.fixture
-def cluster(os_conn, keypair, environment, session, request):
-    initial_gateways, max_gateways, initial_nodes, max_nodes = \
-        getattr(request, 'param', (1, 1, 1, 1))
+def cluster(murano, keypair, environment, session, request):
+    nodes = getattr(request, 'param', {'initial_gateways': 1,
+                                       'max_gateways': 1, 'initial_nodes': 1,
+                                       'max_nodes': 1})
 
-    if max_gateways == 1:
+    if nodes['max_gateways'] == 1:
         gateways_data = [
             {
                 "instance": {
@@ -182,7 +188,7 @@ def cluster(os_conn, keypair, environment, session, request):
                 }
             }
         ]
-    if max_nodes == 1:
+    if nodes['max_nodes'] == 1:
         nodes_data = [
             {
                 "instance": {
@@ -250,7 +256,7 @@ def cluster(os_conn, keypair, environment, session, request):
         ]
 
     kub_data = {
-        "gatewayCount": initial_gateways,
+        "gatewayCount": nodes['initial_gateways'],
         "gatewayNodes": gateways_data,
         "?": {
             "_{id}".format(id=uuid.uuid4().hex): {
@@ -259,7 +265,7 @@ def cluster(os_conn, keypair, environment, session, request):
             "type": "io.murano.apps.docker.kubernetes.KubernetesCluster",
             "id": str(uuid.uuid4())
         },
-        "nodeCount": initial_nodes,
+        "nodeCount": nodes['initial_nodes'],
         "dockerRegistry": "",
         "masterNode": {
             "instance": {
@@ -283,12 +289,12 @@ def cluster(os_conn, keypair, environment, session, request):
         "minionNodes": nodes_data,
         "name": "KubeClusterTest"
     }
-    cluster = os_conn.create_service(environment, session, kub_data)
+    cluster = murano.create_service(environment, session, kub_data)
     return cluster
 
 
 @pytest.fixture
-def pod(os_conn, environment, session, cluster, request):
+def pod(murano, environment, session, cluster, request):
     replicas = getattr(request, 'param', 1)
     pod_data = {
         "kubernetesCluster": cluster,
@@ -303,5 +309,23 @@ def pod(os_conn, environment, session, cluster, request):
             "id": str(uuid.uuid4())
         }
     }
-    pod = os_conn.create_service(environment, session, pod_data)
+    pod = murano.create_service(environment, session, pod_data)
     return pod
+
+
+@pytest.fixture
+def influx(murano, environment, session, pod):
+    post_body = {
+        "host": pod,
+        "name": "Influx",
+        "preCreateDB": 'db1;db2',
+        "publish": True,
+        "?": {
+            "_{id}".format(id=uuid.uuid4().hex): {
+                "name": "Docker InfluxDB"
+            },
+            "type": "io.murano.apps.docker.DockerInfluxDB",
+            "id": str(uuid.uuid4())
+        }
+    }
+    return murano.create_service(environment, session, post_body)
