@@ -1235,7 +1235,7 @@ class TestDVRRegression(TestDVRBase):
 
         for controller in self.controllers:
             with controller.ssh() as remote:
-                res = remote.execute(
+                res = remote.check_call(
                     "echo {0} >> {1}".format(self.logs_start_marker,
                                              self.logs_path))['exit_code']
                 assert res == 0
@@ -1249,14 +1249,15 @@ class TestDVRRegression(TestDVRBase):
             2. Create router01 with router type Distributed
             3. Create port
             4. Add interfaces to the router01 with created port
-            5. Check that no error appeared in the log
+            5. Check that the error with message 'Could not retrieve
+                gateway port for subnet' didn't appear in logs
         """
         net, _ = self.create_internal_network_with_subnet(1)
         router = self.os_conn.create_router(name='router01', distributed=True)
         port = self.os_conn.create_port(net['network']['id'])
         self.os_conn.router_interface_add(router_id=router['router']['id'],
                                           port_id=port['port']['id'])
-        logger.debug("Wait some time to collect neutron logs.")
+        logger.debug("Wait some time before collecting neutron logs.")
         time.sleep(30)
 
         log_msg = "Could not retrieve gateway port for subnet"
@@ -1267,13 +1268,11 @@ class TestDVRRegression(TestDVRBase):
             self.logs_path))
         for controller in self.controllers:
             with controller.ssh() as remote:
-                logs = remote.check_call("cat {}".format(
-                    self.logs_path))['stdout']
-
-                # check only generated during the test logs
-                check_log = False
-                for log in logs:
-                    if self.logs_start_marker in log:
-                        check_log = True
-                    if check_log:
-                        assert log_msg not in log, err_msg
+                with remote.open(self.logs_path) as f:
+                    # check only generated during the test logs
+                    lines = iter(f)
+                    for line in lines:
+                        if self.logs_start_marker in line:
+                            break
+                    for line in lines:
+                        assert log_msg not in line, err_msg
