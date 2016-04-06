@@ -22,6 +22,7 @@ import pytest
 from tempfile import NamedTemporaryFile
 
 from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.functions.common import gen_random_resource_name
 from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests import base
 
@@ -1250,3 +1251,58 @@ class TestDVRTypeChange(TestDVRBase):
         assert router['distributed'], err_msg
 
         self.check_exception_on_router_update_to_centralize(router['id'])
+
+
+class TestDVRRegression(TestDVRBase):
+    @pytest.fixture
+    def prepare_neutron_logs(self):
+        """Mark logs to know which logs are generated during the test"""
+        self.controllers = self.env.get_nodes_by_role('controller')
+        self.logs_path = "/var/log/neutron/server.log"
+        self.logs_start_marker = gen_random_resource_name(
+            prefix='neutron')
+
+        for controller in self.controllers:
+            with controller.ssh() as remote:
+                res = remote.execute(
+                    "echo {0} >> {1}".format(self.logs_start_marker,
+                                             self.logs_path))['exit_code']
+                assert res == 0
+
+    @pytest.mark.usefixtures('prepare_neutron_logs')
+    def test_add_router_interface_with_port_id(self):
+        """Add router interface with port_id parameter
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01 with router type Distributed
+            3. Create port
+            4. Add interfaces to the router01 with created port
+            5. Check that no error appeared in the log
+        """
+        net, _ = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+        port = self.os_conn.create_port(net['network']['id'])
+        self.os_conn.router_interface_add(router_id=router['router']['id'],
+                                          port_id=port['port']['id'])
+        logger.debug("Wait some time to collect neutron logs.")
+        time.sleep(30)
+
+        log_msg = "Could not retrieve gateway port for subnet"
+        err_msg = ("ERROR with '{}' message was found in {}.".format(
+            log_msg, self.logs_path))
+
+        logger.debug("Verify that the error log is absent in {}".format(
+            self.logs_path))
+        for controller in self.controllers:
+            with controller.ssh() as remote:
+                logs = remote.check_call("cat {}".format(
+                    self.logs_path))['stdout']
+
+                # check only generated during the test logs
+                check_log = False
+                for log in logs:
+                    if self.logs_start_marker in log:
+                        check_log = True
+                    if check_log:
+                        assert log_msg not in log, err_msg
