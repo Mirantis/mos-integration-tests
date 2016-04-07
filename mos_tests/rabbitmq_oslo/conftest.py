@@ -12,7 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+import random
+
 import pytest
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture
@@ -38,3 +44,38 @@ def fixt_kill_rpc_server_client(env):
         with node.ssh() as remote:
             cmd = 'pkill -f oslo_msg_check_'
             remote.execute(cmd)
+
+
+@pytest.fixture
+def controller(env):
+    return random.choice(env.get_nodes_by_role('controller'))
+
+
+@pytest.yield_fixture
+def patch_iptables(controller, request):
+    """Apply IPTables rules"""
+    ports = [4369, 5672, 5673, 25672]
+
+    if request.param == 'drop':
+        tbl_modif_tmpl = (
+            'iptables -{action} INPUT -p tcp -m tcp --dport {portnum} -j DROP')
+    elif request.param == 'reject':
+        tbl_modif_tmpl = (
+            'iptables -{action} INPUT -p tcp -m tcp --dport {portnum}'
+            ' -j REJECT --reject-with icmp-host-prohibited')
+    else:
+        raise ValueError("Don't know such param [{0}]!".format(request.param))
+
+    logger.debug('Applying IPTables rules [{0}] to {1}'.format(
+        request.param, controller.data['ip']))
+    # apply changes
+    for oneport in ports:
+        with controller.ssh() as remote:
+            remote.check_call(tbl_modif_tmpl.format(action='I',
+                                                    portnum=oneport))
+    yield
+    # revert changes
+    for oneport in ports:
+        with controller.ssh() as remote:
+            remote.check_call(tbl_modif_tmpl.format(action='D',
+                                                    portnum=oneport))

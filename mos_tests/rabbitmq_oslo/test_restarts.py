@@ -615,3 +615,64 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
     # host srv -> client: Check GET after controller(s) restart
     logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
     assert get_http_code(rpc_client_ip) == exp_resp
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('838294', params={'patch_iptables': 'drop'})
+@pytest.mark.testrail_id('838295', params={'patch_iptables': 'reject'})
+@pytest.mark.parametrize('patch_iptables', ['drop', 'reject'],
+                         indirect=['patch_iptables'])
+def test_start_rpc_srv_client_iptables_modify(
+        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client,
+        patch_iptables, controller):
+    """Tests:
+    Start RabbitMQ RPC server and client and apply IPTABLES DROP rules
+        for RabbitMQ ports on one controller.
+
+    Actions:
+    1. Apply IPTables Drop OR Reject rules to controller where
+        'oslo_msg_check_server' will be launched;
+    2. To be able to use port 5000 from any node open it in IPTables;
+    3. Install 'oslo.messaging-check-tool' on controller and compute;
+    4. Prepare config file for both nodes above;
+    5. Run 'oslo_msg_check_client' on compute node;
+    6. Run 'oslo_msg_check_server' on controller node (remember point 1);
+    7. Send GET curl request from host server to 'oslo_msg_check_client'
+        located on compute node and check that response will '200';
+    8. Remove all modifications of rules from IPTables and kill serv/client.
+    """
+    exp_resp = 200   # expected response code from curl from RPC client
+    timeout_min = 2  # (minutes) time to wait for RPC server/client start
+
+    compute = random.choice(env.get_nodes_by_role('compute'))
+
+    # Get management IPs of all controllers
+    ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
+
+    # Install and configure tool on controller and compute
+    for node in (controller, compute):
+        with node.ssh() as remote:
+            kwargs = vars_config(remote)
+            install_oslomessagingchecktool(remote, **kwargs)
+            configure_oslomessagingchecktool(
+                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+
+    # Client: Run 'oslo_msg_check_client' on compute
+    with compute.ssh() as remote:
+        rpc_client_ip = rabbit_rpc_client_start(
+            remote, kwargs['cfg_file_path'])
+    # Server: Run 'oslo_msg_check_server' on controller
+    with controller.ssh() as remote:
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+
+    # host srv -> client: Check GET
+    logger.debug('GET: [host server] -> [{0}]'.format(rpc_client_ip))
+    # need to wait for server/client start
+    wait(lambda: get_http_code(rpc_client_ip) == exp_resp,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=20,
+         waiting_for='RPC server/client to start')
+
+    assert get_http_code(rpc_client_ip) == exp_resp
