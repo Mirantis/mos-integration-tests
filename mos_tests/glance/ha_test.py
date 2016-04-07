@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_ha')
 class TestGlanceHA(TestBase):
 
+    @pytest.mark.testrail_id('836632')
     @pytest.mark.parametrize('glance', [2], indirect=['glance'])
     def test_shutdown_primary_controller(
             self, glance, image_file, suffix, timeout=60):
@@ -69,6 +70,7 @@ class TestGlanceHA(TestBase):
         images = parser.listing(glance('image-list'))
         assert image['id'] not in [x['ID'] for x in images]
 
+    @pytest.mark.testrail_id('836633')
     @pytest.mark.parametrize('glance', [1], indirect=['glance'])
     def test_shutdown_active_controller_during_upload(
             self, glance, image_file, suffix, timeout=60):
