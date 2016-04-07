@@ -98,7 +98,7 @@ class IronicActions(object):
             'deploy_squashfs': self._get_image('ironic-deploy-squashfs').id,
         })
 
-        node = self.client.node.create(driver='fuel_ssh',
+        node = self.client.node.create(driver=driver,
                                        driver_info=driver_info,
                                        properties=node_properties)
         self.client.port.create(node_uuid=node.uuid, address=mac_address)

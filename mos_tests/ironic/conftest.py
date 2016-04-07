@@ -16,14 +16,12 @@ import json
 import logging
 import os
 import pytest
-import shutil
 import tarfile
 
-from Crypto.PublicKey import RSA
-from six.moves import urllib
 import yaml
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
 from mos_tests.ironic import actions
 from mos_tests import settings
 
@@ -51,59 +49,25 @@ def idfn(val):
         return ','.join(val)
 
 
-@pytest.yield_fixture(scope='session')
-def server_ssh_credentials(devops_env):
-    # determine server ip
-    server_ip = str(devops_env.get_network(name='public').default_gw)
-
-    # backup original authorized_keys file
-    ssh_folder = os.path.expanduser('~/.ssh')
-    if not os.path.exists(ssh_folder):
-        os.mkdir(ssh_folder)
-    authorized_keys = os.path.join(ssh_folder, 'authorized_keys')
-    authorized_keys_backup = os.path.join(ssh_folder, 'authorized_keys.backup')
-    if os.path.exists(authorized_keys):
-        shutil.copy(authorized_keys, authorized_keys_backup)
-
-    # make ssh key pair
-    key = RSA.generate(2048)
-    with open(authorized_keys, 'a+') as f:
-        f.write(key.publickey().exportKey('OpenSSH'))
-        f.write('\n')
-
-    credentials = {
-        'username': os.getlogin(),
-        'ip': server_ip,
-        'key': key.exportKey('PEM')
-    }
-
-    yield credentials
-
-    # revert authorized_keys
-    os.unlink(authorized_keys)
-    if os.path.exists(authorized_keys_backup):
-        shutil.move(authorized_keys_backup, authorized_keys)
-
-
 @pytest.fixture
 def ironic(os_conn):
     return actions.IronicActions(os_conn)
 
 
 @pytest.fixture(scope='session')
-def ironic_drivers_params(server_ssh_credentials):
+def ironic_drivers_params(devops_env):
+    server_ip = str(devops_env.get_network(name='public').default_gw)
     base_dir = os.path.dirname(__file__)
+
     with open(os.path.join(base_dir, 'ironic_nodes.yaml')) as f:
         config = yaml.load(f)
     for i, node in enumerate(config):
-        if node['driver'] != 'fuel_ssh':
+        if node['driver'] != 'fuel_libvirt':
             continue
         driver_info = node['driver_info']
-        if driver_info['ssh_address'] is None:
-            driver_info['ssh_address'] = server_ssh_credentials['ip']
-        if driver_info['ssh_username'] is None:
-            driver_info['ssh_username'] = server_ssh_credentials['username']
-            driver_info['ssh_key_contents'] = server_ssh_credentials['key']
+        if driver_info['libvirt_uri'] is None:
+            driver_info['libvirt_uri'] = 'qemu+tcp://{ip}/system'.format(
+                ip=server_ip)
     return config
 
 
@@ -154,19 +118,11 @@ def ubuntu_image(request, os_conn, image_file):
             cpu_arch='x86_64',
             fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
 
-        if not image_file.file.closed:
-            src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
+        with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
             with tarfile.open(fileobj=src, mode='r|gz') as tar:
                 img = tar.extractfile(tar.firstmember)
-                while True:
-                    data = img.read(1024)
-                    if not data:
-                        break
-                    image_file.file.write(data)
-                image_file.file.close()
-            src.close()
-        with open(image_file.name) as f:
-            os_conn.glance.images.upload(image.id, f)
+                os_conn.glance.images.upload(image.id, img)
+
         logger.info('Creating ubuntu image ... done')
     else:
         image = os_conn.nova.images.find(name=image_name)
@@ -184,7 +140,7 @@ def make_ironic_node(config, devops_env, ironic, name, fuel_env):
     baremetal_net_name = baremetal_interface.network.name
 
     devops_node = None
-    if config['driver'] == 'fuel_ssh':
+    if config['driver'] == 'fuel_libvirt':
         devops_node = devops_env.add_node(
             name=name,
             vcpu=config['node_properties']['cpus'],
