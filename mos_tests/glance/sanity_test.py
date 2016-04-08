@@ -283,6 +283,8 @@ def test_upload_image_with_token_expiration(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('843369', params={'glance_remote': 2})
+@pytest.mark.testrail_id('836601', params={'glance_remote': 1})
 @pytest.mark.parametrize('glance_remote, key_name',
                          ((1, "Property 'key'"),
                           (2, 'key'), ),
