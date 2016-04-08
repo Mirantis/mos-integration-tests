@@ -14,17 +14,12 @@
 #    under the License.
 
 
-import logging
-
 import pytest
 
 from glanceclient.exc import Forbidden
 
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
-
-
-logger = logging.getLogger(__name__)
 
 
 @pytest.mark.testrail_id('836638')
@@ -47,46 +42,39 @@ class TestGlanceSecurity(TestBase):
         """
         name = "Test_{0}".format(suffix[:6])
         url_1 = settings.GLANCE_IMAGE_URL
-        url_2 = 'http://download.cirros-cloud.net/0.3.1/' \
-                'cirros-0.3.1-x86_64-disk.img'
+        url_2 = ('http://download.cirros-cloud.net/0.3.1/'
+                'cirros-0.3.1-x86_64-disk.img')
         metadata = {}
 
         image = self.os_conn.glance.images.create(name=name,
                                                   disk_format='qcow2',
                                                   container_format='bare')
-        image_id = image.id
-        image_info = [i for i in self.os_conn.glance.images.list()
-                      if i.id == image_id][0]
-        assert len(image_info.locations) == 0
-        assert image_info.status == 'queued'
+        assert len(image.locations) == 0
+        assert image.status == 'queued'
 
-        self.os_conn.glance.images.add_location(image_id, url_1, metadata)
-        self.os_conn.glance.images.add_location(image_id, url_2, metadata)
+        self.os_conn.glance.images.add_location(image.id, url_1, metadata)
+        self.os_conn.glance.images.add_location(image.id, url_2, metadata)
 
-        image_info = [i for i in self.os_conn.glance.images.list()
-                      if i.id == image_id][0]
-        assert len(image_info.locations) == 2
-        image_locations = [image_info.locations[i]['url'] for i in range(2)]
-        assert url_1, url_2 in image_locations
-        assert image_info.status == 'active'
+        image = self.os_conn.glance.images.get(image.id)
+        assert len(image.locations) == 2
+        image_locations = [x['url'] for x in image.locations]
+        assert url_1 in image_locations
+        assert url_2 in image_locations
+        assert image.status == 'active'
 
-        self.os_conn.glance.images.delete_locations(image_id, set([url_1]))
-        image_info = [i for i in self.os_conn.glance.images.list()
-                      if i.id == image_id][0]
-        assert len(image_info.locations) == 1
-        assert image_info.locations[0]['url'] == url_2
-        assert image_info.status == 'active'
+        self.os_conn.glance.images.delete_locations(image.id, set([url_1]))
+        image = self.os_conn.glance.images.get(image.id)
+        assert len(image.locations) == 1
+        assert image.locations[0]['url'] == url_2
+        assert image.status == 'active'
 
-        try:
-            self.os_conn.glance.images.delete_locations(image_id, set([url_2]))
-        except Forbidden as e:
-            logger.info(e)
+        with pytest.raises(Forbidden):
+            self.os_conn.glance.images.delete_locations(image.id, set([url_2]))
 
-        image_info = [i for i in self.os_conn.glance.images.list()
-                      if i.id == image_id][0]
-        assert len(image_info.locations) == 1
-        assert image_info.status == 'active'
+        image = self.os_conn.glance.images.get(image.id)
+        assert len(image.locations) == 1
+        assert image.status == 'active'
 
-        self.os_conn.glance.images.delete(image_id)
+        self.os_conn.glance.images.delete(image.id)
         images_id = [i.id for i in self.os_conn.glance.images.list()]
-        assert image_id not in images_id
+        assert image.id not in images_id
