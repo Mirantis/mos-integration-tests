@@ -31,7 +31,7 @@ parameters:
   timeout:
     type: number
     description: Timeout for WaitCondition, depends on your image and environment
-    default: 300
+    default: 600
 
 resources:
   wait_condition:
@@ -57,13 +57,14 @@ resources:
           template: |
             #!/bin/bash -v
             set -x
-            # echo '- INSTALL DOCKER -'
-            # sudo dnf -y install docker   # suppose it is installed
+            echo '- INSTALL DOCKER -'
+            # sudo dnf update -y
+            curl -fsSL https://get.docker.com/ | sudo sh
             # sudo systemctl start docker  # fedora hangs here
             echo '- NOTIFY -'
             wc_notify --data-binary '{"status": "SUCCESS"}'  # wait untill OS will finish booting
             echo '- RUN DOCKER BIND -'
-            sudo /usr/bin/docker -D --tls=false -d --host=tcp://0.0.0.0:2376
+            sudo /usr/bin/docker daemon -D --tls=false --host=tcp://0.0.0.0:2376
           params:
             wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
 

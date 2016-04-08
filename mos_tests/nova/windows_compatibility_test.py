@@ -165,6 +165,12 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                                                   self.instance.id,
                                                   self.floating_ip.ip))
 
+        common_functions.wait(
+            lambda: os.system('ping -c1 {0.ip}'.format(self.floating_ip)) == 0,
+            timeout_seconds=60 * 60,
+            sleep_seconds=60,
+            waiting_for="Windows instance to be pingable")
+
     def tearDown(self):
         if self.instance is not None:
             common_functions.delete_instance(self.nova, self.instance.id)

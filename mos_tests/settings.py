@@ -34,12 +34,15 @@ KEYSTONE_CREDS = {'username': KEYSTONE_USER,
 PUBLIC_TEST_IP = os.environ.get('PUBLIC_TEST_IP', '8.8.8.8')
 
 # Path to folder with required images
-TEST_IMAGE_PATH = os.path.expanduser('~/images')
+TEST_IMAGE_PATH = os.environ.get("TEST_IMAGE_PATH", os.path.expanduser('~/images'))  # noqa
 UBUNTU_IPERF_QCOW2 = 'ubuntu-iperf.qcow2'
-FEDORA_DOCKER_QCOW2 = 'fedora-software-config.qcow2'
+FEDORA_DOCKER_URL = 'http://tarballs.openstack.org/heat-test-image/fedora-heat-test-image.qcow2'  # noqa
 WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
+
+# Openstack Apache proxy config file
+PROXY_CONFIG_FILE = '/etc/apache2/sites-enabled/25-apache_api_proxy.conf'
 
 #########################
 # Glance tests settings #
@@ -81,3 +84,10 @@ IRONIC_GLANCE_DISK_INFO = [{
     }]
 }]
 IRONIC_DISK_GB = 50
+
+##############################
+# RabbitMQ and OSLO settings #
+##############################
+
+RABBITOSLO_REPO = 'https://github.com/dmitrymex/oslo.messaging-check-tool.git'
+RABBITOSLO_PKG = 'oslo.messaging-check-tool_1.0-1~u14.04+mos1_all.deb'

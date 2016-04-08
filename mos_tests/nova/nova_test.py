@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import re
 import subprocess
 from time import sleep
 from time import time
@@ -420,32 +421,8 @@ class NovaIntegrationTests(OpenStackTestCase):
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance is not reachable")
-        hypervisors = {h.hypervisor_hostname: h for h
-                       in self.nova.hypervisors.list()}
-        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
-        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
-        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
-                                stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
-                                       disk_over_commit=False)
-        inst = self.nova.servers.get(inst.id)
-        timeout = 5
-        end_time = time() + 60 * timeout
-        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
-                new_hyper:
-            if time() > end_time:
-                msg = "Hypervisor is not changed after live migration"
-                raise AssertionError(msg)
-            sleep(1)
-            inst = self.nova.servers.get(inst.id)
-        self.assertEqual(inst.status, 'ACTIVE')
-        ping.wait()
-        output = ping.stdout.read().split('\n')[-3].split()
-        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
-        loss = packets['transmitted'] - packets['received']
-        if loss > 5:
-            msg = "Packets loss exceeds the limit, {} packets were lost"
-            raise AssertionError(msg.format(loss))
+
+        self.live_migration(inst, floating_ip.ip)
 
     @pytest.mark.testrail_id('542824')
     def test_live_migration_of_v_ms_with_data_on_root_and_ephemeral_disk(self):
@@ -508,33 +485,8 @@ class NovaIntegrationTests(OpenStackTestCase):
         root_data = out[-2]['stdout'][0]
         ephem_data = out[-1]['stdout'][0]
 
-        # live migration
-        hypervisors = {h.hypervisor_hostname: h for h in
-                       self.nova.hypervisors.list()}
-        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
-        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
-        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
-                                stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
-                                       disk_over_commit=False)
-        inst = self.nova.servers.get(inst.id)
-        timeout = 10
-        end_time = time() + 60 * timeout
-        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
-                new_hyper:
-            if time() > end_time:
-                msg = "Hypervisor is not changed after live migration"
-                raise AssertionError(msg)
-            sleep(1)
-            inst = self.nova.servers.get(inst.id)
-        self.assertEqual(inst.status, 'ACTIVE')
-        ping.wait()
-        output = ping.stdout.read().split('\n')[-3].split()
-        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
-        loss = packets['transmitted'] - packets['received']
-        if loss > 5:
-            msg = "Packets loss exceeds the limit, {} packets were lost"
-            raise AssertionError(msg.format(loss))
+        self.live_migration(inst, floating_ip.ip)
+
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
                        private_keys=[private_key]) as vm_r:
@@ -550,3 +502,45 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.assertEqual(root_data, r_data, "Data on root disk is changed")
         self.assertEqual(ephem_data, ep_data, "Data on ephemeral disk is "
                                               "changed")
+
+    def live_migration(self, instance, ip_to_ping, timeout=20):
+        hypervisors = {h.hypervisor_hostname: h for h in
+                       self.nova.hypervisors.list()}
+        old_hyper = getattr(instance, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        # Start ping of the vm in background
+        ping = subprocess.Popen(["/bin/ping", "-c20", "-i1", ip_to_ping],
+                                stdout=subprocess.PIPE)
+        # Then run the migration
+        self.nova.servers.live_migrate(instance, new_hyper,
+                                       block_migration=True,
+                                       disk_over_commit=False)
+
+        # Check that migration is over, usually it takes about 10-15 seconds
+        def instance_hypervisor():
+            instance.get()
+            return getattr(instance, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+
+        common_functions.wait(lambda: instance_hypervisor() == new_hyper,
+                              timeout_seconds=timeout * 60,
+                              waiting_for='instance hypervisor to be changed')
+        self.assertEqual(instance.status, 'ACTIVE')
+
+        # Now wait till background ping is over
+        ping.wait()
+        # And check that vm was reachable during migration
+        output = re.search(r'(\d+)% packet loss', ping.stdout.read())
+        loss = int(output.group(1))
+        if loss > 90:
+            msg = "Packets loss during migration {}% exceeds the 90% limit"
+            raise AssertionError(msg.format(loss))
+
+        # And now sure that vm is stable after the migration
+        ping = subprocess.Popen(["/bin/ping", "-c300", "-i0.4",
+                                ip_to_ping], stdout=subprocess.PIPE)
+        ping.wait()
+        output = re.search('([0-9]+)% packet loss', ping.stdout.read())
+        loss = int(output.group(1))
+        if loss > 10:
+            msg = "Packets loss during stability {}% exceeds the 10% limit"
+            raise AssertionError(msg.format(loss))

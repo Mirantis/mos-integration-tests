@@ -43,6 +43,8 @@ def pytest_addoption(parser):
                      help="Fuel devops env name")
     parser.addoption("--snapshot", '-S', action="store",
                      help="Fuel devops snapshot name")
+    parser.addoption("--cluster", '-C', action="append",
+                     help="Fuel cluster name to test on it")
 
 
 def pytest_configure(config):
@@ -87,9 +89,25 @@ def env_name(request):
     return request.config.getoption("--env")
 
 
+@pytest.fixture(scope='session')
+def devops_env(env_name):
+    return DevopsClient.get_env(env_name=env_name)
+
+
 @pytest.fixture(scope="session")
 def snapshot_name(request):
     return request.config.getoption("--snapshot")
+
+
+@pytest.fixture(scope="session")
+def fuel_master_ip(request, env_name, snapshot_name):
+    """Get fuel master ip"""
+    fuel_ip = request.config.getoption("--fuel-ip")
+    if not fuel_ip:
+        fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
+    if not fuel_ip:
+        fuel_ip = SERVER_ADDRESS
+    return fuel_ip
 
 
 def revert_snapshot(env_name, snapshot_name):
@@ -125,17 +143,6 @@ def cleanup(request, env_name, snapshot_name):
             revert_snapshot(env_name, snapshot_name)
             reverted = True
     setattr(item.nextitem, 'reverted', reverted)
-
-
-@pytest.fixture(scope="session")
-def fuel_master_ip(request, env_name, snapshot_name):
-    """Get fuel master ip"""
-    fuel_ip = request.config.getoption("--fuel-ip")
-    if not fuel_ip:
-        fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
-    if not fuel_ip:
-        fuel_ip = SERVER_ADDRESS
-    return fuel_ip
 
 
 def get_fuel_client(fuel_ip):
@@ -183,7 +190,15 @@ def fuel(fuel_master_ip):
 @pytest.fixture
 def env(request, fuel):
     """Environment instance"""
-    env = fuel.get_last_created_cluster()
+    names = request.config.getoption('--cluster')
+    if not names:
+        env = fuel.get_last_created_cluster()
+    else:
+        envs = fuel.get_clustres_by_names(names)
+        if len(envs) == 0:
+            raise Exception(
+                "Can't find fuel cluster with name in {}".format(names))
+        env = envs[0]
     if getattr(request.node, 'reverted',
                getattr(request.session, 'reverted', True)):
         env.wait_for_ostf_pass()
@@ -309,26 +324,20 @@ def get_config_option(fp, key, res_type):
 
 def is_l2pop(env):
     """Env deployed with vxlan segmentation and l2 population"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/plugin.ini') as f:
-            return get_config_option(f, 'l2_population', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_l2_pop']['value']
 
 
 def is_dvr(env):
     """Env deployed with enabled distributed routers support"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/neutron.conf') as f:
-            return get_config_option(f, 'router_distributed', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_dvr']['value']
 
 
 def is_l3_ha(env):
     """Env deployed with enabled distributed routers support"""
-    controller = env.get_nodes_by_role('controller')[0]
-    with env.get_ssh_to_node(controller.data['ip']) as remote:
-        with remote.open('/etc/neutron/neutron.conf') as f:
-            return get_config_option(f, 'l3_ha', bool)
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_l3_ha']['value']
 
 
 def is_ironic_enabled(env):

@@ -28,7 +28,12 @@ class EnvProxy(object):
     def __getattr__(self, name):
         return getattr(self._env, name)
 
-    def add_node(self, name, memory=1024, vcpu=1, networks=None, disks=(),
+    def add_node(self,
+                 name,
+                 memory=1024,
+                 vcpu=1,
+                 networks=None,
+                 disks=(),
                  role='fuel_slave'):
         """Add new slave node to cluster
 
@@ -36,21 +41,33 @@ class EnvProxy(object):
         :param memory: memory in MB
         :param vcpu: CPU count
         :param networks: names of networks to assign to node. If None - will
-            assign default networks (admin, private, public, storage,
-            management)
+            assign all networks
         :type networks: tuple or list or None
         :param disks: sizes of disk devices in GB to attach to node
         :param role: may be one of fuel_maste, fuel_slave, ironic_slave
         :return: created and started Node object
         :rtype: devops.models.node.Node
         """
-        node = self._env.add_node(vcpu=vcpu, memory=memory, name=name,
+
+        if self._env.node_set.filter(name=name).exists():
+            node = self._env.get_node(name=name)
+            node.erase()
+        node = self._env.add_node(vcpu=vcpu,
+                                  memory=memory,
+                                  name=name,
                                   role=role)
+
         for i, size in enumerate(disks, 1):
-            disk_dev = self._env.add_empty_volume(
-                node, '{name}_drive{i}'.format(name=name, i=i),
-                size * (1024 ** 3))
+            volume_name = '{name}_drive{i}'.format(name=name, i=i)
+            if self._env.volume_set.filter(name=volume_name).exists():
+                volume = self._env.get_volume(name=volume_name)
+                volume.erase()
+
+            disk_dev = self._env.add_empty_volume(node, volume_name,
+                                                  size * (1024**3))
             disk_dev.volume.define()
+        if networks is None:
+            networks = self.get_networks().values_list('name', flat=True)
         node.attach_to_networks(networks)
         node.define()
         node.start()
@@ -81,6 +98,38 @@ class EnvProxy(object):
             if mac in mac_addresses:
                 return node
 
+    def get_interface_by_fuel_name(self, fuel_name, fuel_env):
+        """Return devops network name for fuel network name
+
+        :param fuel_name: fuel network name (like 'baremetal')
+        :param fuel_env: Fuel environment object
+        :type fuel_env: mos_tests.environment.fuel_client.Environment
+        :return: devops network name
+        """
+        controller = fuel_env.get_nodes_by_role('controller')[0]
+        fuel_networks = controller.data['network_data']
+        node_devices = [x['dev'] for x in fuel_networks
+                        if x['name'] == fuel_name]
+        assert len(node_devices) == 1
+        node_interfaces = [x
+                           for x in controller.data['meta']['interfaces']
+                           if x['name'] == node_devices[0]]
+        assert len(node_interfaces) == 1
+        interface_mac = node_interfaces[0]['mac']
+        devops_node = self.get_node_by_mac(controller.data['mac'])
+        return devops_node.interfaces.get(mac_address=interface_mac)
+
+    def get_net_mac_addresses(self, net_name):
+        net = self.get_network(name="private")
+        return net.interfaces.values_list('mac_address', flat=True)
+
+    def get_mac_net_mapping(self):
+        result = {}
+        for net in self.get_networks():
+            addresses = net.interfaces.values_list('mac_address', flat=True)
+            result.update(dict.fromkeys(addresses, net.name))
+        return result
+
 
 class DevopsClient(object):
     """Method to work with the virtual env over fuel-devops."""
@@ -91,8 +140,8 @@ class DevopsClient(object):
         try:
             return EnvProxy(Environment.get(name=env_name))
         except Exception as e:
-            logger.error('failed to find the last created environment{}'.
-                         format(e))
+            logger.error(
+                'failed to find the last created environment{}'.format(e))
             raise
 
     @classmethod
@@ -105,8 +154,7 @@ class DevopsClient(object):
             env.resume(verbose=False)
             cls.sync_time(env)
         except Exception as e:
-            logger.error('Can\'t revert snapshot due to error: {}'.
-                         format(e))
+            logger.error('Can\'t revert snapshot due to error: {}'.format(e))
             raise
 
     @classmethod
@@ -131,10 +179,9 @@ class DevopsClient(object):
             logger.info("sync time on master")
             remote.execute('hwclock --hctosys')
             logger.info("sync time on {} slaves".format(slaves_count))
-            remote.execute(
-                'for i in {{1..{0}}}; '
-                'do (ssh node-$i "hwclock --hctosys") done'.format(
-                    slaves_count))
+            remote.execute('for i in {{1..{0}}}; '
+                           'do (ssh node-$i "hwclock --hctosys") done'.format(
+                               slaves_count))
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac, interface='admin'):

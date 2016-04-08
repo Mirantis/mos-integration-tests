@@ -12,20 +12,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 import logging
 import random
-import time
-import yaml
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as HeatClient
-from keystoneclient.exceptions import ClientException as KeyStoneException
+from keystoneclient.auth.identity.v2 import Password as KeystonePassword
+from keystoneclient import session
 from keystoneclient.v2_0 import Client as KeystoneClient
-from muranoclient import client as muranoclient
 from neutronclient.common.exceptions import NeutronClientException
-import neutronclient.v2_0.client as neutronclient
+from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
@@ -43,7 +40,7 @@ class OpenStackActions(object):
     """OpenStack base services clients and helper actions"""
 
     def __init__(self, controller_ip, user='admin', password='admin',
-                 tenant='admin', cert=None, env=None):
+                 tenant='admin', cert=None, env=None, proxy_session=None):
         logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
         self.controller_ip = controller_ip
 
@@ -63,74 +60,30 @@ class OpenStackActions(object):
             self.insecure = False
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        self.nova = nova_client.Client(version=2,
-                                       username=user,
-                                       api_key=password,
-                                       project_id=tenant,
-                                       auth_url=auth_url,
-                                       cacert=self.path_to_cert)
 
-        self.cinder = cinderclient.Client(2, user, password,
-                                          tenant, auth_url,
-                                          cacert=self.path_to_cert)
+        auth = KeystonePassword(username=user,
+                                password=password,
+                                auth_url=auth_url,
+                                tenant_name=tenant)
 
-        self.neutron = neutronclient.Client(username=user,
-                                            password=password,
-                                            tenant_name=tenant,
-                                            auth_url=auth_url,
-                                            ca_cert=self.path_to_cert)
+        self.session = session.Session(auth=auth, verify=self.path_to_cert)
 
-        self.keystone = self._get_keystoneclient(username=user,
-                                                 password=password,
-                                                 tenant_name=tenant,
-                                                 auth_url=auth_url,
-                                                 ca_cert=self.path_to_cert)
+        self.keystone = KeystoneClient(session=self.session)
+        self.keystone.management_url = auth_url
 
-        token = self.keystone.auth_token
-        glance_endpoint = self.keystone.service_catalog.url_for(
-            service_type='image', endpoint_type='publicURL')
-        logger.debug('Glance endpoint is {0}'.format(glance_endpoint))
+        self.nova = nova_client.Client(version=2, session=self.session)
 
-        self.glance = GlanceClient(endpoint=glance_endpoint,
-                                   token=token,
-                                   cacert=self.path_to_cert)
+        self.cinder = cinderclient.Client(version=2, session=self.session)
 
-        heat_endpoint = self.keystone.service_catalog.url_for(
-            service_type='orchestration', endpoint_type='publicURL')
-        logger.debug('Heat endpoint is {0}'.format(heat_endpoint))
-        self.heat = HeatClient(endpoint=heat_endpoint,
-                                token=token,
-                                cacert=self.path_to_cert,
-                                ca_file=self.path_to_cert)
-        murano_endpoint = self.keystone.service_catalog.url_for(
-            service_type='application_catalog', endpoint_type='publicURL')
-        logger.debug('Murano endpoint is {0}'.format(murano_endpoint))
-        self.murano = muranoclient.Client('1', endpoint=murano_endpoint,
-                                          token=token,
-                                          cacert=self.path_to_cert)
+        self.neutron = neutron_client.Client(session=self.session)
+
+        self.glance = GlanceClient(session=self.session)
+
+        endpoint_url = self.session.get_endpoint(service_type='orchestration',
+                                                 endpoint_type='publicURL')
+        token = self.session.get_token()
+        self.heat = HeatClient(endpoint=endpoint_url, token=token)
         self.env = env
-
-    def _get_keystoneclient(self, username, password, tenant_name, auth_url,
-                            retries=3, ca_cert=None):
-        keystone = None
-        for i in range(retries):
-            kwargs = dict(auth_url=auth_url,
-                          username=username,
-                          password=password,
-                          tenant_name=tenant_name)
-            if ca_cert is not None:
-                kwargs['cacert'] = ca_cert
-            try:
-                keystone = KeystoneClient(**kwargs)
-                break
-            except KeyStoneException as e:
-                err = "Try nr {0}. Could not get keystone client, error: {1}"
-                logger.warning(err.format(i + 1, e))
-                time.sleep(5)
-        if not keystone:
-            raise
-        keystone.management_url = auth_url
-        return keystone
 
     def _get_cirros_image(self):
         for image in self.glance.images.list():
@@ -205,8 +158,6 @@ class OpenStackActions(object):
             else:
                 logger.debug('Instance unavailable yet: {}'.format(e))
                 return False
-        except Exception as e:
-            logger.error(e)
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -607,6 +558,8 @@ class OpenStackActions(object):
     def ssh_to_instance(self, env, vm, vm_keypair=None, username='cirros',
                         password=None, proxy_node=None):
         """Returns direct ssh client to instance via proxy"""
+        # Update vm data
+        vm.get()
         logger.debug('Try to connect to vm {0}'.format(vm.name))
         net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
         vm_ip = vm.addresses[net_name][0]['addr']
@@ -782,28 +735,3 @@ class OpenStackActions(object):
         wait(lambda: self.nova.servers.get(srv).status == 'REBUILD',
              timeout_seconds=60, waiting_for='start of instance rebuild')
         return srv
-
-    def rand_name(self, name):
-        return name + '_' + str(random.randint(1, 0x7fffffff))
-
-    def create_service(self, environment, session, json_data, to_json=True):
-        service = self.murano.services.post(environment.id, path='/',
-                                            data=json_data,
-                                            session_id=session.id)
-        if to_json:
-            service = service.to_dict()
-            service = json.dumps(service)
-            return yaml.load(service)
-        else:
-            return service
-
-    def deploy_environment(self, environment, session):
-        self.murano.sessions.deploy(environment.id, session.id)
-        start_time = time.time()
-        status = self.murano.environments.get(environment.id).status
-        while status != 'ready' and time.time() - start_time < 3800:
-            if status == 'deploy failure':
-                return 0
-            time.sleep(15)
-            status = self.murano.environments.get(environment.id).status
-        return self.murano.environments.get(environment.id)
