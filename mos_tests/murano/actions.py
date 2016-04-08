@@ -49,7 +49,7 @@ class MuranoActions(object):
                  status == 'ready',
                  timeout_seconds=1500,
                  waiting_for='Environment is ready')
-        except:
+        except Exception:
             raise Exception('Environment deploy finished with errors')
 
         environment = self.os_conn.murano.environments.get(environment.id)
@@ -71,7 +71,7 @@ class MuranoActions(object):
                  status == 'ready',
                  timeout_seconds=1500,
                  waiting_for='Environment is ready')
-        except:
+        except Exception:
             raise Exception('Environment deploy finished with errors')
 
         environment = self.os_conn.murano.environments.get(environment.id)
