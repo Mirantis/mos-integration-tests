@@ -18,10 +18,8 @@ import pytest
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 2, 'max_nodes': 2}],
                          indirect=['cluster'])
-@pytest.mark.run(order=1)
-@pytest.mark.testrail_id('543015')
-def test_kub_scale_down(environment, murano, session, cluster, grafana,
-                        influx):
+@pytest.mark.testrail_id('836658')
+def test_kub_node_down(environment, murano, session, cluster, grafana, influx):
     """Check ScaleNodesDown action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -60,9 +58,8 @@ def test_kub_scale_down(environment, murano, session, cluster, grafana,
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
-@pytest.mark.run(order=2)
-@pytest.mark.testrail_id('543014')
-def test_kub_scale_up(murano, environment, session, cluster, grafana, influx):
+@pytest.mark.testrail_id('836657')
+def test_kub_nodes_up(murano, environment, session, cluster, grafana, influx):
     """Check ScaleNodesUp action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -99,8 +96,7 @@ def test_kub_scale_up(murano, environment, session, cluster, grafana, influx):
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 2, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
-@pytest.mark.run(order=3)
-@pytest.mark.testrail_id('638363')
+@pytest.mark.testrail_id('836662')
 def test_kub_gateway_down(murano, environment, session, cluster, grafana,
                           influx):
     """Check ScaleGatewaysDown action for Kubernetes Cluster
@@ -141,8 +137,7 @@ def test_kub_gateway_down(murano, environment, session, cluster, grafana,
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
-@pytest.mark.run(order=4)
-@pytest.mark.testrail_id('543016')
+@pytest.mark.testrail_id('836659')
 def test_kub_gateway_up(murano, environment, session, cluster, grafana,
                         influx):
     """Check ScaleGatewaysUp action for Kubernetes Cluster
@@ -179,8 +174,7 @@ def test_kub_gateway_up(murano, environment, session, cluster, grafana,
                         kubernetes=True)
 
 
-@pytest.mark.run(order=5)
-@pytest.mark.testrail_id('543022')
+@pytest.mark.testrail_id('836665')
 def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
                                        grafana, influx):
     """Check ScaleNodesUp and scaleGatewaysUp actions for Kubernetes Cluster

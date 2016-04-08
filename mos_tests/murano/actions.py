@@ -45,7 +45,7 @@ class MuranoActions(object):
         status = self.os_conn.murano.environments.get(environment.id).status
         while status != 'ready' and time.time() - start_time < 1500:
             if status == 'deploy failure':
-                assert 0, 'Environment deploy finished with errors'
+                raise Exception('Environment deploy finished with errors')
             time.sleep(15)
             status = self.os_conn.murano.environments.get(environment.id).\
                 status
@@ -87,8 +87,8 @@ class MuranoActions(object):
                         assert self.check_port_access(ip, port)
                         assert self.check_k8s_deployment(ip, port)
                 else:
-                    assert 0, "Instance {} doesn't have floating IP"\
-                        .format(inst_name)
+                    raise Exception("Instance {} doesn't have floating IP"
+                                    .format(inst_name))
             else:
                 inst_name = configuration[0]
                 ports = configuration[1:]
@@ -97,8 +97,8 @@ class MuranoActions(object):
                     for port in ports:
                         assert self.check_port_access(ip, port)
                 else:
-                    assert 0, "Instance {} doesn't have floating IP"\
-                        .format(inst_name)
+                    raise Exception("Instance {} doesn't have floating IP"
+                                    .format(inst_name))
 
     def check_port_access(self, ip, port, negative=False):
         result = 1
@@ -125,7 +125,7 @@ class MuranoActions(object):
                 return True
             except RuntimeError:
                 time.sleep(10)
-        assert 0, 'Containers are not ready'
+        raise Exception('Containers are not ready')
 
     def verify_connection(self, ip, port, negative=False):
         try:
