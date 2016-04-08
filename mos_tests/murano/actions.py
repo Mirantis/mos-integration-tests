@@ -19,6 +19,8 @@ import telnetlib
 import time
 import yaml
 
+from mos_tests.functions.common import wait
+
 
 class MuranoActions(object):
     """Murano-specific actions"""
@@ -40,23 +42,20 @@ class MuranoActions(object):
         else:
             return service
 
-    def wait_for_environment_deploy(self, environment):
-        start_time = time.time()
-        status = self.os_conn.murano.environments.get(environment.id).status
-        while status != 'ready' and time.time() - start_time < 1500:
-            if status == 'deploy failure':
-                raise Exception('Environment deploy finished with errors')
-            time.sleep(15)
-            status = self.os_conn.murano.environments.get(environment.id).\
-                status
+    def deploy_environment(self, environment, session):
+        self.os_conn.murano.sessions.deploy(environment.id, session.id)
+        try:
+            wait(lambda: self.os_conn.murano.environments.get(environment.id).
+                 status == 'ready',
+                 timeout_seconds=1500,
+                 waiting_for='Environment is ready')
+        except:
+            raise Exception('Environment deploy finished with errors')
+
         environment = self.os_conn.murano.environments.get(environment.id)
         logs = self.get_log(environment)
         assert 'Deployment finished' in logs
         return environment
-
-    def deploy_environment(self, environment, session):
-        self.os_conn.murano.sessions.deploy(environment.id, session.id)
-        return self.wait_for_environment_deploy(environment)
 
     def get_action_id(self, environment, name, service):
         env_data = environment.to_dict()
@@ -67,7 +66,18 @@ class MuranoActions(object):
 
     def run_action(self, environment, action_id):
         self.os_conn.murano.actions.call(environment.id, action_id)
-        return self.wait_for_environment_deploy(environment)
+        try:
+            wait(lambda: self.os_conn.murano.environments.get(environment.id).
+                 status == 'ready',
+                 timeout_seconds=1500,
+                 waiting_for='Environment is ready')
+        except:
+            raise Exception('Environment deploy finished with errors')
+
+        environment = self.os_conn.murano.environments.get(environment.id)
+        logs = self.get_log(environment)
+        assert 'Deployment finished' in logs
+        return environment
 
     def status_check(self, environment, configurations, kubernetes=False,
                      negative=False):
