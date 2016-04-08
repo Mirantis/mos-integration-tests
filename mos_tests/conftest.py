@@ -372,6 +372,11 @@ def is_qos_enabled(env):
     return data['neutron_advanced_configuration']['neutron_qos']['value']
 
 
+def is_radosgw_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['objects_ceph']['value']
+
+
 @pytest.fixture(autouse=True)
 def executable_requirements(request, env_name):
     marker = request.node.get_marker('requires_')

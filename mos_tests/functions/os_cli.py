@@ -67,11 +67,26 @@ class CLICLient(object):
 class OpenStack(CLICLient):
     command = 'openstack'
 
-    def details(self, output):
+    def details(self, output, mapping=('Field', 'Value')):
+        """List with one dict with data"""
         data = json.loads(output)
         if isinstance(data, list):
-            data = {x['Field']: x['Value'] for x in data}
+            data = {x[mapping[0]]: x[mapping[1]] for x in data}
         return data
+
+    def listing(self, output, mapping=False):
+        """List with several dicts with data"""
+        data = json.loads(output)
+        if mapping:
+            if isinstance(data, list):
+                data = [{x[mapping[0]]: x[mapping[1]]} for x in data]
+        return data
+
+    def project_list(self, longout=False):
+        cmd = 'project list -f json'
+        if longout:
+            cmd += ' --long'
+        return json.loads(self(cmd))
 
     def project_create(self, name):
         output = self('project create', params='{} -f json'.format(name))
@@ -79,6 +94,20 @@ class OpenStack(CLICLient):
 
     def project_delete(self, name):
         return self('project delete', params=name)
+
+    def project_show(self, name):
+        output = self('project show', params='{} -f json'.format(name))
+        return self.details(output)
+
+    def user_list(self, longout=False):
+        cmd = 'user list -f json'
+        if longout:
+            cmd += ' --long'
+        return json.loads(self(cmd))
+
+    def user_show(self, name):
+        output = self('user show', params='{} -f json'.format(name))
+        return self.details(output)
 
     def user_create(self, name, password, project=None):
         params = '{name} --password {password} -f json'.format(
@@ -104,6 +133,19 @@ class OpenStack(CLICLient):
             params='{name} --user {user} --project {project} -f json'.format(
                 name=role_name, user=user, project=project))
         return self.details(output)
+
+    def ec2_cred_list(self):
+        output = self('ec2 credentials list -f json')
+        return json.loads(output)
+
+    def ec2_cred_create(self, user='admin', project='admin'):
+        output = self(('ec2 credentials create --user {user}'
+                       ' --project {project} -f json').format(user=user,
+                                                              project=project))
+        return self.details(output)
+
+    def ec2_cred_del(self, access_key):
+        return self('ec2 credentials delete {0}'.format(access_key))
 
     def user_set_new_name(self, name, new_name):
         params = '{name} --name {new_name}'.format(
@@ -147,6 +189,58 @@ class Aodh(CLICLient):
             # Change output to tempest parser
             lines[1] = lines[1].replace('Field   ', 'Property')
         return Result('\n'.join(lines))
+
+
+class Swift(CLICLient):
+    command = 'swift'
+
+    def post(self, name):
+        return self('post {0}'.format(name))
+
+    def list(self, name=''):
+        output = self('list -l', params=name)
+        return output.split('\n')
+
+    def delete(self, name, filename=None):
+        params = name
+        if filename:
+            params += ' {0}'.format(filename)
+        return self('delete', params=params)
+
+    def upload(self, name, filename, option=None):
+        if option:
+            return self('upload {0} {1} {2}'.format(name, option, filename))
+        else:
+            return self('upload {0} {1}'.format(name, filename))
+
+
+class S3CMD(CLICLient):
+    command = 's3cmd'
+
+    def bucket_make(self, name):
+        return self('mb s3://{0}'.format(name))
+
+    def bucket_ls(self, name=None):
+        params = ''
+        if name:
+            params += 's3://{0}'.format(name)
+        output = self('ls', params=params)
+        return output.split('\n')
+
+    def bucket_remove(self, name, recursive=False):
+        params = 's3://{0}'.format(name)
+        if recursive:
+            params += ' --recursive'
+        return self('rb', params=params)
+
+    def bucket_put_file(self, bucket_name, file_path, chunk=False):
+        params = '{0} s3://{1}'.format(file_path, bucket_name)
+        if chunk:
+            params += ' --multipart-chunk-size-mb={0}'.format(chunk)
+        return self('put', params=params)
+
+    def bucket_del_file(self, bucket_name, filename):
+        return self('del s3://{0}/{1}'.format(bucket_name, filename))
 
 
 class Nova(CLICLient):
