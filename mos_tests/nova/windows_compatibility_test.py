@@ -31,6 +31,21 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Windows Compatibility verification.
     """
 
+    def wait_instance_is_pingable(self, ip):
+        common_functions.wait(
+            lambda: os.system('ping -c1 {0}'.format(ip)) == 0,
+            timeout_seconds=20 * 60,
+            sleep_seconds=10,
+            waiting_for="windows instance to be pingable")
+
+    def wait_instance_to_boot(self):
+        marker = 'Stopping Cloudbase-Init service'
+        common_functions.wait(
+            lambda: marker in self.instance.get_console_output(),
+            timeout_seconds=15 * 60,
+            sleep_seconds=10,
+            waiting_for='windows instance to boot')
+
     def setUp(self):
         super(self.__class__, self).setUp()
 
@@ -165,11 +180,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                                                   self.instance.id,
                                                   self.floating_ip.ip))
 
-        common_functions.wait(
-            lambda: os.system('ping -c1 {0.ip}'.format(self.floating_ip)) == 0,
-            timeout_seconds=60 * 60,
-            sleep_seconds=60,
-            waiting_for="Windows instance to be pingable")
+        self.wait_instance_is_pingable(self.floating_ip.ip)
 
     def tearDown(self):
         if self.instance is not None:
@@ -236,6 +247,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Make sure that the VM in 'Unpaused' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
+        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -248,6 +261,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_is_pingable(self.floating_ip.ip)
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -286,6 +301,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Make sure that the VM in 'Resume' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
+        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -298,6 +315,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_is_pingable()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -355,6 +374,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Ping the Virtual Machine
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
+        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -367,6 +388,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_is_pingable(self.floating_ip.ip)
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
