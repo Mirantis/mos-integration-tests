@@ -191,14 +191,14 @@ class SSHClient(object):
             self._proxy.settimeout(self.timeout)
         self.connect()
 
-    def check_call(self, command, verbose=False):
+    def check_call(self, command, verbose=True):
         ret = self.execute(command, verbose)
         if ret['exit_code'] != 0:
             raise CalledProcessError(command, ret['exit_code'],
                                      ret['stdout'] + ret['stderr'])
         return ret
 
-    def check_stderr(self, command, verbose=False):
+    def check_stderr(self, command, verbose=True):
         ret = self.check_call(command, verbose)
         if ret['stderr']:
             raise CalledProcessError(command, ret['exit_code'],
