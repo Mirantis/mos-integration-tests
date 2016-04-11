@@ -141,7 +141,7 @@ def enable_multiple_locations_glance(env):
             remote.check_call('mv /etc/glance/glance-api.conf '
                               '/etc/glance/glance-api.conf.orig')
             remote.check_call("cat /etc/glance/glance-api.conf.orig | sed "
-                              "'s/#show_image_direct_url = false/"
+                              "'s/#show_multiple_locations = false/"
                               "show_multiple_locations = true/g' > "
                               "/etc/glance/glance-api.conf")
             remote.check_call('service glance-api restart')

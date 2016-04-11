@@ -22,10 +22,11 @@ from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
 
-@pytest.mark.testrail_id('836638')
-@pytest.mark.usefixtures('enable_multiple_locations_glance')
-@pytest.mark.parametrize('glance', [2], indirect=['glance'])
 class TestGlanceSecurity(TestBase):
+
+    @pytest.mark.testrail_id('836638')
+    @pytest.mark.usefixtures('enable_multiple_locations_glance')
+    @pytest.mark.parametrize('glance', [2], indirect=['glance'])
     def test_remove_last_image_location(self, glance, suffix):
         """Checks that deleting of last image location is not possible
 
