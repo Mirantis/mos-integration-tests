@@ -8,6 +8,7 @@ python-novaclient>=3.3.0
 python-cinderclient>=1.0.5
 python-neutronclient>=4.0.0
 python-heatclient>=1.0.0
+python-muranoclient>=0.8.3
 python-fuelclient
 requests>=2.2.0
 ndg-httpsclient>=0.4.0
