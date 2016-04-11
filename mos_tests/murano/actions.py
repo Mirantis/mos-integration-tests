@@ -47,7 +47,7 @@ class MuranoActions(object):
         try:
             wait(lambda: self.os_conn.murano.environments.get(environment.id).
                  status == 'ready',
-                 timeout_seconds=1500,
+                 timeout_seconds=1000,
                  waiting_for='Environment is ready')
         except Exception:
             raise Exception('Environment deploy finished with errors')
@@ -192,7 +192,7 @@ class MuranoActions(object):
     def get_environment(self, environment):
         return self.os_conn.murano.environments.get(environment.id)
 
-    def check_instance(self, gateways_count, nodes_count):
+    def check_k8s_instances(self, gateways_count, nodes_count):
         instance_list = self.os_conn.nova.servers.list()
         names = ["master-1", "minion-1", "gateway-1"]
         if gateways_count == 2:
@@ -208,6 +208,17 @@ class MuranoActions(object):
                         "Instance {} is not in active status".format(name)
         assert count == len(names)
 
+    def check_docker_instance(self):
+        instance_list = self.os_conn.nova.servers.list()
+        name = "Docker"
+        count = 0
+        for instance in instance_list:
+            if instance.name.find(name) > -1:
+                count += 1
+                assert instance.status == 'ACTIVE', \
+                    "Instance {} is not in active status".format(instance.name)
+        assert count == 1
+
     def get_log(self, environment):
         deployments = self.os_conn.murano.deployments.list(environment.id)
         logs = []
@@ -218,3 +229,17 @@ class MuranoActions(object):
                 for r in reports:
                     logs.append(r.text)
         return logs
+
+    def deployment_success_check(self, environment, *ports):
+        deployment = self.os_conn.murano.deployments.list(environment.id)[-1]
+
+        assert deployment.state == 'success', \
+            'Deployment status is {0}'.format(deployment.state)
+
+        ip = environment.services[0]['instance']['floatingIpAddress']
+
+        if ip:
+            for port in ports:
+                self.check_port_access(ip, port)
+        else:
+            raise Exception('Docker Instance does not have floating IP')

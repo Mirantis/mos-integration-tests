@@ -86,7 +86,7 @@ class OpenStackActions(object):
         self.heat = HeatClient(endpoint=endpoint_url, token=token)
 
         murano_endpoint = self.session.get_endpoint(
-            service_type='application_catalog', endpoint_type='publicURL')
+            service_type='application-catalog', endpoint_type='publicURL')
         self.murano = MuranoClient(endpoint=murano_endpoint, token=token,
                                    cacert=self.path_to_cert)
         self.env = env

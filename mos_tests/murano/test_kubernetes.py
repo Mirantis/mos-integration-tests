@@ -19,7 +19,7 @@ import pytest
                                      'initial_nodes': 2, 'max_nodes': 2}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836658')
-def test_kub_node_down(environment, murano, session, cluster, grafana, influx):
+def test_kub_node_down(environment, murano, session, cluster, grafana):
     """Check ScaleNodesDown action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -34,7 +34,7 @@ def test_kub_node_down(environment, murano, session, cluster, grafana, influx):
         9. Delete Murano environment
     """
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instance(gateways_count=1, nodes_count=2)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=2)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -46,7 +46,7 @@ def test_kub_node_down(environment, murano, session, cluster, grafana, influx):
     action_id = murano.get_action_id(
         deployed_environment, 'scaleNodesDown', 0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -59,7 +59,7 @@ def test_kub_node_down(environment, murano, session, cluster, grafana, influx):
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836657')
-def test_kub_nodes_up(murano, environment, session, cluster, grafana, influx):
+def test_kub_nodes_up(murano, environment, session, cluster, influx):
     """Check ScaleNodesUp action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -74,7 +74,7 @@ def test_kub_nodes_up(murano, environment, session, cluster, grafana, influx):
         9. Delete Murano environment
     """
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -83,7 +83,7 @@ def test_kub_nodes_up(murano, environment, session, cluster, grafana, influx):
                         kubernetes=True)
     action_id = murano.get_action_id(deployed_environment, 'scaleNodesUp', 0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=1, nodes_count=2)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=2)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -97,8 +97,7 @@ def test_kub_nodes_up(murano, environment, session, cluster, grafana, influx):
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836662')
-def test_kub_gateway_down(murano, environment, session, cluster, grafana,
-                          influx):
+def test_kub_gateway_down(murano, environment, session, cluster, influx):
     """Check ScaleGatewaysDown action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -113,7 +112,7 @@ def test_kub_gateway_down(murano, environment, session, cluster, grafana,
         9. Delete Murano environment
     """
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instance(gateways_count=2, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=2, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -125,7 +124,7 @@ def test_kub_gateway_down(murano, environment, session, cluster, grafana,
     action_id = murano.get_action_id(deployed_environment, 'scaleGatewaysDown',
                                      0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -138,8 +137,7 @@ def test_kub_gateway_down(murano, environment, session, cluster, grafana,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836659')
-def test_kub_gateway_up(murano, environment, session, cluster, grafana,
-                        influx):
+def test_kub_gateway_up(murano, environment, session, cluster, influx):
     """Check ScaleGatewaysUp action for Kubernetes Cluster
     Scenario:
         1. Create Murano environment
@@ -154,7 +152,7 @@ def test_kub_gateway_up(murano, environment, session, cluster, grafana,
         9. Delete Murano environment
     """
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -164,7 +162,7 @@ def test_kub_gateway_up(murano, environment, session, cluster, grafana,
     action_id = murano.get_action_id(deployed_environment, 'scaleGatewaysUp',
                                      0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=2, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=2, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -176,7 +174,7 @@ def test_kub_gateway_up(murano, environment, session, cluster, grafana,
 
 @pytest.mark.testrail_id('836665')
 def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
-                                       grafana, influx):
+                                       influx):
     """Check ScaleNodesUp and scaleGatewaysUp actions for Kubernetes Cluster
     if maximum nodes limit is already reached
     Scenario:
@@ -194,7 +192,7 @@ def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
         11. Delete Murano environment
     """
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083],
@@ -204,15 +202,15 @@ def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
     action_id = murano.get_action_id(
         deployed_environment, 'scaleNodesUp', 0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleNodesUp is scheduled' in logs
     assert 'The maximum number of nodes has been reached' in logs
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     action_id = murano.get_action_id(
         deployed_environment, 'scaleGatewaysUp', 0)
     deployed_environment = murano.run_action(deployed_environment, action_id)
-    murano.check_instance(gateways_count=1, nodes_count=1)
+    murano.check_k8s_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleGatewaysUp is scheduled' in logs
     assert 'The maximum number of gateway nodes has been reached' in logs

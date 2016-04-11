@@ -20,9 +20,8 @@ from mos_tests.functions import os_cli
 from mos_tests.murano import actions
 
 
-flavor = 'm1.small'
-linux_image = 'debian-8-m-agent.qcow2'
-docker_image = 'debian-8-docker.qcow2'
+flavor = 'm1.medium'
+docker_image = 'ubuntu14.04-x64-docker'
 kubernetes_image = 'ubuntu14.04-x64-kubernetes'
 labels = "testkey=testvalue"
 
@@ -44,7 +43,7 @@ def openstack_client(controller_remote):
 
 
 @pytest.yield_fixture
-def environment(murano, os_conn):
+def environment(murano, os_conn, clear_old, package):
     environment = os_conn.murano.environments.create(
         {'name': murano.rand_name('MuranoEnv')})
     yield environment
@@ -71,6 +70,16 @@ def murano_cli(controller_remote):
 
 
 @pytest.fixture
+def clear_old(os_conn):
+    instance_list = os_conn.nova.servers.list()
+    names = ["master", "minion", "gateway", "Docker"]
+    for instance in instance_list:
+            for name in names:
+                if instance.name.find(name) > -1:
+                    instance.delete()
+
+
+@pytest.fixture
 def kubernetespod(murano_cli):
     fqn = 'io.murano.apps.docker.kubernetes.KubernetesPod'
     packages = murano_cli(
@@ -82,21 +91,20 @@ def kubernetespod(murano_cli):
 
 
 @pytest.fixture
-def grafana(murano_cli):
-    fqn = 'io.murano.apps.docker.DockerGrafana'
-    packages = murano_cli(
-        'package-import',
-        params='{0} --exists-action s'.format(fqn),
+def package(murano_cli, os_conn, request):
+    package_name = getattr(request, 'param', 'DockerGrafana')
+
+    fqn = 'io.murano.apps.docker.{}'.format(package_name)
+    murano_cli(
+        'package-import', params='{0} --exists-action s'.format(fqn),
         flags='--murano-repo-url=http://storage.apps.openstack.org').listing()
-    package = [x for x in packages if x['FQN'] == fqn][0]
-    return package
 
 
 @pytest.fixture
-def docker_data(os_conn, keypair):
-    body = {
+def docker(murano, keypair, environment, session):
+    docker_data = {
         "instance": {
-            "name": os_conn.rand_name("Docker"),
+            "name": murano.rand_name("Docker"),
             "assignFloatingIp": True,
             "keyname": keypair.name,
             "flavor": flavor,
@@ -116,7 +124,8 @@ def docker_data(os_conn, keypair):
             "id": str(uuid.uuid4())
         }
     }
-    return body
+    docker = murano.create_service(environment, session, docker_data)
+    return docker
 
 
 @pytest.fixture
