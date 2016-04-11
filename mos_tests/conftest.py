@@ -137,7 +137,7 @@ def reinit_fixtures(request):
 def cleanup(request, env_name, snapshot_name):
     yield
     item = request.node
-    if item.session.nextitem is None:
+    if hasattr(item.session, 'nextitem') and item.session.nextitem is None:
         return
     test_results = [getattr(item, 'rep_{}'.format(name), None)
                     for name in ("setup", "call", "teardown")]
