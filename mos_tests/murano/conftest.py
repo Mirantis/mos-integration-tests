@@ -92,12 +92,13 @@ def kubernetespod(murano_cli):
 
 @pytest.fixture
 def package(murano_cli, os_conn, request):
-    package_name = getattr(request, 'param', 'DockerGrafana')
-
-    fqn = 'io.murano.apps.docker.{}'.format(package_name)
-    murano_cli(
-        'package-import', params='{0} --exists-action s'.format(fqn),
-        flags='--murano-repo-url=http://storage.apps.openstack.org').listing()
+    package_names = getattr(request, 'param', ('DockerGrafana',))
+    for name in package_names:
+        fqn = 'io.murano.apps.docker.{}'.format(name)
+        murano_cli(
+            'package-import', params='{0} --exists-action s'.format(fqn),
+            flags='--murano-repo-url=http://storage.apps.openstack.org')\
+            .listing()
 
 
 @pytest.fixture
