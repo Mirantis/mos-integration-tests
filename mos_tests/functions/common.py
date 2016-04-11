@@ -20,6 +20,7 @@ from time import sleep
 from time import time
 import urllib2
 
+import uuid
 from waiting import TimeoutExpired
 from waiting import wait as base_wait
 import yaml
@@ -627,6 +628,13 @@ def wait(*args, **kwargs):
     except TimeoutExpired as e:
         # prevent shows traceback from waiting package
         raise e
+
+
+def gen_random_resource_name(prefix=None, reduce_by=None):
+    random_name = str(uuid.uuid4()).replace('-', '')[::reduce_by]
+    if prefix:
+        random_name = prefix + '_' + random_name
+    return random_name
 
 
 def gen_temp_file(prefix='tmp', suffix=''):

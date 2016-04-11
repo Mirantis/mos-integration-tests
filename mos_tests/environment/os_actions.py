@@ -231,6 +231,9 @@ class OpenStackActions(object):
         return self.neutron.list_ports(
             network_id=network_id, device_owner=device_owner)['ports']
 
+    def create_port(self, network_id):
+        return self.neutron.create_port({'port': {'network_id': network_id}})
+
     def list_l3_agents(self):
         return self.list_all_neutron_agents('l3')
 
@@ -347,11 +350,15 @@ class OpenStackActions(object):
             router['tenant_id'] = tenant_id
         return self.neutron.create_router({'router': router})
 
-    def router_interface_add(self, router_id, subnet_id):
-        subnet = {
-            'subnet_id': subnet_id
-        }
-        self.neutron.add_interface_router(router_id, subnet)
+    def router_interface_add(self, router_id, subnet_id=None, port_id=None):
+        body = {}
+        if subnet_id:
+            body['subnet_id'] = subnet_id
+        elif port_id:
+            body['port_id'] = port_id
+        else:
+            raise ValueError("subnet_id or port_id must be indicated.")
+        self.neutron.add_interface_router(router_id, body)
 
     def router_gateway_add(self, router_id, network_id):
         network = {

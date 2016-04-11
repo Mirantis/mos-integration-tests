@@ -115,21 +115,19 @@ class OvsBase(TestBase):
             :param compute: Compute node where the server is scheduled
             :return: cookie value
         """
+        cookies = {'br-int': set(), 'br-tun': set()}
+
+        cookie_pattern = re.compile(r'cookie=[^,]+')
         with compute.ssh() as remote:
-            result = remote.execute('ovs-ofctl dump-flows br-int')
-            result_tun = remote.execute('ovs-ofctl dump-flows br-tun')
-        assert result['exit_code'] == 0
-        result_out = result['stdout']
-        if result_tun['stderr'] != ['ovs-ofctl: br-tun is not a bridge or a '
-                                    'socket\n']:
-            assert result_tun['exit_code'] == 0
-            result_out.extend(result_tun['stdout'])
-        cookie_lines = filter(lambda x: x.find(' cookie=') != -1, result_out)
-        cookie_values = map(lambda x: x.split(',')[0].partition(' cookie=')[2],
-                            cookie_lines)
-        assert cookie_values[0] != 0
-        assert cookie_values.count(cookie_values[0]) == len(cookie_values)
-        return cookie_values[0]
+            result = remote.check_call('ovs-ofctl dump-flows br-int')
+            cookies_list = cookie_pattern.findall(result.stdout_string)
+            cookies['br-int'].update(cookies_list)
+
+            result = remote.execute('ovs-ofctl dump-flows br-tun')
+            if result.is_ok:
+                cookies_list = cookie_pattern.findall(result.stdout_string)
+                cookies['br-tun'].update(cookies_list)
+        return cookies
 
 
 @pytest.mark.check_env_("has_2_or_more_computes")
@@ -862,7 +860,7 @@ class TestOVSRestartAddFlows(OvsBase):
                them back. To do this, launch the script against master node.
             6. Check that all ovs-agents are in alive state
             7. Get list of flows for br-int again
-            8. Compere cookie parameters
+            8. Compare cookie parameters
         """
         self._prepare_openstack()
         server = self.os_conn.nova.servers.find(name="server_for_flow_check")
@@ -870,10 +868,12 @@ class TestOVSRestartAddFlows(OvsBase):
         compute = [i for i in self.env.get_nodes_by_role('compute')
                    if i.data['fqdn'] == node_name][0]
 
-        before_value = self.get_current_cookie(compute)
-
         # Check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
+
+        before_value = self.get_current_cookie(compute)
+
+        assert all([len(x) < 2 for x in before_value.values()])
 
         # Disable ovs agent on all controllers
         self.disable_ovs_agents_on_controller()
@@ -896,6 +896,8 @@ class TestOVSRestartAddFlows(OvsBase):
 
         after_value = self.get_current_cookie(compute)
         assert before_value != after_value
+
+        assert all([len(x) < 2 for x in after_value.values()])
 
 
 @pytest.mark.check_env_("has_2_or_more_computes", "is_vlan")
