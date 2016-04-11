@@ -45,3 +45,11 @@ L3 HA tests
 .. automodule:: mos_tests.neutron.python_tests.test_l3_ha
    :members:
 
+
+Neutron plugins tests
+=====================
+
+QoS tests
+-----------
+.. automodule:: mos_tests.neutron.python_tests.test_qos
+   :members:
