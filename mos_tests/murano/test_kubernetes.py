@@ -214,3 +214,46 @@ def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleGatewaysUp is scheduled' in logs
     assert 'The maximum number of gateway nodes has been reached' in logs
+
+
+@pytest.mark.testrail_id('836666')
+def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
+                                       influx):
+    """Check ScaleNodesDown and scaleGatewaysDown actions for Kubernetes
+    Cluster if only one minion/gateway node is present
+    Scenario:
+        1. Create Murano environment
+        2. Add Kubernetes Cluster application to the environment: Set
+        initial_gateways=1, max_gateways=1, initial_nodes=1, max_nodes=1
+        3. Add Kubernetes Pod to the environment
+        4. Add some application to the environment
+        5. Deploy environment
+        6. Check deployment status and make sure that all nodes are active
+        7. Execute scaleNodesDown action
+        8. Check error message
+        9. Execute scaleGatewaysDown action
+        10. Check error message
+        11. Delete Murano environment
+    """
+    deployed_environment = murano.deploy_environment(environment, session)
+    murano.check_instances(gateways_count=1, nodes_count=1)
+    murano.status_check(deployed_environment,
+                        [[cluster['name'], "master-1", 8080],
+                         [cluster['name'], "gateway-1", 8083],
+                         [cluster['name'], "minion-1", 4194]
+                         ],
+                        kubernetes=True)
+    action_id = murano.get_action_id(deployed_environment, 'scaleNodesDown', 0)
+    deployed_environment = murano.run_action(deployed_environment, action_id)
+    murano.check_instances(gateways_count=1, nodes_count=1)
+    logs = murano.get_log(deployed_environment)
+    assert 'Action scaleNodesDown is scheduled' in logs
+    assert 'No nodes that can be removed' in logs
+    murano.check_instances(gateways_count=1, nodes_count=1)
+    action_id = murano.get_action_id(
+        deployed_environment, 'scaleGatewaysDown', 0)
+    deployed_environment = murano.run_action(deployed_environment, action_id)
+    murano.check_instances(gateways_count=1, nodes_count=1)
+    logs = murano.get_log(deployed_environment)
+    assert 'Action scaleGatewaysDown is scheduled' in logs
+    assert 'No gateway nodes that can be removed' in logs
