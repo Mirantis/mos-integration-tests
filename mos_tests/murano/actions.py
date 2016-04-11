@@ -192,13 +192,17 @@ class MuranoActions(object):
     def get_environment(self, environment):
         return self.os_conn.murano.environments.get(environment.id)
 
-    def check_k8s_instances(self, gateways_count, nodes_count):
+    def check_instances(self, gateways_count=0, nodes_count=0, docker_count=0):
         instance_list = self.os_conn.nova.servers.list()
-        names = ["master-1", "minion-1", "gateway-1"]
-        if gateways_count == 2:
-            names.append("gateway-2")
-        if nodes_count == 2:
-            names.append("minion-2")
+        names = []
+        if gateways_count and nodes_count:
+            names.append("master-1")
+            for i in range(gateways_count):
+                names.append("gateway-{}".format(i + 1))
+            for i in range(nodes_count):
+                names.append("minion-{}".format(i + 1))
+        if docker_count:
+            names.append("Docker")
         count = 0
         for instance in instance_list:
             for name in names:
@@ -207,17 +211,6 @@ class MuranoActions(object):
                     assert instance.status == 'ACTIVE', \
                         "Instance {} is not in active status".format(name)
         assert count == len(names)
-
-    def check_docker_instance(self):
-        instance_list = self.os_conn.nova.servers.list()
-        name = "Docker"
-        count = 0
-        for instance in instance_list:
-            if instance.name.find(name) > -1:
-                count += 1
-                assert instance.status == 'ACTIVE', \
-                    "Instance {} is not in active status".format(instance.name)
-        assert count == 1
 
     def get_log(self, environment):
         deployments = self.os_conn.murano.deployments.list(environment.id)
