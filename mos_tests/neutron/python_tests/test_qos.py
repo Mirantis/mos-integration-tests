@@ -340,3 +340,84 @@ class TestTraficBetweenComputes(TestQoSBase):
             self.check_iperf_bandwidth(instances[0],
                                        instances[1],
                                        limit=3000 * 1024)
+
+    @pytest.mark.testrail_id('838310')
+    def test_restrictions_on_net_and_vm(self, instances, os_conn):
+        """Check traffic restriction between vms if there are different
+        restrictions in the net and vm
+
+        Scenario:
+            1. Create net01, subnet
+            2. Create router01, set gateway and add interface to net01
+            3. Create new policy: neutron qos-policy-create policy_1
+            4. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id policy_1 \
+                --max-kbps 4000 --max-burst-kbps 300
+            5. Update net01 with --qos-policy parameter
+            6. Boot ubuntu vm1 in net01 on compute-1
+            7. Boot ubuntu vm2 in net01 on compute-2
+            8. Start iperf between vm1 and vm2
+            9. Look on the traffic with nload on vm port on compute-1
+            10. Create new policy: neutron qos-policy-create bw-limiter
+            11. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id bw-limiter \
+                --max-kbps 3000
+            12. Find neutron port for vm1: neutron port-list | grep <vm1 ip>
+            13. Update port with new policy:
+                neutron port-update your-port-id --qos-policy bw-limiter
+            14. Check in nload that traffic changed properly
+            15. Update rule for vm port:
+                neutron qos-bandwidth-limit-rule-update rule-id bw-limiter \
+                --max-kbps 6000
+        """
+        instance1, instance2 = instances
+
+        # Create policy for net
+        policy1 = os_conn.create_qos_policy('policy_1')
+        os_conn.neutron.create_bandwidth_limit_rule(policy1['policy']['id'], {
+            'bandwidth_limit_rule': {
+                'max_kbps': 4000,
+                'max_burst_kbps': 300,
+            }
+        })
+        os_conn.neutron.update_network(
+            self.net['network']['id'],
+            {'network': {'qos_policy_id': policy1['policy']['id']}})
+
+        self.check_iperf_bandwidth(instance1, instance2, (4000 + 300) * 1024)
+
+        # Create policy for port
+        instance1_ip = os_conn.get_nova_instance_ips(instance1)['fixed']
+        port1 = os_conn.get_port_by_fixed_ip(instance1_ip)
+        port_policy = os_conn.create_qos_policy('policy_2')
+        port_rule = os_conn.neutron.create_bandwidth_limit_rule(
+            port_policy['policy']['id'], {
+                'bandwidth_limit_rule': {
+                    'max_kbps': 3000,
+                }
+            })
+
+        os_conn.neutron.update_port(
+            port1['id'],
+            {'port': {'qos_policy_id': port_policy['policy']['id']}})
+
+        self.check_iperf_bandwidth(instance1,
+                                   instance2,
+                                   limit=3000 * 1024,
+                                   time=60,
+                                   interval=20)
+
+        # Update rule for port
+        os_conn.neutron.update_bandwidth_limit_rule(
+            port_rule['bandwidth_limit_rule']['id'],
+            port_policy['policy']['id'], {
+                'bandwidth_limit_rule': {
+                    'max_kbps': 6000,
+                }
+            })
+
+        self.check_iperf_bandwidth(instance1,
+                                   instance2,
+                                   limit=6000 * 1024,
+                                   time=60,
+                                   interval=20)
