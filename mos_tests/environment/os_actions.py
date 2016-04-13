@@ -246,10 +246,12 @@ class OpenStackActions(object):
     def get_l3_for_router(self, router_id):
         return self.neutron.list_l3_agent_hosting_routers(router_id)
 
-    def create_network(self, name, tenant_id=None):
+    def create_network(self, name, tenant_id=None, qos_policy_id=None):
         network = {'name': name, 'admin_state_up': True}
         if tenant_id is not None:
             network['tenant_id'] = tenant_id
+        if qos_policy_id is not None:
+            network['qos_policy_id'] = qos_policy_id
         return self.neutron.create_network({'network': network})
 
     def delete_network(self, id):
