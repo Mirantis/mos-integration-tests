@@ -21,7 +21,6 @@ from heatclient.v1.client import Client as HeatClient
 from keystoneclient.auth.identity.v2 import Password as KeystonePassword
 from keystoneclient import session
 from keystoneclient.v2_0 import Client as KeystoneClient
-from muranoclient.v1.client import Client as MuranoClient
 from neutronclient.common.exceptions import NeutronClientException
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
@@ -85,10 +84,6 @@ class OpenStackActions(object):
         token = self.session.get_token()
         self.heat = HeatClient(endpoint=endpoint_url, token=token)
 
-        murano_endpoint = self.session.get_endpoint(
-            service_type='application-catalog', endpoint_type='publicURL')
-        self.murano = MuranoClient(endpoint=murano_endpoint, token=token,
-                                   cacert=self.path_to_cert)
         self.env = env
 
     def _get_cirros_image(self):

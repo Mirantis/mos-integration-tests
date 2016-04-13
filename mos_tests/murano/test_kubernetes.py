@@ -15,6 +15,7 @@
 import pytest
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 2, 'max_nodes': 2}],
                          indirect=['cluster'])
@@ -55,6 +56,7 @@ def test_kub_node_down(environment, murano, session, cluster, influx):
                         kubernetes=True)
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
@@ -93,6 +95,7 @@ def test_kub_nodes_up(murano, environment, session, cluster, influx):
                         kubernetes=True)
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 2, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
@@ -133,6 +136,7 @@ def test_kub_gateway_down(murano, environment, session, cluster, influx):
                         kubernetes=True)
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 1, 'max_nodes': 2}],
                          indirect=['cluster'])
@@ -172,6 +176,7 @@ def test_kub_gateway_up(murano, environment, session, cluster, influx):
                         kubernetes=True)
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.testrail_id('836665')
 def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
                                        influx):
@@ -216,6 +221,7 @@ def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
     assert 'The maximum number of gateway nodes has been reached' in logs
 
 
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.testrail_id('836666')
 def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
                                        influx):

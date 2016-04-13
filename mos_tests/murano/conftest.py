@@ -43,18 +43,18 @@ def openstack_client(controller_remote):
 
 
 @pytest.yield_fixture
-def environment(murano, os_conn, clear_old, package):
-    environment = os_conn.murano.environments.create(
+def environment(murano, clear_old, package):
+    environment = murano.murano.environments.create(
         {'name': murano.rand_name('MuranoEnv')})
     yield environment
-    os_conn.murano.environments.delete(environment.id)
+    murano.murano.environments.delete(environment.id)
 
 
 @pytest.yield_fixture
-def session(os_conn, environment):
-    session = os_conn.murano.sessions.configure(environment.id)
+def session(murano, environment):
+    session = murano.murano.sessions.configure(environment.id)
     yield session
-    os_conn.murano.sessions.delete(environment.id, session.id)
+    murano.murano.sessions.delete(environment.id, session.id)
 
 
 @pytest.yield_fixture
