@@ -171,6 +171,7 @@ class OpenStackActions(object):
         :rtype: dict
         :return: Dict with server ips
         """
+        srv.get()
         return {x['OS-EXT-IPS:type']: x['addr']
                 for y in srv.addresses.values()
                 for x in y}
@@ -255,7 +256,7 @@ class OpenStackActions(object):
         return self.neutron.delete_network(id)
 
     def create_subnet(self, network_id, name, cidr, tenant_id=None,
-                      dns_nameservers=None):
+                      dns_nameservers=('8.8.8.8', '8.8.4.4')):
         subnet = {
             "network_id": network_id,
             "ip_version": 4,
