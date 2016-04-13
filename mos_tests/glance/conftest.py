@@ -130,3 +130,38 @@ def user(openstack_client, suffix, project):
                                 project=project['id'])
     yield user
     openstack_client.user_delete(user['id'])
+
+
+@pytest.yield_fixture
+def enable_multiple_locations_glance(env):
+    """Change show_multiple_locations to true"""
+
+    def set_show_multiple_locations(node):
+        with node.ssh() as remote:
+            remote.check_call('mv /etc/glance/glance-api.conf '
+                              '/etc/glance/glance-api.conf.orig')
+            remote.check_call("cat /etc/glance/glance-api.conf.orig | sed "
+                              "'s/#show_multiple_locations = false/"
+                              "show_multiple_locations = true/g' > "
+                              "/etc/glance/glance-api.conf")
+            remote.check_call('service glance-api restart')
+
+    def reset_show_multiple_locations(node):
+        with node.ssh() as remote:
+            remote.check_call('mv /etc/glance/glance-api.conf.orig '
+                              '/etc/glance/glance-api.conf')
+            remote.check_call('service glance-api restart')
+
+    def wait_glance_alive():
+        common.wait(lambda: common.get_os_conn(env), timeout_seconds=60 * 3,
+                    waiting_for='glance available',
+                    expected_exceptions=Exception)
+
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        set_show_multiple_locations(controller)
+    wait_glance_alive()
+    yield
+    for controller in controllers:
+        reset_show_multiple_locations(controller)
+    wait_glance_alive()
