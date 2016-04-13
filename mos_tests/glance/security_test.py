@@ -44,7 +44,7 @@ class TestGlanceSecurity(TestBase):
         name = "Test_{0}".format(suffix[:6])
         url_1 = settings.GLANCE_IMAGE_URL
         url_2 = ('http://download.cirros-cloud.net/0.3.1/'
-                'cirros-0.3.1-x86_64-disk.img')
+                 'cirros-0.3.1-x86_64-disk.img')
         metadata = {}
 
         image = self.os_conn.glance.images.create(name=name,
@@ -75,6 +75,67 @@ class TestGlanceSecurity(TestBase):
         image = self.os_conn.glance.images.get(image.id)
         assert len(image.locations) == 1
         assert image.status == 'active'
+
+        self.os_conn.glance.images.delete(image.id)
+        images_id = [i.id for i in self.os_conn.glance.images.list()]
+        assert image.id not in images_id
+
+    @pytest.mark.testrail_id('836636')
+    @pytest.mark.parametrize('glance', [2], indirect=['glance'])
+    def test_image_direct_url_false(self, glance, image_file_remote, suffix):
+        """Check absence of 'direct_url' property for glance image by default
+        for Swift storage
+
+        Scenario:
+            1. Create image from `image_file`
+            2. Check that image status is `active`
+            3. Check that image doesn't have property 'direct_url'
+            4. Delete image
+            5. Check that image deleted
+        """
+        name = "Test_{0}".format(suffix[:6])
+        image = self.os_conn.glance.images.create(name=name,
+                                                  disk_format='qcow2',
+                                                  container_format='bare')
+        self.os_conn.glance.images.upload(image.id, image_file_remote)
+
+        image = self.os_conn.glance.images.get(image.id)
+        assert image.status == 'active'
+        assert 'direct_url' not in image.keys()
+
+        self.os_conn.glance.images.delete(image.id)
+        images_id = [i.id for i in self.os_conn.glance.images.list()]
+        assert image.id not in images_id
+
+    @pytest.mark.testrail_id('843822')
+    @pytest.mark.usefixtures('enable_image_direct_url_glance')
+    @pytest.mark.parametrize('glance', [2], indirect=['glance'])
+    def test_image_direct_url_true(self, glance, image_file_remote, suffix):
+        """Check that value of 'direct_url' property doesn't contain glance
+        credentials (tenant:user:password) in case of show_image_direct_url =
+        True for Swift storage
+
+        Scenario:
+            1. Set show_image_direct_url = True in glance-api.conf on all
+            controllers and restart glance-api service on all controllers
+            2. Create image from `image_file`
+            3. Check that image status is `active`
+            4. Check that value of image property 'direct_url' has format
+            'swift+config://ref1/glance/image_id'
+            5. Delete image
+            6. Check that image deleted
+        """
+        name = "Test_{0}".format(suffix[:6])
+        image = self.os_conn.glance.images.create(name=name,
+                                                  disk_format='qcow2',
+                                                  container_format='bare')
+        self.os_conn.glance.images.upload(image.id, image_file_remote)
+
+        image = self.os_conn.glance.images.get(image.id)
+        assert image.status == 'active'
+        expected_direct_url_value = ('swift+config://ref1/glance/{image_id}'
+                                     .format(image_id=image.id))
+        assert image.direct_url == expected_direct_url_value
 
         self.os_conn.glance.images.delete(image.id)
         images_id = [i.id for i in self.os_conn.glance.images.list()]
