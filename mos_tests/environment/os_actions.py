@@ -147,6 +147,7 @@ class OpenStackActions(object):
 
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
+
         try:
             with self.ssh_to_instance(self.env, server, username='cirros',
                 password='cubswin:)'
@@ -365,6 +366,21 @@ class OpenStackActions(object):
             'network_id': network_id
         }
         self.neutron.add_gateway_router(router_id, network)
+
+    def delete_router(self, router_id):
+        binded_ports = self.neutron.list_ports(
+            device_id=router_id, device_owner=u'network:router_interface'
+        )['ports']
+        for port in binded_ports:
+            self.neutron.remove_interface_router(router_id,
+                                                 {'port_id': port['id']})
+        self.neutron.delete_router(router_id)
+
+    def create_qos_policy(self, name):
+        return self.neutron.create_qos_policy({'policy': {'name': name}})
+
+    def delete_qos_policy(self, policy_id):
+        self.neutron.delete_qos_policy(policy_id)
 
     def create_sec_group_for_ssh(self):
         name = "test-sg" + str(random.randint(1, 0x7fffffff))
