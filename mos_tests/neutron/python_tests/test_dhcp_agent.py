@@ -56,6 +56,31 @@ class TestDHCPAgent(TestBase):
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
+    def create_50_networks(self, ):
+        tenant = self.os_conn.neutron.get_quotas_tenant()
+        tenant_id = tenant['tenant']['tenant_id']
+        self.os_conn.neutron.update_quota(tenant_id, {'quota':
+                                                      {'network': 50,
+                                                       'router': 50,
+                                                       'subnet': 50,
+                                                       'port': 150}})
+        # According to the test requirements 50 networks should be created
+        # However during implementation found that only about 34 nets
+        # can be created for one tenant. Need to clarify that situation.
+        for x in range(29):
+            net_id = self.os_conn.add_net(self.router['id'])
+            self.networks.append(net_id)
+            logger.info('Total networks created at the moment {}'.format(
+                        len(self.networks)))
+            srv = self.os_conn.create_server(
+                name='instanceNo{}'.format(x),
+                key_name=self.instance_keypair.name,
+                security_groups=[self.security_group.name],
+                nics=[{'net-id': net_id}],
+                wait_for_avaliable=False)
+            logger.info('Delete the server {}'.format(srv.name))
+            self.os_conn.nova.servers.delete(srv)
+
     @pytest.mark.testrail_id('542614')
     def test_to_check_dhcp_agents_work(self):
         """[Neutron VLAN and VXLAN] Check dhcp-agents work
@@ -75,29 +100,8 @@ class TestDHCPAgent(TestBase):
               Check that quantity on agents are nearly equal
         """
 
-        tenant = self.os_conn.neutron.get_quotas_tenant()
-        tenant_id = tenant['tenant']['tenant_id']
-        self.os_conn.neutron.update_quota(tenant_id, {'quota':
-                                                      {'network': 50,
-                                                       'router': 50,
-                                                       'subnet': 50,
-                                                       'port': 150}})
-        # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 34 nets
-        # can be created for one tenant. Need to clarify that situation.
-        for x in range(29):
-            net_id = self.os_conn.add_net(self.router['id'])
-            self.networks.append(net_id)
-            logger.info('Total networks created at the moment {}'.format(
-                        len(self.networks)))
-            srv = self.os_conn.create_server(
-                name='instanseNo{}'.format(x),
-                key_name=self.instance_keypair.name,
-                security_groups=[self.security_group.name],
-                nics=[{'net-id': net_id}],
-                wait_for_avaliable=False)
-            logger.info('Delete the server {}'.format(srv.name))
-            self.os_conn.nova.servers.delete(srv)
+        # Create 50 networks, launch and terminate instances
+        self.create_50_networks()
 
         # Count networks for each dhcp agent
         # Each agent should contain networks
@@ -277,3 +281,55 @@ class TestDHCPAgent(TestBase):
 
         # Run udhcp again
         self.run_udhcpc_on_vm(srv)
+
+    def test_to_check_dhcp_agents_after_disable_service(self):
+        """[Neutron VLAN and VXLAN] Check dhcp-agents work
+        after restart service
+
+        Steps:
+            1. Update quotas for creation a lot of networks:
+                neutron quota-update --network 1000 --subnet 1000
+                                     --router 1000 --port 1000:
+            2. Create 50 networks, subnets, launch and terminate instance
+            3. Check amount of dhcp agents on networkX
+                neutron dhcp-agent-list-hosting-net netX
+            4. Disable dhcp-agents:
+                pcs resource disable p_neutron-dhcp-agent
+                Wait till agents are down
+            5. Enable dhcp-agents:
+                pcs resource enable p_neutron-dhcp-agent
+                Wait till agents are up
+            5. Check amount of dhcp agents on networkX:
+                neutron dhcp-agent-list-hosting-net netX
+               Check that quantity on agents are exactly the same
+               as before disable
+        """
+
+        # Create 50 networks, launch and terminate instances
+        self.create_50_networks()
+
+        # Get amount of DHCP agents for the net9
+        net_id = self.networks[8]
+        network_agt = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
+            net_id)['agents']
+        dhcp_agent_num = len(network_agt)
+        logger.info('The amount of dhcp-agents {}:'.format(dhcp_agent_num))
+
+        # Disable & Enable dhcp agents on controller node
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            logger.info('disable all dhcp agents')
+            remote.check_call('pcs resource disable neutron-dhcp-agent')
+            self.os_conn.wait_agents_down(self.dhcp_agent_ids)
+            logger.info('enable all dhcp agents')
+            remote.check_call('pcs resource enable neutron-dhcp-agent')
+            self.os_conn.wait_agents_alive(self.dhcp_agent_ids)
+
+        # Get amount of DHCP agents for the net9
+        net_id = self.networks[8]
+        network_agt = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
+            net_id)['agents']
+        logger.info('The amount of dhcp-agents {}:'.format(len(network_agt)))
+        err_msg = 'Amount of dhcp agents for network {} is incorrect'.format(
+            net_id)
+        assert len(network_agt) == dhcp_agent_num, err_msg
