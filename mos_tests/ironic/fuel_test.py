@@ -92,22 +92,21 @@ def test_baremetal_network_settings(new_env, admin_remote):
 
 
 @pytest.mark.testrail_id(
-    '631890',
-    params={'new_config': {'/editable/additional_components/ironic/value': True
-                           }})
+    '631892',
+    new_config={'/editable/additional_components/ironic/value': True})
 @pytest.mark.testrail_id(
     '631893',
-    params={'new_config': {'/editable/storage/images_ceph/value': True,
-                           '/editable/storage/objects_ceph/value': True}})
+    new_config={'/editable/storage/images_ceph/value': True,
+                '/editable/storage/objects_ceph/value': True})
 @pytest.mark.testrail_id(
     '631894',
-    params={'new_config': {
+    new_config={
         '/editable/additional_components/ironic/value': True,
         '/editable/storage/images_ceph/value': True,
         '/editable/storage/objects_ceph/value': True,
         '/editable/storage/ephemeral_ceph/value': True,
         '/editable/storage/volumes_ceph/value': True,
-    }})
+    })
 @pytest.mark.parametrize('new_config', [
     {'/editable/additional_components/ironic/value': True},
     {'/editable/storage/images_ceph/value': True,

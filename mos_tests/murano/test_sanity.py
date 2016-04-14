@@ -153,6 +153,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
                 self.murano_client.packages.delete(pkg.id)
         super(TestImportPackageWithDepencies, self).tearDown()
 
+    @pytest.mark.testrail_id('542963')
     def test_import_package_by_url(self):
         """Test package importing via url."""
 
@@ -182,6 +183,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
             self.check_element_on_page(
                 by.By.XPATH, c.AppPackages.format(pkg_name))
 
+    @pytest.mark.testrail_id('542964')
     def test_import_package_from_repo(self):
         """Test package importing via fqn from repo with dependent apps."""
 
@@ -229,6 +231,7 @@ class TestPackageSizeLimit(base.PackageTestCase):
         shutil.rmtree((os.path.split(self.zips[0])[0]), ignore_errors=True)
         super(TestPackageSizeLimit, self).tearDown()
 
+    @pytest.mark.testrail_id('542960')
     @pytest.mark.usefixtures('package_size_limit')
     def test_package_size_limit(self):
         self.navigate_to('Manage')
@@ -477,6 +480,7 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
             timeout_seconds=10 * 60,
             waiting_for='environment deployed')
 
+    @pytest.mark.testrail_id('543132')
     @pytest.mark.usefixtures('init', 'apache_package', 'prepare_24')
     def test_particular_network(self):
         """Deploy Murano environment in particular network"""
@@ -492,6 +496,7 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
                     if self.env_name in x.name][0]
         self.assertIn(self.net_name, instance.addresses.keys())
 
+    @pytest.mark.testrail_id('543146')
     @pytest.mark.usefixtures('init', 'apache_package', 'prepare_30')
     def test_particular_network_no_free_ip(self):
         """Deploy Murano environment in network with empty ip"""
@@ -510,6 +515,7 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 
         self.assertEqual(status_el.text, 'Deploy FAILURE')
 
+    @pytest.mark.testrail_id('543138')
     @pytest.mark.usefixtures('init', 'apache_package', 'prepare_24')
     def test_change_network_for_app_from_app_page(self):
         """Change network for Murano application"""

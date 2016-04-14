@@ -28,22 +28,6 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
-def pytest_runtest_makereport(item, call):
-    if "incremental" in item.keywords:
-        if call.excinfo is not None:
-            parent = item.parent
-            parent._previousfailed = {str(item.callspec.params): item}
-
-
-def pytest_runtest_setup(item):
-    if "incremental" in item.keywords:
-        previousfailed_info = getattr(item.parent, "_previousfailed", {})
-        previousfailed = previousfailed_info.get(str(item.callspec.params))
-        if previousfailed is not None:
-            pytest.xfail("previous test failed ({0.name})".format(
-                previousfailed))
-
-
 def idfn(val):
     if isinstance(val, (list, tuple)):
         return ','.join(val)

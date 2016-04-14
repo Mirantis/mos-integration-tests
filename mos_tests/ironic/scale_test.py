@@ -55,19 +55,16 @@ def idfn(val):
 @pytest.mark.usefixtures('cleanup_nodes')
 class TestScale(object):
     @pytest.fixture(scope='class',
-                    params=[['ironic'], ['ceph'], ['ironic', 'controller'],
+                    params=[['ironic'], ['ironic', 'controller'],
                             ['ironic', 'controller', 'ceph']],
                     ids=idfn)
     def roles(self, request):
         return request.param
 
     @pytest.mark.undestructive
-    @pytest.mark.testrail_id('631895', params={'roles': ['ironic']})
-    @pytest.mark.testrail_id('631897',
-                             params={'roles': ['ironic', 'controller']})
-    @pytest.mark.testrail_id(
-        '631899',
-        params={'roles': ['ironic', 'controller', 'ceph']})
+    @pytest.mark.testrail_id('631895', roles=['ironic'])
+    @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
+    @pytest.mark.testrail_id('631899', roles=['ironic', 'controller', 'ceph'])
     @pytest.mark.parametrize('ubuntu_image',
                              [['create']],
                              indirect=['ubuntu_image'])
@@ -155,12 +152,9 @@ class TestScale(object):
 
         self.__class__.fuel_node = fuel_node
 
-    @pytest.mark.testrail_id('631896', params={'roles': ['ironic']})
-    @pytest.mark.testrail_id('631898',
-                             params={'roles': ['ironic', 'controller']})
-    @pytest.mark.testrail_id(
-        '631900',
-        params={'roles': ['ironic', 'controller', 'ceph']})
+    @pytest.mark.testrail_id('631896', roles=['ironic'])
+    @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
+    @pytest.mark.testrail_id('631900', roles=['ironic', 'controller', 'ceph'])
     @pytest.mark.parametrize('ubuntu_image',
                              [['delete']],
                              indirect=['ubuntu_image'])
