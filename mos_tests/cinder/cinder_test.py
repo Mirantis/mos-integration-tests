@@ -19,7 +19,6 @@ import pytest
 
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
-from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +32,9 @@ class CinderIntegrationTests(OpenStackTestCase):
 
         self.volume_list = []
         self.snapshot_list = []
-        tenant_name = settings.KEYSTONE_CREDS['tenant_name']
-        self.tenant_id = [t.id for t in self.keystone.tenants.list() if
-                          t.name == tenant_name][0]
-        self.quota = self.cinder.quotas.get(self.tenant_id).snapshots
-        self.cinder.quotas.update(self.tenant_id, snapshots=200)
+        self.project_id = self.session.get_project_id()
+        self.quota = self.cinder.quotas.get(self.project_id).snapshots
+        self.cinder.quotas.update(self.project_id, snapshots=200)
 
     def tearDown(self):
         try:
@@ -48,7 +45,7 @@ class CinderIntegrationTests(OpenStackTestCase):
                 common_functions.delete_volume(self.cinder, volume)
             self.volume_list = []
         finally:
-            self.cinder.quotas.update(self.tenant_id, snapshots=self.quota)
+            self.cinder.quotas.update(self.project_id, snapshots=self.quota)
 
     @pytest.mark.testrail_id('543176')
     def test_creating_multiple_snapshots(self):
