@@ -125,22 +125,10 @@ def get_mngmnt_ip_of_ctrllrs(env):
 def disable_enable_all_eth_interf(remote, sleep_sec=60):
     """Shutdown all eth interfaces on node and after sleep enable them back"""
     logger.debug('Stop/Start all eth interfaces on %s.' % remote.host)
-
-    # Partial WA for interfaces down/up.
-    #   https://bugs.launchpad.net/fuel/+bug/1563321
-    cmd = 'ip route show | grep default'
-    def_route = remote.check_call(cmd)['stdout'][0].strip()
-
     background = '<&- >/dev/null 2>&1 &'
-    cmd = ("(list_eth="
-           "$(ip link show|grep 'state UP'|awk -F': ' '{print $2}') ; "
-           "for i in $list_eth; do ifconfig $i down; done ; "
-           "sleep %s ; "
-           "for i in $list_eth; do ifconfig $i up; done ; "
-           "ip -s -s neigh flush all ; "
-           "ip route add %s ) %s") % (sleep_sec, def_route, background)
-    # "ip route add ..." partial WA for
-    #   https://bugs.launchpad.net/fuel/+bug/1563321
+    cmd = ('(ifdown -a ; ip -s -s neigh flush all ; '
+           'sleep {0} ; ifup -a) {1}'.format(
+                sleep_sec, background))
     remote.execute(cmd)
 
 
