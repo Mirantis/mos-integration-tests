@@ -31,19 +31,31 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Windows Compatibility verification.
     """
 
-    def wait_instance_is_pingable(self, ip):
-        common_functions.wait(
-            lambda: os.system('ping -c1 {0}'.format(ip)) == 0,
-            timeout_seconds=20 * 60,
-            sleep_seconds=10,
-            waiting_for="windows instance to be pingable")
+    def is_instance_ready(self, instance):
+        """Determine instance is ready by mean brightness of screenshot
+
+        Minimal registered level for booted machne was 33, so 25 is used as
+        threshold value.
+        """
+        hypervisor_hostname = getattr(self.instance,
+                                      'OS-EXT-SRV-ATTR:hypervisor_hostname')
+        instance_name = getattr(self.instance, 'OS-EXT-SRV-ATTR:instance_name')
+        compute_node = self.env.find_node_by_fqdn(hypervisor_hostname)
+        screenshot_path = '/tmp/instance_screenshot'
+        with compute_node.ssh() as remote:
+            remote.check_call(
+                'virsh screenshot {name} --file {path}'.format(
+                    name=instance_name, path=screenshot_path),
+                verbose=False)
+            with remote.open(screenshot_path, 'rb') as f:
+                data = f.read()
+        return sum(ord(x) for x in data) / len(data) > 25
 
     def wait_instance_to_boot(self):
-        marker = 'Stopping Cloudbase-Init service'
         common_functions.wait(
-            lambda: marker in self.instance.get_console_output(),
-            timeout_seconds=15 * 60,
-            sleep_seconds=10,
+            lambda: self.is_instance_ready(self.instance),
+            timeout_seconds=45 * 60,
+            sleep_seconds=60,
             waiting_for='windows instance to boot')
 
     def setUp(self):
@@ -180,7 +192,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                                                   self.instance.id,
                                                   self.floating_ip.ip))
 
-        self.wait_instance_is_pingable(self.floating_ip.ip)
+        self.wait_instance_to_boot()
 
     def tearDown(self):
         if self.instance is not None:
@@ -248,7 +260,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -262,7 +273,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
 
-        self.wait_instance_is_pingable(self.floating_ip.ip)
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -302,7 +313,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -316,7 +326,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
 
-        self.wait_instance_is_pingable()
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -375,7 +385,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
 
-        self.wait_instance_to_boot()
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -389,7 +398,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
 
-        self.wait_instance_is_pingable(self.floating_ip.ip)
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
