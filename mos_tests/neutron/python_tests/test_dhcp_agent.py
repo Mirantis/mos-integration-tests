@@ -67,7 +67,7 @@ class TestDHCPAgent(TestBase):
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        for x in range(10):
+        for x in range(29):
             net_id = self.os_conn.add_net(self.router['id'])
             self.networks.append(net_id)
             logger.info('Total networks created at the moment {}'.format(
