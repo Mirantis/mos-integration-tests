@@ -192,8 +192,9 @@ def test_image_create_delete_from_url(glance, suffix, option):
     check_image_not_in_list(glance, image)
 
 
-@pytest.mark.testrail_id('542890', params={'glance': 1})
-@pytest.mark.testrail_id('542911', params={'glance': 2})
+@pytest.mark.testrail_id('542890', glance=1)
+@pytest.mark.testrail_id('542911', glance=2)
+@pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
 def test_image_file_equal(glance, image_file, suffix):
     """Check that after upload-download image file are not changed
 
@@ -277,6 +278,8 @@ def test_upload_image_with_token_expiration(glance, image_file, suffix):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('843369', params={'glance': 2})
+@pytest.mark.testrail_id('836601', params={'glance': 1})
 @pytest.mark.parametrize('glance, key_name', (
     (1, "Property 'key'"),
     (2, 'key'),

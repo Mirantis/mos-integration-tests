@@ -16,7 +16,6 @@ from collections import namedtuple
 from distutils.spawn import find_executable
 import logging
 import os
-import unittest
 import uuid
 
 import pytest
@@ -34,6 +33,11 @@ from mos_tests.settings import SERVER_ADDRESS
 from mos_tests.settings import SSH_CREDENTIALS
 
 logger = logging.getLogger(__name__)
+
+
+# Define pytest plugins to use
+pytest_plugins = ("mos_tests.plugins.incremental",
+                  "mos_tests.plugins.testrail_id")
 
 
 def pytest_addoption(parser):
@@ -379,29 +383,6 @@ def devops_requirements(request, env_name):
             DevopsClient.get_env(env_name=env_name)
         except Exception:
             pytest.skip('requires devops env to be defined')
-
-
-def pytest_collection_modifyitems(config, items):
-    """Add marker to test name, if test marked with `testrail_id` marker
-
-    If optional argument `params` passed - test parameters should be a
-    superset of `params` to mark be applied
-    """
-    for item in items:
-        markers = item.get_marker('testrail_id') or []
-        suffix_string = ''
-        for marker in markers:
-            test_id = marker.args[0]
-            params = marker.kwargs.get('params', {})
-            params_in_callspec = all(param in item.callspec.params.items()
-                                     for param in params.items())
-            if len(params) > 0 and not params_in_callspec:
-                continue
-            suffix_string = '[({})]'.format(test_id)
-            break
-        item.name += suffix_string
-        if item.cls is not None and issubclass(item.cls, unittest.TestCase):
-            setattr(item.cls, item.name, item.function)
 
 
 @pytest.yield_fixture
