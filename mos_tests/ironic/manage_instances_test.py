@@ -312,7 +312,7 @@ def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
-@pytest.mark.testrail_id('631916')
+@pytest.mark.testrail_id('631910')
 def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
                                       ironic_nodes, os_conn, env):
     """Boot Ubuntu14-based virtual-bare-metal instance with user-data
@@ -443,6 +443,7 @@ def test_boot_nodes_consequently(env, os_conn, ironic, ubuntu_image, flavors,
             remote.check_call('uname')
 
 
+@pytest.mark.testrail_id('631914')
 @pytest.mark.parametrize('ironic_nodes', [1], indirect=['ironic_nodes'])
 @pytest.mark.usefixtures('ironic_nodes', 'env2_ironic_node')
 def test_deploy_baremetal_nodes_on_2_envs(
