@@ -83,6 +83,7 @@ class OpenStackActions(object):
                                                  endpoint_type='publicURL')
         token = self.session.get_token()
         self.heat = HeatClient(endpoint=endpoint_url, token=token)
+
         self.env = env
 
     def _get_cirros_image(self):
@@ -729,8 +730,8 @@ class OpenStackActions(object):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
         with self._get_controller().ssh() as remote:
             return os_cli.OpenStack(remote).user_create(name=name,
-                                                       password=password,
-                                                       tenant=tenant)
+                                                        password=password,
+                                                        tenant=tenant)
 
     def user_delete(self, name):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
