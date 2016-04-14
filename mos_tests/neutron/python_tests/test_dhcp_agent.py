@@ -56,7 +56,7 @@ class TestDHCPAgent(TestBase):
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
-    def create_50_networks(self, ):
+    def create_networks(self, net_number):
         tenant = self.os_conn.neutron.get_quotas_tenant()
         tenant_id = tenant['tenant']['tenant_id']
         self.os_conn.neutron.update_quota(tenant_id, {'quota':
@@ -64,10 +64,7 @@ class TestDHCPAgent(TestBase):
                                                        'router': 50,
                                                        'subnet': 50,
                                                        'port': 150}})
-        # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 34 nets
-        # can be created for one tenant. Need to clarify that situation.
-        for x in range(29):
+        for x in range(net_number):
             net_id = self.os_conn.add_net(self.router['id'])
             self.networks.append(net_id)
             logger.info('Total networks created at the moment {}'.format(
@@ -101,7 +98,10 @@ class TestDHCPAgent(TestBase):
         """
 
         # Create 50 networks, launch and terminate instances
-        self.create_50_networks()
+        # According to the test requirements 50 networks should be created
+        # However during implementation found that only about 34 nets
+        # can be created for one tenant. Need to clarify that situation.
+        self.create_networks(29)
 
         # Count networks for each dhcp agent
         # Each agent should contain networks
@@ -306,7 +306,10 @@ class TestDHCPAgent(TestBase):
         """
 
         # Create 50 networks, launch and terminate instances
-        self.create_50_networks()
+        # According to the test requirements 50 networks should be created
+        # However during implementation found that only about 34 nets
+        # can be created for one tenant. Need to clarify that situation.
+        self.create_networks(29)
 
         # Get amount of DHCP agents for the net9
         net_id = self.networks[8]
