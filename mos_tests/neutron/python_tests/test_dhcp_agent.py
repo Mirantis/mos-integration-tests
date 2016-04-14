@@ -282,9 +282,10 @@ class TestDHCPAgent(TestBase):
         # Run udhcp again
         self.run_udhcpc_on_vm(srv)
 
+    @pytest.mark.testrail_id('843830')
     def test_to_check_dhcp_agents_after_disable_service(self):
-        """[Neutron VLAN and VXLAN] Check dhcp-agents work
-        after restart service
+        """[Neutron VLAN and VXLAN] Check that no redundant DHCP agents
+        assigned to the network after DHCP agents restart.
 
         Steps:
             1. Update quotas for creation a lot of networks:
