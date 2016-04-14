@@ -1240,6 +1240,7 @@ class TestDVRRegression(TestDVRBase):
                                              self.logs_path))['exit_code']
                 assert res == 0
 
+    @pytest.mark.testrail_id('843828')
     @pytest.mark.usefixtures('prepare_neutron_logs')
     def test_add_router_interface_with_port_id(self):
         """Add router interface with port_id parameter

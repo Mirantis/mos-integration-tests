@@ -14,25 +14,26 @@
 
 import csv
 import logging
-import os
 
 import pytest
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
 from mos_tests.neutron.python_tests import base
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
+BOOT_MARKER = 'INSTANCE BOOT COMPLETED'
 
 
 def wait_instances_to_boot(os_conn, instances):
-    common.wait(lambda: all([os_conn.is_server_active(x) for x in instances]),
+    common.wait(lambda: all(os_conn.is_server_active(x) for x in instances),
                 timeout_seconds=5 * 60,
                 waiting_for="instances became to active state")
     common.wait(
-        lambda: all([os_conn.is_server_ssh_ready(x) for x in instances]),
+        lambda: all(BOOT_MARKER in x.get_console_output() for x in instances),
         timeout_seconds=5 * 60,
-        waiting_for="instances to be ssh ready")
+        waiting_for="instances to be ready")
 
 
 @pytest.mark.check_env_('is_qos_enabled')
@@ -47,12 +48,10 @@ class TestQoSBase(base.TestBase):
     @pytest.fixture
     def iperf_image_id(self, os_conn):
         logger.info('Creating ubuntu image')
-        image_path = os.path.join(settings.TEST_IMAGE_PATH,
-                                  settings.UBUNTU_IPERF_QCOW2)
         image = os_conn.glance.images.create(name="image_ubuntu",
                                              disk_format='qcow2',
                                              container_format='bare')
-        with open(image_path, 'rb') as f:
+        with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
             os_conn.glance.images.upload(image.id, f)
 
         logger.info('Ubuntu image created')
@@ -74,11 +73,15 @@ class TestQoSBase(base.TestBase):
         os_conn.router_interface_add(router_id=self.router['router']['id'],
                                      subnet_id=self.subnet['subnet']['id'])
 
-    def boot_iperf_instance(self, name, compute_node, net):
+    def boot_iperf_instance(self, name, compute_node, net, udp=False):
         userdata = (
             '#!/bin/bash -v\n'
-            'iperf -s -p 5002 -D'
-        )  # yapf: disable
+            'apt-get install -yq iperf\n'
+            'echo "{marker}"\n'
+            'iperf {udp_flag} -s -p 5002 <&- > /tmp/iperf.log 2>&1'
+        ).format(marker=BOOT_MARKER,
+                 udp_flag='-u' if udp else '')  # yapf: disable
+
         return self.os_conn.create_server(
             name=name,
             availability_zone='{}:{}'.format(self.zone.zoneName, compute_node),
@@ -94,18 +97,32 @@ class TestQoSBase(base.TestBase):
     def get_iperf_result(self,
                          remote,
                          server_ip,
-                         time=60,
-                         interval=10,
-                         port=5002):
-        result = remote.check_call(
-            'iperf -c {ip} -p {port} -y C -t {time} -i {interval}'.format(
-                ip=server_ip,
-                port=port,
-                time=time,
-                interval=interval))
+                         time=80,
+                         interval=20,
+                         port=5002,
+                         udp=False):
+        interval = min(interval, time)
+        if udp:
+            cmd = ('iperf -u -c {ip} -p {port} -x CDMS -y C -t {time} '
+                   '-i {interval} --bandwidth 10M')
+        else:
+            cmd = 'iperf -c {ip} -p {port} -y C -t {time} -i {interval}'
+        result = remote.check_call(cmd.format(ip=server_ip,
+                                              port=port,
+                                              time=time,
+                                              interval=interval))
         assert not result['stderr'], 'Error during iperf execution, {}'.format(
             result)
-        reader = csv.reader(result['stdout'][:-1])
+        if udp:
+            # Show only server report
+            stdout = result['stdout'][-1:]
+        else:
+            # Exclude summary
+            stdout = result['stdout'][:-1]
+            # Strip first result, because it almost always too high
+            if len(stdout) > 1:
+                stdout = stdout[1:]
+        reader = csv.reader(stdout)
         for line in reader:
             yield line
 
@@ -117,8 +134,8 @@ class TestQoSBase(base.TestBase):
                 username='ubuntu',
                 vm_keypair=self.instance_keypair) as remote:
             for line in self.get_iperf_result(remote, server_ip, **kwargs):
-                bandwidth = int(line[-1])
-                assert (limit / 2) < bandwidth < limit
+                bandwidth = int(line[8])
+                assert (limit / 2) < bandwidth <= limit
 
 
 @pytest.mark.check_env_('has_1_or_more_computes')
@@ -266,17 +283,9 @@ class TestTraficBetweenComputes(TestQoSBase):
         os_conn.neutron.update_port(
             port2['id'], {'port': {'qos_policy_id': policy2['policy']['id']}})
 
-        self.check_iperf_bandwidth(instance1,
-                                   instance2,
-                                   limit=3000 * 1024,
-                                   time=60,
-                                   interval=60)
+        self.check_iperf_bandwidth(instance1, instance2, limit=3000 * 1024)
 
-        self.check_iperf_bandwidth(instance2,
-                                   instance1,
-                                   limit=4000 * 1024,
-                                   time=60,
-                                   interval=60)
+        self.check_iperf_bandwidth(instance2, instance1, limit=4000 * 1024)
 
     @pytest.mark.testrail_id('838306')
     def test_create_net_with_policy(self, os_conn, variables, iperf_image_id):
@@ -401,11 +410,7 @@ class TestTraficBetweenComputes(TestQoSBase):
             port1['id'],
             {'port': {'qos_policy_id': port_policy['policy']['id']}})
 
-        self.check_iperf_bandwidth(instance1,
-                                   instance2,
-                                   limit=3000 * 1024,
-                                   time=60,
-                                   interval=20)
+        self.check_iperf_bandwidth(instance1, instance2, limit=3000 * 1024)
 
         # Update rule for port
         os_conn.neutron.update_bandwidth_limit_rule(
@@ -416,8 +421,91 @@ class TestTraficBetweenComputes(TestQoSBase):
                 }
             })
 
+        self.check_iperf_bandwidth(instance1, instance2, limit=6000 * 1024)
+
+
+@pytest.mark.check_env_('has_2_or_more_computes')
+class TestTraficBetween3Instances(TestQoSBase):
+    @pytest.fixture
+    def instances(self, request, variables, networks, iperf_image_id, os_conn):
+        udp = request.param or False
+        instances = []
+        compute_nodes = self.zone.hosts.keys()[:2]
+        compute_nodes.insert(0, compute_nodes[0])
+        for i, node in enumerate(compute_nodes):
+            instance = self.boot_iperf_instance(name='server%02d' % i,
+                                                compute_node=node,
+                                                net=self.net,
+                                                udp=udp)
+            instances.append(instance)
+        wait_instances_to_boot(os_conn, instances)
+        return instances
+
+    @pytest.mark.testrail_id('838299', udp=False)
+    @pytest.mark.testrail_id('839064', udp=True)
+    @pytest.mark.parametrize('instances, udp',
+                             [(False, False), (True, True)],
+                             indirect=['instances'])
+    def test_traffic_for_one_vm_and_2_another(self, instances, os_conn, udp):
+        """Check traffic restriction for one vm between two vms in one net
+
+        Scenario:
+            1. Create net01, subnet
+            2. Create router01, set gateway and add interface to net01
+            3. Boot ubuntu vm1 in net01 on compute-1
+            4. Boot ubuntu vm2 in net01 on compute-1
+            5. Boot ubuntu vm3 in net01 on compute-2
+            6. Start iperf between vm1 and vm2
+            7. Look on the traffic with nload on vm port on compute-1
+            8. Start iperf between vm1 and vm3
+            9. Look on the traffic with nload on vm port on compute-1
+            10. Create new policy: neutron qos-policy-create bw-limiter
+            11. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id bw-limiter \
+                --max-kbps 3000
+            12. Find neutron port for vm1: Neutron port-list | grep <vm1 ip>
+            13. Update port with new policy:
+                neutron port-update your-port-id --qos-policy bw-limiter
+            14. Check in nload that traffic changed properly
+        """
+
+        instance1, instance2, instance3 = instances
+
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1,
+                                       instance2,
+                                       limit=3000 * 1024,
+                                       time=10,
+                                       udp=udp)
+
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1,
+                                       instance3,
+                                       limit=3000 * 1024,
+                                       time=10,
+                                       udp=udp)
+
+        # Create policy for port
+        instance1_ip = os_conn.get_nova_instance_ips(instance1)['fixed']
+        port1 = os_conn.get_port_by_fixed_ip(instance1_ip)
+        port_policy = os_conn.create_qos_policy('policy_2')
+        os_conn.neutron.create_bandwidth_limit_rule(
+            port_policy['policy']['id'], {
+                'bandwidth_limit_rule': {
+                    'max_kbps': 3000,
+                }
+            })
+
+        os_conn.neutron.update_port(
+            port1['id'],
+            {'port': {'qos_policy_id': port_policy['policy']['id']}})
+
         self.check_iperf_bandwidth(instance1,
                                    instance2,
-                                   limit=6000 * 1024,
-                                   time=60,
-                                   interval=20)
+                                   limit=3000 * 1024,
+                                   udp=udp)
+
+        self.check_iperf_bandwidth(instance1,
+                                   instance3,
+                                   limit=3000 * 1024,
+                                   udp=udp)
