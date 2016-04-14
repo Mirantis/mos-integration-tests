@@ -17,7 +17,6 @@ import logging
 import os
 import paramiko
 import posixpath
-import select
 import stat
 import time
 
@@ -227,17 +226,21 @@ class SSHClient(object):
     def execute(self, command, verbose=True, merge_stderr=False):
         chan, stdin, stdout, stderr = self.execute_async(
             command, merge_stderr=merge_stderr)
-        stdout_string, stderr_string = '', ''
+        output = {'stdout': '', 'stderr': ''}
+
+        def read_from_chan():
+            while chan.recv_ready():
+                output['stdout'] += chan.recv(1024)
+            while chan.recv_stderr_ready():
+                output['stderr'] += chan.recv_stderr(1024)
+
         while not chan.exit_status_ready():
-            rl, wl, xl = select.select([chan], [], [], 0.0)
-            for ch in rl:
-                if ch.recv_ready():
-                    stdout_string += ch.recv(1024)
-                if ch.recv_stderr_ready():
-                    stderr_string += ch.recv_stderr(1024)
+            read_from_chan()
+
+        read_from_chan()
         result = CommandResult({
-            'stdout': stdout_string.splitlines(True),
-            'stderr': stderr_string.splitlines(True),
+            'stdout': output['stdout'].splitlines(True),
+            'stderr': output['stderr'].splitlines(True),
             'exit_code': chan.recv_exit_status()
         })
         stdin.close()

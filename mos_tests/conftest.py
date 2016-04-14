@@ -431,11 +431,12 @@ def pytest_collection_modifyitems(config, items):
         suffix_string = ''
         for marker in markers:
             test_id = marker.args[0]
-            params = marker.kwargs.get('params', {})
+            params = marker.kwargs.get('params', marker.kwargs)
             if len(params) > 0:
                 if not hasattr(item, 'callspec'):
-                    raise Exception("testrail_id decorator with 'param' "
-                                    "requires parametrizing of test method")
+                    raise Exception("testrail_id decorator with filter "
+                                    "parameters requires parametrizing "
+                                    "of test method")
                 params_in_callspec = all(param in item.callspec.params.items()
                                          for param in params.items())
                 if not params_in_callspec:
