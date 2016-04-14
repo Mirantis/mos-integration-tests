@@ -12,14 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 import random
 import socket
 import telnetlib
-import time
-import yaml
 
 from mos_tests.functions.common import wait
+from muranoclient.v1.client import Client as MuranoClient
 
 
 class MuranoActions(object):
@@ -27,35 +25,38 @@ class MuranoActions(object):
 
     def __init__(self, os_conn):
         self.os_conn = os_conn
+        self.murano_endpoint = os_conn.session.get_endpoint(
+            service_type='application-catalog', endpoint_type='publicURL')
+        self.murano = MuranoClient(endpoint=self.murano_endpoint,
+                                   token=os_conn.session.get_token(),
+                                   cacert=os_conn.path_to_cert)
 
     def rand_name(self, name):
         return name + '_' + str(random.randint(1, 0x7fffffff))
 
     def create_service(self, environment, session, json_data, to_json=True):
-        service = self.os_conn.murano.services.post(environment.id, path='/',
-                                                    data=json_data,
-                                                    session_id=session.id)
-        if to_json:
-            service = service.to_dict()
-            service = json.dumps(service)
-            return yaml.load(service)
-        else:
-            return service
+        service = self.murano.services.post(environment.id, path='/',
+                                            data=json_data,
+                                            session_id=session.id)
+        return service.to_dict()
 
-    def deploy_environment(self, environment, session):
-        self.os_conn.murano.sessions.deploy(environment.id, session.id)
-        try:
-            wait(lambda: self.os_conn.murano.environments.get(environment.id).
-                 status == 'ready',
-                 timeout_seconds=1500,
-                 waiting_for='Environment is ready')
-        except Exception:
-            raise Exception('Environment deploy finished with errors')
+    def wait_for_deploy(self, environment):
+        def is_murano_env_deployed():
+            status = self.murano.environments.get(environment.id).status
+            if status == 'deploy failure':
+                raise Exception('Environment deploy finished with errors')
+            return status == 'ready'
+        wait(is_murano_env_deployed, timeout_seconds=1200,
+             waiting_for='environment is ready')
 
-        environment = self.os_conn.murano.environments.get(environment.id)
+        environment = self.murano.environments.get(environment.id)
         logs = self.get_log(environment)
         assert 'Deployment finished' in logs
         return environment
+
+    def deploy_environment(self, environment, session):
+        self.murano.sessions.deploy(environment.id, session.id)
+        return self.wait_for_deploy(environment)
 
     def get_action_id(self, environment, name, service):
         env_data = environment.to_dict()
@@ -65,19 +66,8 @@ class MuranoActions(object):
                 return action_id
 
     def run_action(self, environment, action_id):
-        self.os_conn.murano.actions.call(environment.id, action_id)
-        try:
-            wait(lambda: self.os_conn.murano.environments.get(environment.id).
-                 status == 'ready',
-                 timeout_seconds=1500,
-                 waiting_for='Environment is ready')
-        except Exception:
-            raise Exception('Environment deploy finished with errors')
-
-        environment = self.os_conn.murano.environments.get(environment.id)
-        logs = self.get_log(environment)
-        assert 'Deployment finished' in logs
-        return environment
+        self.murano.actions.call(environment.id, action_id)
+        return self.wait_for_deploy(environment)
 
     def status_check(self, environment, configurations, kubernetes=False,
                      negative=False):
@@ -88,14 +78,10 @@ class MuranoActions(object):
                 ports = configuration[2:]
                 ip = self.get_k8s_ip_by_instance_name(environment, inst_name,
                                                       service_name)
-                if ip and ports and negative:
+                if ip:
                     for port in ports:
                         assert self.check_port_access(ip, port, negative)
                         assert self.check_k8s_deployment(ip, port, negative)
-                elif ip and ports:
-                    for port in ports:
-                        assert self.check_port_access(ip, port)
-                        assert self.check_k8s_deployment(ip, port)
                 else:
                     raise Exception("Instance {} doesn't have floating IP"
                                     .format(inst_name))
@@ -111,59 +97,31 @@ class MuranoActions(object):
                                     .format(inst_name))
 
     def check_port_access(self, ip, port, negative=False):
-        result = 1
-        start_time = time.time()
-        while time.time() - start_time < 600:
+        def is_port_accesible():
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             result = sock.connect_ex((str(ip), port))
             sock.close()
+            return result == 0
 
-            if result == 0 or negative:
-                break
-            time.sleep(5)
-        if negative:
-            assert result != 0, '{} port is opened on instance'.format(port)
-        else:
-            assert result == 0, '{} port is closed on instance'.format(port)
-        return True
+        return wait(lambda: not negative == is_port_accesible(),
+                    timeout_seconds=300, waiting_for='port access check')
 
     def check_k8s_deployment(self, ip, port, timeout=3600, negative=False):
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                self.verify_connection(ip, port, negative)
-                return True
-            except RuntimeError:
-                time.sleep(10)
-        raise Exception('Containers are not ready')
-
-    def verify_connection(self, ip, port, negative=False):
-        try:
+        def is_link_accesible():
             tn = telnetlib.Telnet(ip, port)
             tn.write('GET / HTTP/1.0\n\n')
             buf = tn.read_all()
-            if negative and len(buf) == 0:
-                return True
-            elif len(buf) != 0:
+            if len(buf) == 0:
+                return False
+            else:
                 tn.sock.sendall(telnetlib.IAC + telnetlib.NOP)
                 return True
-            else:
-                raise RuntimeError('Resource at {0}:{1} not exist'.
-                                   format(ip, port))
-        except socket.error as e:
-            raise RuntimeError('Found reset: {0}'.format(e))
+
+        return wait(lambda: not negative == is_link_accesible(),
+                    timeout_seconds=300, waiting_for='kubernetes access check')
 
     def get_k8s_ip_by_instance_name(self, environment, inst_name,
                                     service_name):
-        """Returns ip of specific kubernetes node (gateway, master, minion)
-        based. Search depends on service name of kubernetes and names of
-        spawned instances
-        :param environment: Murano environment
-        :param inst_name: Name of instance or substring of instance name
-        :param service_name: Name of Kube Cluster application in Murano
-        environment
-        :return: Ip of Kubernetes instances
-        """
         for service in environment.services:
             if service_name in service['name']:
                 if "gateway" in inst_name:
@@ -179,26 +137,24 @@ class MuranoActions(object):
                             return minion['instance']['floatingIpAddress']
 
     def get_ip_by_instance_name(self, environment, inst_name):
-        """Returns ip of instance using instance name
-        :param environment: Murano environment
-        :param name: String, which is substring of name of instance or name of
-        instance
-        :return:
-        """
         for service in environment.services:
             if inst_name in service['instance']['name']:
                 return service['instance']['floatingIpAddress']
 
     def get_environment(self, environment):
-        return self.os_conn.murano.environments.get(environment.id)
+        return self.murano.environments.get(environment.id)
 
-    def check_instance(self, gateways_count, nodes_count):
+    def check_instances(self, gateways_count=0, nodes_count=0, docker_count=0):
         instance_list = self.os_conn.nova.servers.list()
-        names = ["master-1", "minion-1", "gateway-1"]
-        if gateways_count == 2:
-            names.append("gateway-2")
-        if nodes_count == 2:
-            names.append("minion-2")
+        names = []
+        if gateways_count and nodes_count:
+            names.append("master-1")
+            for i in range(gateways_count):
+                names.append("gateway-{}".format(i + 1))
+            for i in range(nodes_count):
+                names.append("minion-{}".format(i + 1))
+        if docker_count:
+            names.append("Docker")
         count = 0
         for instance in instance_list:
             for name in names:
@@ -209,12 +165,26 @@ class MuranoActions(object):
         assert count == len(names)
 
     def get_log(self, environment):
-        deployments = self.os_conn.murano.deployments.list(environment.id)
+        deployments = self.murano.deployments.list(environment.id)
         logs = []
         for deployment in deployments:
             if deployment.updated == environment.updated:
-                reports = self.os_conn.murano.deployments.reports(
+                reports = self.murano.deployments.reports(
                     environment.id, deployment.id)
                 for r in reports:
                     logs.append(r.text)
         return logs
+
+    def deployment_success_check(self, environment, *ports):
+        deployment = self.murano.deployments.list(environment.id)[-1]
+
+        assert deployment.state == 'success', \
+            'Deployment status is {0}'.format(deployment.state)
+
+        ip = environment.services[0]['instance']['floatingIpAddress']
+
+        if ip:
+            for port in ports:
+                self.check_port_access(ip, port)
+        else:
+            raise Exception('Docker Instance does not have floating IP')

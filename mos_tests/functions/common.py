@@ -15,6 +15,7 @@
 import inspect
 import logging
 import os
+import socket
 from tempfile import NamedTemporaryFile
 from time import sleep
 from time import time
@@ -655,3 +656,16 @@ def is_task_ready(task):
         return False
     else:
         raise Exception('Task is {0.status}. {0.data}'.format(task))
+
+
+def has_connect(ip, port=22, timeout=1):
+    """Return True, if port available and False otherwise"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.connect((ip, port))
+        return True
+    except Exception:
+        return False
+    finally:
+        s.close()

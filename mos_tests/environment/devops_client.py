@@ -130,6 +130,26 @@ class EnvProxy(object):
             result.update(dict.fromkeys(addresses, net.name))
         return result
 
+    def revert_snapshot(self, snapshot_name):
+        try:
+            logger.info("Reverting snapshot {0}".format(snapshot_name))
+            self.revert(snapshot_name, flag=False)
+            self.resume(verbose=False)
+            self.sync_time()
+        except Exception as e:
+            logger.error('Can\'t revert snapshot due to error: {}'.format(e))
+            raise
+
+    def sync_time(self):
+        with self.get_admin_remote() as remote:
+            slaves_count = len(self.nodes().all) - 1
+            logger.info("sync time on master")
+            remote.execute('hwclock --hctosys')
+            logger.info("sync time on {} slaves".format(slaves_count))
+            remote.execute('for i in {{1..{0}}}; '
+                           'do (ssh node-$i "hwclock --hctosys") done'.format(
+                               slaves_count))
+
 
 class DevopsClient(object):
     """Method to work with the virtual env over fuel-devops."""
@@ -148,14 +168,7 @@ class DevopsClient(object):
     def revert_snapshot(cls, env_name, snapshot_name):
         """Resume the env and revert the snapshot."""
         env = cls.get_env(env_name)
-        try:
-            logger.info("Reverting snapshot {0}".format(snapshot_name))
-            env.revert(snapshot_name, flag=False)
-            env.resume(verbose=False)
-            cls.sync_time(env)
-        except Exception as e:
-            logger.error('Can\'t revert snapshot due to error: {}'.format(e))
-            raise
+        return env.revert_snapshot(snapshot_name)
 
     @classmethod
     def get_admin_node_ip(cls, env_name):
@@ -171,17 +184,6 @@ class DevopsClient(object):
             master = env.get_nodes(role__in=('fuel_master', 'admin'))[0]
             admin_ip = master.get_ip_address_by_network_name('admin')
         return admin_ip
-
-    @classmethod
-    def sync_time(cls, env):
-        with env.get_admin_remote() as remote:
-            slaves_count = len(env.nodes().all) - 1
-            logger.info("sync time on master")
-            remote.execute('hwclock --hctosys')
-            logger.info("sync time on {} slaves".format(slaves_count))
-            remote.execute('for i in {{1..{0}}}; '
-                           'do (ssh node-$i "hwclock --hctosys") done'.format(
-                               slaves_count))
 
     @classmethod
     def get_node_by_mac(cls, env_name, mac, interface='admin'):

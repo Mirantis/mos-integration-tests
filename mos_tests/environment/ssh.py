@@ -17,6 +17,7 @@ import logging
 import os
 import paramiko
 import posixpath
+import select
 import stat
 import time
 
@@ -191,14 +192,14 @@ class SSHClient(object):
             self._proxy.settimeout(self.timeout)
         self.connect()
 
-    def check_call(self, command, verbose=False):
+    def check_call(self, command, verbose=True):
         ret = self.execute(command, verbose)
         if ret['exit_code'] != 0:
             raise CalledProcessError(command, ret['exit_code'],
                                      ret['stdout'] + ret['stderr'])
         return ret
 
-    def check_stderr(self, command, verbose=False):
+    def check_stderr(self, command, verbose=True):
         ret = self.check_call(command, verbose)
         if ret['stderr']:
             raise CalledProcessError(command, ret['exit_code'],
@@ -226,16 +227,19 @@ class SSHClient(object):
     def execute(self, command, verbose=True, merge_stderr=False):
         chan, stdin, stdout, stderr = self.execute_async(
             command, merge_stderr=merge_stderr)
+        stdout_string, stderr_string = '', ''
+        while not chan.exit_status_ready():
+            rl, wl, xl = select.select([chan], [], [], 0.0)
+            for ch in rl:
+                if ch.recv_ready():
+                    stdout_string += ch.recv(1024)
+                if ch.recv_stderr_ready():
+                    stderr_string += ch.recv_stderr(1024)
         result = CommandResult({
-            'stdout': [],
-            'stderr': [],
-            'exit_code': 0
+            'stdout': stdout_string.splitlines(True),
+            'stderr': stderr_string.splitlines(True),
+            'exit_code': chan.recv_exit_status()
         })
-        for line in stdout:
-            result['stdout'].append(line)
-        for line in stderr:
-            result['stderr'].append(line)
-        result['exit_code'] = chan.recv_exit_status()
         stdin.close()
         stdout.close()
         stderr.close()

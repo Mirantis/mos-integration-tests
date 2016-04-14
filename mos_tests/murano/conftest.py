@@ -20,9 +20,8 @@ from mos_tests.functions import os_cli
 from mos_tests.murano import actions
 
 
-flavor = 'm1.small'
-linux_image = 'debian-8-m-agent.qcow2'
-docker_image = 'debian-8-docker.qcow2'
+flavor = 'm1.medium'
+docker_image = 'ubuntu14.04-x64-docker'
 kubernetes_image = 'ubuntu14.04-x64-kubernetes'
 labels = "testkey=testvalue"
 
@@ -44,18 +43,18 @@ def openstack_client(controller_remote):
 
 
 @pytest.yield_fixture
-def environment(murano, os_conn):
-    environment = os_conn.murano.environments.create(
+def environment(murano, clear_old, package):
+    environment = murano.murano.environments.create(
         {'name': murano.rand_name('MuranoEnv')})
     yield environment
-    os_conn.murano.environments.delete(environment.id)
+    murano.murano.environments.delete(environment.id)
 
 
 @pytest.yield_fixture
-def session(os_conn, environment):
-    session = os_conn.murano.sessions.configure(environment.id)
+def session(murano, environment):
+    session = murano.murano.sessions.configure(environment.id)
     yield session
-    os_conn.murano.sessions.delete(environment.id, session.id)
+    murano.murano.sessions.delete(environment.id, session.id)
 
 
 @pytest.yield_fixture
@@ -71,6 +70,16 @@ def murano_cli(controller_remote):
 
 
 @pytest.fixture
+def clear_old(os_conn):
+    instance_list = os_conn.nova.servers.list()
+    names = ["master", "minion", "gateway", "Docker"]
+    for instance in instance_list:
+            for name in names:
+                if instance.name.find(name) > -1:
+                    instance.delete()
+
+
+@pytest.fixture
 def kubernetespod(murano_cli):
     fqn = 'io.murano.apps.docker.kubernetes.KubernetesPod'
     packages = murano_cli(
@@ -82,45 +91,41 @@ def kubernetespod(murano_cli):
 
 
 @pytest.fixture
-def grafana(murano_cli):
-    fqn = 'io.murano.apps.docker.DockerGrafana'
-    packages = murano_cli(
-        'package-import',
-        params='{0} --exists-action s'.format(fqn),
+def package(murano_cli, os_conn, request):
+    package_name = getattr(request, 'param', 'DockerGrafana')
+
+    fqn = 'io.murano.apps.docker.{}'.format(package_name)
+    murano_cli(
+        'package-import', params='{0} --exists-action s'.format(fqn),
         flags='--murano-repo-url=http://storage.apps.openstack.org').listing()
-    package = [x for x in packages if x['FQN'] == fqn][0]
-    return package
 
 
 @pytest.fixture
-def dockerhttpd_package(murano_cli):
-    fqn = 'io.murano.apps.docker.DockerHTTPd'
-    packages = murano_cli(
-        'package-import',
-        params='{0} --exists-action s'.format(fqn),
-        flags='--murano-repo-url=http://storage.apps.openstack.org').listing()
-    package = [x for x in packages if x['FQN'] == fqn][0]
-    return package
-
-
-@pytest.fixture
-def dockerhttpd(murano, environment, session, pod):
-    post_body = {
-        "host": pod,
-        "image": 'httpd',
-        "name": "HTTPd",
-        "port": 80,
-        "publish": True,
+def docker(murano, keypair, environment, session):
+    docker_data = {
+        "instance": {
+            "name": murano.rand_name("Docker"),
+            "assignFloatingIp": True,
+            "keyname": keypair.name,
+            "flavor": flavor,
+            "image": docker_image,
+            "availabilityZone": 'nova',
+            "?": {
+                "type": "io.murano.resources.LinuxMuranoInstance",
+                "id": str(uuid.uuid4())
+            },
+        },
+        "name": "DockerVM",
         "?": {
             "_{id}".format(id=uuid.uuid4().hex): {
-                "name": "Docker HTTPd"
+                "name": "Docker VM Service"
             },
-            "type": "io.murano.apps.docker.DockerHTTPd",
+            "type": "io.murano.apps.docker.DockerStandaloneHost",
             "id": str(uuid.uuid4())
         }
     }
-
-    return murano.create_service(environment, session, post_body)
+    docker = murano.create_service(environment, session, docker_data)
+    return docker
 
 
 @pytest.fixture

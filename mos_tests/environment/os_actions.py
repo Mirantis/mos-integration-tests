@@ -21,7 +21,6 @@ from heatclient.v1.client import Client as HeatClient
 from keystoneclient.auth.identity.v2 import Password as KeystonePassword
 from keystoneclient import session
 from keystoneclient.v2_0 import Client as KeystoneClient
-from muranoclient.v1.client import Client as MuranoClient
 from neutronclient.common.exceptions import NeutronClientException
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
@@ -84,10 +83,7 @@ class OpenStackActions(object):
                                                  endpoint_type='publicURL')
         token = self.session.get_token()
         self.heat = HeatClient(endpoint=endpoint_url, token=token)
-        murano_endpoint = self.session.get_endpoint(
-            service_type='application-catalog', endpoint_type='publicURL')
-        self.murano = MuranoClient(endpoint=murano_endpoint, token=token,
-                                   cacert=self.path_to_cert)
+
         self.env = env
 
     def _get_cirros_image(self):
@@ -152,6 +148,7 @@ class OpenStackActions(object):
 
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
+
         try:
             with self.ssh_to_instance(self.env, server, username='cirros',
                 password='cubswin:)'
@@ -250,10 +247,12 @@ class OpenStackActions(object):
     def get_l3_for_router(self, router_id):
         return self.neutron.list_l3_agent_hosting_routers(router_id)
 
-    def create_network(self, name, tenant_id=None):
+    def create_network(self, name, tenant_id=None, qos_policy_id=None):
         network = {'name': name, 'admin_state_up': True}
         if tenant_id is not None:
             network['tenant_id'] = tenant_id
+        if qos_policy_id is not None:
+            network['qos_policy_id'] = qos_policy_id
         return self.neutron.create_network({'network': network})
 
     def delete_network(self, id):
@@ -370,6 +369,21 @@ class OpenStackActions(object):
             'network_id': network_id
         }
         self.neutron.add_gateway_router(router_id, network)
+
+    def delete_router(self, router_id):
+        binded_ports = self.neutron.list_ports(
+            device_id=router_id, device_owner=u'network:router_interface'
+        )['ports']
+        for port in binded_ports:
+            self.neutron.remove_interface_router(router_id,
+                                                 {'port_id': port['id']})
+        self.neutron.delete_router(router_id)
+
+    def create_qos_policy(self, name):
+        return self.neutron.create_qos_policy({'policy': {'name': name}})
+
+    def delete_qos_policy(self, policy_id):
+        self.neutron.delete_qos_policy(policy_id)
 
     def create_sec_group_for_ssh(self):
         name = "test-sg" + str(random.randint(1, 0x7fffffff))
@@ -716,8 +730,8 @@ class OpenStackActions(object):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
         with self._get_controller().ssh() as remote:
             return os_cli.OpenStack(remote).user_create(name=name,
-                                                       password=password,
-                                                       tenant=tenant)
+                                                        password=password,
+                                                        tenant=tenant)
 
     def user_delete(self, name):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli

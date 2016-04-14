@@ -76,7 +76,7 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_runtest_teardown(item, nextitem):
-    setattr(item, "nextitem", nextitem)
+    setattr(item.session, "nextitem", nextitem)
 
 
 @pytest.fixture
@@ -124,11 +124,20 @@ def setup_session(request, env_name, snapshot_name):
     revert_snapshot(env_name, snapshot_name)
 
 
+def reinit_fixtures(request):
+    """Refresh some session fixtures (after revert, for example)"""
+    logger.info('refresh clients fixtures')
+    for fixture in ('fuel', 'env', 'os_conn'):
+        fixturedef = request._get_active_fixturedef(fixture)
+        fixturedef.cached_result = None
+        fixturedef.execute(request)
+
+
 @pytest.yield_fixture(autouse=True)
 def cleanup(request, env_name, snapshot_name):
     yield
     item = request.node
-    if item.nextitem is None:
+    if hasattr(item.session, 'nextitem') and item.session.nextitem is None:
         return
     test_results = [getattr(item, 'rep_{}'.format(name), None)
                     for name in ("setup", "call", "teardown")]
@@ -138,11 +147,14 @@ def cleanup(request, env_name, snapshot_name):
     skipped = any(x for x in test_results if x is not None and x.skipped)
     destructive = 'undestructive' not in item.keywords
     reverted = False
-    if failed or (not skipped and destructive):
+    if destructive and not skipped:
         if all([env_name, snapshot_name]):
             revert_snapshot(env_name, snapshot_name)
             reverted = True
-    setattr(item.nextitem, 'reverted', reverted)
+    setattr(request.session, 'reverted', reverted)
+
+    # reinitialize fixtures
+    reinit_fixtures(request)
 
 
 def get_fuel_client(fuel_ip):
@@ -181,13 +193,13 @@ def credentials(setup_session, fuel_master_ip):
                        cert=path_to_cert)
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def fuel(fuel_master_ip):
     """Initialized fuel client"""
     return get_fuel_client(fuel_master_ip)
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def env(request, fuel):
     """Environment instance"""
     names = request.config.getoption('--cluster')
@@ -199,11 +211,9 @@ def env(request, fuel):
             raise Exception(
                 "Can't find fuel cluster with name in {}".format(names))
         env = envs[0]
-    if getattr(request.node, 'reverted',
-               getattr(request.session, 'reverted', True)):
+    if getattr(request.session, 'reverted', True):
         env.wait_for_ostf_pass()
-        os_conn = get_os_conn(env)
-        wait(os_conn.is_nova_ready,
+        wait(env.os_conn.is_nova_ready,
              timeout_seconds=60 * 5,
              expected_exceptions=Exception,
              waiting_for="OpenStack nova computes is ready")
@@ -234,13 +244,13 @@ def os_conn_for_unittests(request, fuel_master_ip):
     fuel_client = get_fuel_client(fuel_master_ip)
     environment = fuel_client.get_last_created_cluster()
     request.cls.env = environment
-    request.cls.os_conn = get_os_conn(environment)
+    request.cls.os_conn = environment.os_conn
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def os_conn(env):
     """Openstack common actions"""
-    return get_os_conn(env)
+    return env.os_conn
 
 
 @pytest.fixture
@@ -348,6 +358,11 @@ def is_ironic_enabled(env):
 def is_ceph_enabled(env):
     data = env.get_settings_data()['editable']['storage']
     return data['volumes_ceph']['value']
+
+
+def is_qos_enabled(env):
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_qos']['value']
 
 
 @pytest.fixture(autouse=True)
