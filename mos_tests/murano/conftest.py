@@ -338,3 +338,32 @@ def influx(murano, environment, session, pod):
         }
     }
     return murano.create_service(environment, session, post_body)
+
+
+@pytest.fixture
+def dockerhttpd_package(murano_cli):
+    fqn = 'io.murano.apps.docker.DockerHTTPd'
+    murano_cli(
+        'package-import',
+        params='{0} --exists-action s'.format(fqn),
+        flags='--murano-repo-url=http://storage.apps.openstack.org').listing()
+
+
+@pytest.fixture
+def dockerhttpd(murano, environment, dockerhttpd_package, session, pod):
+    post_body = {
+        "host": pod,
+        "image": 'httpd',
+        "name": "HTTPd",
+        "port": 80,
+        "publish": True,
+        "?": {
+            "_{id}".format(id=uuid.uuid4().hex): {
+                "name": "Docker HTTPd"
+            },
+            "type": "io.murano.apps.docker.DockerHTTPd",
+            "id": str(uuid.uuid4())
+        }
+    }
+
+    return murano.create_service(environment, session, post_body)
