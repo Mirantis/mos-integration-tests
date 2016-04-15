@@ -17,12 +17,90 @@
 import pytest
 
 from glanceclient.exc import Forbidden
+from six.moves import configparser
+from tempest.lib.cli import output_parser as parser
 
+from mos_tests.functions import common
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
 
 class TestGlanceSecurity(TestBase):
+
+    def change_glance_credentials(self, env, openstack_client):
+        """Change username and password for glance user"""
+
+        def change_credentials(node):
+            with node.ssh() as remote:
+                remote.check_call('mv /etc/glance/glance-api.conf '
+                                  '/etc/glance/glance-api.conf.orig')
+                with remote.open('/etc/glance/glance-api.conf.orig') as f:
+                    parser = configparser.RawConfigParser()
+                    parser.readfp(f)
+                    parser.set('keystone_authtoken', 'admin_user', 'glance-1')
+                    parser.set('keystone_authtoken', 'admin_password', 'test')
+                    with remote.open(
+                            '/etc/glance/glance-api.conf', 'w') as new:
+                        parser.write(new)
+
+                remote.check_call('mv /etc/glance/glance-swift.conf '
+                                  '/etc/glance/glance-swift.conf.orig')
+                with remote.open('/etc/glance/glance-swift.conf.orig') as f:
+                    parser = configparser.RawConfigParser()
+                    parser.readfp(f)
+                    parser.set('ref1', 'user', 'services:glance-1')
+                    parser.set('ref1', 'key', 'test')
+                    with remote.open(
+                            '/etc/glance/glance-swift.conf', 'w') as new:
+                        parser.write(new)
+
+                remote.check_call('service glance-api restart')
+
+        def wait_glance_alive():
+            common.wait(lambda:
+                        len(list(self.os_conn.glance.images.list())) > 0,
+                        timeout_seconds=60, waiting_for='glance available',
+                        expected_exceptions=Exception)
+
+        controllers = env.get_nodes_by_role('controller')
+        for controller in controllers:
+            change_credentials(controller)
+        openstack_client.user_set_new_name('glance', 'glance-1')
+        openstack_client.user_set_new_password('glance-1', 'test')
+        wait_glance_alive()
+
+    def restore_glance_credentials(self, env, openstack_client):
+        """Restore old username and password for glance user"""
+
+        def restore_credentials(node):
+            with node.ssh() as remote:
+                remote.check_call('mv /etc/glance/glance-api.conf.orig '
+                                  '/etc/glance/glance-api.conf')
+                remote.check_call('mv /etc/glance/glance-swift.conf.orig '
+                                  '/etc/glance/glance-swift.conf')
+                remote.check_call('service glance-api restart')
+
+        def get_old_password(node):
+            with node.ssh() as remote:
+                with remote.open('/etc/glance/glance-swift.conf') as f:
+                    parser = configparser.RawConfigParser()
+                    parser.readfp(f)
+                    old_passwd = parser.get('ref1', 'key')
+            return old_passwd
+
+        def wait_glance_alive():
+            common.wait(lambda:
+                        len(list(self.os_conn.glance.images.list())) > 0,
+                        timeout_seconds=60, waiting_for='glance available',
+                        expected_exceptions=Exception)
+
+        controllers = env.get_nodes_by_role('controller')
+        for controller in controllers:
+            restore_credentials(controller)
+        openstack_client.user_set_new_name('glance-1', 'glance')
+        openstack_client.user_set_new_password(
+                'glance', get_old_password(controllers[0]))
+        wait_glance_alive()
 
     @pytest.mark.testrail_id('836638')
     @pytest.mark.usefixtures('enable_multiple_locations_glance')
@@ -140,3 +218,42 @@ class TestGlanceSecurity(TestBase):
         self.os_conn.glance.images.delete(image.id)
         images_id = [i.id for i in self.os_conn.glance.images.list()]
         assert image.id not in images_id
+
+    @pytest.mark.testrail_id('836637')
+    @pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+    def test_download_image_if_change_credentials(self, glance_remote, suffix,
+                                                  image_file_remote,
+                                                  env, openstack_client):
+        """Check that if create image and then change glance username and
+        password, it will be possible to download this image successfully
+
+        Scenario:
+            1. Create image from `image_file`
+            2. Check that image status is `active`
+            3. Change glance credentials into keystone, glance-api.conf,
+            glance-swift.conf and restart glance-api service on all controllers
+            4. Check that downloading of image executed without errors
+            5. Delete image
+            6. Check that image deleted
+            7. Restore glance credentials
+            8. Delete downloaded image file
+        """
+        name = "Test_{0}".format(suffix[:6])
+        cmd = ('image-create --name {name} --container-format bare '
+               '--disk-format qcow2 --file {source} --progress'.format(
+                   name=name,
+                   source=image_file_remote))
+
+        image = parser.details(glance_remote(cmd))
+        assert image['status'] == 'active'
+
+        self.change_glance_credentials(env, openstack_client)
+
+        glance_remote('image-download {id} >> /dev/null'.format(**image))
+
+        glance_remote('image-delete {id}'.format(**image))
+
+        image_list = parser.listing(glance_remote('image-list'))
+        assert image['id'] not in [x['ID'] for x in image_list]
+
+        self.restore_glance_credentials(env, openstack_client)
