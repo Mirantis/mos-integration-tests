@@ -103,6 +103,16 @@ class OpenStack(CLICLient):
                 name=role_name, user=user, project=project))
         return self.details(output)
 
+    def user_set_new_name(self, name, new_name):
+        params = '{name} --name {new_name}'.format(
+            name=name, new_name=new_name)
+        return self('user set', params=params)
+
+    def user_set_new_password(self, name, new_password):
+        params = '{name} --password {password}'.format(
+            name=name, password=new_password)
+        return self('user set', params=params)
+
 
 class Glance(CLICLient):
     command = 'glance'
