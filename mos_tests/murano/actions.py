@@ -15,6 +15,7 @@
 import random
 import socket
 import telnetlib
+import uuid
 
 from mos_tests.functions.common import wait
 from muranoclient.v1.client import Client as MuranoClient
@@ -34,11 +35,15 @@ class MuranoActions(object):
     def rand_name(self, name):
         return name + '_' + str(random.randint(1, 0x7fffffff))
 
-    def create_service(self, environment, session, json_data, to_json=True):
-        service = self.murano.services.post(environment.id, path='/',
-                                            data=json_data,
-                                            session_id=session.id)
+    def create_service(self, environment, session, json_data):
+        service = self.murano.services.post(
+            environment.id, path='/', data=json_data, session_id=session.id)
         return service.to_dict()
+
+    def delete_service(self, environment, session, service):
+        self.murano.services.delete(
+            environment.id, path='/{0}'.format(service['?']['id']),
+            session_id=session.id)
 
     def wait_for_deploy(self, environment):
         def is_murano_env_deployed():
@@ -97,28 +102,31 @@ class MuranoActions(object):
                                     .format(inst_name))
 
     def check_port_access(self, ip, port, negative=False):
-        def is_port_accesible():
+        def is_port_accessible():
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             result = sock.connect_ex((str(ip), port))
             sock.close()
             return result == 0
 
-        return wait(lambda: not negative == is_port_accesible(),
+        return wait(lambda: not negative == is_port_accessible(),
                     timeout_seconds=300, waiting_for='port access check')
 
-    def check_k8s_deployment(self, ip, port, timeout=3600, negative=False):
-        def is_link_accesible():
-            tn = telnetlib.Telnet(ip, port)
-            tn.write('GET / HTTP/1.0\n\n')
-            buf = tn.read_all()
-            if len(buf) == 0:
-                return False
-            else:
-                tn.sock.sendall(telnetlib.IAC + telnetlib.NOP)
-                return True
+    def check_k8s_deployment(self, ip, port, negative=False):
+        def is_link_accessible():
+            try:
+                tn = telnetlib.Telnet(ip, port)
+                tn.write('GET / HTTP/1.0\n\n')
+                buf = tn.read_all()
+                if len(buf) != 0:
+                    tn.sock.sendall(telnetlib.IAC + telnetlib.NOP)
+                    return True
+            except socket.error:
+                    return False
+            return False
 
-        return wait(lambda: not negative == is_link_accesible(),
-                    timeout_seconds=300, waiting_for='kubernetes access check')
+        return wait(lambda: not negative == is_link_accessible(),
+                    timeout_seconds=300,
+                    waiting_for='kubernetes access check')
 
     def get_k8s_ip_by_instance_name(self, environment, inst_name,
                                     service_name):
@@ -175,7 +183,7 @@ class MuranoActions(object):
                     logs.append(r.text)
         return logs
 
-    def deployment_success_check(self, environment, *ports):
+    def deployment_success_check(self, environment, ports):
         deployment = self.murano.deployments.list(environment.id)[-1]
 
         assert deployment.state == 'success', \
@@ -188,3 +196,288 @@ class MuranoActions(object):
                 self.check_port_access(ip, port)
         else:
             raise Exception('Docker Instance does not have floating IP')
+
+    def create_session(self, environment):
+        return self.murano.sessions.configure(environment.id)
+
+    def influxdb(self, host, name='Influx', db='db1;db2'):
+        post_body = {
+            "host": host,
+            "image": 'tutum/influxdb',
+            "name": name,
+            "interfacePort": 8083,
+            "apiPort": 8086,
+            "preCreateDB": db,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker InfluxDB"
+                },
+                "type": "io.murano.apps.docker.DockerInfluxDB",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def grafana(self, host, influx_service):
+        post_body = {
+            "host": host,
+            "image": 'tutum/grafana',
+            "name": "Grafana",
+            "port": 80,
+            "influxDB": influx_service,
+            "grafanaUser": self.rand_name("user"),
+            "grafanaPassword": self.rand_name("pass"),
+            "dbName": self.rand_name("base"),
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Grafana"
+                },
+                "type": "io.murano.apps.docker.DockerGrafana",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def mongodb(self, host):
+        post_body = {
+            "host": host,
+            "name": "Mongo",
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker MongoDB"
+                },
+                "type": "io.murano.apps.docker.DockerMongoDB",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def nginx(self, host):
+        post_body = {
+            "host": host,
+            "image": 'nginx',
+            "name": "Nginx",
+            "port": 80,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Nginx"
+                },
+                "type": "io.murano.apps.docker.DockerNginx",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def glassfish(self, host):
+        post_body = {
+            "host": host,
+            "image": 'tutum/glassfish',
+            "name": "Glass",
+            "password": self.rand_name("O5t@"),
+            "adminPort": 4848,
+            "httpPort": 8080,
+            "httpsPort": 8181,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker GlassFish"
+                },
+                "type": "io.murano.apps.docker.DockerGlassFish",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def mariadb(self, host):
+        post_body = {
+            "host": host,
+            "image": 'tutum/mariadb',
+            "name": "MariaDB",
+            "port": 3306,
+            "password": self.rand_name("O5t@"),
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker MariaDB"
+                },
+                "type": "io.murano.apps.docker.DockerMariaDB",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def mysql(self, host):
+        post_body = {
+            "host": host,
+            "image": 'mysql',
+            "name": "MySQL",
+            "port": 3306,
+            "password": self.rand_name("O5t@"),
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker MySQL"
+                },
+                "type": "io.murano.apps.docker.DockerMySQL",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def jenkins(self, host):
+        post_body = {
+            "host": host,
+            "image": 'jenkins',
+            "name": "Jenkins",
+            "port": 8080,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Jenkins"
+                },
+                "type": "io.murano.apps.docker.DockerJenkins",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def postgres(self, host):
+        post_body = {
+            "host": host,
+            "image": 'postgres',
+            "name": "Postgres",
+            "port": 5432,
+            "password": self.rand_name("O5t@"),
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker PostgreSQL"
+                },
+                "type": "io.murano.apps.docker.DockerPostgreSQL",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def crate(self, host):
+        post_body = {
+            "host": host,
+            "name": "Crate",
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Crate"
+                },
+                "type": "io.murano.apps.docker.DockerCrate",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def redis(self, host):
+        post_body = {
+            "host": host,
+            "image": 'redis',
+            "name": "Redis",
+            "port": 6379,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Redis"
+                },
+                "type": "io.murano.apps.docker.DockerRedis",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def tomcat(self, host):
+        post_body = {
+            "host": host,
+            "image": 'tutum/tomcat',
+            "name": "Tomcat",
+            "port": 8080,
+            "password": self.rand_name("O5t@"),
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Tomcat"
+                },
+                "type": "io.murano.apps.docker.DockerTomcat",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def httpd(self, host):
+        post_body = {
+            "host": host,
+            "image": 'httpd',
+            "name": "HTTPd",
+            "port": 80,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker HTTPd"
+                },
+                "type": "io.murano.apps.docker.DockerHTTPd",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def httpd_site(self, host):
+        post_body = {
+            "host": host,
+            "image": 'httpd',
+            "name": "HTTPdS",
+            "port": 80,
+            "publish": True,
+            "siteRepo": "https://github.com/gabrielecirulli/2048.git",
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker HTTPd"
+                },
+                "type": "io.murano.apps.docker.DockerHTTPdSite",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def nginx_site(self, host):
+        post_body = {
+            "host": host,
+            "image": 'nginx',
+            "name": "NginxS",
+            "port": 80,
+            "siteRepo": 'https://github.com/gabrielecirulli/2048.git',
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Nginx Site"
+                },
+                "type": "io.murano.apps.docker.DockerNginxSite",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def pod(self, host, replicas):
+        post_body = {
+            "kubernetesCluster": host,
+            "labels": "testkey=testvalue",
+            "name": "testpodtwo",
+            "replicas": replicas,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Kubernetes Pod"
+                },
+                "type": "io.murano.apps.docker.kubernetes.KubernetesPod",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
