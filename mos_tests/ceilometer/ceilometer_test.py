@@ -16,7 +16,7 @@ import os
 
 import pytest
 
-from tempest_lib.cli import output_parser as parser
+from tempest.lib.cli import output_parser as parser
 
 
 def scripts_dir_path():

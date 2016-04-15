@@ -163,6 +163,7 @@ def ironic_node(baremetal_node, os_conn, ironic, server_ssh_credentials):
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
+@pytest.mark.testrail_id('631921')
 def test_reboot_conductor(env, ironic, os_conn, ironic_node, ubuntu_image,
                           flavor, keypair, env_name):
     """Check ironic state after restart conductor node
