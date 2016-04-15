@@ -9,6 +9,7 @@ import random
 import uuid
 
 from oslo_config import cfg
+from six.moves import range
 
 from ceilometer.storage import impl_mongodb
 
@@ -64,12 +65,12 @@ sample_dict = {"counter_name": "instance",
 
 
 def create_resources(resources_count=5000):
-    return [str(uuid.uuid4()) for _ in xrange(resources_count)]
+    return [str(uuid.uuid4()) for _ in range(resources_count)]
 
 
 def record_samples(samples_count=50000, resources_count=5000,
                    conf=None):
-    print ('%s. %s. Start record samples' % (
+    print('%s. %s. Start record samples' % (
         datetime.datetime.utcnow(),
         multiprocessing.current_process().name))
     cfg.CONF(["--config-file", "/etc/ceilometer/ceilometer.conf"],
@@ -134,7 +135,7 @@ def record_samples(samples_count=50000, resources_count=5000,
         db.meter.insert(batch)
     if resource_batch:
         db.resource.insert(resource_batch)
-    print ("%s. %s. Writed %s samples and %s resources" % (
+    print("%s. %s. Writed %s samples and %s resources" % (
         datetime.datetime.utcnow(),
         multiprocessing.current_process().name,
         samples_count, resources_count))
@@ -160,8 +161,8 @@ def main():
                         type=str,
                         default="cpu_util")
     args = parser.parse_args()
-    users = [uuid.uuid4().hex for _ in xrange(args.users)]
-    projects = [uuid.uuid4().hex for _ in xrange(args.projects)]
+    users = [uuid.uuid4().hex for _ in range(args.users)]
+    projects = [uuid.uuid4().hex for _ in range(args.projects)]
     meters = [args.meter]
     interval = 30
     for user, project, meter in itertools.product(users, projects, meters):
