@@ -56,28 +56,6 @@ class TestDHCPAgent(TestBase):
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
-    def create_networks(self, net_number):
-        tenant = self.os_conn.neutron.get_quotas_tenant()
-        tenant_id = tenant['tenant']['tenant_id']
-        self.os_conn.neutron.update_quota(tenant_id, {'quota':
-                                                      {'network': 50,
-                                                       'router': 50,
-                                                       'subnet': 50,
-                                                       'port': 150}})
-        for x in range(net_number):
-            net_id = self.os_conn.add_net(self.router['id'])
-            self.networks.append(net_id)
-            logger.info('Total networks created at the moment {}'.format(
-                        len(self.networks)))
-            srv = self.os_conn.create_server(
-                name='instanceNo{}'.format(x),
-                key_name=self.instance_keypair.name,
-                security_groups=[self.security_group.name],
-                nics=[{'net-id': net_id}],
-                wait_for_avaliable=False)
-            logger.info('Delete the server {}'.format(srv.name))
-            self.os_conn.nova.servers.delete(srv)
-
     @pytest.mark.testrail_id('542614')
     def test_to_check_dhcp_agents_work(self):
         """[Neutron VLAN and VXLAN] Check dhcp-agents work
@@ -101,7 +79,8 @@ class TestDHCPAgent(TestBase):
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        self.create_networks(29)
+        self.create_networks(29, self.router, self.networks,
+                             self.instance_keypair, self.security_group)
 
         # Count networks for each dhcp agent
         # Each agent should contain networks
@@ -310,7 +289,8 @@ class TestDHCPAgent(TestBase):
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        self.create_networks(29)
+        self.create_networks(29, self.router, self.networks,
+                             self.instance_keypair, self.security_group)
 
         # Get amount of DHCP agents for the net9
         net_id = self.networks[8]
