@@ -68,7 +68,7 @@ class CinderIntegrationTests(OpenStackTestCase):
         logger.info('Create 70 snapshots')
         count = 70
         initial_snapshot_lst = []
-        for num in xrange(count):
+        for num in range(count):
             logger.info('Creating {} snapshot'.format(num))
             snapshot_id = self.cinder.volume_snapshots \
                 .create(volume.id, name='1st_creation_{0}'.format(num))
@@ -89,7 +89,7 @@ class CinderIntegrationTests(OpenStackTestCase):
                     'of deletion')
         new_count = 50
         new_snapshot_lst = []
-        for num in xrange(new_count):
+        for num in range(new_count):
             logger.info('Creating {} snapshot'.format(num))
             snapshot_id = self.cinder.volume_snapshots \
                 .create(volume.id, name='2nd_creation_{0}'.format(num))

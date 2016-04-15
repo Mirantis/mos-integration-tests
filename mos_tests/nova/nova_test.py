@@ -240,7 +240,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         volumes = []
 
         # Creation using Cinder
-        for num in xrange(volume_count):
+        for num in range(volume_count):
             volumes.append(
                 self.cinder.volumes.create(
                     1, name='Volume_{}'.format(num + 1)))
@@ -276,7 +276,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         net_internal_id = net_dict["admin_internal_net"]
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for _ in xrange(count)]
+                             for _ in range(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
@@ -339,7 +339,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         net_internal_id = net_dict["admin_internal_net"]
 
         initial_volumes = self.cinder.volumes.list()
-        for i in xrange(count):
+        for i in range(count):
             common_functions.create_volume(self.cinder, image_id, size=1)
         self.volumes = [volume for volume in self.cinder.volumes.list()
                         if volume not in initial_volumes]
@@ -347,7 +347,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.assertEqual(len(self.volumes), 10, msg)
 
         self.floating_ips = [self.nova.floating_ips.create()
-                             for _ in xrange(count)]
+                             for _ in range(count)]
         fip_new = [fip_info.ip for fip_info in self.floating_ips]
         fip_all = [fip_info.ip for fip_info in self.nova.floating_ips.list()]
         for fip in fip_new:
