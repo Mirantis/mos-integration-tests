@@ -311,11 +311,11 @@ def test_pod_replication(env, os_conn, keypair, murano, environment, session,
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('pod', '2', indirect=['pod'])
+@pytest.mark.parametrize('action, exp_count', [('Up', 3), ('Down', 1)])
 @pytest.mark.testrail_id('836663', params={'action': 'Up'})
 @pytest.mark.testrail_id('836664', params={'action': 'Down'})
-@pytest.mark.parametrize('action', ['Up', 'Down'])
 def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
-                            session, cluster, pod, dockerhttpd):
+                            session, cluster, pod, dockerhttpd, exp_count):
     """Check "scalePodUp" & "scalePodDown" actions
     Scenario:
         1. Create Murano environment
@@ -352,9 +352,5 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
     with os_conn.ssh_to_instance(env, srv, vm_keypair=keypair,
                                  username='ubuntu') as remote:
         res = remote.check_call('sudo docker ps | grep httpd')['stdout']
-        if action == 'Up':
-            assert len(res) == 3, "{0} replicas instead of {1}".format(
-                len(res), 3)
-        elif action == 'Down':
-            assert len(res) == 1, "{0} replicas instead of {1}".format(
-                len(res), 1)
+        assert len(res) == exp_count, "{0} replicas instead of {1}".format(
+            len(res), exp_count)
