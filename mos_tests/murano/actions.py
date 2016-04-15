@@ -13,12 +13,17 @@
 #    under the License.
 
 import random
+import requests
 import socket
 import telnetlib
 import uuid
 
 from mos_tests.functions.common import wait
 from muranoclient.v1.client import Client as MuranoClient
+
+flavor = 'm1.medium'
+linux = 'debian-8-m-agent.qcow2'
+availability_zone = 'nova'
 
 
 class MuranoActions(object):
@@ -199,6 +204,18 @@ class MuranoActions(object):
 
     def create_session(self, environment):
         return self.murano.sessions.configure(environment.id)
+
+    def check_path(self, env, path, inst_name=None):
+        environment = env.manager.get(env.id)
+        if inst_name:
+            ip = self.get_ip_by_instance_name(environment, inst_name)
+        else:
+            ip = environment.services[0]['instance']['floatingIpAddress']
+        resp = requests.get('http://{0}/{1}'.format(ip, path))
+        if resp.status_code == 200:
+            pass
+        else:
+            self.fail("Service path unavailable")
 
     def influxdb(self, host, name='Influx', db='db1;db2'):
         post_body = {
@@ -477,6 +494,177 @@ class MuranoActions(object):
                     "name": "Kubernetes Pod"
                 },
                 "type": "io.murano.apps.docker.kubernetes.KubernetesPod",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def mysql_app(self, keypair):
+        post_body = {
+            "instance": {
+                "name": self.rand_name("testMurano"),
+                "flavor": flavor,
+                "image": linux,
+                "assignFloatingIp": True,
+                "keyname": keypair.id,
+                "availabilityZone": availability_zone,
+                "?": {
+                    "type": "io.murano.resources.LinuxMuranoInstance",
+                    "id": str(uuid.uuid4())
+                }
+            },
+            "database": "newbaseapp",
+            "username": "newuser",
+            "password": "n3wp@sSwd",
+            "name": "MySQL1",
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "MySQL"
+                },
+                "type": "io.murano.databases.MySql",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def wordpress(self, host, database):
+        post_body = {
+            "name": 'WordPress',
+            "server": host,
+            "database": database,
+            "dbName": "wordpress",
+            "dbUser": "wp_user",
+            "dbPassword": self.rand_name('P@s5'),
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "WordPress"
+                },
+                "type": "io.murano.apps.WordPress",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def apache(self, keypair):
+        post_body = {
+            "instance": {
+                "flavor": flavor,
+                "image": linux,
+                "assignFloatingIp": True,
+                "keyname": keypair.id,
+                "availabilityZone": availability_zone,
+                "?": {
+                    "type": "io.murano.resources.LinuxMuranoInstance",
+                    "id": str(uuid.uuid4())
+                },
+                "name": self.rand_name("testMurano")
+            },
+            "name": "Apache",
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Apache"
+                },
+                "type": "io.murano.apps.apache.ApacheHttpServer",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def postgres_app(self, keypair):
+        post_body = {
+            "instance": {
+                "flavor": flavor,
+                "image": linux,
+                "keyname": keypair.id,
+                "assignFloatingIp": True,
+                "availabilityZone": availability_zone,
+                "?": {
+                    "type": "io.murano.resources.LinuxMuranoInstance",
+                    "id": str(uuid.uuid4())
+                },
+                "name": self.rand_name("testMurano")
+            },
+            "database": self.rand_name('db'),
+            "username": self.rand_name('user'),
+            "password": self.rand_name('P@s5'),
+            "name": 'PostgreSQL',
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "PostgreSQL"
+                },
+                "type": "io.murano.databases.PostgreSql",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def tomcat_app(self, keypair):
+        post_body = {
+            "instance": {
+                "flavor": flavor,
+                "image": linux,
+                "keyname": keypair.id,
+                "assignFloatingIp": True,
+                "availabilityZone": availability_zone,
+                "?": {
+                    "type": "io.murano.resources.LinuxMuranoInstance",
+                    "id": str(uuid.uuid4())
+                },
+                "name": self.rand_name("testMurano")
+            },
+            "database": self.rand_name('db'),
+            "username": self.rand_name('user'),
+            "password": self.rand_name('P@s5'),
+            "name": 'Tomcat',
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Tomcat"
+                },
+                "type": "io.murano.apps.apache.Tomcat",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def zabbix_server(self, keypair):
+        post_body = {
+            "instance": {
+                "flavor": flavor,
+                "image": linux,
+                "keyname": keypair.id,
+                "assignFloatingIp": True,
+                "availabilityZone": availability_zone,
+                "?": {
+                    "type": "io.murano.resources.LinuxMuranoInstance",
+                    "id": str(uuid.uuid4())
+                },
+                "name": "ZabbixServer"
+            },
+            "database": "zabbix",
+            "username": "zabbix",
+            "password": self.rand_name('P@s5'),
+            "name": "ZabbixServer",
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Zabbix Server"
+                },
+                "type": "io.murano.apps.ZabbixServer",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
+
+    def zabbix_agent(self, host):
+        post_body = {
+            "name": 'ZabbixAgent',
+            "server": host,
+            "probe": "ICMP",
+            "hostname": "zabbix",
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Zabbix Agent"
+                },
+                "type": "io.murano.apps.ZabbixAgent",
                 "id": str(uuid.uuid4())
             }
         }
