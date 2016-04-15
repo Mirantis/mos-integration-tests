@@ -4,11 +4,12 @@ python:
 sudo: required
 dist: trusty
 env:
-  - TOX_ENV=static_check
+  - TOX_ENV=py27-static_check
+  - TOX_ENV=py34-static_check
   - TOX_ENV=doc_check
   - TOX_ENV=testrail_id_check
 before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -y pkg-config libvirt-dev libvirt-bin python-dev
 install: pip install tox
-script: tox -e $TOX_ENV
+script: tox -ve $TOX_ENV

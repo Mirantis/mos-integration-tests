@@ -21,6 +21,7 @@ import sys
 
 import pytest
 from six.moves import configparser
+from six.moves import range
 
 from mos_tests.functions.common import wait
 from mos_tests import settings
@@ -761,14 +762,14 @@ def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
 
     # Randomly select [num of controllers - 1] controllers for kill-9 actions
     ctrlls_for_kill = []
-    for i in xrange(0, (len(controllers) - 1)):
+    for i in range(0, (len(controllers) - 1)):
         ctrl = random.choice(controllers)
         while ctrl in ctrlls_for_kill:
             ctrl = random.choice(controllers)
         ctrlls_for_kill.append(ctrl)
 
     # Kill rabbit several times on selected controllers
-    for i in xrange(0, num_of_rabbit_kill):
+    for i in range(0, num_of_rabbit_kill):
         for ctrl in ctrlls_for_kill:
             logger.debug('Round %s of kill-9 on %s' % (i, ctrl.data['ip']))
             with ctrl.ssh() as remote:

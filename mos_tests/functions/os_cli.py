@@ -18,7 +18,7 @@ from tempest.lib.cli import output_parser as parser
 from tempest.lib import exceptions
 
 
-class Result(unicode):
+class Result(str):
     def listing(self):
         return parser.listing(self)
 

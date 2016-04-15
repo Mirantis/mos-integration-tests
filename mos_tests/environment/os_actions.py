@@ -155,7 +155,7 @@ class OpenStackActions(object):
             ):
                 return True
         except paramiko.SSHException as e:
-            if 'authentication' in unicode(e).lower():
+            if 'authentication' in str(e).lower():
                 return True
             else:
                 logger.debug('Instance unavailable yet: {}'.format(e))

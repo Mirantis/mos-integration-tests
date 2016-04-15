@@ -269,9 +269,10 @@ def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('pod', '2', indirect=['pod'])
+@pytest.mark.parametrize('package', [('DockerHTTPd',)], indirect=['package'])
 @pytest.mark.testrail_id('836661')
 def test_pod_replication(env, os_conn, keypair, murano, environment, session,
-                         cluster, pod, dockerhttpd):
+                         cluster, pod, package):
     """Check that replication controller works correctly
     Scenario:
         1. Create Murano environment
@@ -287,6 +288,7 @@ def test_pod_replication(env, os_conn, keypair, murano, environment, session,
         replica differs from id of removed replica
         10. Remove environment
     """
+    murano.create_service(environment, session, murano.httpd(pod))
     deployed_environment = murano.deploy_environment(environment, session)
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
@@ -311,11 +313,12 @@ def test_pod_replication(env, os_conn, keypair, murano, environment, session,
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('pod', '2', indirect=['pod'])
+@pytest.mark.parametrize('package', [('DockerHTTPd',)], indirect=['package'])
 @pytest.mark.parametrize('action, exp_count', [('Up', 3), ('Down', 1)])
 @pytest.mark.testrail_id('836663', params={'action': 'Up'})
 @pytest.mark.testrail_id('836664', params={'action': 'Down'})
 def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
-                            session, cluster, pod, dockerhttpd, exp_count):
+                            session, cluster, pod, package, exp_count):
     """Check "scalePodUp" & "scalePodDown" actions
     Scenario:
         1. Create Murano environment
@@ -332,6 +335,7 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
         after "scalePodDown" action accordingly)
         10. Remove environment
     """
+    murano.create_service(environment, session, murano.httpd(pod))
     deployed_environment = murano.deploy_environment(environment, session)
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
