@@ -49,11 +49,10 @@ def delete_instances(os_conn, instances):
 
     def isnstances_shutdowned():
         instances = [x
-                       for x in os_conn.nova.servers.list()
-                       if x.id in instances_ids]
+                     for x in os_conn.nova.servers.list()
+                     if x.id in instances_ids]
         if any([x.status == 'ERROR' for x in instances]):
-            raise Exception(
-                'Some server(s) became to ERROR state after stop')
+            raise Exception('Some server(s) became to ERROR state after stop')
         return all([x.status == 'SHUTOFF' for x in instances])
 
     common.wait(isnstances_shutdowned, timeout_seconds=10 * 60)
@@ -615,22 +614,8 @@ class TestTraficBetween3InstancesInOneNet(TestQoSBase):
                                    udp=udp)
 
 
-@pytest.mark.incremental
 @pytest.mark.check_env_('has_2_or_more_computes')
-class TestTraficBetween3InstancesInDifferentNet(TestQoSBase):
-    @classmethod
-    @pytest.yield_fixture(scope='class')
-    def network2(cls, variables, os_conn, network):
-        net = os_conn.create_network(name='net02')
-        subnet = os_conn.create_subnet(network_id=net['network']['id'],
-                                       name='net02__subnet',
-                                       cidr='10.0.1.0/24')
-
-        os_conn.router_interface_add(router_id=cls.router['router']['id'],
-                                     subnet_id=subnet['subnet']['id'])
-        yield net
-        os_conn.delete_network(net['network']['id'])
-
+class TwoNetAndComputesThreeInstances(object):
     @classmethod
     @pytest.yield_fixture(scope='class')
     def instances(cls, variables, network, iperf_image_id, os_conn, network2):
@@ -648,6 +633,25 @@ class TestTraficBetween3InstancesInDifferentNet(TestQoSBase):
             os_conn.assign_floating_ip(instance)
         yield instances
         delete_instances(os_conn, instances)
+
+
+@pytest.mark.incremental
+class TestTraficBetween3InstancesInDifferentNet(
+        TwoNetAndComputesThreeInstances, TestQoSBase):
+    @classmethod
+    @pytest.yield_fixture(scope='class')
+    def network2(cls, variables, os_conn, network):
+        net = os_conn.create_network(name='net02')
+        subnet = os_conn.create_subnet(network_id=net['network']['id'],
+                                       name='net02__subnet',
+                                       cidr='10.0.1.0/24')
+
+        os_conn.router_interface_add(router_id=cls.router['router']['id'],
+                                     subnet_id=subnet['subnet']['id'])
+        yield net
+        os_conn.router_interface_delete(cls.router['router']['id'],
+                                        subnet_id=subnet['subnet']['id'])
+        os_conn.delete_network(net['network']['id'])
 
     @classmethod
     @pytest.yield_fixture(scope='class')
@@ -766,3 +770,96 @@ class TestTraficBetween3InstancesInDifferentNet(TestQoSBase):
                                    ip_type='floating')
 
         self.check_iperf_bandwidth(instance1, instance3, limit=1000 * 1024)
+
+
+class TestWithFloating(TwoNetAndComputesThreeInstances, TestQoSBase):
+    @classmethod
+    @pytest.yield_fixture(scope='class')
+    def router2(cls, variables, os_conn):
+        ext_net = os_conn.ext_network
+        router = os_conn.create_router(name='router02')
+        os_conn.router_gateway_add(router_id=router['router']['id'],
+                                   network_id=ext_net['id'])
+        yield router
+        os_conn.delete_router(router['router']['id'])
+
+    @classmethod
+    @pytest.yield_fixture(scope='class')
+    def network2(cls, variables, os_conn, router2):
+        net = os_conn.create_network(name='net02')
+        subnet = os_conn.create_subnet(network_id=net['network']['id'],
+                                       name='net02__subnet',
+                                       cidr='10.0.1.0/24')
+
+        os_conn.router_interface_add(router_id=router2['router']['id'],
+                                     subnet_id=subnet['subnet']['id'])
+        yield net
+        os_conn.router_interface_delete(router2['router']['id'],
+                                        subnet_id=subnet['subnet']['id'])
+        os_conn.delete_network(net['network']['id'])
+
+    @pytest.mark.testrail_id('838300')
+    def test_restrictions(self, instances, os_conn, clean_port_policy):
+        """Check traffic restriction for one vm between two vms
+        in different nets by floatings
+
+        Scenario:
+            1. Create net01, subnet
+            2. Create router01, set gateway and add interface to net01
+            3. Create net02, subnet
+            4. Create router02, set gateway and add interface to net02
+            5. Boot ubuntu vm1 in net01 on compute-1
+            6. Boot ubuntu vm2 in net02 on compute-1
+            7. Boot ubuntu vm3 in net02 on compute-2
+            8. Associate floatings to all vms
+            9. Start iperf between vm1 and vm2 by floating
+            10. Look on the traffic with nload on vm port on compute-1
+            11. Start iperf between vm1 and vm3
+            12. Look on the traffic with nload on vm port on compute-1
+            13. Create new policy: neutron qos-policy-create bw-limiter
+            14. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id bw-limiter \
+                --max-kbps 3000
+            15. Find neutron port for vm1: neutron port-list | grep <vm1 ip>
+            16. Update port with new policy:
+                neutron port-update your-port-id --qos-policy bw-limiter
+            17. Check in nload that traffic changed properly
+        """
+        instance1, instance2, instance3 = instances
+
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1,
+                                       instance2,
+                                       limit=3000 * 1024,
+                                       time=20,
+                                       ip_type='floating')
+
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1,
+                                       instance3,
+                                       limit=3000 * 1024,
+                                       time=20,
+                                       ip_type='floating')
+
+        # Create policy for port
+        instance1_ip = os_conn.get_nova_instance_ips(instance1)['fixed']
+        port1 = os_conn.get_port_by_fixed_ip(instance1_ip)
+        policy = os_conn.create_qos_policy('policy_1')
+        os_conn.neutron.create_bandwidth_limit_rule(policy['policy']['id'], {
+            'bandwidth_limit_rule': {
+                'max_kbps': 3000,
+            }
+        })
+
+        os_conn.neutron.update_port(
+            port1['id'], {'port': {'qos_policy_id': policy['policy']['id']}})
+
+        self.check_iperf_bandwidth(instance1,
+                                   instance2,
+                                   limit=3000 * 1024,
+                                   ip_type='floating')
+
+        self.check_iperf_bandwidth(instance1,
+                                   instance3,
+                                   limit=3000 * 1024,
+                                   ip_type='floating')
