@@ -18,7 +18,6 @@ import pytest
 
 from glanceclient.exc import Forbidden
 from six.moves import configparser
-from tempest.lib.cli import output_parser as parser
 
 from mos_tests.functions import common
 from mos_tests.neutron.python_tests.base import TestBase
@@ -57,9 +56,11 @@ class TestGlanceSecurity(TestBase):
                 remote.check_call('service glance-api restart')
 
         def wait_glance_alive():
-            common.wait(lambda: common.get_os_conn(env), timeout_seconds=60,
-                        waiting_for='glance available',
-                        expected_exceptions=Exception)
+            common.wait(
+                lambda:
+                len([i for i in self.os_conn.glance.images.list()]) > 0,
+                timeout_seconds=60, waiting_for='glance available',
+                expected_exceptions=Exception)
 
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
@@ -88,9 +89,11 @@ class TestGlanceSecurity(TestBase):
             return old_passwd
 
         def wait_glance_alive():
-            common.wait(lambda: common.get_os_conn(env), timeout_seconds=60,
-                        waiting_for='glance available',
-                        expected_exceptions=Exception)
+            common.wait(
+                lambda:
+                len([i for i in self.os_conn.glance.images.list()]) > 0,
+                timeout_seconds=60, waiting_for='glance available',
+                expected_exceptions=Exception)
 
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
@@ -234,7 +237,6 @@ class TestGlanceSecurity(TestBase):
             5. Delete image
             6. Check that image deleted
             7. Restore glance credentials
-            8. Delete downloaded image file
         """
         name = "Test_{0}".format(suffix[:6])
         cmd = ('image-create --name {name} --container-format bare '
@@ -242,23 +244,17 @@ class TestGlanceSecurity(TestBase):
                    name=name,
                    source=image_file_remote))
 
-        image = parser.details(glance_remote(cmd))
+        image = glance_remote(cmd).details()
         assert image['status'] == 'active'
 
         self.change_glance_credentials(env, openstack_client)
 
-        filename = '/tmp/test_image_downloaded.iso'
         glance_remote('image-download {id} >> {local_file}'
-                      .format(local_file=filename, **image))
+                      .format(local_file='/dev/null', **image))
 
         glance_remote('image-delete {id}'.format(**image))
 
-        image_list = parser.listing(glance_remote('image-list'))
+        image_list = glance_remote('image-list').listing()
         assert image['id'] not in [x['ID'] for x in image_list]
 
         self.restore_glance_credentials(env, openstack_client)
-
-        controllers = env.get_nodes_by_role('controller')
-        for controller in controllers:
-            with controller.ssh() as remote:
-                remote.check_call('rm -f {}'.format(filename))
