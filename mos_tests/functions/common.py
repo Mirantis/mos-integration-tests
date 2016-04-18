@@ -652,7 +652,7 @@ def is_task_ready(task):
     logger.debug('Task progress is {0.progress}'.format(task))
     if task.status == 'ready':
         return True
-    elif task.status == 'running':
+    elif task.status in ('running', 'pending'):
         return False
     else:
         raise Exception('Task is {0.status}. {0.data}'.format(task))

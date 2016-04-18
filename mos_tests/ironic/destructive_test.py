@@ -25,9 +25,11 @@ from mos_tests.functions import os_cli
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631921', params={'boot_instance_before': False})
 @pytest.mark.testrail_id('631922', params={'boot_instance_before': True})
-@pytest.mark.parametrize('boot_instance_before', [True, False])
+@pytest.mark.parametrize('boot_instance_before',
+                         [True, False],
+                         ids=['boot_instance_before', 'boot_instance_after'])
 def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
-                          flavors, keypair, env_name, boot_instance_before):
+                          flavors, keypair, devops_env, boot_instance_before):
     """Check ironic state after restart conductor node
 
     Scenario:
@@ -47,15 +49,13 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 
     conductor = env.get_nodes_by_role('ironic')[0]
 
-    devops_node = devops_client.DevopsClient.get_node_by_mac(
-        env_name=env_name,
-        mac=conductor.data['mac'])
+    devops_node = devops_env.get_node_by_mac(conductor.data['mac'])
     devops_node.reset()
 
     time.sleep(10)
 
     common.wait(conductor.is_ssh_avaliable,
-                timeout_seconds=60 * 5,
+                timeout_seconds=60 * 10,
                 sleep_seconds=20,
                 waiting_for='ironic conductor node to reboot')
 

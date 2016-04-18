@@ -15,6 +15,7 @@
 import logging
 
 from devops.models import Environment
+from devops.models import Interface
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +87,13 @@ class EnvProxy(object):
             disk.delete()
         node.erase()
 
-    def get_node_by_mac(self, mac, interface='admin'):
+    def get_node_by_mac(self, mac):
         """Return devops node by mac
 
         :return: matched node
         :rtype: devops.models.node.Node
         """
-        for node in self.nodes().all:
-            interfaces = node.interface_by_network_name(interface)
-            mac_addresses = [x.mac_address for x in interfaces]
-            if mac in mac_addresses:
-                return node
+        return self.node_set.get(interface__mac_address=mac)
 
     def get_interface_by_fuel_name(self, fuel_name, fuel_env):
         """Return devops network name for fuel network name
@@ -116,8 +113,7 @@ class EnvProxy(object):
                            if x['name'] == node_devices[0]]
         assert len(node_interfaces) == 1
         interface_mac = node_interfaces[0]['mac']
-        devops_node = self.get_node_by_mac(controller.data['mac'])
-        return devops_node.interfaces.get(mac_address=interface_mac)
+        return Interface.objects.get(mac_address=interface_mac)
 
     def get_net_mac_addresses(self, net_name):
         net = self.get_network(name="private")
@@ -186,9 +182,9 @@ class DevopsClient(object):
         return admin_ip
 
     @classmethod
-    def get_node_by_mac(cls, env_name, mac, interface='admin'):
+    def get_node_by_mac(cls, env_name, mac):
         env = cls.get_env(env_name=env_name)
-        return env.get_node_by_mac(mac, interface)
+        return env.get_node_by_mac(mac)
 
     @classmethod
     def get_devops_node(cls, node_name='', env_name=''):
