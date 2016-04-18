@@ -544,3 +544,60 @@ class NovaIntegrationTests(OpenStackTestCase):
         if loss > 10:
             msg = "Packets loss during stability {}% exceeds the 10% limit"
             raise AssertionError(msg.format(loss))
+
+    @pytest.mark.testrail_id('843882')
+    def test_boot_instance_from_volume_bigger_than_flavor_size(self):
+        """This test checks that nova allows creation instance
+           from volume with size bigger than flavor size
+            Steps:
+            1. Create volume with size 2Gb.
+            2. Boot instance with flavor size 'tiny' from newly created volume
+            3. Check that instance created with correct values
+        """
+
+        # 1. Create volume
+        image_id = [image.id for image in self.nova.images.list() if
+                    image.name == 'TestVM'][0]
+
+        volume = common_functions.create_volume(self.cinder, image_id,
+                                                size=2, timeout=60)
+        self.volumes.append(volume)
+
+        # 2. Create router, network, subnet, connect them to external network
+        exist_networks = self.os_conn.list_networks()['networks']
+        ext_network = [x for x in exist_networks
+                       if x.get('router:external')][0]
+        self.router = self.os_conn.create_router(name="router01")['router']
+        self.os_conn.router_gateway_add(router_id=self.router['id'],
+                                        network_id=ext_network['id'])
+        net_id = self.os_conn.add_net(self.router['id'])
+
+        # 3. Create instance from newly created volume, associate floating_ip
+        name = 'TestVM_1517671_instance'
+        flavor_list = {f.name: f.id for f in self.nova.flavors.list()}
+        initial_flavor = flavor_list['m1.tiny']
+        bdm = {'vda': volume.id}
+        instance = common_functions.create_instance(self.nova, name,
+                                                    initial_flavor, net_id,
+                                                    [self.sec_group.name],
+                                                    block_device_mapping=bdm,
+                                                    inst_list=self.instances)
+        self.instances.append(instance.id)
+
+        # Assert for attached volumes
+        attached_volumes = self.nova.servers.get(instance).to_dict()[
+            'os-extended-volumes:volumes_attached']
+        self.assertIn({'id': volume.id}, attached_volumes)
+
+        # Assert to flavor size
+        self.assertEqual(self.nova.servers.get(instance).flavor['id'],
+                         initial_flavor,
+                         "Unexpected instance flavor after creation")
+
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip.ip)
+        instance.add_floating_ip(floating_ip.ip)
+
+        # Check that instance is reachable
+        ping = common_functions.ping_command(self.floating_ip.ip)
+        self.assertTrue(ping, "Instance after creation is not reachable")
