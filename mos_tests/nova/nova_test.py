@@ -548,7 +548,7 @@ class NovaIntegrationTests(OpenStackTestCase):
     @pytest.mark.testrail_id('843882')
     def test_boot_instance_from_volume_bigger_than_flavor_size(self):
         """This test checks that nova allows creation instance
-           from volume with size bigger than flavor size
+            from volume with size bigger than flavor size
             Steps:
             1. Create volume with size 2Gb.
             2. Boot instance with flavor size 'tiny' from newly created volume
