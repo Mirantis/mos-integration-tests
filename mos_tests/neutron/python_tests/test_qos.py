@@ -40,50 +40,27 @@ def wait_instances_to_boot(os_conn, instances):
         waiting_for="instances to be ready")
 
 
-def delete_instances(os_conn, instances):
-    instances_ids = [x.id for x in instances]
-
-    # Stop instances (to prevent error during deletion)
-    for instance_id in instances_ids:
-        os_conn.nova.servers.stop(instance_id)
-
-    def isnstances_shutdowned():
-        instances = [x
-                     for x in os_conn.nova.servers.list()
-                     if x.id in instances_ids]
-        if any([x.status == 'ERROR' for x in instances]):
-            raise Exception('Some server(s) became to ERROR state after stop')
-        return all([x.status == 'SHUTOFF' for x in instances])
-
-    common.wait(isnstances_shutdowned, timeout_seconds=10 * 60)
-
-    # Delete instances
-    for instance_id in instances_ids:
-        os_conn.nova.servers.delete(instance_id)
-
-    def instances_deleted():
-        not_deleted = [x
-                       for x in os_conn.nova.servers.list()
-                       if x.id in instances_ids]
-        if len(not_deleted) == 0:
-            return True
-        if any([x.status == 'ERROR' for x in not_deleted]):
-            raise Exception(
-                'Some server(s) became to ERROR state after deletion')
-
-    common.wait(instances_deleted, timeout_seconds=2 * 60)
-
-
 def delete_ports_policy(os_conn):
     for port in os_conn.neutron.list_ports()['ports']:
         policy_id = port['qos_policy_id']
         if policy_id is not None:
+            logger.debug('Deleting QoS policy from port')
             os_conn.neutron.update_port(port['id'],
                                         {'port': {'qos_policy_id': None}})
             os_conn.delete_qos_policy(policy_id)
 
 
-@pytest.yield_fixture(scope='module')
+def delete_net_policy(os_conn):
+    for net in os_conn.neutron.list_networks()['networks']:
+        policy_id = net['network']['qos_policy_id']
+        if policy_id is not None:
+            logger.debug('Deleting QoS policy from net')
+            os_conn.neutron.update_network(
+                net['network']['id'], {'network': {'qos_policy_id': None}})
+            os_conn.delete_qos_policy(policy_id)
+
+
+@pytest.yield_fixture(scope='class')
 def iperf_image_id(os_conn):
     logger.info('Creating ubuntu image')
     image = os_conn.glance.images.create(name="image_ubuntu",
@@ -97,21 +74,18 @@ def iperf_image_id(os_conn):
     os_conn.glance.images.delete(image.id)
 
 
-@pytest.yield_fixture(scope='module')
+@pytest.fixture(scope='class')
 def instance_keypair(os_conn):
-    keypair = os_conn.create_key(key_name='instancekey')
-    yield keypair
-    os_conn.delete_key(key_name='instancekey')
+    return os_conn.create_key(key_name='instancekey')
 
 
-@pytest.yield_fixture(scope='module')
+@pytest.fixture(scope='class')
 def security_group(os_conn):
-    security_group = os_conn.create_sec_group_for_ssh()
-    yield security_group
-    os_conn.nova.security_groups.delete(security_group.id)
+    return os_conn.create_sec_group_for_ssh()
 
 
 @pytest.mark.check_env_('is_qos_enabled')
+@pytest.mark.need_devops
 class TestQoSBase(base.TestBase):
     @classmethod
     @pytest.fixture(scope='class', autouse=True)
@@ -124,7 +98,7 @@ class TestQoSBase(base.TestBase):
         cls.image_id = iperf_image_id
 
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def network(cls, variables, os_conn):
         cls.net = os_conn.create_network(name='net01')
         cls.subnet = os_conn.create_subnet(network_id=cls.net['network']['id'],
@@ -137,19 +111,18 @@ class TestQoSBase(base.TestBase):
 
         os_conn.router_interface_add(router_id=cls.router['router']['id'],
                                      subnet_id=cls.subnet['subnet']['id'])
+
+    @classmethod
+    @pytest.yield_fixture(scope='class', autouse=True)
+    def revert(cls, request, devops_env, snapshot_name):
         yield
-        os_conn.delete_router(cls.router['router']['id'])
-        os_conn.delete_network(cls.net['network']['id'])
+        if hasattr(request.session, 'nextitem') and snapshot_name is not None:
+            devops_env.revert_snapshot(snapshot_name)
 
     @pytest.yield_fixture
     def clean_net_policy(self, os_conn):
         yield
-        net = os_conn.neutron.show_network(self.net['network']['id'])
-        policy_id = net['network']['qos_policy_id']
-        if policy_id is not None:
-            os_conn.neutron.update_network(
-                net['network']['id'], {'network': {'qos_policy_id': None}})
-            os_conn.delete_qos_policy(policy_id)
+        delete_ports_policy(os_conn)
 
     @pytest.yield_fixture
     def clean_port_policy(self, os_conn):
@@ -228,13 +201,17 @@ class TestQoSBase(base.TestBase):
                 vm_keypair=self.instance_keypair) as remote:
             for line in self.get_iperf_result(remote, server_ip, **kwargs):
                 bandwidth = int(line[8])
-                assert (limit * 0.8) < bandwidth <= limit * 1.05
+                if bandwidth < 0.8 * limit:
+                    raise Exception(
+                        'Bandwidth is too low: {0}, limit is {1}'.format(
+                            bandwidth, limit))
+                assert bandwidth <= limit * 1.05
 
 
 @pytest.mark.check_env_('has_1_or_more_computes')
 class TestSingleCompute(TestQoSBase):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def instances(cls, variables, network, iperf_image_id, os_conn):
         instances = []
         compute_node = cls.zone.hosts.keys()[0]
@@ -244,8 +221,7 @@ class TestSingleCompute(TestQoSBase):
                                                net=cls.net)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
-        yield instances
-        delete_instances(os_conn, instances)
+        return instances
 
     @pytest.mark.testrail_id('838298')
     def test_traffic_restriction_with_max_burst(self, instances, os_conn,
@@ -300,7 +276,7 @@ class TestSingleCompute(TestQoSBase):
 @pytest.mark.check_env_('has_2_or_more_computes')
 class DifferentComputesInstancesMixin(object):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def instances(cls, variables, network, iperf_image_id, os_conn):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
@@ -310,8 +286,7 @@ class DifferentComputesInstancesMixin(object):
                                                net=cls.net)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
-        yield instances
-        delete_instances(os_conn, instances)
+        return instances
 
 
 class TestTraficBetweenComputes(DifferentComputesInstancesMixin, TestQoSBase):
@@ -461,10 +436,60 @@ class TestTraficBetweenComputes(DifferentComputesInstancesMixin, TestQoSBase):
 
         self.check_iperf_bandwidth(instance1, instance2, limit=6000 * 1024)
 
+    @pytest.mark.testrail_id('838305')
+    def test_restriction_for_net(self, instances, os_conn, clean_net_policy):
+        """Check traffic restriction for net between two vms after
+        updating rule for net
+
+        Scenario:
+            1. Create net01, subnet
+            2. Create router01, set gateway and add interface to net01
+            3. Create new policy: neutron qos-policy-create bw-limiter
+            4. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id bw-limiter \
+                --max-kbps 3000
+            5. Boot ubuntu vm1 in net01 on compute-1
+            6. Boot ubuntu vm2 in net01 on compute-2
+            7. Start iperf between vm1 and vm2
+            8. Look on the traffic with nload on vm port on compute-1
+            9. Check in nload that traffic changed properly for both vms
+            10. Update your net:
+                neutron net-update net01 --qos-policy bw-limiter
+            11. Check in nload that traffic changed properly for both vms
+        """
+        # Create policy
+        policy1 = os_conn.create_qos_policy('policy_1')
+        os_conn.neutron.create_bandwidth_limit_rule(policy1['policy']['id'], {
+            'bandwidth_limit_rule': {
+                'max_kbps': 3000,
+            }
+        })
+
+        instance1, instance2 = instances
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1,
+                                       instance2,
+                                       limit=3000 * 1024,
+                                       time=20)
+
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance2,
+                                       instance1,
+                                       limit=3000 * 1024,
+                                       time=20)
+        # Update net with policy
+        os_conn.neutron.update_network(
+            self.net['network']['id'],
+            {'network': {'qos_policy_id': policy1['policy']['id']}})
+
+        self.check_iperf_bandwidth(instance1, instance2, limit=3000 * 1024)
+
+        self.check_iperf_bandwidth(instance2, instance1, limit=3000 * 1024)
+
 
 class TestPolicyWithNetCreate(DifferentComputesInstancesMixin, TestQoSBase):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def network(cls, variables, os_conn):
         cls.policy = os_conn.create_qos_policy('policy_1')
         cls.rule = os_conn.neutron.create_bandwidth_limit_rule(
@@ -486,10 +511,6 @@ class TestPolicyWithNetCreate(DifferentComputesInstancesMixin, TestQoSBase):
 
         os_conn.router_interface_add(router_id=cls.router['router']['id'],
                                      subnet_id=cls.subnet['subnet']['id'])
-        yield
-        os_conn.delete_router(cls.router['router']['id'])
-        os_conn.delete_network(cls.net['network']['id'])
-        os_conn.delete_qos_policy(cls.policy['policy']['id'])
 
     @pytest.mark.testrail_id('838306')
     def test_create_net_with_policy(self, os_conn, instances):
@@ -531,7 +552,7 @@ class TestPolicyWithNetCreate(DifferentComputesInstancesMixin, TestQoSBase):
 @pytest.mark.check_env_('has_2_or_more_computes')
 class TestTraficBetween3InstancesInOneNet(TestQoSBase):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def instances(cls, variables, network, iperf_image_id, os_conn):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
@@ -542,8 +563,7 @@ class TestTraficBetween3InstancesInOneNet(TestQoSBase):
                                                net=cls.net)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
-        yield instances
-        delete_instances(os_conn, instances)
+        return instances
 
     @pytest.mark.testrail_id('838299', udp=False)
     @pytest.mark.testrail_id('839064', udp=True)
@@ -617,7 +637,7 @@ class TestTraficBetween3InstancesInOneNet(TestQoSBase):
 @pytest.mark.check_env_('has_2_or_more_computes')
 class TwoNetAndComputesThreeInstances(object):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def instances(cls, variables, network, iperf_image_id, os_conn, network2):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
@@ -631,15 +651,14 @@ class TwoNetAndComputesThreeInstances(object):
         wait_instances_to_boot(os_conn, instances)
         for instance in instances:
             os_conn.assign_floating_ip(instance)
-        yield instances
-        delete_instances(os_conn, instances)
+        return instances
 
 
 @pytest.mark.incremental
 class TestTraficBetween3InstancesInDifferentNet(
         TwoNetAndComputesThreeInstances, TestQoSBase):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def network2(cls, variables, os_conn, network):
         net = os_conn.create_network(name='net02')
         subnet = os_conn.create_subnet(network_id=net['network']['id'],
@@ -648,16 +667,7 @@ class TestTraficBetween3InstancesInDifferentNet(
 
         os_conn.router_interface_add(router_id=cls.router['router']['id'],
                                      subnet_id=subnet['subnet']['id'])
-        yield net
-        os_conn.router_interface_delete(cls.router['router']['id'],
-                                        subnet_id=subnet['subnet']['id'])
-        os_conn.delete_network(net['network']['id'])
-
-    @classmethod
-    @pytest.yield_fixture(scope='class')
-    def clean_port_policy(cls, os_conn):
-        yield
-        delete_ports_policy(os_conn)
+        return net
 
     @pytest.mark.testrail_id('838301')
     def test_traffic_with_different_nets(self, instances, os_conn):
@@ -774,17 +784,16 @@ class TestTraficBetween3InstancesInDifferentNet(
 
 class TestWithFloating(TwoNetAndComputesThreeInstances, TestQoSBase):
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def router2(cls, variables, os_conn):
         ext_net = os_conn.ext_network
         router = os_conn.create_router(name='router02')
         os_conn.router_gateway_add(router_id=router['router']['id'],
                                    network_id=ext_net['id'])
-        yield router
-        os_conn.delete_router(router['router']['id'])
+        return router
 
     @classmethod
-    @pytest.yield_fixture(scope='class')
+    @pytest.fixture(scope='class')
     def network2(cls, variables, os_conn, router2):
         net = os_conn.create_network(name='net02')
         subnet = os_conn.create_subnet(network_id=net['network']['id'],
@@ -793,10 +802,7 @@ class TestWithFloating(TwoNetAndComputesThreeInstances, TestQoSBase):
 
         os_conn.router_interface_add(router_id=router2['router']['id'],
                                      subnet_id=subnet['subnet']['id'])
-        yield net
-        os_conn.router_interface_delete(router2['router']['id'],
-                                        subnet_id=subnet['subnet']['id'])
-        os_conn.delete_network(net['network']['id'])
+        return net
 
     @pytest.mark.testrail_id('838300')
     def test_restrictions(self, instances, os_conn, clean_port_policy):
