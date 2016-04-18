@@ -56,11 +56,10 @@ class TestGlanceSecurity(TestBase):
                 remote.check_call('service glance-api restart')
 
         def wait_glance_alive():
-            common.wait(
-                lambda:
-                len([i for i in self.os_conn.glance.images.list()]) > 0,
-                timeout_seconds=60, waiting_for='glance available',
-                expected_exceptions=Exception)
+            common.wait(lambda:
+                        len(list(self.os_conn.glance.images.list())) > 0,
+                        timeout_seconds=60, waiting_for='glance available',
+                        expected_exceptions=Exception)
 
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
@@ -89,11 +88,10 @@ class TestGlanceSecurity(TestBase):
             return old_passwd
 
         def wait_glance_alive():
-            common.wait(
-                lambda:
-                len([i for i in self.os_conn.glance.images.list()]) > 0,
-                timeout_seconds=60, waiting_for='glance available',
-                expected_exceptions=Exception)
+            common.wait(lambda:
+                        len(list(self.os_conn.glance.images.list())) > 0,
+                        timeout_seconds=60, waiting_for='glance available',
+                        expected_exceptions=Exception)
 
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
@@ -249,8 +247,7 @@ class TestGlanceSecurity(TestBase):
 
         self.change_glance_credentials(env, openstack_client)
 
-        glance_remote('image-download {id} >> {local_file}'
-                      .format(local_file='/dev/null', **image))
+        glance_remote('image-download {id} >> /dev/null'.format(**image))
 
         glance_remote('image-delete {id}'.format(**image))
 
