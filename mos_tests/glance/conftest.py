@@ -63,6 +63,7 @@ def short_lifetime_keystone(env):
     wait_keystone_alive()
 
 
+@pytest.fixture
 def cli(os_conn):
     return base.CLIClient(username=os_conn.username,
                           password=os_conn.password,
@@ -88,6 +89,18 @@ def image_file(request):
         f.write(' ')
         f.flush()
         yield f.name
+
+
+@pytest.yield_fixture
+def image_file_remote(request, controller_remote, suffix):
+    size = getattr(request, 'param', 100)  # Size in MB
+    filename = '/tmp/{}'.format(suffix[:6])
+    with controller_remote.open(filename, 'w') as f:
+        f.seek(size * (1024 ** 2))
+        f.write(' ')
+        f.flush()
+    yield filename
+    controller_remote.execute('rm -f {}'.format(filename))
 
 
 @pytest.yield_fixture
