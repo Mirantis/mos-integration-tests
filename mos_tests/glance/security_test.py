@@ -24,6 +24,42 @@ from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
 
+@pytest.yield_fixture
+def restore_glance_credentials(env, openstack_client, os_conn):
+    """Restore old username and password for glance user"""
+
+    def restore_credentials(node):
+        with node.ssh() as remote:
+            remote.execute('mv /etc/glance/glance-api.conf.orig '
+                           '/etc/glance/glance-api.conf')
+            remote.execute('mv /etc/glance/glance-swift.conf.orig '
+                           '/etc/glance/glance-swift.conf')
+            remote.execute('service glance-api restart')
+
+    def get_old_password(node):
+        with node.ssh() as remote:
+            with remote.open('/etc/glance/glance-swift.conf') as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+                old_passwd = parser.get('ref1', 'key')
+        return old_passwd
+
+    def wait_glance_alive():
+        common.wait(lambda:
+                    len(list(os_conn.glance.images.list())) > 0,
+                    timeout_seconds=60, waiting_for='glance available',
+                    expected_exceptions=Exception)
+
+    yield
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        restore_credentials(controller)
+    openstack_client.user_set_new_name('glance-1', 'glance')
+    openstack_client.user_set_new_password(
+        'glance', get_old_password(controllers[0]))
+    wait_glance_alive()
+
+
 class TestGlanceSecurity(TestBase):
 
     def change_glance_credentials(self, env, openstack_client):
@@ -66,39 +102,6 @@ class TestGlanceSecurity(TestBase):
             change_credentials(controller)
         openstack_client.user_set_new_name('glance', 'glance-1')
         openstack_client.user_set_new_password('glance-1', 'test')
-        wait_glance_alive()
-
-    def restore_glance_credentials(self, env, openstack_client):
-        """Restore old username and password for glance user"""
-
-        def restore_credentials(node):
-            with node.ssh() as remote:
-                remote.check_call('mv /etc/glance/glance-api.conf.orig '
-                                  '/etc/glance/glance-api.conf')
-                remote.check_call('mv /etc/glance/glance-swift.conf.orig '
-                                  '/etc/glance/glance-swift.conf')
-                remote.check_call('service glance-api restart')
-
-        def get_old_password(node):
-            with node.ssh() as remote:
-                with remote.open('/etc/glance/glance-swift.conf') as f:
-                    parser = configparser.RawConfigParser()
-                    parser.readfp(f)
-                    old_passwd = parser.get('ref1', 'key')
-            return old_passwd
-
-        def wait_glance_alive():
-            common.wait(lambda:
-                        len(list(self.os_conn.glance.images.list())) > 0,
-                        timeout_seconds=60, waiting_for='glance available',
-                        expected_exceptions=Exception)
-
-        controllers = env.get_nodes_by_role('controller')
-        for controller in controllers:
-            restore_credentials(controller)
-        openstack_client.user_set_new_name('glance-1', 'glance')
-        openstack_client.user_set_new_password(
-            'glance', get_old_password(controllers[0]))
         wait_glance_alive()
 
     @pytest.mark.testrail_id('836638')
@@ -219,6 +222,7 @@ class TestGlanceSecurity(TestBase):
         assert image.id not in images_id
 
     @pytest.mark.testrail_id('836637')
+    @pytest.mark.usefixtures('restore_glance_credentials')
     @pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
     def test_download_image_if_change_credentials(self, glance_remote, suffix,
                                                   image_file_remote,
@@ -253,5 +257,3 @@ class TestGlanceSecurity(TestBase):
 
         image_list = glance_remote('image-list').listing()
         assert image['id'] not in [x['ID'] for x in image_list]
-
-        self.restore_glance_credentials(env, openstack_client)
