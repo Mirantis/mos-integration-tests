@@ -23,6 +23,13 @@ from mos_tests.functions import common
 from mos_tests.functions import os_cli
 
 
+def wait_for_glance_alive(os_conn):
+    common.wait(lambda: len(list(os_conn.glance.images.list())) > 0,
+                timeout_seconds=60,
+                expected_exceptions=Exception,
+                waiting_for='glance to be alive')
+
+
 @pytest.yield_fixture
 def short_lifetime_keystone(env):
     """Change keystone token lifetime to 30s"""
@@ -48,7 +55,9 @@ def short_lifetime_keystone(env):
             remote.check_call('service apache2 start')
 
     def wait_keystone_alive():
-        common.wait(lambda: common.get_os_conn(env), timeout_seconds=60 * 3,
+        session = env.os_conn.session
+        common.wait(lambda: session.get(session.auth.auth_url).ok,
+                    timeout_seconds=60 * 3,
                     waiting_for='keystone available',
                     expected_exceptions=Exception)
 
@@ -152,19 +161,14 @@ def enable_multiple_locations_glance(env):
                               '/etc/glance/glance-api.conf')
             remote.check_call('service glance-api restart')
 
-    def wait_glance_alive():
-        common.wait(lambda: common.get_os_conn(env), timeout_seconds=60 * 3,
-                    waiting_for='glance available',
-                    expected_exceptions=Exception)
-
     controllers = env.get_nodes_by_role('controller')
     for controller in controllers:
         set_show_multiple_locations(controller)
-    wait_glance_alive()
+    wait_for_glance_alive(env.os_conn)
     yield
     for controller in controllers:
         reset_show_multiple_locations(controller)
-    wait_glance_alive()
+    wait_for_glance_alive(env.os_conn)
 
 
 @pytest.yield_fixture
@@ -187,16 +191,11 @@ def enable_image_direct_url_glance(env):
                               '/etc/glance/glance-api.conf')
             remote.check_call('service glance-api restart')
 
-    def wait_glance_alive():
-        common.wait(lambda: common.get_os_conn(env), timeout_seconds=60 * 3,
-                    waiting_for='glance available',
-                    expected_exceptions=Exception)
-
     controllers = env.get_nodes_by_role('controller')
     for controller in controllers:
         set_show_image_direct_url(controller)
-    wait_glance_alive()
+    wait_for_glance_alive(env.os_conn)
     yield
     for controller in controllers:
         reset_show_image_direct_url(controller)
-    wait_glance_alive()
+    wait_for_glance_alive(env.os_conn)
