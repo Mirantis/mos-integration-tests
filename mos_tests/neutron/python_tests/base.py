@@ -307,3 +307,35 @@ class TestBase(object):
         err_msg = 'Failed to start the udhcpc on vm std_err: {}'.format(
             result['stderr'])
         assert not result['exit_code'], err_msg
+
+    def create_delete_number_of_instances(self, net_number, router, net_list,
+                                          inst_keypair, security_group):
+        """Create X number of networks, create and delete instance on it.
+
+        :param net_number: number of networks to create
+        :param router: router to external network
+        :param net_list: list of existed networks
+        :param inst_keypair: private keys to connect to instance
+        :param security_group: security group that instance is related to
+        :returns: -
+        """
+        tenant = self.os_conn.neutron.get_quotas_tenant()
+        tenant_id = tenant['tenant']['tenant_id']
+        self.os_conn.neutron.update_quota(tenant_id, {'quota':
+                                                      {'network': 50,
+                                                       'router': 50,
+                                                       'subnet': 50,
+                                                       'port': 150}})
+        for x in range(net_number):
+            net_id = self.os_conn.add_net(router['id'])
+            net_list.append(net_id)
+            logger.info('Total networks created at the moment {}'.format(
+                        len(net_list)))
+            srv = self.os_conn.create_server(
+                name='instanceNo{}'.format(x),
+                key_name=inst_keypair.name,
+                security_groups=[security_group.name],
+                nics=[{'net-id': net_id}],
+                wait_for_avaliable=False)
+            logger.info('Delete the server {}'.format(srv.name))
+            self.os_conn.nova.servers.delete(srv)
