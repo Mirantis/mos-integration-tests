@@ -79,15 +79,8 @@ def flavors(ironic_drivers_params, os_conn):
         flavor.delete()
 
 
-@pytest.yield_fixture(scope='module')
-def image_file():
-    image_file = common.gen_temp_file(prefix='image', suffix='.img')
-    yield image_file
-    image_file.unlink(image_file.name)
-
-
 @pytest.yield_fixture(params=[['create', 'delete']], ids=idfn)
-def ubuntu_image(request, os_conn, image_file):
+def ubuntu_image(request, os_conn):
     actions = request.param
     image_name = 'ironic_trusty'
 

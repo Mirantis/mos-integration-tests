@@ -18,10 +18,10 @@ import tarfile
 
 import ipaddress
 import pytest
-from six.moves import urllib
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
 from mos_tests.ironic import actions
 from mos_tests.ironic import conftest
 from mos_tests import settings
@@ -184,19 +184,11 @@ def env2_ubuntu_image(env2, image_file):
         cpu_arch='x86_64',
         fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
 
-    if not image_file.file.closed:
-        src = urllib.request.urlopen(settings.IRONIC_IMAGE_URL)
+    with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
         with tarfile.open(fileobj=src, mode='r|gz') as tar:
             img = tar.extractfile(tar.firstmember)
-            while True:
-                data = img.read(1024)
-                if not data:
-                    break
-                image_file.file.write(data)
-            image_file.file.close()
-        src.close()
-    with open(image_file.name) as f:
-        env2.os_conn.glance.images.upload(image.id, f)
+            env2.os_conn.glance.images.upload(image.id, img)
+
     logger.info('Creating ubuntu image ... done')
 
     yield image
