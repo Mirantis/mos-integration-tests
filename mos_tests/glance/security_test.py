@@ -64,8 +64,8 @@ class TestGlanceSecurity(TestBase):
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
             change_credentials(controller)
-            openstack_client.user_set_new_name('glance', 'glance-1')
-            openstack_client.user_set_new_password('glance-1', 'test')
+        openstack_client.user_set_new_name('glance', 'glance-1')
+        openstack_client.user_set_new_password('glance-1', 'test')
         wait_glance_alive()
 
     def restore_glance_credentials(self, env, openstack_client):
@@ -96,9 +96,9 @@ class TestGlanceSecurity(TestBase):
         controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
             restore_credentials(controller)
-            openstack_client.user_set_new_name('glance-1', 'glance')
-            openstack_client.user_set_new_password(
-                'glance', get_old_password(controller))
+        openstack_client.user_set_new_name('glance-1', 'glance')
+        openstack_client.user_set_new_password(
+            'glance', get_old_password(controllers[0]))
         wait_glance_alive()
 
     @pytest.mark.testrail_id('836638')
