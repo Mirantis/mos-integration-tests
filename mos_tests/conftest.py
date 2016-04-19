@@ -137,7 +137,6 @@ def reinit_fixtures(request):
         except Exception:
             continue
         fixturedef.cached_result = None
-        fixturedef.execute(request)
 
 
 @pytest.yield_fixture(autouse=True)
