@@ -12,8 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
-import re
 import time
 
 import pytest
@@ -28,30 +28,25 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 class TestFailoverRestarts(TestBase):
 
-    def check_common_services(self, os_cli):
+    def check_common_services(self, openstack_client):
         # check several times that all needed services are up
         for x in range(5):
             for server in self.os_conn.nova.servers.list():
                 assert server.status == 'ACTIVE'
 
-            # Get user list with the '--long' option to see if the user is
-            # enabled or not.
-            cmd = 'source openrc; openstack user list --long'
-            result = os_cli.remote.check_call(cmd)
-            for line in result['stdout']:
-                assert 'False' not in line
+            # Get user list and check that all users are enabled
+            result = openstack_client('user list --long -f json')
+            for user in json.loads(result):
+                assert user['Enabled'] is True
 
-            # Get list of the services and for each service get detailed info
-            # by ID of the service. The problem is that only detailed info
-            # contains 'enabled' parameter.
-            cmd = 'source openrc; openstack service list'
-            for service_line in os_cli.remote.check_call(cmd)['stdout']:
-                cmd = 'source openrc; openstack service show {}'
-                match = re.search('[a-f0-9]{32}', service_line)
-                if match:
-                    cmd = cmd.format(match.group(0))
-                    for line in os_cli.remote.check_call(cmd)['stdout']:
-                        assert 'False' not in line
+            # Get list of services IDs and than description for each service
+            result = openstack_client('service list -f json')
+            id_list = [service['ID'] for service in json.loads(result)]
+            for service_id in id_list:
+                cmd = 'service show {} -f json'.format(service_id)
+                result = openstack_client(cmd)
+                service = json.loads(result)
+                assert service['enabled'] is True
 
             for service in self.os_conn.nova.services.list():
                 assert service.status == 'enabled'
