@@ -14,11 +14,12 @@
 
 import json
 
+import six
 from tempest.lib.cli import output_parser as parser
 from tempest.lib import exceptions
 
 
-class Result(str):
+class Result(six.text_type):
     def listing(self):
         return parser.listing(self)
 
@@ -26,16 +27,17 @@ class Result(str):
         return parser.details(self)
 
     def __add__(self, other):
+        if not isinstance(other, six.text_type):
+            other = other.decode('utf-8')
         return self.__class__(super(Result, self).__add__(other))
 
 
 def os_execute(remote, command, fail_ok=False, merge_stderr=False):
-    command = command.encode('utf-8')
-    command = '. openrc && {}'.format(command)
+    command = '. openrc && {}'.format(command.encode('utf-8'))
     result = remote.execute(command)
     if not fail_ok and not result.is_ok:
         raise exceptions.CommandFailed(result['exit_code'],
-                                       command,
+                                       command.decode('utf-8'),
                                        result.stdout_string,
                                        result.stderr_string)
     output = Result()

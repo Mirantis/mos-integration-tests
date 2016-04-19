@@ -15,10 +15,12 @@
 import functools
 import logging
 import os
-import paramiko
 import posixpath
 import stat
 import time
+
+import paramiko
+import six
 
 
 logger = logging.getLogger(__name__)
@@ -50,17 +52,20 @@ def retry(count=10, delay=1, pass_counter=None):
     return decorator
 
 
+@six.python_2_unicode_compatible
 class CalledProcessError(Exception):
     def __init__(self, command, returncode, output=None):
         self.returncode = returncode
+        if not isinstance(output, six.text_type):
+            command = command.decode('utf-8')
         self.cmd = command
         self.output = output
 
     def __str__(self):
-        message = "Command '%s' returned non-zero exit status %s" % (
+        message = u"Command '%s' returned non-zero exit status %s" % (
             self.cmd, self.returncode)
         if self.output:
-            message += "\n%s" % '\n'.join(self.output)
+            message += u"\n%s" % repr(self.output)
         return message
 
 
