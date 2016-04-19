@@ -41,14 +41,19 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                                       'OS-EXT-SRV-ATTR:hypervisor_hostname')
         instance_name = getattr(self.instance, 'OS-EXT-SRV-ATTR:instance_name')
         compute_node = self.env.find_node_by_fqdn(hypervisor_hostname)
-        screenshot_path = '/tmp/instance_screenshot'
+        screenshot_path = '/tmp/instance_screenshot.ppm'
         with compute_node.ssh() as remote:
+            remote.check_call(
+                'virsh send-key {name} --codeset win32 VK_TAB'.format(
+                    name=instance_name))
             remote.check_call(
                 'virsh screenshot {name} --file {path}'.format(
                     name=instance_name, path=screenshot_path),
                 verbose=False)
             with remote.open(screenshot_path, 'rb') as f:
                 data = f.read()
+        with open(screenshot_path, 'wb') as f:
+            f.write(data)
         return sum(ord(x) for x in data) / len(data) > 25
 
     def wait_instance_to_boot(self):
