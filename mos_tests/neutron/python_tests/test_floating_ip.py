@@ -77,8 +77,8 @@ class TestFloatingIP(TestBase):
 
         self.os_conn.neutron.delete_floatingip(self.floating_ip['id'])
 
-        self.os_conn.neutron.remove_interface_router(
-            router['id'], {'subnet_id': subnet['subnet']['id']})
+        self.os_conn.router_interface_delete(router['id'],
+                                             subnet_id=subnet['subnet']['id'])
         self.os_conn.neutron.delete_router(router['id'])
         self.os_conn.neutron.delete_network(net['network']['id'])
         security_group.delete()

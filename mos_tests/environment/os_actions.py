@@ -365,6 +365,16 @@ class OpenStackActions(object):
             raise ValueError("subnet_id or port_id must be indicated.")
         self.neutron.add_interface_router(router_id, body)
 
+    def router_interface_delete(self, router_id, subnet_id=None, port_id=None):
+        body = {}
+        if subnet_id:
+            body['subnet_id'] = subnet_id
+        elif port_id:
+            body['port_id'] = port_id
+        else:
+            raise ValueError("subnet_id or port_id must be indicated.")
+        self.neutron.remove_interface_router(router_id, body)
+
     def router_gateway_add(self, router_id, network_id):
         network = {
             'network_id': network_id
@@ -376,8 +386,7 @@ class OpenStackActions(object):
             device_id=router_id, device_owner=u'network:router_interface'
         )['ports']
         for port in binded_ports:
-            self.neutron.remove_interface_router(router_id,
-                                                 {'port_id': port['id']})
+            self.router_interface_delete(router_id, port_id=port['id'])
         self.neutron.delete_router(router_id)
 
     def create_qos_policy(self, name):
