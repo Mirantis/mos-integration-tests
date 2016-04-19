@@ -308,8 +308,17 @@ class TestBase(object):
             result['stderr'])
         assert not result['exit_code'], err_msg
 
-    def create_networks(self, net_number, router, net_list, inst_keypair,
-                        security_group):
+    def create_delete_number_of_instances(self, net_number, router, net_list,
+                                          inst_keypair, security_group):
+        """Create X number of networks, create and delete instance on it.
+
+        :param net_number: number of networks to create
+        :param router: router to external network
+        :param net_list: list of existed networks
+        :param inst_keypair: private keys to connect to instance
+        :param security_group: security group that instance is related to
+        :returns: -
+        """
         tenant = self.os_conn.neutron.get_quotas_tenant()
         tenant_id = tenant['tenant']['tenant_id']
         self.os_conn.neutron.update_quota(tenant_id, {'quota':
