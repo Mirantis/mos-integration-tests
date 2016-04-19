@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
 import time
 
@@ -27,31 +28,41 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 class TestFailoverRestarts(TestBase):
 
-    def check_common_services(self):
+    def check_common_services(self, openstack_client):
         # check several times that all needed services are up
         for x in range(5):
             for server in self.os_conn.nova.servers.list():
                 assert server.status == 'ACTIVE'
-            for user in self.os_conn.keystone.users.list():
-                assert user.enabled
-            for service in self.os_conn.keystone.services.list():
-                assert service.enabled
+
+            # Get user list and check that all users are enabled
+            result = openstack_client('user list --long -f json')
+            for user in json.loads(result):
+                assert user['Enabled'] is True
+
+            # Get list of services IDs and than description for each service
+            result = openstack_client('service list -f json')
+            id_list = [service['ID'] for service in json.loads(result)]
+            for service_id in id_list:
+                cmd = 'service show {} -f json'.format(service_id)
+                result = openstack_client(cmd)
+                service = json.loads(result)
+                assert service['enabled'] is True
+
             for service in self.os_conn.nova.services.list():
                 assert service.status == 'enabled'
+
             for image in self.os_conn.glance.images.list():
                 assert image.status == 'active'
-            # Just a little delay before the next check
-            time.sleep(2)
 
     @pytest.mark.testrail_id('542818')
     def test_restart_galera_services_with_replicaton(self):
         """Restart all Galera services with data replication
 
         Scenario:
-            1. 'pcs resource disable clone_p_mysql' for stop Galera service.
+            1. 'pcs resource disable clone_p_mysqld' for stop Galera service.
             2. 'ps -ef | grep mysql' and check that
                 all mysql processes was killed.
-            3. 'pcs resource enable clone_p_mysql' for start Galera service.
+            3. 'pcs resource enable clone_p_mysqld' for start Galera service.
             4. 'ps -ef | grep mysql' and check that mysql processes worked.
             5.  Execute 'nova list', 'keystone user-list', 'glance image-list',
                 'nova-manage service list', 'keystone service-list'
@@ -79,14 +90,14 @@ class TestFailoverRestarts(TestBase):
 
         with controller.ssh() as remote:
 
-            cmd = 'pcs resource disable clone_p_mysql'
+            cmd = 'pcs resource disable clone_p_mysqld'
             logger.info('disable all galera services with cmd {}'.format(cmd))
             remote.check_call(cmd)
 
             logger.info('wait until all mysql processes are stopped')
             wait(is_mysql_stopped, timeout_seconds=3 * 60, sleep_seconds=5)
 
-            cmd = 'pcs resource enable clone_p_mysql'
+            cmd = 'pcs resource enable clone_p_mysqld'
             logger.info('enable all galera services with cmd {}'.format(cmd))
             remote.check_call(cmd)
 
@@ -94,7 +105,7 @@ class TestFailoverRestarts(TestBase):
             wait(is_mysql_started, timeout_seconds=3 * 60, sleep_seconds=5)
 
     @pytest.mark.testrail_id('542817')
-    def test_restart_rabbitmq_services_with_replicaton(self):
+    def test_restart_rabbitmq_services_with_replicaton(self, openstack_client):
         """Restart all RabbitMQ services with data replication
         Scenario
             1. Login to the first Openstack controller node
@@ -158,7 +169,7 @@ class TestFailoverRestarts(TestBase):
         # It will guaranty that all services are recovered.
         self.env.wait_for_ostf_pass()
 
-        self.check_common_services()
+        self.check_common_services(openstack_client)
 
     @pytest.mark.testrail_id('542815')
     def test_instance_folder_after_hard_reboot(self, clean_os):
