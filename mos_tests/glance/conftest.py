@@ -209,3 +209,47 @@ def enable_image_direct_url_glance(env):
     for controller in controllers:
         reset_show_image_direct_url(controller)
     wait_glance_alive()
+
+
+@pytest.yield_fixture
+def restore_glance_credentials(env, openstack_client, os_conn):
+    """Restore old username and password for glance user"""
+
+    def check_changed_credentials(node):
+        with node.ssh() as remote:
+            out = remote.check_call(
+                'find /etc/glance -name glance-*.conf.orig')
+            if len(out['stdout']) != 2:
+                pytest.fail('New glance credentials were not applied')
+
+    def restore_credentials(node):
+        with node.ssh() as remote:
+            remote.check_call('mv /etc/glance/glance-api.conf.orig '
+                              '/etc/glance/glance-api.conf')
+            remote.check_call('mv /etc/glance/glance-swift.conf.orig '
+                              '/etc/glance/glance-swift.conf')
+            remote.check_call('service glance-api restart')
+
+    def get_old_password(node):
+        with node.ssh() as remote:
+            with remote.open('/etc/glance/glance-swift.conf') as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+                old_passwd = parser.get('ref1', 'key')
+        return old_passwd
+
+    def wait_glance_alive():
+        common.wait(lambda:
+                    len(list(os_conn.glance.images.list())) > 0,
+                    timeout_seconds=60, waiting_for='glance available',
+                    expected_exceptions=Exception)
+
+    yield
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        check_changed_credentials(controller)
+        restore_credentials(controller)
+    openstack_client.user_set_new_name('glance-1', 'glance')
+    openstack_client.user_set_new_password(
+        'glance', get_old_password(controllers[0]))
+    wait_glance_alive()
