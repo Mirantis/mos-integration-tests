@@ -121,3 +121,7 @@ class Ironic(CLICLient):
 
 class Murano(CLICLient):
     command = 'murano'
+
+
+class Ceilometer(CLICLient):
+    command = 'ceilometer'
