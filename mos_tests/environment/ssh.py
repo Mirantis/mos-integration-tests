@@ -16,6 +16,7 @@ import functools
 import logging
 import os
 import posixpath
+import select
 import stat
 import time
 
@@ -231,21 +232,21 @@ class SSHClient(object):
     def execute(self, command, verbose=True, merge_stderr=False):
         chan, stdin, stdout, stderr = self.execute_async(
             command, merge_stderr=merge_stderr)
-        output = {'stdout': '', 'stderr': ''}
 
-        def read_from_chan():
-            while chan.recv_ready():
-                output['stdout'] += chan.recv(1024)
-            while chan.recv_stderr_ready():
-                output['stderr'] += chan.recv_stderr(1024)
+        stdout_buf = ''
+        stderr_buf = ''
 
-        while not chan.exit_status_ready():
-            read_from_chan()
+        while not chan.closed or chan.recv_ready() or chan.recv_stderr_ready():
+            select.select([chan], [], [chan], 60)
 
-        read_from_chan()
+            if chan.recv_ready():
+                stdout_buf += chan.recv(1024)
+            if chan.recv_stderr_ready():
+                stderr_buf += chan.recv_stderr(1024)
+
         result = CommandResult({
-            'stdout': output['stdout'].splitlines(True),
-            'stderr': output['stderr'].splitlines(True),
+            'stdout': stdout_buf.splitlines(True),
+            'stderr': stderr_buf.splitlines(True),
             'exit_code': chan.recv_exit_status()
         })
         stdin.close()
