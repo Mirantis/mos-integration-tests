@@ -36,8 +36,7 @@ def map_interfaces(devops_env, fuel_node):
 
 
 @pytest.yield_fixture(scope='class')
-def cleanup_nodes(env_name):
-    devops_env = devops_client.DevopsClient.get_env(env_name)
+def cleanup_nodes(devops_env):
     nodes = devops_env.nodes().all
     yield
     for node in devops_env.nodes().all:

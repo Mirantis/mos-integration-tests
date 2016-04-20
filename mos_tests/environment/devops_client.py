@@ -64,9 +64,9 @@ class EnvProxy(object):
                 volume = self._env.get_volume(name=volume_name)
                 volume.erase()
 
-            disk_dev = self._env.add_empty_volume(node, volume_name,
-                                                  size * (1024**3))
-            disk_dev.volume.define()
+            volume = self._env.add_empty_volume(node, volume_name,
+                                                size * (1024**3))
+            volume.define()
         if networks is None:
             networks = self.get_networks().values_list('name', flat=True)
         node.attach_to_networks(networks)
