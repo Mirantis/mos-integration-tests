@@ -434,3 +434,8 @@ def controller_remote(env):
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)
+
+
+def is_cinder_lvm_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['volumes_lvm']['value']
