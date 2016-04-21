@@ -117,25 +117,19 @@ class OpenStackActions(object):
         if status == 'ERROR':
             raise Exception('Server {} status is error'.format(server.name))
 
-    def create_server(self, name, image_id=None, volume_id=None, flavor=1,
-                      userdata=None, files=None, key_name=None, timeout=300,
+    def create_server(self, name, image_id=None, flavor=1, userdata=None,
+                      files=None, key_name=None, timeout=300,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
 
-        if image_id is None and volume_id is None:
+        if image_id is None:
             image_id = self._get_cirros_image().id
-        if image_id:
-            srv = self.nova.servers.create(name=name,
-                                           image=image_id,
-                                           flavor=flavor,
-                                           userdata=userdata,
-                                           files=files,
-                                           key_name=key_name,
-                                           **kwargs)
-        elif volume_id:
-            srv = self.nova.servers.create(
-                name=name, image=image_id, flavor=flavor, userdata=userdata,
-                files=files, key_name=key_name,
-                block_device_mapping={'vda': volume_id}, **kwargs)
+        srv = self.nova.servers.create(name=name,
+                                       image=image_id,
+                                       flavor=flavor,
+                                       userdata=userdata,
+                                       files=files,
+                                       key_name=key_name,
+                                       **kwargs)
 
         if wait_for_active:
             wait(lambda: self.is_server_active(srv),

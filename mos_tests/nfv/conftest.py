@@ -21,12 +21,14 @@ from mos_tests.functions import common
 def aggregate(os_conn):
     hp_computes = []
     for compute in os_conn.env.get_nodes_by_role('compute'):
-        with os_conn.env.get_ssh_to_node(compute.data['ip']) as remote:
+        with compute.ssh() as remote:
             res = remote.execute(
                 'grep HugePages_Total /proc/meminfo')['stdout']
         if res:
-            if res[0].split(':')[1].rstrip().lstrip() != '0':
+            if res[0].split(':')[1].strip() != '0':
                 hp_computes.append(compute)
+    if len(hp_computes) < 2:
+        pytest.skip("Insufficient count of compute nodes with Huge Pages")
     aggr = os_conn.nova.aggregates.create('hpgs-aggr', 'nova')
     os_conn.nova.aggregates.set_metadata(aggr, {'hpgs': 'true'})
     for host in hp_computes:
@@ -38,7 +40,7 @@ def aggregate(os_conn):
 
 
 @pytest.yield_fixture()
-def nfv_flavor(os_conn, clear_old, request):
+def nfv_flavor(os_conn, cleanup, request):
     flavors = getattr(
         request, 'param', [[['m1.small.hpgs', 512, 1, 1],
                            [{'hw:mem_page_size': 2048}, ]], ])
@@ -57,7 +59,7 @@ def nfv_flavor(os_conn, clear_old, request):
 @pytest.yield_fixture(scope="class")
 def keypair(os_conn):
     key = os_conn.create_key(key_name='nfv_key')
-    yield key.name
+    yield key
     os_conn.delete_key(key_name=key.name)
 
 
@@ -71,8 +73,7 @@ def security_group(os_conn):
 @pytest.yield_fixture(scope="class")
 def networks(os_conn):
     router = os_conn.create_router(name="router01")['router']
-    ext_net = [x for x in os_conn.list_networks()['networks']
-               if x.get('router:external')][0]
+    ext_net = os_conn.ext_network
     os_conn.router_gateway_add(router_id=router['id'],
                                network_id=ext_net['id'])
     net01 = os_conn.add_net(router['id'])
@@ -85,36 +86,36 @@ def networks(os_conn):
 
 
 @pytest.yield_fixture(scope="class")
-@pytest.yield_fixture
 def volume(os_conn):
         image_id = [image.id for image in os_conn.nova.images.list()
                     if image.name == 'TestVM'][0]
         volume = common.create_volume(os_conn.cinder, image_id,
-                                      name='nfv_volume', type='volumes_lvm')
+                                      name='nfv_volume',
+                                      volume_type='volumes_lvm')
         yield volume
         volume.delete()
 
 
 @pytest.yield_fixture
-def clear_old(os_conn):
-    def clear(os_conn):
-        instance_list = os_conn.nova.servers.list()
-        if instance_list:
-            for instance in instance_list:
-                instance.delete()
-            common.wait(lambda: len(os_conn.nova.servers.list()) == 0,
-                        timeout_seconds=10 * 60)
-
-        image_list = os_conn.nova.images.list()
-        if image_list:
-            for image in image_list:
-                if image.name != 'TestVM':
-                    image.delete()
-            common.wait(lambda: len(os_conn.nova.images.list()) == 1,
-                        timeout_seconds=10 * 60)
-    clear(os_conn)
+def cleanup(os_conn):
+    def instances_cleanup(os_conn):
+        instances = os_conn.nova.servers.list()
+        for instance in instances:
+            instance.delete()
+        common.wait(lambda: len(os_conn.nova.servers.list()) == 0,
+                    timeout_seconds=10 * 60, waiting_for='instances cleanup')
+    initial_images = os_conn.nova.images.list()
+    instances_cleanup(os_conn)
     yield
-    clear(os_conn)
+    instances_cleanup(os_conn)
+
+    images = [image for image in os_conn.nova.images.list() if
+              image not in initial_images]
+    for image in images:
+        image.delete()
+    common.wait(lambda: len(os_conn.nova.images.list()) == len(initial_images),
+                timeout_seconds=10 * 60, waiting_for='images cleanup')
+
     for volume in os_conn.cinder.volumes.list():
         if volume.name != 'nfv_volume':
             volume.delete()

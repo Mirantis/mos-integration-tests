@@ -20,6 +20,7 @@ import pytest
 import six
 
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests import settings
 
 
@@ -86,70 +87,13 @@ class TestBase(object):
             subnet_id=subnet['subnet']['id'])
         return router
 
-    def run_on_vm(self, vm, vm_keypair=None, command='uname',
-                  vm_login="cirros", timeout=3 * 60, vm_password='cubswin:)'):
-        """Execute command on vm and return dict with results
-
-        :param vm: server to execute command on
-        :param vm_keypair: keypair used during vm creating
-        :param command: command to execute
-        :param vm_login: username to login to vm via ssh
-        :param vm_password: password to login to vm via ssh
-        :param timeout: type - int or None
-            - if None - execute command and return results
-            - if int - wait `timeout` seconds until command exit_code will be 0
-        :returns: Dictionary with `exit_code`, `stdout`, `stderr` keys.
-            `Stdout` and `stderr` are list of strings
-        """
-        results = []
-
-        def execute():
-            with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair,
-                                              username=vm_login,
-                                              password=vm_password) as remote:
-                result = remote.execute(command)
-                results.append(result)
-                return result
-
-        logger.info('Executing `{cmd}` on {vm_name}'.format(
-            cmd=command,
-            vm_name=vm.name))
-
-        if timeout is None:
-            execute()
-        else:
-            err_msg = "SSH command: `{command}` completed with 0 exit code"
-            wait(lambda: execute()['exit_code'] == 0,
-                 sleep_seconds=(1, 60, 5), timeout_seconds=timeout,
-                 expected_exceptions=(Exception,),
-                 waiting_for=err_msg.format(command=command))
-        return results[-1]
-
-    def check_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
-                           timeout=3 * 60, vm_login='cirros',
-                           vm_password='cubswin:)'):
-        logger.info('Expecting that ping from VM should pass')
-        # Get ping results
-        result = self.check_ping_from_vm_helper(
-            vm, vm_keypair, ip_to_ping,
-            timeout, vm_login, vm_password)
-
-        error_msg = (
-            'Instance has NO connection, but it should have.\n'
-            'EXIT CODE: "{exit_code}"\n'
-            'STDOUT: "{stdout}"\n'
-            'STDERR {stderr}').format(**result)
-
-        # As ping should pass we expect '0' in exit_code
-        assert 0 == result['exit_code'], error_msg
-
     def check_no_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
                               timeout=None, vm_login='cirros',
                               vm_password='cubswin:)'):
         logger.info('Expecting that ping from VM should fail')
         # Get ping results
-        result = self.check_ping_from_vm_helper(
-            vm, vm_keypair, ip_to_ping,
+        result = network_checks.check_ping_from_vm_helper(
+            self.env, self.os_conn, vm, vm_keypair, ip_to_ping,
             timeout, vm_login, vm_password)
 
         error_msg = (
@@ -160,21 +104,6 @@ class TestBase(object):
 
         # As ping should fail we expect NOT '0' in exit_code
         assert 0 != result['exit_code'], error_msg
-
-    def check_ping_from_vm_helper(self, vm, vm_keypair, ip_to_ping,
-                                  timeout, vm_login, vm_password):
-        """Returns dictionary with results of ping execution:
-            exit_code, stdout, stderr
-        """
-        if ip_to_ping is None:
-            ip_to_ping = [settings.PUBLIC_TEST_IP]
-        if isinstance(ip_to_ping, six.string_types):
-            ip_to_ping = [ip_to_ping]
-        cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
-        cmd = ' && '.join(cmd_list)
-        res = self.run_on_vm(vm, vm_keypair, cmd, timeout=timeout,
-                             vm_login=vm_login, vm_password=vm_password)
-        return res
 
     def check_ping_from_vm_with_ip(self, vm_ip, vm_keypair=None,
                                    ip_to_ping=None, ping_count=1,
@@ -195,19 +124,6 @@ class TestBase(object):
                  'stdout {1}, stderr {2}'.format(res['exit_code'],
                                                  res['stdout'],
                                                  res['stderr']))
-
-    def check_vm_connectivity(self, timeout=3 * 60):
-        """Check that all vms can ping each other and public ip"""
-        servers = self.os_conn.get_servers()
-        for server1 in servers:
-            ips_to_ping = [settings.PUBLIC_TEST_IP]
-            for server2 in servers:
-                if server1 == server2:
-                    continue
-                ips_to_ping += self.os_conn.get_nova_instance_ips(
-                    server2).values()
-            self.check_ping_from_vm(server1, self.instance_keypair,
-                                    ips_to_ping, timeout=timeout)
 
     def run_on_cirros(self, vm, cmd):
         """Run command on Cirros VM, connected by floating ip.
@@ -301,9 +217,8 @@ class TestBase(object):
 
     def run_udhcpc_on_vm(self, vm):
         command = 'sudo -i cirros-dhcpc up eth0'
-        result = self.run_on_vm(vm,
-                                self.instance_keypair,
-                                command)
+        result = network_checks.run_on_vm(self.env, self.os_conn, vm,
+                                          self.instance_keypair, command)
         err_msg = 'Failed to start the udhcpc on vm std_err: {}'.format(
             result['stderr'])
         assert not result['exit_code'], err_msg
