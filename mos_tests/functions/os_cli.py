@@ -135,3 +135,15 @@ class Murano(CLICLient):
 
 class Ceilometer(CLICLient):
     command = 'ceilometer'
+
+
+class Aodh(CLICLient):
+    command = 'aodh'
+
+    def __call__(self, *args, **kwargs):
+        result = super(Aodh, self).__call__(*args, **kwargs)
+        lines = result.splitlines()
+        if len(lines) > 0:
+            # Change output to tempest parser
+            lines[1] = lines[1].replace('Field   ', 'Property')
+        return Result('\n'.join(lines))

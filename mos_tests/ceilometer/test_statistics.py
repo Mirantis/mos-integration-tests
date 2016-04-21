@@ -14,14 +14,8 @@
 
 import pytest
 
-from mos_tests.functions import os_cli
 
 pytestmark = pytest.mark.undestructive
-
-
-@pytest.fixture
-def ceilometer(controller_remote):
-    return os_cli.Ceilometer(controller_remote)
 
 
 @pytest.mark.testrail_id('842486', param='-m image.size -p 100')
@@ -45,9 +39,9 @@ def ceilometer(controller_remote):
      '-m image.size -q project={project_id}; user={user_id}',
      '-m storage.containers.objects -q project={project_id}; user={user_id}',
      ])
-def test_statistic(ceilometer, param, os_conn):
+def test_statistic(ceilometer_client, param, os_conn):
     """Check that ceilometer statistics {params} return 0 exit code"""
     project_id = os_conn.session.get_project_id()
     user_id = os_conn.session.get_user_id()
     param = param.format(project_id=project_id, user_id=user_id)
-    ceilometer('statistics {param}'.format(param=param))
+    ceilometer_client('statistics {param}'.format(param=param))

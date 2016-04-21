@@ -3,6 +3,16 @@
 This repository contains automated tests for Mirantis OpenStack.
 
 
+### Packages requirements
+
+```bash
+$ sudo apt-get install libpq-dev \
+    python-dev \
+    libffi-dev \
+    libvirt-dev
+```
+
+
 ### Running tests with tox
 
 To run tests you need to deploy some cloud with MOS, then install `tox` and run on server:
@@ -27,6 +37,7 @@ To launch tests with py.test directly:
 
     $ virtualenv venv
     $ source venv/bin/activate
+    $ pip install -U pip
     $ pip install -r requirements.txt
 
 Next you can run tests:

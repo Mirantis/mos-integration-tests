@@ -437,8 +437,9 @@ class OpenStackActions(object):
 
     @property
     def ext_network(self):
-        exist_networks = self.list_networks()['networks']
-        return [x for x in exist_networks if x.get('router:external')][0]
+        ext_networks = self.neutron.list_networks(
+            **{'router:external': True, 'status': 'ACTIVE'})
+        return ext_networks['networks'][0]
 
     def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
