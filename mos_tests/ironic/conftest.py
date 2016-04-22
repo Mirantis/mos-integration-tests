@@ -12,18 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 import logging
 import os
 import pytest
-import tarfile
 
 import yaml
 
 from mos_tests.functions import common
-from mos_tests.functions import file_cache
 from mos_tests.ironic import actions
-from mos_tests import settings
+from mos_tests.ironic import testutils
 
 logger = logging.getLogger(__name__)
 
@@ -79,35 +76,7 @@ def flavors(ironic_drivers_params, os_conn):
         flavor.delete()
 
 
-@pytest.yield_fixture(params=[['create', 'delete']], ids=idfn)
-def ubuntu_image(request, os_conn):
-    actions = request.param
-    image_name = 'ironic_trusty'
-
-    if 'create' in actions:
-        logger.info('Creating ubuntu image')
-        image = os_conn.glance.images.create(
-            name=image_name,
-            disk_format='raw',
-            container_format='bare',
-            hypervisor_type='baremetal',
-            visibility='public',
-            cpu_arch='x86_64',
-            fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
-
-        with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
-            with tarfile.open(fileobj=src, mode='r|gz') as tar:
-                img = tar.extractfile(tar.firstmember)
-                os_conn.glance.images.upload(image.id, img)
-
-        logger.info('Creating ubuntu image ... done')
-    else:
-        image = os_conn.nova.images.find(name=image_name)
-
-    yield image
-
-    if 'delete' in actions:
-        os_conn.glance.images.delete(image.id)
+ubuntu_image = pytest.yield_fixture()(testutils.ubuntu_image)
 
 
 def make_ironic_node(config, devops_env, ironic, name, fuel_env):
