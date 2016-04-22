@@ -91,32 +91,26 @@ def test_baremetal_network_settings(new_env, admin_remote):
                               get_baremetal_net_settings_from_cli())
 
 
-@pytest.mark.testrail_id(
-    '631892',
-    new_config={'/editable/additional_components/ironic/value': True})
+@pytest.mark.testrail_id('631892', new_config={})
 @pytest.mark.testrail_id(
     '631893',
     new_config={'/editable/storage/images_ceph/value': True,
                 '/editable/storage/objects_ceph/value': True})
-@pytest.mark.testrail_id(
-    '631894',
-    new_config={
-        '/editable/additional_components/ironic/value': True,
-        '/editable/storage/images_ceph/value': True,
-        '/editable/storage/objects_ceph/value': True,
-        '/editable/storage/ephemeral_ceph/value': True,
-        '/editable/storage/volumes_ceph/value': True,
-    })
+@pytest.mark.testrail_id('631894',
+                         new_config={
+                             '/editable/storage/images_ceph/value': True,
+                             '/editable/storage/objects_ceph/value': True,
+                             '/editable/storage/ephemeral_ceph/value': True,
+                             '/editable/storage/volumes_ceph/value': True,
+                         })
 @pytest.mark.parametrize('new_config', [
-    {'/editable/additional_components/ironic/value': True},
-    {'/editable/storage/images_ceph/value': True,
-     '/editable/storage/objects_ceph/value': True}, {
-         '/editable/additional_components/ironic/value': True,
-         '/editable/storage/images_ceph/value': True,
-         '/editable/storage/objects_ceph/value': True,
-         '/editable/storage/ephemeral_ceph/value': True,
-         '/editable/storage/volumes_ceph/value': True,
-     }
+    {}, {'/editable/storage/images_ceph/value': True,
+         '/editable/storage/objects_ceph/value': True}, {
+             '/editable/storage/images_ceph/value': True,
+             '/editable/storage/objects_ceph/value': True,
+             '/editable/storage/ephemeral_ceph/value': True,
+             '/editable/storage/volumes_ceph/value': True,
+         }
 ])
 def test_edit_config_with_yaml(new_env, admin_remote, new_config):
     """Ironic role can be enabled in cluster via yaml config file
@@ -131,6 +125,7 @@ def test_edit_config_with_yaml(new_env, admin_remote, new_config):
         5. Check that Ironic is enabled in Fuel API
     """
     old_settings = new_env.get_settings_data()
+    new_config['/editable/additional_components/ironic/value'] = True
     for key, value in new_config.items():
         assert dpath.util.get(old_settings, key) != value
 

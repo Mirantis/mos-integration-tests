@@ -217,6 +217,7 @@ def env(request, fuel):
             raise Exception(
                 "Can't find fuel cluster with name in {}".format(names))
         env = envs[0]
+    assert env.is_operational
     if getattr(request.session, 'reverted', True):
         env.wait_for_ostf_pass()
         wait(env.os_conn.is_nova_ready,

@@ -19,8 +19,12 @@ import pytest
 from mos_tests import conftest
 from mos_tests.environment import devops_client
 from mos_tests.functions import common
+from mos_tests.ironic import testutils
 
 logger = logging.getLogger(__name__)
+
+
+ubuntu_image = pytest.yield_fixture(scope='class')(testutils.ubuntu_image)
 
 
 def map_interfaces(devops_env, fuel_node):
@@ -64,9 +68,6 @@ class TestScale(object):
     @pytest.mark.testrail_id('631895', roles=['ironic'])
     @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631899', roles=['ironic', 'controller', 'ceph'])
-    @pytest.mark.parametrize('ubuntu_image',
-                             [['create']],
-                             indirect=['ubuntu_image'])
     def test_add_node(self, env, env_name, suffix, os_conn, ubuntu_image,
                       flavors, keypair, ironic, ironic_nodes, roles):
         """Test ironic work after add new ironic-conductor node to cluster
@@ -154,9 +155,6 @@ class TestScale(object):
     @pytest.mark.testrail_id('631896', roles=['ironic'])
     @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631900', roles=['ironic', 'controller', 'ceph'])
-    @pytest.mark.parametrize('ubuntu_image',
-                             [['delete']],
-                             indirect=['ubuntu_image'])
     def test_delete_node(self, env, roles, ironic, ubuntu_image, flavors,
                          keypair, os_conn, ironic_nodes):
         """Delete one of multiple ironic nodes.
