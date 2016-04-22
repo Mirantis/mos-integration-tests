@@ -16,6 +16,7 @@ from itertools import groupby
 import logging
 import os
 
+import dpath.util
 from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects import environment
@@ -95,9 +96,12 @@ class Environment(environment.Environment):
 
     @property
     def os_conn(self):
+        controller_address = self.get_primary_controller_ip()
+        if self.ssl_enabled:
+            controller_address = self.ssl_hostname
         if self._os_conn is None:
             self._os_conn = OpenStackActions(
-                controller_ip=self.get_primary_controller_ip(),
+                controller_ip=controller_address,
                 cert=self.certificate,
                 env=self)
         return self._os_conn
@@ -199,10 +203,21 @@ class Environment(environment.Environment):
             'networking_parameters']['segmentation_type']
 
     @property
+    def ssl_config(self):
+        return dpath.util.get(self.get_settings_data(), '*/public_ssl')
+
+    @property
+    def ssl_enabled(self):
+        return dpath.util.get(self.ssl_config, '/services/value')
+
+    @property
     def certificate(self):
-        ssl = self.get_settings_data()['editable']['public_ssl']
-        if ssl['services']['value']:
-            return ssl['cert_data']['value']['content']
+        if self.ssl_enabled:
+            return dpath.util.get(self.ssl_config, '/cert_data/value/content')
+
+    @property
+    def ssl_hostname(self):
+        return dpath.util.get(self.ssl_config, '/hostname/value')
 
     @property
     def leader_controller(self):

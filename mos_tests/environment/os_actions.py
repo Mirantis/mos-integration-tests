@@ -422,6 +422,11 @@ class OpenStackActions(object):
                 secgroup.id, **ruleset)
         return secgroup
 
+    def delete_security_group(self, name):
+        sec_groups = self.nova.security_groups.findall(name=name)
+        for sg in sec_groups:
+            self.nova.security_groups.delete(sg)
+
     def create_key(self, key_name):
         return self.nova.keypairs.create(key_name)
 
