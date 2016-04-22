@@ -18,6 +18,7 @@ import pytest
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class TestRestarts(TestBase):
         self.os_conn.assign_floating_ip(self.server1)
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
         # Find a primary controller
         primary_controller = self.env.primary_controller
@@ -165,7 +166,7 @@ class TestRestarts(TestBase):
                                 self.hosts[0],
                                 self.security_group.id)
         # Create one more server and check connectivity
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.check_env_('not(is_l3_ha) and not(is_dvr)')
     @pytest.mark.testrail_id('542611')
@@ -215,7 +216,7 @@ class TestRestarts(TestBase):
                                 self.instance_keypair.name,
                                 self.hosts[0],
                                 self.security_group.id)
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.check_env_('not(is_l3_ha) and not(is_dvr)')
     @pytest.mark.testrail_id('542613')
@@ -268,7 +269,7 @@ class TestRestarts(TestBase):
                                 self.instance_keypair.name,
                                 self.hosts[0],
                                 self.security_group.id)
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542625')
     def test_shutdown_primary_controller_dhcp_agent(self):

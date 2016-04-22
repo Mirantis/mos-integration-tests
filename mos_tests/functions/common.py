@@ -418,17 +418,20 @@ def is_volume_exists(cinder_client, uid):
     return uid in [s.id for s in cinder_client.volumes.list()]
 
 
-def create_volume(cinder_client, image_id, size=1, timeout=5):
+def create_volume(cinder_client, image_id, size=1, timeout=5,
+                  name='Test_volume', volume_type=None,):
     """Check volume creation
         :param cinder_client: Cinder API client connection point
         :param image_id: UID of image
         :param size: Size of volume in GB
         :param timeout: Timeout for check operation
+        :param name: name for volume
+        :param volume_type: type for volume
         :return volume
     """
     end_time = time() + 60 * timeout
-    volume = cinder_client.volumes.create(size, name='Test_volume',
-                                          imageRef=image_id)
+    volume = cinder_client.volumes.create(size, name=name, imageRef=image_id,
+                                          volume_type=volume_type)
     status = cinder_client.volumes.get(volume.id).status
     while status != 'available':
         if time() > end_time:

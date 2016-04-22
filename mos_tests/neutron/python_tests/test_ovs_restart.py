@@ -21,6 +21,7 @@ import time
 import pytest
 
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
@@ -173,8 +174,9 @@ class TestOVSRestartTwoVms(OvsBase):
             self.os_conn.nova.servers.find(name="server02")
         ).values()[0]
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=3 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, self.server1, self.instance_keypair,
+            self.server2_ip, timeout=3 * 60)
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [
@@ -237,8 +239,9 @@ class TestOVSRestartTwoVms(OvsBase):
             # after restarting service
             time.sleep(30)
 
-            self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                    self.server2_ip, timeout=3 * 60)
+            network_checks.check_ping_from_vm(
+                self.env, self.os_conn, self.server1, self.instance_keypair,
+                self.server2_ip, timeout=3 * 60)
 
             # check all agents are alive
             assert all([agt['alive'] for agt in
@@ -286,8 +289,9 @@ class TestOVSRestartTwoVms(OvsBase):
         # after restarting service
         time.sleep(30)
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=3 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, self.server1, self.instance_keypair,
+            self.server2_ip, timeout=3 * 60)
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
@@ -417,7 +421,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
                 nics=[{'net-id': self.net_id}])
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [agt['id'] for agt in
@@ -456,9 +460,8 @@ class TestOVSRestartsOneNetwork(OvsBase):
 
         arping_cmd = 'sudo arping -I eth0 {}'.format(vm_ip)
         cmd = ' '.join((arping_cmd, '< /dev/null > ~/arp.log 2>&1 &'))
-        result = self.run_on_vm(srv1,
-                                self.instance_keypair,
-                                cmd)
+        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
+                                          self.instance_keypair, cmd)
         err_msg = 'Failed to start the arping on vm result: {}'.format(
                                                                 result)
         assert not result['exit_code'], err_msg
@@ -483,9 +486,8 @@ class TestOVSRestartsOneNetwork(OvsBase):
 
         # Check that arping is still executing
         cmd = 'ps'
-        result = self.run_on_vm(srv1,
-                                self.instance_keypair,
-                                cmd)
+        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
+                                          self.instance_keypair, cmd)
         arping_is_run = False
         for line in result['stdout']:
             if arping_cmd in line:
@@ -496,13 +498,12 @@ class TestOVSRestartsOneNetwork(OvsBase):
 
         # Read log of arpping execution for future possible debug
         cmd = 'cat ~/arp.log'
-        result = self.run_on_vm(srv1,
-                                self.instance_keypair,
-                                cmd)
+        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
+                                          self.instance_keypair, cmd)
         logger.debug(result)
 
         # Check connectivity
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
 
 @pytest.mark.check_env_("has_1_or_more_computes")
@@ -540,8 +541,9 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
             self.os_conn.nova.servers.find(name="server01-2")
         ).values()[0]
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=3 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, self.server1, self.instance_keypair,
+            self.server2_ip, timeout=3 * 60)
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [
@@ -598,8 +600,9 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         # after restarting service
         time.sleep(30)
 
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, timeout=3 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, self.server1, self.instance_keypair,
+            self.server2_ip, timeout=3 * 60)
 
         # check all agents are alive
         assert all([agt['alive'] for agt in
@@ -644,8 +647,9 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
     def launch_iperf_server(self, vm, keypair, vm_login, vm_pwd):
         """Launch iperf server"""
         server_cmd = 'iperf -u -s -p 5002 </dev/null > ~/iperf.log 2>&1 &'
-        res_srv = self.run_on_vm(vm, keypair, server_cmd, vm_login=vm_login,
-                                 vm_password=vm_pwd)
+        res_srv = network_checks.run_on_vm(self.env, self.os_conn, vm, keypair,
+                                           server_cmd, vm_login=vm_login,
+                                           vm_password=vm_pwd)
         return res_srv
 
     def launch_iperf_client(self, client, server, keypair, vm_login,
@@ -656,8 +660,9 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
             .format(self.os_conn.get_nova_instance_ips(server)['fixed'])
         if background:
             client_cmd += ' < /dev/null > ~/iperf_client.log 2>&1 &'
-        res = self.run_on_vm(client, keypair, client_cmd, vm_login=vm_login,
-                             vm_password=vm_pwd)
+        res = network_checks.run_on_vm(self.env, self.os_conn, client, keypair,
+                                       client_cmd, vm_login=vm_login,
+                                       vm_password=vm_pwd)
         return res
 
     @pytest.fixture
@@ -720,9 +725,10 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.server2 = self.os_conn.nova.servers.find(name="server02")
         self.server2_ip = self.os_conn.get_nova_instance_ips(
             self.os_conn.nova.servers.find(name="server02")).values()[0]
-        self.check_ping_from_vm(self.server1, self.instance_keypair,
-                                self.server2_ip, vm_login='ubuntu',
-                                vm_password='ubuntu', timeout=4 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, self.server1, self.instance_keypair,
+            self.server2_ip, vm_login='ubuntu', vm_password='ubuntu',
+            timeout=4 * 60)
 
         # make a list of ovs agents that resides only on controllers
         controllers = [node.data['fqdn']
@@ -793,8 +799,9 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         cmd = 'cat ~/iperf_client.log'
 
         def get_lost():
-            result = self.run_on_vm(self.server1, self.instance_keypair, cmd,
-                                    vm_login='ubuntu', vm_password='ubuntu')
+            result = network_checks.run_on_vm(
+                self.env, self.os_conn, self.server1, self.instance_keypair,
+                cmd, vm_login='ubuntu', vm_password='ubuntu')
             return self.get_lost_percentage(result['stdout'])
 
         lost = wait(get_lost, timeout_seconds=5 * 60, sleep_seconds=5,
