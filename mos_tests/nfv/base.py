@@ -60,3 +60,17 @@ class TestBaseNFV(object):
         volume = common.create_volume(os_conn.cinder, image,
                                       volume_type='volumes_lvm')
         return volume.id
+
+    def migrate(self, os_conn, vm):
+        os_conn.nova.servers.migrate(vm)
+        common.wait(
+            lambda: os_conn.nova.servers.get(vm).status == 'VERIFY_RESIZE',
+            timeout_seconds=3 * 60,
+            waiting_for='instance {} changes status to VERIFY_RESIZE during '
+                        'migration'.format(vm.name))
+        os_conn.nova.servers.confirm_resize(vm)
+        common.wait(lambda: os_conn.is_server_active(vm),
+                    timeout_seconds=5 * 60,
+                    waiting_for='instance {} changes status to ACTIVE after '
+                                'migration'.format(vm.name))
+        return os_conn.nova.servers.get(vm)
