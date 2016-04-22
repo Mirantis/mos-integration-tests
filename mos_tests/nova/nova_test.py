@@ -17,6 +17,7 @@ import subprocess
 from time import sleep
 from time import time
 
+import logging
 import paramiko
 import pytest
 import six
@@ -24,6 +25,11 @@ import six
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests.functions import network_checks
+from mos_tests.neutron.python_tests.base import TestBase
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
@@ -601,3 +607,151 @@ class NovaIntegrationTests(OpenStackTestCase):
         # Check that instance is reachable
         ping = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping, "Instance after creation is not reachable")
+
+
+@pytest.mark.undestructive
+class TestNovaDeferredDelete(TestBase):
+    """Nova Deferred Delete test cases"""
+    recl_interv_long = 24 * 60 * 60  # seconds
+    recl_interv_short = 30           # seconds
+
+    @classmethod
+    @pytest.yield_fixture
+    def volumes(cls, os_conn):
+        """Volumes cleanUp"""
+        volumes = []
+        yield volumes
+        for volume in volumes:
+            common_functions.delete_volume(os_conn.cinder, volume)
+
+    @pytest.mark.testrail_id('842493')
+    @pytest.mark.parametrize(
+        'set_recl_inst_interv', [recl_interv_long], indirect=True)
+    def test_restore_deleted_instance(
+            self, set_recl_inst_interv, instances, volumes):
+        """Restore previously deleted instance.
+        Actions:
+        1. Update '/etc/nova/nova.conf' with 'reclaim_instance_interval=86400'
+        and restart Nova on all nodes;
+        2. Create net and subnet;
+        3. Create and run two instances (vm1, vm2) inside same net;
+        4. Check that ping are successful between vms;
+        5. Create a volume and attach it to an instance vm1;
+        6. Delete instance vm1 and check that it's in 'SOFT_DELETE' state;
+        7. Restore vm1 instance and check that it's in 'ACTIVE' state;
+        8. Check that ping are successful between vms;
+        """
+        timeout = 60  # (sec) timeout to wait instance for status change
+
+        # Create two vms
+        vm1, vm2 = instances
+
+        # Ping one vm from another
+        vm1_ip = self.os_conn.get_nova_instance_ips(vm1).values()[0]
+        vm2_ip = self.os_conn.get_nova_instance_ips(vm2).values()[0]
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm1, ip_to_ping=vm2_ip, timeout=60)
+
+        # Create a volume and attach it to an instance vm1
+        volume = common_functions.create_volume(
+            self.os_conn.cinder, image_id=None)
+        self.os_conn.nova.volumes.create_server_volume(
+            server_id=vm1.id, volume_id=volume.id, device='/dev/vdb')
+        volumes.append(volume)
+
+        # Delete instance vm1 and check that it's in "SOFT_DELETED" state
+        common_functions.delete_instance(self.os_conn.nova, vm1.id)
+        assert vm1 not in self.os_conn.get_servers()
+        common_functions.wait(
+            lambda: self.os_conn.server_status_is(vm1, 'SOFT_DELETED'),
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} changes status to SOFT_DELETED'.format(
+                vm1.name))
+
+        # Restore vm1 instance and check that it's in "ACTIVE" state now
+        resp = self.os_conn.nova.servers.restore(vm1.id)
+        assert resp[0].ok
+        common_functions.wait(
+            lambda: self.os_conn.is_server_active(vm1.id),
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} changes status to ACTIVE'.format(
+                vm1.name))
+
+        # Ping one vm from another
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm2, ip_to_ping=vm1_ip, timeout=60)
+
+    @pytest.mark.testrail_id('842494')
+    @pytest.mark.parametrize(
+        'set_recl_inst_interv', [recl_interv_short], indirect=True)
+    def test_inst_deleted_reclaim_interval_timeout(
+            self, set_recl_inst_interv, instances, volumes):
+        """Check that softly-deleted instance is totally deleted after
+        reclaim interval timeout.
+        Actions:
+        1. Update '/etc/nova/nova.conf' with short 'reclaim_instance_interval'
+        and restart Nova on all nodes;
+        2. Create net and subnet;
+        3. Create and run two instances (vm1, vm2) inside same net;
+        4. Create a volume and attach it to an instance vm1;
+        5. Delete instance vm1 and check that it's in 'SOFT_DELETE' state;
+        6. Wait for the reclaim instance interval to expire and make sure
+        the vm1 is deleted;
+        7. Check that volume is released now and has an Available state;
+        8. Attach the volume to vm2 instance to ensure that the volume's reuse
+        doesn't call any errors.
+
+        ~! BUG !~
+        https://bugs.launchpad.net/cinder/+bug/1463856
+        Cinder volume isn't available after instance soft-deleted timer
+        expired while volume is still attached.
+        """
+        timeout = 60  # (sec) timeout to wait instance for status change
+
+        # Create two vms
+        vm1, vm2 = instances
+
+        # Create a volume and attach it to an instance vm1
+        volume = common_functions.create_volume(
+            self.os_conn.cinder, image_id=None)
+        self.os_conn.nova.volumes.create_server_volume(
+            server_id=vm1.id, volume_id=volume.id, device='/dev/vdb')
+        volumes.append(volume)
+
+        # Delete instance vm1 and check that it's in "SOFT_DELETED" state
+        common_functions.delete_instance(self.os_conn.nova, vm1.id)
+        assert vm1 not in self.os_conn.get_servers()
+        common_functions.wait(
+            lambda: self.os_conn.server_status_is(vm1, 'SOFT_DELETED'),
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} changes status to SOFT_DELETED'.format(
+                vm1.name))
+
+        # Wait interval and check that instance is not present
+        time_to_sleep = 2.5 * self.recl_interv_short
+        logger.debug(('Sleep to wait for 2.5 reclaim_instance_interval ({0})'
+                      ).format(time_to_sleep))
+        sleep(time_to_sleep)
+        try:
+            self.os_conn.get_instance_detail(vm1.id)
+        except Exception as e:
+            assert e.code == 404
+        else:
+            raise Exception(('Instance {0} not deleted after '
+                             '"reclaim_interval_timeout"').format(vm1.name))
+
+        # Update volume information
+        volume = self.os_conn.cinder.volumes.get(volume.id)
+
+        # ~! BUG !~: https://bugs.launchpad.net/cinder/+bug/1463856
+        # Check that volume is released now and has an Available state
+        assert volume.status == 'available'
+        # Check volume is not attached
+        assert volume.attachments == []
+
+        # Attach the volume to vm2 instance
+        self.os_conn.nova.volumes.create_server_volume(
+            server_id=vm2.id, volume_id=volume.id, device='/dev/vdb')
+
+        # Check volume status after re-attach
+        assert self.os_conn.cinder.volumes.get(volume.id).status == 'in-use'
