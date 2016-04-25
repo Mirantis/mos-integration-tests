@@ -76,16 +76,14 @@ class TestRestarts(TestBase):
 
         # Find a primary controller
         primary_controller = self.env.primary_controller
-        mac = primary_controller.data['mac']
-        self.primary_node = DevopsClient.get_node_by_mac(
-            env_name=self.env_name, mac=mac)
+        self.primary_node = self.devops_env.get_node_by_fuel_node(
+            primary_controller)
         self.primary_host = primary_controller.data['fqdn']
 
         # Find a non-primary controller
         non_primary_controller = self.env.non_primary_controllers[0]
-        mac = non_primary_controller.data['mac']
-        self.non_primary_node = DevopsClient.get_node_by_mac(
-            env_name=self.env_name, mac=mac)
+        self.non_primary_node = self.devops_env.get_node_by_fuel_node(
+            non_primary_controller)
         self.non_primary_host = non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
@@ -483,9 +481,8 @@ class TestRestarts(TestBase):
         for controller in self.env.non_primary_controllers:
             if controller.data['fqdn'] in ports_binding_before:
                 controller_to_restart = controller
-        mac = controller_to_restart.data['mac']
-        controller_with_dhcp = DevopsClient.get_node_by_mac(
-            env_name=self.env_name, mac=mac)
+        controller_with_dhcp = self.devops_env.get_node_by_fuel_node(
+            controller_to_restart)
 
         self.env.warm_restart_nodes([controller_with_dhcp])
 

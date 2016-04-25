@@ -49,7 +49,7 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 
     conductor = env.get_nodes_by_role('ironic')[0]
 
-    devops_node = devops_env.get_node_by_mac(conductor.data['mac'])
+    devops_node = devops_env.get_node_by_fuel_node(conductor)
     devops_node.reset()
 
     time.sleep(10)
@@ -94,7 +94,7 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('638353')
-def test_reboot_all_ironic_conductors(env, env_name):
+def test_reboot_all_ironic_conductors(env, devops_env):
     """Check ironic state after restart all conductor nodes
 
     Scenario:
@@ -124,9 +124,7 @@ def test_reboot_all_ironic_conductors(env, env_name):
             else:
                 assert drivers == drivers_data
 
-    devops_nodes = [devops_client.DevopsClient.get_node_by_mac(
-        env_name=env_name,
-        mac=x.data['mac']) for x in conductors]
+    devops_nodes = [devops_env.get_node_by_fuel_node(x) for x in conductors]
 
     for node in devops_nodes:
         node.destroy()

@@ -43,13 +43,12 @@ class TestDVRBase(base.TestBase):
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
         self.hosts = self.zone.hosts.keys()
 
-    def reset_computes(self, hostnames, env_name):
+    def reset_computes(self, hostnames, devops_env):
 
         logger.info('Resetting computes {}'.format(hostnames))
         for hostname in hostnames:
             node = self.env.find_node_by_fqdn(hostname)
-            devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                       mac=node.data['mac'])
+            devops_node = devops_env.get_node_by_fuel_node(node)
             devops_node.reset()
 
         def get_agents_on_hosts():
@@ -197,7 +196,7 @@ class TestDVR(TestDVRBase):
                                           vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('542764')
-    def test_connectivity_after_reset_compute(self, env_name):
+    def test_connectivity_after_reset_compute(self, devops_env):
         """Check North-South connectivity with floatingIP after reset compute
 
         Scenario:
@@ -220,14 +219,14 @@ class TestDVR(TestDVRBase):
 
         # reset compute
         compute_hostname = getattr(self.server, 'OS-EXT-SRV-ATTR:host')
-        self.reset_computes([compute_hostname], env_name)
+        self.reset_computes([compute_hostname], devops_env)
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
                                           vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('638477')
     def test_connectivity_after_reset_primary_controller_with_snat(self,
-            env_name):
+            devops_env):
         """Check North-South connectivity without floating after resetting
             primary controller with snat
 
@@ -269,8 +268,7 @@ class TestDVR(TestDVRBase):
             self.os_conn.add_router_to_l3_agent(router_id=self.router_id,
                 l3_agent_id=new_l3_agent['id'])
 
-        devops_node = DevopsClient.get_node_by_mac(
-            env_name=env_name, mac=leader_controller.data['mac'])
+        devops_node = devops_env.get_node_by_fuel_node(leader_controller)
         devops_node.reset()
 
         new_controller_with_snat = wait(
@@ -290,7 +288,7 @@ class TestDVR(TestDVRBase):
                                           timeout=4 * 60)
 
     @pytest.mark.testrail_id('542778')
-    def test_shutdown_snat_controller(self, env_name):
+    def test_shutdown_snat_controller(self, devops_env):
         """Shutdown controller with SNAT-namespace and check it reschedules.
 
         Scenario:
@@ -317,8 +315,7 @@ class TestDVR(TestDVRBase):
         controller_with_snat = self.find_snat_controller(self.router_id)
         logger.info('Destroying controller with SNAT: {}'.format(
             controller_with_snat.data['fqdn']))
-        devops_node = DevopsClient.get_node_by_mac(
-            env_name=env_name, mac=controller_with_snat.data['mac'])
+        devops_node = devops_env.get_node_by_fuel_node(controller_with_snat)
         self.env.destroy_nodes([devops_node])
         # Wait for SNAT reschedule
         new_controller_with_snat = wait(
@@ -703,7 +700,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
     @pytest.mark.testrail_id('542766')
-    def test_routing_after_reset_computes(self, env_name, prepare_openstack):
+    def test_routing_after_reset_computes(self, devops_env, prepare_openstack):
         """Check East-West connectivity after reset compute nodes
 
         Scenario:
@@ -724,7 +721,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             self.env, self.os_conn, vm=self.server1,
             vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
-        self.reset_computes(self.compute_nodes, env_name)
+        self.reset_computes(self.compute_nodes, devops_env)
 
         # Check ping after reset
         network_checks.check_ping_from_vm(
@@ -733,7 +730,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')
-    def test_east_west_connectivity_after_destroy_controller(self, env_name,
+    def test_east_west_connectivity_after_destroy_controller(self, devops_env,
             prepare_openstack):
         """Check East-West connectivity after destroy controller
 
@@ -761,8 +758,7 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
         # destroy controller
         controller = self.env.get_nodes_by_role('controller')[0]
-        devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                   mac=controller.data['mac'])
+        devops_node = devops_env.get_node_by_fuel_node(controller)
         self.env.destroy_nodes([devops_node])
 
         network_checks.check_ping_from_vm(

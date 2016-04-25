@@ -61,7 +61,7 @@ def test_evacuate(devops_env, env, os_conn, instances, keypair):
     """
     compute_host = getattr(instances[0], 'OS-EXT-SRV-ATTR:hypervisor_hostname')
     compute_node = env.find_node_by_fqdn(compute_host)
-    devops_node = devops_env.get_node_by_mac(compute_node.data['mac'])
+    devops_node = devops_env.get_node_by_fuel_node(compute_node)
     devops_node.destroy()
 
     def is_hypervisor_down():

@@ -450,7 +450,7 @@ class TestL3Agent(TestBase):
 
     @pytest.mark.need_devops
     @pytest.mark.testrail_id('542609')
-    def test_shutdown_not_primary_controller(self, env_name):
+    def test_shutdown_not_primary_controller(self, devops_env):
         """Shut down non-primary controller and check l3-agent work
 
         Scenario:
@@ -496,8 +496,7 @@ class TestL3Agent(TestBase):
 
         # Destroy node with l3 agent
         node = self.env.find_node_by_fqdn(l3_agent['host'])
-        devops_node = DevopsClient.get_node_by_mac(env_name=env_name,
-                                                   mac=node.data['mac'])
+        devops_node = devops_env.get_node_by_fuel_node(node)
         if devops_node is not None:
             devops_node.destroy()
         else:

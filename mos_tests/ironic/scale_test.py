@@ -30,7 +30,7 @@ ubuntu_image = pytest.yield_fixture(scope='class')(testutils.ubuntu_image)
 def map_interfaces(devops_env, fuel_node):
     """Return pairs of fuel_node interfaces and devops interfaces"""
     pairs = []
-    devops_node = devops_env.get_node_by_mac(fuel_node.data['mac'])
+    devops_node = devops_env.get_node_by_fuel_node(fuel_node)
     for fuel_interface in fuel_node.get_attribute('interfaces'):
         for devops_interface in devops_node.interfaces:
             if fuel_interface['mac'] == devops_interface.mac_address:

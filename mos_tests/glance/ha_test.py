@@ -32,7 +32,7 @@ class TestGlanceHA(TestBase):
     @pytest.mark.testrail_id('836632')
     @pytest.mark.parametrize('glance', [2], indirect=['glance'])
     def test_shutdown_primary_controller(
-            self, glance, image_file, suffix, timeout=60):
+            self, glance, image_file, suffix, devops_env, timeout=60):
         """Check creating image after shutdown primary controller
 
         Steps:
@@ -44,9 +44,7 @@ class TestGlanceHA(TestBase):
         """
         # Find a primary controller
         primary_controller = self.env.primary_controller
-        mac = primary_controller.data['mac']
-        primary_node = DevopsClient.get_node_by_mac(
-            env_name=self.env_name, mac=mac)
+        primary_node = devops_env.get_node_by_fuel_node(primary_controller)
 
         # Shutdown primary controller
         self.env.warm_shutdown_nodes([primary_node])
@@ -73,7 +71,7 @@ class TestGlanceHA(TestBase):
     @pytest.mark.testrail_id('836633')
     @pytest.mark.parametrize('glance', [1], indirect=['glance'])
     def test_shutdown_active_controller_during_upload(
-            self, glance, image_file, suffix, timeout=60):
+            self, glance, image_file, suffix, devops_env, timeout=60):
         """Check that image is created successfully if during creating image
         to perform shutdown of active controller
 
@@ -87,9 +85,7 @@ class TestGlanceHA(TestBase):
 
         # Find a primary controller
         primary_controller = self.env.primary_controller
-        mac = primary_controller.data['mac']
-        self.primary_node = DevopsClient.get_node_by_mac(
-            env_name=self.env_name, mac=mac)
+        primary_node = devops_env.get_node_by_fuel_node(primary_controller)
 
         name = 'Test_{}'.format(suffix[:6])
         image_url = settings.GLANCE_IMAGE_URL
@@ -100,7 +96,7 @@ class TestGlanceHA(TestBase):
         logger.info('Image starts to upload')
 
         # Shutdown primary controller
-        self.env.warm_shutdown_nodes([self.primary_node])
+        self.env.warm_shutdown_nodes([primary_node])
 
         image_list = parser.listing(glance('image-list'))
         assert image['id'] in [x['ID'] for x in image_list]

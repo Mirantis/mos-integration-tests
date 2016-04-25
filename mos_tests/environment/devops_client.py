@@ -87,13 +87,16 @@ class EnvProxy(object):
             disk.delete()
         node.erase()
 
-    def get_node_by_mac(self, mac):
-        """Return devops node by mac
+    def get_node_by_fuel_node(self, fuel_node):
+        """Return devops node by fuel node
 
         :return: matched node
         :rtype: devops.models.node.Node
         """
-        return self.node_set.get(interface__mac_address=mac)
+        interfaces = fuel_node.data['meta']['interfaces']
+        mac_addresses = [x['mac'] for x in interfaces]
+        return self.node_set.distinct('uuid').get(
+            interface__mac_address__in=mac_addresses)
 
     def get_interface_by_fuel_name(self, fuel_name, fuel_env):
         """Return devops network name for fuel network name
@@ -180,11 +183,6 @@ class DevopsClient(object):
             master = env.get_nodes(role__in=('fuel_master', 'admin'))[0]
             admin_ip = master.get_ip_address_by_network_name('admin')
         return admin_ip
-
-    @classmethod
-    def get_node_by_mac(cls, env_name, mac):
-        env = cls.get_env(env_name=env_name)
-        return env.get_node_by_mac(mac)
 
     @classmethod
     def get_devops_node(cls, node_name='', env_name=''):
