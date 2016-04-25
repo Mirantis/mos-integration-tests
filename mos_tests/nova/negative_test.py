@@ -14,6 +14,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.undestructive
+
 
 @pytest.mark.testrail_id('842537')
 def test_retrieve_nonroot_certificate(controller_remote, os_conn):

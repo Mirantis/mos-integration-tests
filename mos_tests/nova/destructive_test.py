@@ -19,27 +19,6 @@ from mos_tests.functions import network_checks
 
 
 @pytest.fixture
-def network(os_conn):
-    network = os_conn.create_network(name='net01')
-    subnet = os_conn.create_subnet(network_id=network['network']['id'],
-                                   name='net01__subnet',
-                                   cidr='192.168.1.0/24')
-    return network
-    os_conn.delete_subnet(subnet['subnet']['id'])
-    os_conn.delete_network(network['network']['id'])
-
-
-@pytest.fixture
-def keypair(os_conn):
-    return os_conn.create_key(key_name='instancekey')
-
-
-@pytest.fixture
-def security_group(os_conn):
-    return os_conn.create_sec_group_for_ssh()
-
-
-@pytest.fixture
 def instances(os_conn, security_group, keypair, network):
     instances = []
     zone = os_conn.nova.availability_zones.find(zoneName="nova")
@@ -106,7 +85,7 @@ def test_evacuate(devops_env, env, os_conn, instances, keypair):
                 raise Exception('Instance {0.name} is in ERROR status\n'
                                 '{0.fault[message]}\n'
                                 '{0.fault[details]}'.format(instance))
-            if instance.status != 'ACTIVE':
+            if not os_conn.server_status_is(instance, 'ACTIVE'):
                 return False
             if getattr(instance,
                        'OS-EXT-SRV-ATTR:hypervisor_hostname') == compute_host:
