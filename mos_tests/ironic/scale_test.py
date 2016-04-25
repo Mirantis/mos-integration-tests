@@ -53,6 +53,7 @@ def idfn(val):
         return ','.join(val)
 
 
+@pytest.mark.undestructive
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.incremental
 @pytest.mark.usefixtures('cleanup_nodes')
@@ -64,7 +65,6 @@ class TestScale(object):
     def roles(self, request):
         return request.param
 
-    @pytest.mark.undestructive
     @pytest.mark.testrail_id('631895', roles=['ironic'])
     @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631899', roles=['ironic', 'controller', 'ceph'])

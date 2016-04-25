@@ -20,6 +20,7 @@ from mos_tests.functions import common
 from mos_tests.functions import os_cli
 from mos_tests.glance.conftest import project  # noqa
 from mos_tests.glance.conftest import user  # noqa
+from mos_tests.ironic.conftest import make_devops_node
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
@@ -47,10 +48,29 @@ def ironic_cli(controller_remote):
     return os_cli.Ironic(controller_remote)
 
 
+@pytest.fixture
+def config(ironic_drivers_params):
+    config = ironic_drivers_params[0]
+    if config['driver'] != 'fuel_libvirt':
+        pytest.skip('Required config with `fuel_libvirt` driver for this test '
+                    'actually {config} passed'.format(config))
+    return config
+
+
+@pytest.yield_fixture
+def devops_node(devops_env, env, config):
+    node = make_devops_node(config=config,
+                            devops_env=devops_env,
+                            fuel_env=env,
+                            name='baremetal')
+    yield node
+    devops_env.del_node(node)
+
+
 @pytest.mark.testrail_id('631901')
 @pytest.mark.check_env_('has_ironic_conductor')
-def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
-                         cleanup_ironic, chassis):
+def test_crud_operations(config, devops_node, os_conn, ironic, cleanup_ironic,
+                         chassis):
     """Test CRUD operations for ironic node
 
     Scenario:
@@ -71,8 +91,7 @@ def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
             nova hypervisor-list
     """
     fake_driver_info = {'A1': 'A1', 'B1': 'B1', 'B2': 'B2'}
-    ironic_driver = ironic_drivers_params[0]
-    node_properties = ironic_driver['node_properties']
+    node_properties = config['node_properties']
 
     # Create node
     node = ironic.client.node.create(driver='fake',
@@ -89,7 +108,7 @@ def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
 
     hypervisor = common.wait(
         get_hypervisor,
-        timeout_seconds=2 * 60,
+        timeout_seconds=3 * 60,
         sleep_seconds=10,
         waiting_for='ironic node to appear in hypervisors list')
 
@@ -104,15 +123,18 @@ def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
     patch = [
         {'op': 'replace',
          'path': '/driver',
-         'value': ironic_driver['driver']},
-        {'op': 'replace',
-         'path': '/driver_info',
-         'value': ironic_driver['driver_info']}
+         'value': config['driver']}, {'op': 'replace',
+                                      'path': '/driver_info',
+                                      'value': config['driver_info']}
     ]
 
     # Update node driver
     node = ironic.client.node.update(node.uuid, patch=patch)
-    assert node.driver == ironic_driver['driver']
+    assert node.driver == config['driver']
+
+    # Create port
+    ironic.client.port.create(node_uuid=node.uuid,
+                              address=config['mac_address'])
 
     def updated_hypervisor():
         hypervisor = os_conn.nova.hypervisors.find(
@@ -122,7 +144,7 @@ def test_crud_operations(ironic_drivers_params, ironic_nodes, os_conn, ironic,
 
     hypervisor = common.wait(
         updated_hypervisor,
-        timeout_seconds=2 * 60,
+        timeout_seconds=3 * 60,
         sleep_seconds=10,
         waiting_for='ironic hypevisor to update CPU count')
 
