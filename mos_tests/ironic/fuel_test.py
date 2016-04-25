@@ -94,7 +94,8 @@ def test_baremetal_network_settings(new_env, admin_remote):
 @pytest.mark.testrail_id('631892', new_config={})
 @pytest.mark.testrail_id(
     '631893',
-    new_config={'/editable/storage/images_ceph/value': True,
+    new_config={'/editable/storage/volumes_lvm/value': False,
+                '/editable/storage/images_ceph/value': True,
                 '/editable/storage/objects_ceph/value': True})
 @pytest.mark.testrail_id('631894',
                          new_config={
@@ -102,14 +103,17 @@ def test_baremetal_network_settings(new_env, admin_remote):
                              '/editable/storage/objects_ceph/value': True,
                              '/editable/storage/ephemeral_ceph/value': True,
                              '/editable/storage/volumes_ceph/value': True,
+                             '/editable/storage/volumes_lvm/value': False,
                          })
 @pytest.mark.parametrize('new_config', [
-    {}, {'/editable/storage/images_ceph/value': True,
+    {}, {'/editable/storage/volumes_lvm/value': False,
+         '/editable/storage/images_ceph/value': True,
          '/editable/storage/objects_ceph/value': True}, {
              '/editable/storage/images_ceph/value': True,
              '/editable/storage/objects_ceph/value': True,
              '/editable/storage/ephemeral_ceph/value': True,
              '/editable/storage/volumes_ceph/value': True,
+             '/editable/storage/volumes_lvm/value': False,
          }
 ])
 def test_edit_config_with_yaml(new_env, admin_remote, new_config):
