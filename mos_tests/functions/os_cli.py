@@ -105,6 +105,16 @@ class OpenStack(CLICLient):
                 name=role_name, user=user, project=project))
         return self.details(output)
 
+    def user_set_new_name(self, name, new_name):
+        params = '{name} --name {new_name}'.format(
+            name=name, new_name=new_name)
+        return self('user set', params=params)
+
+    def user_set_new_password(self, name, new_password):
+        params = '{name} --password {password}'.format(
+            name=name, password=new_password)
+        return self('user set', params=params)
+
 
 class Glance(CLICLient):
     command = 'glance'
@@ -121,3 +131,19 @@ class Ironic(CLICLient):
 
 class Murano(CLICLient):
     command = 'murano'
+
+
+class Ceilometer(CLICLient):
+    command = 'ceilometer'
+
+
+class Aodh(CLICLient):
+    command = 'aodh'
+
+    def __call__(self, *args, **kwargs):
+        result = super(Aodh, self).__call__(*args, **kwargs)
+        lines = result.splitlines()
+        if len(lines) > 0:
+            # Change output to tempest parser
+            lines[1] = lines[1].replace('Field   ', 'Property')
+        return Result('\n'.join(lines))

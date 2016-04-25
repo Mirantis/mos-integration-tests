@@ -24,7 +24,7 @@ from keystoneclient.v2_0 import Client as KeystoneClient
 from neutronclient.common.exceptions import NeutronClientException
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
-from novaclient.exceptions import ClientException as NovaClientException
+from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
 
@@ -34,6 +34,16 @@ from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli
 
 logger = logging.getLogger(__name__)
+
+
+class InstanceError(Exception):
+    def __init__(self, instance):
+        self.instance = instance
+
+    def __str__(self):
+        return ('Instance {0.name} is in ERROR status\n'
+                '{0.fault[message]}\n'
+                '{0.fault[details]}'.format(self.instance))
 
 
 class OpenStackActions(object):
@@ -110,12 +120,14 @@ class OpenStackActions(object):
         srv = self.nova.servers.get(srv.id)
         return getattr(srv, "OS-EXT-SRV-ATTR:hypervisor_hostname")
 
+    def server_status_is(self, server, status):
+        server = self.nova.servers.get(server)
+        if server.status == 'ERROR':
+            raise InstanceError(server)
+        return server.status == status
+
     def is_server_active(self, server):
-        status = self.nova.servers.get(server).status
-        if status == 'ACTIVE':
-            return True
-        if status == 'ERROR':
-            raise Exception('Server {} status is error'.format(server.name))
+        return self.server_status_is(server, 'ACTIVE')
 
     def create_server(self, name, image_id=None, flavor=1, userdata=None,
                       files=None, key_name=None, timeout=300,
@@ -160,6 +172,15 @@ class OpenStackActions(object):
             else:
                 logger.debug('Instance unavailable yet: {}'.format(e))
                 return False
+
+    def is_server_deleted(self, server_id):
+        try:
+            instance = self.nova.servers.get(server_id)
+            if instance.status == 'ERROR':
+                raise InstanceError(instance)
+            return False
+        except nova_exceptions.NotFound:
+            return True
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
@@ -331,7 +352,7 @@ class OpenStackActions(object):
         else:
             try:
                 self.nova.servers.remove_floating_ip(srv, floating_ip)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 logger.info('The floatingip {} can not be disassociated.'
                             .format(floating_ip))
 
@@ -345,7 +366,7 @@ class OpenStackActions(object):
         else:
             try:
                 self.nova.floating_ips.delete(floating_ip)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 logger.info('floating_ip {} is not deletable'
                             .format(floating_ip))
 
@@ -422,6 +443,11 @@ class OpenStackActions(object):
                 secgroup.id, **ruleset)
         return secgroup
 
+    def delete_security_group(self, name):
+        sec_groups = self.nova.security_groups.findall(name=name)
+        for sg in sec_groups:
+            self.nova.security_groups.delete(sg)
+
     def create_key(self, key_name):
         return self.nova.keypairs.create(key_name)
 
@@ -437,8 +463,9 @@ class OpenStackActions(object):
 
     @property
     def ext_network(self):
-        exist_networks = self.list_networks()['networks']
-        return [x for x in exist_networks if x.get('router:external')][0]
+        ext_networks = self.neutron.list_networks(
+            **{'router:external': True, 'status': 'ACTIVE'})
+        return ext_networks['networks'][0]
 
     def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
@@ -466,21 +493,21 @@ class OpenStackActions(object):
         for floating_ip in self.nova.floating_ips.list():
             try:
                 self.nova.floating_ips.delete(floating_ip)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 self.delete_floating_ip(floating_ip, use_neutron=True)
 
     def delete_servers(self):
         for server in self.nova.servers.list():
             try:
                 self.nova.servers.delete(server)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 logger.info('nova server {} is not deletable'.format(server))
 
     def delete_keypairs(self):
         for key_pair in self.nova.keypairs.list():
             try:
                 self.nova.keypairs.delete(key_pair)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 logger.info('key pair {} is not deletable'.format(key_pair.id))
 
     def delete_security_groups(self):
@@ -489,7 +516,7 @@ class OpenStackActions(object):
                 continue
             try:
                 self.nova.security_groups.delete(sg)
-            except NovaClientException:
+            except nova_exceptions.ClientException:
                 logger.info(
                     'The Security Group {} is not deletable'.format(sg))
 
@@ -751,19 +778,19 @@ class OpenStackActions(object):
     def server_hard_reboot(self, server):
         try:
             self.nova.servers.reboot(server.id, reboot_type='HARD')
-        except NovaClientException:
+        except nova_exceptions.ClientException:
             logger.info("nova server {} can't be rebooted".format(server))
 
     def server_start(self, server):
         try:
             self.nova.servers.start(server.id)
-        except NovaClientException:
+        except nova_exceptions.ClientException:
             logger.info("nova server {} can't be started".format(server))
 
     def server_stop(self, server):
         try:
             self.nova.servers.stop(server.id)
-        except NovaClientException:
+        except nova_exceptions.ClientException:
             logger.info("nova server {} can't be stopped".format(server))
 
     def rebuild_server(self, server, image):

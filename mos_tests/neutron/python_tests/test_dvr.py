@@ -24,6 +24,7 @@ import pytest
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import gen_random_resource_name
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests import base
 
 
@@ -192,7 +193,8 @@ class TestDVR(TestDVRBase):
         self._prepare_openstack_env(distributed_router=dvr_router,
                                     assign_floating_ip=floating_ip)
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('542764')
     def test_connectivity_after_reset_compute(self, env_name):
@@ -220,7 +222,8 @@ class TestDVR(TestDVRBase):
         compute_hostname = getattr(self.server, 'OS-EXT-SRV-ATTR:host')
         self.reset_computes([compute_hostname], env_name)
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('638477')
     def test_connectivity_after_reset_primary_controller_with_snat(self,
@@ -247,7 +250,8 @@ class TestDVR(TestDVRBase):
         """
         self._prepare_openstack_env(assign_floating_ip=False)
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
         leader_controller = self.env.leader_controller
 
@@ -281,8 +285,9 @@ class TestDVR(TestDVRBase):
             leader_controller.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair,
-                                timeout=4 * 60)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair,
+                                          timeout=4 * 60)
 
     @pytest.mark.testrail_id('542778')
     def test_shutdown_snat_controller(self, env_name):
@@ -306,7 +311,8 @@ class TestDVR(TestDVRBase):
 
         """
         self._prepare_openstack_env()
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
         # Get controller with SNAT and destroy it
         controller_with_snat = self.find_snat_controller(self.router_id)
         logger.info('Destroying controller with SNAT: {}'.format(
@@ -323,7 +329,8 @@ class TestDVR(TestDVRBase):
             sleep_seconds=(1, 60, 5),
             waiting_for="snat is rescheduled")
         # Check external ping and proper SNAT rescheduling
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
         assert (
             controller_with_snat.data['fqdn'] !=
             new_controller_with_snat.data['fqdn'])
@@ -411,7 +418,8 @@ class TestDVR(TestDVRBase):
                 remote.check_call(cmd.format(action='clear'))
                 time.sleep(10)
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('542774')
     def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
@@ -502,7 +510,8 @@ class TestDVR(TestDVRBase):
             assert controller_with_snat != new_controller_with_snat
             controller_with_snat = new_controller_with_snat
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
     @pytest.mark.testrail_id('638473', params={'node_to_clear_key': 'first'})
     @pytest.mark.testrail_id('638471', params={'node_to_clear_key': 'last'})
@@ -587,7 +596,8 @@ class TestDVR(TestDVRBase):
                  timeout_seconds=60 * 3, sleep_seconds=20,
                  waiting_for="snat go back to {}".format(node_to_clear))
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
+                                          vm_keypair=self.instance_keypair)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
@@ -653,9 +663,9 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             8. Go to the vm_1
             9. Ping vm_2
         """
-        self.check_ping_from_vm(vm=self.server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
     @pytest.mark.testrail_id('542776')
     def test_routing_after_ban_and_clear_l3_agent(self, prepare_openstack):
@@ -688,9 +698,9 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         with compute1.ssh() as remote:
             remote.check_call('service neutron-l3-agent start')
 
-        self.check_ping_from_vm(vm=self.server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
     @pytest.mark.testrail_id('542766')
     def test_routing_after_reset_computes(self, env_name, prepare_openstack):
@@ -710,16 +720,16 @@ class TestDVRWestEastConnectivity(TestDVRBase):
             9. Wait some time while computers are resetting
             10. Go to vm_2 and ping vm_1
         """
-        self.check_ping_from_vm(vm=self.server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
         self.reset_computes(self.compute_nodes, env_name)
 
         # Check ping after reset
-        self.check_ping_from_vm(vm=self.server2,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server1_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server2,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server1_ip)
 
     @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')
@@ -745,9 +755,9 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         Duration 10m
 
         """
-        self.check_ping_from_vm(vm=self.server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
         # destroy controller
         controller = self.env.get_nodes_by_role('controller')[0]
@@ -755,9 +765,9 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                                    mac=controller.data['mac'])
         self.env.destroy_nodes([devops_node])
 
-        self.check_ping_from_vm(vm=self.server2,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server1_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server2,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server1_ip)
 
     @pytest.mark.testrail_id('542756')
     def test_east_west_connectivity_instances_on_the_same_host(
@@ -810,9 +820,9 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         server2_ip = self.os_conn.get_nova_instance_ips(
             self.os_conn.nova.servers.find(name="server02")).values()[0]
 
-        self.check_ping_from_vm(vm=server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
@@ -864,9 +874,9 @@ class TestDVREastWestConnectivity(TestDVRBase):
             8. Go to the vm_1
             9. Ping vm_2
         """
-        self.check_ping_from_vm(vm=self.server1,
-                                vm_keypair=self.instance_keypair,
-                                ip_to_ping=self.server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=self.server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server2_ip)
 
 
 @pytest.mark.check_env_('has_1_or_more_computes')
@@ -978,7 +988,7 @@ class TestDVRTypeChange(TestDVRBase):
         self.os_conn.assign_floating_ip(srv)
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
         # find the compute where the vm is run
         computes = self.env.get_nodes_by_role('compute')
@@ -1068,7 +1078,7 @@ class TestDVRTypeChange(TestDVRBase):
                 waiting_for=wait_msg)
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
         # And finally check that after all it is not poissible
         # to change the router type from distributed to centralized
@@ -1149,7 +1159,7 @@ class TestDVRTypeChange(TestDVRBase):
              waiting_for='reschedule l3_agent with snat')
 
         # Check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542758')
     def test_create_dvr_by_no_admin_user(self, openstack_client):

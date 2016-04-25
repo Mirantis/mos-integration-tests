@@ -12,18 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 import logging
 import os
 import pytest
-import tarfile
 
 import yaml
 
 from mos_tests.functions import common
-from mos_tests.functions import file_cache
 from mos_tests.ironic import actions
-from mos_tests import settings
+from mos_tests.ironic import testutils
 
 logger = logging.getLogger(__name__)
 
@@ -79,55 +76,36 @@ def flavors(ironic_drivers_params, os_conn):
         flavor.delete()
 
 
-@pytest.yield_fixture(params=[['create', 'delete']], ids=idfn)
-def ubuntu_image(request, os_conn):
-    actions = request.param
-    image_name = 'ironic_trusty'
-
-    if 'create' in actions:
-        logger.info('Creating ubuntu image')
-        image = os_conn.glance.images.create(
-            name=image_name,
-            disk_format='raw',
-            container_format='bare',
-            hypervisor_type='baremetal',
-            visibility='public',
-            cpu_arch='x86_64',
-            fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
-
-        with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
-            with tarfile.open(fileobj=src, mode='r|gz') as tar:
-                img = tar.extractfile(tar.firstmember)
-                os_conn.glance.images.upload(image.id, img)
-
-        logger.info('Creating ubuntu image ... done')
-    else:
-        image = os_conn.nova.images.find(name=image_name)
-
-    yield image
-
-    if 'delete' in actions:
-        os_conn.glance.images.delete(image.id)
+ubuntu_image = pytest.yield_fixture()(testutils.ubuntu_image)
 
 
-def make_ironic_node(config, devops_env, ironic, name, fuel_env):
-
+def make_devops_node(config, devops_env, fuel_env, name):
+    """Creates devops ironic_slave node"""
     baremetal_interface = devops_env.get_interface_by_fuel_name('baremetal',
                                                                 fuel_env)
     baremetal_net_name = baremetal_interface.network.name
 
+    devops_node = devops_env.add_node(
+        name=name,
+        vcpu=config['node_properties']['cpus'],
+        memory=config['node_properties']['memory_mb'],
+        disks=[config['node_properties']['local_gb']],
+        networks=[baremetal_net_name],
+        role='ironic_slave')
+    mac = devops_node.interface_by_network_name(baremetal_net_name)[
+        0].mac_address
+
+    config['mac_address'] = mac
+    return devops_node
+
+
+def make_ironic_node(config, devops_env, ironic, name, fuel_env):
     devops_node = None
     if config['driver'] == 'fuel_libvirt':
-        devops_node = devops_env.add_node(
-            name=name,
-            vcpu=config['node_properties']['cpus'],
-            memory=config['node_properties']['memory_mb'],
-            disks=[config['node_properties']['local_gb']],
-            networks=[baremetal_net_name],
-            role='ironic_slave')
-        mac = devops_node.interface_by_network_name(baremetal_net_name)[
-            0].mac_address
-        config['mac_address'] = mac
+        devops_node = make_devops_node(config=config,
+                                            devops_env=devops_env,
+                                            fuel_env=fuel_env,
+                                            name=name)
     node = ironic.create_node(config['driver'], config['driver_info'],
                               config['node_properties'], config['mac_address'])
     return devops_node, node

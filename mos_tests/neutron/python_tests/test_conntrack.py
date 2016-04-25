@@ -155,9 +155,8 @@ def servers(os_conn, os_clients, networks, sec_groups):
 
     def is_instances_deleted():
         for os_conn in os_clients:
-            for server in os_conn.nova.servers.list():
-                if server.id in [x.id for x in servers]:
-                    return False
+            if not all(os_conn.is_server_deleted(x.id) for x in servers):
+                return False
         return True
 
     wait(is_instances_deleted, timeout_seconds=60,

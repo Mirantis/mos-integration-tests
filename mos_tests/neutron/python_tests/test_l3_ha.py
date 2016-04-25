@@ -27,6 +27,7 @@ from six.moves.queue import Queue
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
@@ -351,8 +352,9 @@ class TestL3HA(TestBase):
             remote.check_call('pcs resource enable neutron-l3-agent')
             self.os_conn.wait_agents_alive(agent_ids)
 
-        self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
-                                ip_to_ping=server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
     @pytest.mark.testrail_id('542792')
     def test_delete_ns_for_active_router(self, router, prepare_openstack):
@@ -450,8 +452,9 @@ class TestL3HA(TestBase):
                                      from_node=primary_controller.data['fqdn'],
                                      timeout_seconds=5 * 60)
 
-        self.check_ping_from_vm(vm=server1, vm_keypair=self.instance_keypair,
-                                ip_to_ping=server2_ip)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
     @pytest.mark.testrail_id('542793')
     def test_ban_l3_agent_for_many_routers(self, variables):

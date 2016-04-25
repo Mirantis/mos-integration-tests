@@ -21,6 +21,7 @@ import threading
 import pytest
 
 from mos_tests.functions.common import gen_temp_file
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 
 
@@ -257,7 +258,8 @@ class TestVxlan(TestVxlanBase):
         server1 = self.os_conn.nova.servers.find(name="server01")
         server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2).values()[0]
-        self.check_ping_from_vm(server1, self.instance_keypair, server2_ip)
+        network_checks.check_ping_from_vm(self.env, self.os_conn, server1,
+                                          self.instance_keypair, server2_ip)
 
         # Start tcpdump
         compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
@@ -274,7 +276,9 @@ class TestVxlan(TestVxlanBase):
             # Ping server1 from server2
             server1_ip = self.os_conn.get_nova_instance_ips(
                 server1).values()[0]
-            self.check_ping_from_vm(server2, self.instance_keypair, server1_ip)
+            network_checks.check_ping_from_vm(
+                self.env, self.os_conn, server2, self.instance_keypair,
+                server1_ip)
 
         # Check traffic
         check_all_traffic_has_vni(net1['provider:segmentation_id'],
@@ -363,7 +367,8 @@ class TestVxlanL2pop(TestVxlanBase):
             tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
         ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
-            self.run_on_vm(server1, self.instance_keypair, cmd)
+            network_checks.run_on_vm(self.env, self.os_conn, server1,
+                                     self.instance_keypair, cmd)
 
         check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                              log_file=broadcast_log_file.name)
@@ -376,7 +381,8 @@ class TestVxlanL2pop(TestVxlanBase):
             tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
         ):
             cmd = 'ping -c 4 {0}; true'.format(server2_ip)
-            self.run_on_vm(server1, self.instance_keypair, cmd)
+            network_checks.run_on_vm(self.env, self.os_conn, server1,
+                                     self.instance_keypair, cmd)
 
         check_icmp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                            log_file=unicast_log_file.name)
@@ -570,7 +576,8 @@ class TestVxlanL2pop(TestVxlanBase):
                 interface=server2_tap,)
         ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
-            self.run_on_vm(server1, self.instance_keypair, cmd)
+            network_checks.run_on_vm(self.env, self.os_conn, server1,
+                                     self.instance_keypair, cmd)
 
         check_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                           log_file=broadcast_log_file.name)
@@ -586,7 +593,8 @@ class TestVxlanL2pop(TestVxlanBase):
                 interface=server3_tap,)
         ):
             cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
-            self.run_on_vm(server1, self.instance_keypair, cmd)
+            network_checks.run_on_vm(self.env, self.os_conn, server1,
+                                     self.instance_keypair, cmd)
 
         check_no_arp_traffic(src_ip=server1_ip, dst_ip=server2_ip,
                              log_file=broadcast_log_file.name)

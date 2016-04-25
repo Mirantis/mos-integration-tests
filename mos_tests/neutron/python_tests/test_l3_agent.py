@@ -19,6 +19,7 @@ import pytest
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import wait
+from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 
 
@@ -79,7 +80,7 @@ class TestL3Agent(TestBase):
         self.os_conn.assign_floating_ip(server1)
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     def ban_l3_agent(self, _ip, router_name, wait_for_migrate=True,
                      wait_for_die=True):
@@ -237,7 +238,7 @@ class TestL3Agent(TestBase):
             security_groups=[self.security_group.id])
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542605')
     def test_ban_l3_agents_and_clear_last(self):
@@ -294,7 +295,7 @@ class TestL3Agent(TestBase):
             security_groups=[self.security_group.id])
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542606')
     def test_ban_l3_agents_and_clear_first(self):
@@ -362,7 +363,7 @@ class TestL3Agent(TestBase):
             security_groups=[self.security_group.id])
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542607')
     def test_l3_agent_after_drop_rabbit_port(self):
@@ -392,7 +393,7 @@ class TestL3Agent(TestBase):
         self.drop_rabbit_port(router_name="router01")
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.testrail_id('542608')
     def test_ban_l3_agents_many_times(self):
@@ -445,7 +446,7 @@ class TestL3Agent(TestBase):
                                 wait_for_alive=True)
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
 
     @pytest.mark.need_devops
     @pytest.mark.testrail_id('542609')
@@ -529,4 +530,4 @@ class TestL3Agent(TestBase):
             security_groups=[self.security_group.id])
 
         # check pings
-        self.check_vm_connectivity()
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
