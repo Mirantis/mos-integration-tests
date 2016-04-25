@@ -279,7 +279,7 @@ def test_instance_terminate(env, ironic, os_conn, ironic_nodes, ubuntu_image,
         3. Wait and check that instance not present in nova list
     """
     instance.delete()
-    common.wait(lambda: not os_conn.nova.servers.list().count(instance),
+    common.wait(lambda: os_conn.is_server_deleted(instance.id),
                 timeout_seconds=60,
                 waiting_for="instance is terminated")
 
@@ -375,12 +375,9 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
             received_packets = int(result['stdout'][-2].split()[3])
             assert received_packets > 0
 
-    def is_instance_deleted():
-        return instance not in tenant_conn.nova.servers.list()
-
     for instance, tenant_conn in zip(instances, tenants_clients):
         instance.delete()
-        common.wait(is_instance_deleted,
+        common.wait(tenant_conn.is_server_deleted(instance.id),
                     timeout_seconds=60 * 5,
                     sleep_seconds=20,
                     waiting_for="instance is deleted")
