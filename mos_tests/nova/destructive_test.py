@@ -18,30 +18,6 @@ from mos_tests.functions import common
 from mos_tests.functions import network_checks
 
 
-@pytest.fixture
-def instances(os_conn, security_group, keypair, network):
-    instances = []
-    zone = os_conn.nova.availability_zones.find(zoneName="nova")
-    compute_host = zone.hosts.keys()[0]
-    for i in range(2):
-        instance = os_conn.create_server(
-            name='server%02d' % i,
-            availability_zone='{}:{}'.format(zone.zoneName, compute_host),
-            key_name=keypair.name,
-            nics=[{'net-id': network['network']['id']}],
-            security_groups=[security_group.id],
-            wait_for_active=False,
-            wait_for_avaliable=False)
-        instances.append(instance)
-    common.wait(lambda: all(os_conn.is_server_active(x) for x in instances),
-                timeout_seconds=2 * 60,
-                waiting_for='instances to became to active status')
-    common.wait(lambda: all(os_conn.is_server_ssh_ready(x) for x in instances),
-                timeout_seconds=2 * 60,
-                waiting_for='instances to be ready for ssh')
-    return instances
-
-
 @pytest.mark.testrail_id('842496')
 def test_evacuate(devops_env, env, os_conn, instances, keypair):
     """Evacuate instances from failed compute node
