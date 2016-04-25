@@ -52,7 +52,9 @@ def short_lifetime_keystone(env):
             remote.check_call('service apache2 stop')
             remote.check_call('mv /etc/keystone/keystone.conf.orig '
                               '/etc/keystone/keystone.conf')
-            remote.check_call('service apache2 start')
+            remote.check_call('for i in {1..15};'
+                              'do if [ "$(service apache2 start)" ];'
+                              'then break;fi;done')
 
     def wait_keystone_alive():
         session = env.os_conn.session
