@@ -79,24 +79,33 @@ def flavors(ironic_drivers_params, os_conn):
 ubuntu_image = pytest.yield_fixture()(testutils.ubuntu_image)
 
 
-def make_ironic_node(config, devops_env, ironic, name, fuel_env):
-
+def make_devops_node(config, devops_env, fuel_env, name):
+    """Creates devops ironic_slave node"""
     baremetal_interface = devops_env.get_interface_by_fuel_name('baremetal',
                                                                 fuel_env)
     baremetal_net_name = baremetal_interface.network.name
 
+    devops_node = devops_env.add_node(
+        name=name,
+        vcpu=config['node_properties']['cpus'],
+        memory=config['node_properties']['memory_mb'],
+        disks=[config['node_properties']['local_gb']],
+        networks=[baremetal_net_name],
+        role='ironic_slave')
+    mac = devops_node.interface_by_network_name(baremetal_net_name)[
+        0].mac_address
+
+    config['mac_address'] = mac
+    return devops_node
+
+
+def make_ironic_node(config, devops_env, ironic, name, fuel_env):
     devops_node = None
     if config['driver'] == 'fuel_libvirt':
-        devops_node = devops_env.add_node(
-            name=name,
-            vcpu=config['node_properties']['cpus'],
-            memory=config['node_properties']['memory_mb'],
-            disks=[config['node_properties']['local_gb']],
-            networks=[baremetal_net_name],
-            role='ironic_slave')
-        mac = devops_node.interface_by_network_name(baremetal_net_name)[
-            0].mac_address
-        config['mac_address'] = mac
+        devops_node = make_devops_node(config=config,
+                                            devops_env=devops_env,
+                                            fuel_env=fuel_env,
+                                            name=name)
     node = ironic.create_node(config['driver'], config['driver_info'],
                               config['node_properties'], config['mac_address'])
     return devops_node, node
