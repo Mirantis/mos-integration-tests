@@ -463,8 +463,9 @@ class TestRestarts(TestBase):
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        self.create_networks(29, self.router, self.networks,
-                             self.instance_keypair, self.security_group)
+        self.create_delete_number_of_instances(29, self.router, self.networks,
+                                               self.instance_keypair,
+                                               self.security_group)
 
         # Get DHCP agents for the net9
         net_id = self.networks[8]
