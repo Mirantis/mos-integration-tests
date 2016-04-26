@@ -45,13 +45,14 @@ def security_group(os_conn, request):
         os_conn.delete_security_group(name=sec_group.name)
 
 
-@pytest.yield_fixture(params=[{'count': 2}], ids=['2 vms'])
+@pytest.yield_fixture
 def instances(request, os_conn, security_group, keypair, network):
-    """Some instances on one compute node at one network"""
+    """Some instances (2 by default) on one compute node at one network"""
     zone = os_conn.nova.availability_zones.find(zoneName="nova")
     compute_host = zone.hosts.keys()[0]
     instances = []
-    for i in range(request.param['count']):
+    param = getattr(request, 'param', {'count': 2})
+    for i in range(param['count']):
         instance = os_conn.create_server(
             name='server%02d' % i,
             availability_zone='{}:{}'.format(zone.zoneName, compute_host),
