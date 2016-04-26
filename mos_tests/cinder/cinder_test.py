@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.undestructive
 class CinderIntegrationTests(OpenStackTestCase):
-    """Basic automated tests for OpenStack Heat verification."""
+    """Basic automated tests for OpenStack Cinder verification."""
 
     def setUp(self):
         super(self.__class__, self).setUp()
