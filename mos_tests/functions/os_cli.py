@@ -147,3 +147,7 @@ class Aodh(CLICLient):
             # Change output to tempest parser
             lines[1] = lines[1].replace('Field   ', 'Property')
         return Result('\n'.join(lines))
+
+
+class Nova(CLICLient):
+    command = 'nova'
