@@ -377,7 +377,8 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
 
     for instance, tenant_conn in zip(instances, tenants_clients):
         instance.delete()
-        common.wait(tenant_conn.is_server_deleted(instance.id),
+    for instance, tenant_conn in zip(instances, tenants_clients):
+        common.wait(lambda: tenant_conn.is_server_deleted(instance.id),
                     timeout_seconds=60 * 5,
                     sleep_seconds=20,
                     waiting_for="instance is deleted")
