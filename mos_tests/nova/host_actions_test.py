@@ -70,3 +70,52 @@ def test_live_evacuate_instances(instances, os_conn, env, keypair,
                                           instance1,
                                           vm_keypair=keypair,
                                           ip_to_ping=ip)
+
+
+@pytest.mark.check_env_('has_2_or_more_computes')
+@pytest.mark.parametrize('instances',
+                         [{'count': 3}],
+                         ids=['3 vms'],
+                         indirect=True)
+@pytest.mark.testrail_id('842500')
+def test_migrate_instances(instances, os_conn, env, keypair, nova_client):
+    """Migrate all instances of the specified host to other available hosts
+
+    Scenario:
+        1. Create net01, net01__subnet
+        2. Boot instances vm1, vm2 and vm3 in net01 on compute node1
+        3. Run the 'nova host-servers-migrate <compute node1>' command
+        4. Check that every instance is rescheduled to other computes
+        5. Check that the status of every rescheduled instance is VERIFY_RESIZE
+        6. Confirm resize for every instance:
+            nova resize-confirm vm1 (vm2, vm3)
+        7. Check that every migrated instance has an ACTIVE status now
+        8. Send pings between vm1, vm2 and vm3 to check network connectivity
+    """
+    old_host = getattr(instances[0], 'OS-EXT-SRV-ATTR:host')
+    nova_client('host-servers-migrate', params=old_host)
+
+    common.wait(lambda: all([os_conn.server_status_is(x, 'VERIFY_RESIZE')
+                             for x in instances]),
+                timeout_seconds=2 * 60,
+                waiting_for='instances became to VERIFY_RESIZE status')
+
+    for instance in instances:
+        instance.get()
+        assert getattr(instance, 'OS-EXT-SRV-ATTR:host') != old_host
+
+    for instance in instances:
+        instance.confirm_resize()
+
+    common.wait(lambda: all([os_conn.is_server_active(x) for x in instances]),
+                timeout_seconds=2 * 60,
+                waiting_for='instances became to ACTIVE status')
+
+    for instance in instances:
+        ips = [os_conn.get_nova_instance_ips(x)['fixed']
+               for x in instances if x != instance]
+        network_checks.check_ping_from_vm(env,
+                                          os_conn,
+                                          instance,
+                                          vm_keypair=keypair,
+                                          ip_to_ping=ips)
