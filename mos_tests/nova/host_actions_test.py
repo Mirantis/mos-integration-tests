@@ -119,3 +119,82 @@ def test_migrate_instances(instances, os_conn, env, keypair, nova_client):
                                           instance,
                                           vm_keypair=keypair,
                                           ip_to_ping=ips)
+
+
+@pytest.mark.testrail_id('842497')
+@pytest.mark.check_env_('has_2_or_more_computes')
+def test_compute_resources_info(os_conn, env, keypair, nova_client, request):
+    """Get info about resources' usage on compute nodes
+
+    Scenario:
+        1. Get list of compute nodes
+        2. Get info about available resources on every compute node with
+            'nova host-describe <node-n.domain.tld>'
+        3. Create net01, net01__subnet
+        4. Boot instances vm1 and vm2 in net01 on node-1
+        5. Launch 'nova host-describe <node-1.domain.tld>' and check
+            that used_now and used_max characteristics were changed and
+            new line with tenant ID appeared for compute node1
+        6. Launch 'nova host-describe <node-2.domain.tld>' and check
+            that used_now and used_max characteristics weren't changed for
+            compute node2
+        7. Boot instances vm3 and vm4 in net01 on compute node2
+        8. Launch 'nova host-describe <node-2.domain.tld>' and check
+            that used_now and used_max characteristics were changed and
+            new line with tenant ID appeared for the compute node2
+    """
+    compute_hosts = os_conn.nova.hosts.findall(service='compute')
+    old_data = {}
+    for host in compute_hosts:
+        data = nova_client('host-describe', params=host.host_name).listing()
+        old_data[host.host_name] = {x['PROJECT']: x for x in data}
+
+    instances = request.getfuncargvalue('instances')
+    host1 = getattr(instances[0], 'OS-EXT-SRV-ATTR:host')
+    data = nova_client('host-describe', params=host1).listing()
+    host1_data = {x['PROJECT']: x for x in data}
+
+    # Check that host1 used_now and used_max values were changed
+    for row in ('(used_now)', '(used_max)'):
+        assert host1_data[row] != old_data[host1][row]
+
+    # Check tenant_id in host1 data
+    assert os_conn.session.get_project_id() in host1_data
+
+    # Check other compute's datas doesn't changes
+    for host in compute_hosts:
+        if host.host_name == host1:
+            continue
+        host2 = host.host_name
+        data = nova_client('host-describe', params=host.host_name).listing()
+        host_data = {x['PROJECT']: x for x in data}
+        assert host_data == old_data[host.host_name]
+
+    network = request.getfuncargvalue('network')
+    security_group = request.getfuncargvalue('security_group')
+
+    # Boot 2 instances on host2
+    for i in range(2, 4):
+        instance = os_conn.create_server(
+            name='server%02d' % i,
+            availability_zone='nova:{}'.format(host2),
+            key_name=keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[security_group.id],
+            wait_for_active=False,
+            wait_for_avaliable=False)
+        instances.append(instance)
+
+    common.wait(lambda: all(os_conn.is_server_active(x) for x in instances),
+                timeout_seconds=2 * 60,
+                waiting_for='instances to became to ACTIVE status')
+
+    data = nova_client('host-describe', params=host2).listing()
+    host2_data = {x['PROJECT']: x for x in data}
+
+    # Check that host2 used_now and used_max values were changed
+    for row in ('(used_now)', '(used_max)'):
+        assert host2_data[row] != old_data[host2][row]
+
+    # Check tenant_id in host2 data
+    assert os_conn.session.get_project_id() in host2_data
