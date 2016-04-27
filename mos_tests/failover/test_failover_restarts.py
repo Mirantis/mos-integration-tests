@@ -85,8 +85,8 @@ class TestFailoverRestarts(TestBase):
             if result['stdout']:
                 return True
 
-        # Find any controller in cluster
-        controller = self.env.get_nodes_by_role('controller')[0]
+        # Find the primary controller in cluster
+        controller = self.env.primary_controller
 
         with controller.ssh() as remote:
 
