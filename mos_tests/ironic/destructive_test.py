@@ -75,10 +75,10 @@ def keypair(os_conn):
 
 @pytest.fixture
 def ironic(os_conn):
-    token = os_conn.keystone.auth_token
+    session = os_conn.session
     ironic_endpoint = os_conn.keystone.service_catalog.url_for(
         service_type='baremetal', endpoint_type='publicURL')
-    return client.get_client(api_version=1, os_auth_token=token,
+    return client.get_client(api_version=1, session=session,
                              ironic_url=ironic_endpoint)
 
 

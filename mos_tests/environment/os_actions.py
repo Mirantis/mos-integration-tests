@@ -14,16 +14,16 @@
 
 import logging
 import random
-import time
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as HeatClient
-from keystoneclient.exceptions import ClientException as KeyStoneException
+from keystoneclient.auth.identity.v2 import Password as KeystonePassword
+from keystoneclient import session
 from keystoneclient.v2_0 import Client as KeystoneClient
 from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
-from novaclient import client as nova_client
+from novaclient import client as novaclient
 from novaclient.exceptions import ClientException as NovaClientException
 import paramiko
 import six
@@ -36,7 +36,18 @@ from mos_tests.functions import os_cli
 logger = logging.getLogger(__name__)
 
 
+class InstanceError(Exception):
+    def __init__(self, instance):
+        self.instance = instance
+
+    def __str__(self):
+        return ('Instance {0.name} is in ERROR status\n'
+                '{0.fault[message]}\n'
+                '{0.fault[details]}'.format(self.instance))
+
+
 class OpenStackActions(object):
+    """OpenStack base services clients and helper actions"""
 
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None, env=None):
@@ -59,68 +70,31 @@ class OpenStackActions(object):
             self.insecure = False
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        self.nova = nova_client.Client(version=2,
-                                       username=user,
-                                       api_key=password,
-                                       project_id=tenant,
-                                       auth_url=auth_url,
-                                       cacert=self.path_to_cert)
 
-        self.cinder = cinderclient.Client(2, user, password,
-                                          tenant, auth_url,
-                                          cacert=self.path_to_cert)
+        auth = KeystonePassword(username=user,
+                                password=password,
+                                auth_url=auth_url,
+                                tenant_name=tenant)
 
-        self.neutron = neutronclient.Client(username=user,
-                                            password=password,
-                                            tenant_name=tenant,
-                                            auth_url=auth_url,
-                                            ca_cert=self.path_to_cert)
+        self.session = session.Session(auth=auth, verify=self.path_to_cert)
 
-        self.keystone = self._get_keystoneclient(username=user,
-                                                 password=password,
-                                                 tenant_name=tenant,
-                                                 auth_url=auth_url,
-                                                 ca_cert=self.path_to_cert)
+        self.keystone = KeystoneClient(session=self.session)
+        self.keystone.management_url = auth_url
 
-        token = self.keystone.auth_token
-        glance_endpoint = self.keystone.service_catalog.url_for(
-            service_type='image', endpoint_type='publicURL')
-        logger.debug('Glance endpoint is {0}'.format(glance_endpoint))
+        self.nova = novaclient.Client(version=2, session=self.session)
 
-        self.glance = GlanceClient(endpoint=glance_endpoint,
-                                   token=token,
-                                   cacert=self.path_to_cert)
+        self.cinder = cinderclient.Client(version=2, session=self.session)
 
-        heat_endpoint = self.keystone.service_catalog.url_for(
-            service_type='orchestration', endpoint_type='publicURL')
-        logger.debug('Heat endpoint is {0}'.format(heat_endpoint))
-        self.heat = HeatClient(endpoint=heat_endpoint,
-                                token=token,
-                                cacert=self.path_to_cert,
-                                ca_file=self.path_to_cert)
+        self.neutron = neutronclient.Client(session=self.session)
+
+        self.glance = GlanceClient(session=self.session)
+
+        endpoint_url = self.session.get_endpoint(service_type='orchestration',
+                                                 endpoint_type='publicURL')
+        token = self.session.get_token()
+        self.heat = HeatClient(endpoint=endpoint_url, token=token)
+
         self.env = env
-
-    def _get_keystoneclient(self, username, password, tenant_name, auth_url,
-                            retries=3, ca_cert=None):
-        keystone = None
-        for i in range(retries):
-            kwargs = dict(auth_url=auth_url,
-                          username=username,
-                          password=password,
-                          tenant_name=tenant_name)
-            if ca_cert is not None:
-                kwargs['cacert'] = ca_cert
-            try:
-                keystone = KeystoneClient(**kwargs)
-                break
-            except KeyStoneException as e:
-                err = "Try nr {0}. Could not get keystone client, error: {1}"
-                logger.warning(err.format(i + 1, e))
-                time.sleep(5)
-        if not keystone:
-            raise
-        keystone.management_url = auth_url
-        return keystone
 
     def _get_cirros_image(self):
         for image in self.glance.images.list():
@@ -146,12 +120,14 @@ class OpenStackActions(object):
         srv = self.nova.servers.get(srv.id)
         return getattr(srv, "OS-EXT-SRV-ATTR:hypervisor_hostname")
 
+    def server_status_is(self, server, status):
+        server = self.nova.servers.get(server)
+        if server.status == 'ERROR':
+            raise InstanceError(server)
+        return server.status == status
+
     def is_server_active(self, server):
-        status = self.nova.servers.get(server).status
-        if status == 'ACTIVE':
-            return True
-        if status == 'ERROR':
-            raise Exception('Server {} status is error'.format(server.name))
+        return self.server_status_is(server, 'ACTIVE')
 
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=300,
@@ -301,7 +277,7 @@ class OpenStackActions(object):
         return self.neutron.delete_network(id)
 
     def create_subnet(self, network_id, name, cidr, tenant_id=None,
-                      dns_nameservers=None):
+                      dns_nameservers=('8.8.8.8', '8.8.4.4')):
         subnet = {
             "network_id": network_id,
             "ip_version": 4,

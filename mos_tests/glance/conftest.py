@@ -68,7 +68,7 @@ def cli(os_conn):
     return base.CLIClient(username=os_conn.username,
                           password=os_conn.password,
                           tenant_name=os_conn.tenant,
-                          uri=os_conn.keystone.auth_url,
+                          uri=os_conn.session.auth.auth_url,
                           cli_dir='.tox/glance/bin',
                           insecure=os_conn.insecure,
                           prefix='env PYTHONIOENCODING=UTF-8')
