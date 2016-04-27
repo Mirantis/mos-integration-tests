@@ -755,3 +755,67 @@ class TestNovaDeferredDelete(TestBase):
 
         # Check volume status after re-attach
         assert self.os_conn.cinder.volumes.get(volume.id).status == 'in-use'
+
+    @pytest.mark.testrail_id('842495')
+    @pytest.mark.parametrize(
+        'set_recl_inst_interv', [recl_interv_long], indirect=True)
+    def test_force_delete_inst_before_deferred_cleanup(
+            self, set_recl_inst_interv, instances, volumes):
+        """Force delete of instance before deferred cleanup
+        Actions:
+        1. Update '/etc/nova/nova.conf' with long 'reclaim_instance_interval'
+        and restart Nova on all nodes;
+        2. Create net and subnet;
+        3. Create and run two instances (vm1, vm2) inside same net;
+        4. Create a volume and attach it to an instance vm1;
+        5. Delete instance vm1 and check that it's in 'SOFT_DELETE' state;
+        6. Delete instance vm1 with 'force' option and check that it's not
+        present.
+        7. Check that volume is released now and has an Available state;
+        8. Attach the volume to vm2 instance to ensure that the volume's reuse
+        doesn't call any errors.
+        """
+        timeout = 60  # (sec) timeout to wait instance for status change
+
+        # Create two vms
+        vm1, vm2 = instances
+
+        # Create a volume and attach it to an instance vm1
+        volume = common_functions.create_volume(
+            self.os_conn.cinder, image_id=None)
+        self.os_conn.nova.volumes.create_server_volume(
+            server_id=vm1.id, volume_id=volume.id, device='/dev/vdb')
+        volumes.append(volume)
+
+        # Delete instance vm1 and check that it's in "SOFT_DELETED" state
+        common_functions.delete_instance(self.os_conn.nova, vm1.id)
+        assert vm1 not in self.os_conn.get_servers()
+        common_functions.wait(
+            lambda: self.os_conn.server_status_is(vm1, 'SOFT_DELETED'),
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} changes status to SOFT_DELETED'.format(
+                vm1.name))
+
+        # Force delete and check vm1 not present
+        common_functions.delete_instance(self.os_conn.nova, vm1.id, force=True)
+        common_functions.wait(
+            lambda: self.os_conn.is_server_deleted(vm1.id),
+            timeout_seconds=timeout, sleep_seconds=5,
+            waiting_for='instance {0} to be forced deleted'.format(vm1.name))
+
+        # Check that volume is released now and has an Available state
+        assert common_functions.check_volume_status(
+            self.os_conn.cinder, volume.id, 'available', 1)
+
+        # Check volume is not attached
+        assert self.os_conn.cinder.volumes.get(volume.id).attachments == []
+
+        # Attach the volume to vm2 instance
+        self.os_conn.nova.volumes.create_server_volume(
+            server_id=vm2.id, volume_id=volume.id, device='/dev/vdb')
+        # Check volume status is 'in-use' after re-attach
+        assert common_functions.check_volume_status(
+            self.os_conn.cinder, volume.id, 'in-use', 1)
+        # Check that volume has correct server id
+        volume = self.os_conn.cinder.volumes.get(volume.id)
+        assert volume.attachments[0]['server_id'] == vm2.id
