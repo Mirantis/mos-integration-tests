@@ -282,7 +282,7 @@ class TestL3HA(TestBase):
             8. Ban agent on what router scheduled with ACTIVE state
             9. Wait until router rescheduled
             10. Stop ping
-            11. Check that ping lost no more than 10 packets
+            11. Check that ping lost no more than 50 packets
             12. Repeat steps 7-10 `ban_count` times
         """
         # collect l3 agents and group it by hs_state
@@ -318,7 +318,7 @@ class TestL3HA(TestBase):
                         from_node=node_to_ban)
                     node_to_ban = new_agent['host']
 
-            assert ping_result['sent'] - ping_result['received'] < 10
+            assert ping_result['sent'] - ping_result['received'] < 50
 
     @pytest.mark.testrail_id('542794')
     def test_ban_all_l3_agents_and_clear_them(self, router, prepare_openstack):
@@ -371,7 +371,7 @@ class TestL3HA(TestBase):
             7. Start ping vm2 from vm1 by floating ip
             8. Delete namespace for router on node with ACTIVE ha_state
             9. Stop ping
-            10. Check that ping lost no more than 10 packets
+            10. Check that ping lost no more than 50 packets
         """
 
         server1 = self.os_conn.nova.servers.find(name="server01")
@@ -392,7 +392,7 @@ class TestL3HA(TestBase):
                     "ip netns delete qrouter-{0}".format(
                         router['router']['id']))
 
-        assert ping_result['sent'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 50
 
     @pytest.mark.testrail_id('542786')
     def test_destroy_primary_controller(self, router, prepare_openstack,
@@ -411,10 +411,9 @@ class TestL3HA(TestBase):
             7. If node from step 6 isn't primary controller,
                 reschedule router1 to primary by banning all another
                 and then clear them
-            8. Start ping vm2 from vm1 by floating ip
-            9. Destroy primary controller
-            10. Stop ping
-            11. Check that ping lost no more than 10 packets
+            8. Destroy primary controller
+            9. Wait time while env is unstable
+            10. Check ping
         """
         router_id = router['router']['id']
         agents = self.get_active_l3_agents_for_router(router_id)
@@ -468,7 +467,7 @@ class TestL3HA(TestBase):
             6. Add rules for ping
             7. Start ping beetween vms
             8. Ban active agent for router between vms
-            9. Check lost pings not more 10 packets
+            9. Check lost pings not more 50 packets
         """
         # Update quota
         tenant = self.os_conn.neutron.get_quotas_tenant()
@@ -527,7 +526,7 @@ class TestL3HA(TestBase):
                     from_node=node_to_ban)
                 node_to_ban = new_agent['host']
 
-        assert ping_result['sent'] - ping_result['received'] < 10
+        assert ping_result['sent'] - ping_result['received'] < 50
 
     @pytest.mark.testrail_id('542790')
     def test_ban_active_l3_agent_with_external_connectivity(self, router,
@@ -583,7 +582,7 @@ class TestL3HA(TestBase):
                ip netns exec qrouter-<router_id> ip link set dev ha-<id> down
             7. Wait until router rescheduled
             8. Stop ping
-            9. Check that ping lost less than 10 packets
+            9. Check that ping lost less than 50 packets
         """
         instance = self.os_conn.nova.servers.find(name="server01")
         router_id = router['router']['id']
@@ -616,7 +615,7 @@ class TestL3HA(TestBase):
                     router_id=router['router']['id'],
                     from_node=active_hostname)
 
-        assert (ping_result['sent'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 50
 
     @pytest.mark.testrail_id('542789')
     def test_ban_l3_agent_with_tcpdump_check(self, router, prepare_openstack):
@@ -634,7 +633,7 @@ class TestL3HA(TestBase):
             8. Stop ping
             9. Stop tcpdump
             10. Check that tcpdump results and active l3 agents statuses
-            11. Check that ping lost less than 10 packets
+            11. Check that ping lost less than 50 packets
         """
         def start_tcpdump_in_background(node, router_id, active_qg_iface_id):
             """Start tcpdump on l3ha-router provided port.
@@ -716,7 +715,7 @@ class TestL3HA(TestBase):
         new_tcpdump_results = get_last_package_datetime(new_active_node)
         assert (last_tcpdump_results and new_tcpdump_results) is not None
         assert last_tcpdump_results < new_tcpdump_results
-        assert (ping_result['sent'] - ping_result['received']) < 10
+        assert (ping_result['sent'] - ping_result['received']) < 50
 
     def reschedule_active_l3_agt(self, router_id,
                                  to_controller, from_controller):
@@ -767,10 +766,9 @@ class TestL3HA(TestBase):
             7. If node from step 6 isn't primary controller,
                 reschedule router1 to primary by banning all another
                 and then clear them
-            8. Start ping vm2 from vm1 by floating ip
-            9. destroy primary controller
-            10. Stop ping
-            11. Check that ping lost no more than 10 packets
+            8. Destroy primary controller
+            9. Start ping vm2 from vm1 by floating ip
+            11. Check that ping is available
             12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
 
         """
@@ -791,22 +789,21 @@ class TestL3HA(TestBase):
                                      from_node=from_node,
                                      timeout_seconds=5 * 60)
 
-        # Start ping in background and destroy the node
-        with self.background_ping(vm=server1,
-                                  vm_keypair=self.instance_keypair,
-                                  ip_to_ping=server2_ip) as ping_result:
-
-            devops_node = devops_env.get_node_by_fuel_node(controller)
-            self.env.destroy_nodes([devops_node])
-
-        assert ping_result['sent'] - ping_result['received'] < 10
+        logger.info("Destroy non primary controller {}".format(
+            controller.data['fqdn']))
+        devops_node = devops_env.get_node_by_fuel_node(controller)
+        self.env.destroy_nodes([devops_node])
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
                                      from_node=controller.data['fqdn'],
                                      timeout_seconds=5 * 60)
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
         self.check_l3_ha_agent_states(router_id)
+
 
     @pytest.mark.testrail_id('542787')
     def test_reset_primary_controller(self, router,
@@ -825,9 +822,8 @@ class TestL3HA(TestBase):
             7. If node from step 6 isn't primary controller,
                 reschedule router1 to primary by banning all another
                 and then clear them
-            8. Start ping vm2 from vm1 by floating ip
-            9. Reset primary controller
-            10. Stop ping
+            8. Reset primary controller
+            10. Start ping vm2 from vm1 by floating ip
             11. Check that ping lost no more than 10 packets
             12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
 
@@ -855,20 +851,18 @@ class TestL3HA(TestBase):
                                      from_node=from_node,
                                      timeout_seconds=5 * 60)
 
-        # Start ping in background and reset the node
-        with self.background_ping(vm=server1,
-                                  vm_keypair=self.instance_keypair,
-                                  ip_to_ping=server2_ip,
-                                  proxy_node=proxy_node) as ping_result:
-
-            devops_node = devops_env.get_node_by_fuel_node(primary_controller)
-            devops_node.reset()
-
-        assert ping_result['sent'] - ping_result['received'] < 10
+        logger.info("Reset primary controller {}".format(
+            primary_controller.data['fqdn']))
+        devops_node = devops_env.get_node_by_fuel_node(primary_controller)
+        devops_node.reset()
 
         # To ensure that the l3 agt is moved from the affected controller
         self.wait_router_rescheduled(router_id=router_id,
                                      from_node=primary_controller.data['fqdn'],
                                      timeout_seconds=5 * 60)
+
+        network_checks.check_ping_from_vm(
+            self.env, self.os_conn, vm=server1,
+            vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
         self.check_l3_ha_agent_states(router_id)
