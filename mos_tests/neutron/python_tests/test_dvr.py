@@ -1283,3 +1283,53 @@ class TestDVRRegression(TestDVRBase):
                             break
                     for line in lines:
                         assert log_msg not in line, err_msg
+
+    @pytest.mark.testrail_id('844801')
+    def test_check_router_namespace_on_compute_node(self):
+        """Check router namespace on compute node with vm and after deleting vm
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01 with router type Distributed
+            3. Add interfaces to the router01
+            4. Set router gateway to external net
+            5. Boot VM in created net01
+            6. On compute node (where vm is hosted) check that router namespace
+            is present
+            7. Delete VM
+            8. On compute node (where vm is hosted) check that router namespace
+            is deleted
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        server = self.os_conn.create_server(
+            name='server01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        compute_hostname = getattr(server, 'OS-EXT-SRV-ATTR:host')
+        node = self.env.find_node_by_fqdn(compute_hostname)
+        router_namespace = "qrouter-{0}".format(router['router']['id'])
+        cmd = 'ip net | grep {0}'.format(router_namespace)
+
+        logger.debug('Verify that router namespace is present on compute node')
+        with node.ssh() as remote:
+            remote.check_call(cmd)
+
+        self.os_conn.delete_servers()
+
+        with node.ssh() as remote:
+            wait(lambda: not remote.execute(cmd).is_ok,
+                 timeout_seconds=60,
+                 waiting_for='router namespace to be deleted on compute node',
+                 expected_exceptions=Exception)
