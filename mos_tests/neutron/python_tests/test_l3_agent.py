@@ -20,6 +20,7 @@ import pytest
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
+import mos_tests.neutron.python_tests.functions as func
 
 
 logger = logging.getLogger(__name__)
@@ -529,3 +530,64 @@ class TestL3Agent(TestBase):
 
         # check pings
         network_checks.check_vm_connectivity(self.env, self.os_conn)
+
+    @pytest.mark.testrail_id('')
+    def test_ban_l3_dhcp_agents(self):
+        """[Neutron VLAN and VXLAN] Check that no errors would be found
+        in neutron log after ban two dhcp and two l3 agents.
+
+        Steps:
+            1. Update quotas for creation a lot of networks:
+                neutron quota-update --network 1000 --subnet 1000
+                                     --router 1000 --port 1000:
+            2. Create 50 networks, subnets, launch and terminate instance
+            3. Look on what DHCP-agents chosen network is:
+                ``neutron dhcp-agent-list-hosting-net <network_name>``
+            4. Ban DHCP-agents on what chosen network is:
+                from primary controller:
+                ``pcs resource ban neutron-dhcp-agent node-3``
+            5. Ban l3-agent on what router1 is:
+                ``pcs resource ban neutron-l3-agent router01``
+            6. Check that no ERROR messages are appeared in log.
+        """
+        controllers = self.env.get_nodes_by_role('controller')
+        logs_path, logs_start_marker = func.mark_neutron_logs(controllers)
+
+        # Create 50 networks, launch and terminate instances
+        # According to the test requirements 50 networks should be created
+        # However during implementation found that only about 34 nets
+        # can be created for one tenant. Need to clarify that situation.
+        router = self.os_conn.neutron.list_routers(
+            name='router01')['routers'][0]
+        network_ids_list = []
+
+        self.create_delete_number_of_instances(9, router, network_ids_list,
+                                               self.instance_keypair,
+                                               self.security_group)
+        net_id = network_ids_list[8]
+
+        # Get dhcp agents
+        agents = self.os_conn.get_node_with_dhcp_for_network(
+            net_id=net_id)
+
+        # determine primary controller
+        leader_node_ip = self.env.leader_controller.data['ip']
+
+        for i in range(2):
+            logger.info('Ban iteration #{}'.format(i + 1))
+            # ban agent on current network
+            func.ban_dhcp_agent(self.os_conn, self.env, node_to_ban=agents[i],
+                                host=leader_node_ip, wait_for_die=True,
+                                wait_for_rescheduling=False)
+
+        devops_node = self.get_node_with_dhcp(net_id)
+        ip = devops_node.data['ip']
+
+        # ban l3 agents
+        for _ in range(1):
+            self.ban_l3_agent(router_name="router01", _ip=ip,
+                              wait_for_migrate=False)
+
+        err_trace = "ERROR"
+        func.check_neutron_logs(controllers, logs_path, logs_start_marker,
+                                err_trace)

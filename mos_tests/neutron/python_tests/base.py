@@ -234,6 +234,7 @@ class TestBase(object):
         :param security_group: security group that instance is related to
         :returns: -
         """
+        exists_nets_count = len(self.os_conn.list_networks()['networks'])
         tenant = self.os_conn.neutron.get_quotas_tenant()
         tenant_id = tenant['tenant']['tenant_id']
         self.os_conn.neutron.update_quota(tenant_id, {'quota':
@@ -241,7 +242,7 @@ class TestBase(object):
                                                        'router': 50,
                                                        'subnet': 50,
                                                        'port': 150}})
-        for x in range(net_number):
+        for x in range(exists_nets_count, net_number + exists_nets_count):
             net_id = self.os_conn.add_net(router['id'])
             net_list.append(net_id)
             logger.info('Total networks created at the moment {}'.format(
