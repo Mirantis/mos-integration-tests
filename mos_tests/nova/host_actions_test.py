@@ -198,3 +198,63 @@ def test_compute_resources_info(os_conn, env, keypair, nova_client, request):
 
     # Check tenant_id in host2 data
     assert os_conn.session.get_project_id() in host2_data
+
+
+@pytest.mark.testrail_id('842498')
+@pytest.mark.check_env_('has_2_or_more_computes')
+def test_put_metadata(instances, os_conn, env, keypair, nova_client, network,
+                      security_group):
+    """Put metadata on all instances scheduled on a single compute node
+
+    Scenario:
+        1. Create net01, net01__subnet
+        2. Boot instances vm1 and vm2 in net01 on compute node1
+        3. Boot instances vm3 and vm4 in net01 on compute node2
+        4. Put metadata 'key=test' on all instances scheduled on compute node1:
+            nova host-meta node-1.domain.tld set key=test
+        5. Check the 'metadata' field of every instance's details scheduled on
+            compute node1 is contains {"key": "test"}
+        6. Check that 'metadata' field of every instance's details scheduled on
+            compute node2 is empty
+        7. Delete metadata for all instances scheduled on compute node1:
+            nova host-meta node-1.domain.tld delete key=test
+        8. Check that metadata field is empty now for every instance scheduled
+            on a compute node1
+    """
+    host1 = getattr(instances[0], 'OS-EXT-SRV-ATTR:host')
+
+    zone = os_conn.nova.availability_zones.find(zoneName="nova")
+    host2 = [x for x in zone.hosts.keys() if x != host1][0]
+
+    # Boot 2 instances on host2
+    for i in range(2, 4):
+        instance = os_conn.create_server(
+            name='server%02d' % i,
+            availability_zone='nova:{}'.format(host2),
+            key_name=keypair.name,
+            nics=[{'net-id': network['network']['id']}],
+            security_groups=[security_group.id],
+            wait_for_active=False,
+            wait_for_avaliable=False)
+        instances.append(instance)
+
+    common.wait(lambda: all(os_conn.is_server_active(x) for x in instances),
+                timeout_seconds=2 * 60,
+                waiting_for='instances to became to ACTIVE status')
+
+    nova_client('host-meta', params='{host} set key=test'.format(host=host1))
+
+    for instance in instances[:2]:
+        instance.get()
+        assert instance.metadata == {'key': 'test'}
+
+    for instance in instances[2:]:
+        instance.get()
+        assert instance.metadata == {}
+
+    nova_client('host-meta',
+                params='{host} delete key=test'.format(host=host1))
+
+    for instance in instances[:2]:
+        instance.get()
+        assert instance.metadata == {}
