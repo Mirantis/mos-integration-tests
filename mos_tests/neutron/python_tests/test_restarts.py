@@ -16,7 +16,6 @@ import logging
 
 import pytest
 
-from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase

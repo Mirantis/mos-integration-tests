@@ -16,7 +16,6 @@ import time
 
 import pytest
 
-from mos_tests.environment import devops_client
 from mos_tests.functions import common
 from mos_tests.functions import os_cli
 

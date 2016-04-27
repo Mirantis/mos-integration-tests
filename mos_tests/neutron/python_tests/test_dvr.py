@@ -21,7 +21,6 @@ from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 import pytest
 
-from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import gen_random_resource_name
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
