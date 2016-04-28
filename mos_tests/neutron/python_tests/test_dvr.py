@@ -21,10 +21,10 @@ from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 import pytest
 
-from mos_tests.functions.common import gen_random_resource_name
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests import base
+import mos_tests.neutron.python_tests.functions as func
 
 
 logger = logging.getLogger(__name__)
@@ -1230,23 +1230,8 @@ class TestDVRTypeChange(TestDVRBase):
 
 
 class TestDVRRegression(TestDVRBase):
-    @pytest.fixture
-    def prepare_neutron_logs(self):
-        """Mark logs to know which logs are generated during the test"""
-        self.controllers = self.env.get_nodes_by_role('controller')
-        self.logs_path = "/var/log/neutron/server.log"
-        self.logs_start_marker = gen_random_resource_name(
-            prefix='neutron')
-
-        for controller in self.controllers:
-            with controller.ssh() as remote:
-                res = remote.check_call(
-                    "echo {0} >> {1}".format(self.logs_start_marker,
-                                             self.logs_path))['exit_code']
-                assert res == 0
 
     @pytest.mark.testrail_id('843828')
-    @pytest.mark.usefixtures('prepare_neutron_logs')
     def test_add_router_interface_with_port_id(self):
         """Add router interface with port_id parameter
 
@@ -1258,6 +1243,9 @@ class TestDVRRegression(TestDVRBase):
             5. Check that the error with message 'Could not retrieve
                 gateway port for subnet' didn't appear in logs
         """
+        controllers = self.env.get_nodes_by_role('controller')
+        logs_path, logs_start_marker = func.mark_neutron_logs(controllers)
+
         net, _ = self.create_internal_network_with_subnet(1)
         router = self.os_conn.create_router(name='router01', distributed=True)
         port = self.os_conn.create_port(net['network']['id'])
@@ -1267,21 +1255,8 @@ class TestDVRRegression(TestDVRBase):
         time.sleep(30)
 
         log_msg = "Could not retrieve gateway port for subnet"
-        err_msg = ("ERROR with '{}' message was found in {}.".format(
-            log_msg, self.logs_path))
-
-        logger.debug("Verify that the error log is absent in {}".format(
-            self.logs_path))
-        for controller in self.controllers:
-            with controller.ssh() as remote:
-                with remote.open(self.logs_path) as f:
-                    # check only generated during the test logs
-                    lines = iter(f)
-                    for line in lines:
-                        if self.logs_start_marker in line:
-                            break
-                    for line in lines:
-                        assert log_msg not in line, err_msg
+        func.check_neutron_logs(controllers, logs_path, logs_start_marker,
+                                log_msg)
 
     @pytest.mark.testrail_id('844801')
     def test_check_router_namespace_on_compute_node(self):

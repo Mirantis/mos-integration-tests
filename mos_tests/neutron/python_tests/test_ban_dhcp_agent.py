@@ -18,6 +18,7 @@ import pytest
 
 from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests import base
+from mos_tests.neutron.python_tests.functions import ban_dhcp_agent
 
 
 logger = logging.getLogger(__name__)
@@ -63,37 +64,9 @@ class TestBaseDHCPAgent(base.TestBase):
         :param wait_for_rescheduling: wait new dhcp-agent starts
         :returns: str, name of banned node
         """
-        list_dhcp_agents = lambda: self.os_conn.list_all_neutron_agents(
-            agent_type='dhcp', filter_attr='host')
-        if network_name:
-            network = self.os_conn.neutron.list_networks(
-                name=network_name)['networks'][0]
-            list_dhcp_agents = (
-                lambda: self.os_conn.get_node_with_dhcp_for_network(
-                    network['id']))
-        current_agents = list_dhcp_agents()
-
-        # ban dhcp agent on provided node
-        with self.env.get_ssh_to_node(host) as remote:
-            remote.check_call(
-                "pcs resource ban neutron-dhcp-agent {0}".format(
-                    node_to_ban))
-
-        # Wait to die banned dhcp agent
-        if wait_for_die:
-            wait(
-                lambda: (node_to_ban not in list_dhcp_agents()),
-                timeout_seconds=60 * 3,
-                sleep_seconds=(1, 60, 5),
-                waiting_for='DHCP agent on {0} to ban'.format(node_to_ban))
-        # Wait to reschedule dhcp agent
-        if wait_for_rescheduling:
-            wait(
-                lambda: (set(list_dhcp_agents()) - set(current_agents)),
-                timeout_seconds=60 * 3,
-                sleep_seconds=(1, 60, 5),
-                waiting_for="DHCP agent to reschedule")
-        return node_to_ban
+        return ban_dhcp_agent(self.os_conn, self.env, node_to_ban, host,
+                              network_name, wait_for_die,
+                              wait_for_rescheduling)
 
     def clear_dhcp_agent(self, node_to_clear, host, network_name=None,
                          wait_for_rescheduling=True):
