@@ -75,28 +75,13 @@ class TestDHCPAgent(TestBase):
               Check that quantity on agents are nearly equal
         """
 
-        tenant = self.os_conn.neutron.get_quotas_tenant()
-        tenant_id = tenant['tenant']['tenant_id']
-        self.os_conn.neutron.update_quota(tenant_id, {'quota':
-                                                      {'network': 1000,
-                                                       'router': 1000,
-                                                       'subnet': 1000,
-                                                       'port': 1000}})
+        # Create 50 networks, launch and terminate instances
         # According to the test requirements 50 networks should be created
         # However during implementation found that only about 34 nets
         # can be created for one tenant. Need to clarify that situation.
-        for x in range(30):
-            net_id = self.os_conn.add_net(self.router['id'])
-            self.networks.append(net_id)
-            logger.info('Total networks created at the moment {}'.format(
-                        len(self.networks)))
-            srv = self.os_conn.create_server(
-                name='instanseNo{}'.format(x),
-                key_name=self.instance_keypair.name,
-                security_groups=[self.security_group.name],
-                nics=[{'net-id': net_id}])
-            logger.info('Delete the server {}'.format(srv.name))
-            self.os_conn.nova.servers.delete(srv)
+        self.create_delete_number_of_instances(29, self.router, self.networks,
+                                               self.instance_keypair,
+                                               self.security_group)
 
         # Count networks for each dhcp agent
         # Each agent should contain networks
