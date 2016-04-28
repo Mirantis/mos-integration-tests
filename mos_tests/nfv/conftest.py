@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import csv
 import pytest
 
 from mos_tests.functions import common
@@ -24,12 +25,12 @@ def aggregate(os_conn):
     numa_computes = []
     for compute in os_conn.env.get_nodes_by_role('compute'):
         with compute.ssh() as remote:
-            res = remote.execute('lscpu')['stdout']
-        if res:
-            numa_node_count = [line.split(':')[-1].strip() for line in res
-                               if 'NUMA node(s)' in line][0]
-            if int(numa_node_count) > 1:
-                numa_computes.append(compute)
+            res = remote.check_call("lscpu -p=cpu,node | "
+                                    "grep -v '#'")["stdout"]
+        reader = csv.reader(res)
+        numas = {int(numa[1]) for numa in reader}
+        if len(numas) > 1:
+            numa_computes.append(compute)
     if len(numa_computes) < 2:
         pytest.skip("Insufficient count of compute with Numa Nodes")
     aggr = os_conn.nova.aggregates.create('performance', 'nova')
