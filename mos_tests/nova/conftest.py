@@ -12,9 +12,65 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+import tempfile
+
 import pytest
+from six.moves import configparser
 
 from mos_tests.functions import common
+
+
+logger = logging.getLogger(__name__)
+
+
+@pytest.yield_fixture
+def set_recl_inst_interv(env, request):
+    """Set 'reclaim_instance_interval' to 'nova.conf' on all nodes"""
+
+    def nova_service_restart(nodes):
+        for node in nodes:
+            with node.ssh() as remote:
+                if 'controller' in node.data['roles']:
+                    remote.check_call(nova_restart_ctrllr)
+                elif 'compute' in node.data['roles']:
+                    remote.check_call(nova_restart_comput)
+
+    nova_cfg_f = '/etc/nova/nova.conf'
+    nova_restart_ctrllr = 'service nova-api restart && sleep 3'
+    nova_restart_comput = 'service nova-compute restart && sleep 3'
+    interv_sec = request.param  # reclaim_instance_interval
+
+    logger.debug('In {0} set "reclaim_instance_interval={1}"'.format(
+        nova_cfg_f, interv_sec))
+    # take backup
+    backup_f = nova_cfg_f + '_backup'
+    backup = 'cp {0} {1}'.format(nova_cfg_f, backup_f)
+    # modify nova config file
+    nodes = (env.get_nodes_by_role('controller') +
+             env.get_nodes_by_role('compute'))
+    for node in nodes:
+        with node.ssh() as remote:
+            remote.check_call(backup)
+            # set value
+            with remote.open(nova_cfg_f, 'r') as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+                parser.set('DEFAULT', 'reclaim_instance_interval', interv_sec)
+            # write file
+            with remote.open(nova_cfg_f, 'w') as new_f:
+                parser.write(new_f)
+    # restart services
+    nova_service_restart(nodes)
+    yield
+    # revert original file
+    logger.debug('Revert changes of nova.conf back')
+    for node in nodes:
+        with node.ssh() as remote:
+            cmd = 'mv {0} {1}'.format(backup_f, nova_cfg_f)
+            remote.check_call(cmd)
+    # restart services
+    nova_service_restart(nodes)
 
 
 @pytest.yield_fixture
@@ -71,7 +127,10 @@ def instances(request, os_conn, security_group, keypair, network):
     yield instances
     if 'undestructive' in request.node.keywords:
         for instance in instances:
-            instance.delete()
+            try:                         # if instance was deleted in test
+                instance.force_delete()  # force - if soft deletion enabled
+            except Exception as e:
+                assert e.code == 404     # Instance not found
         common.wait(
             lambda: all(os_conn.is_server_deleted(x.id) for x in instances),
             timeout_seconds=60,

@@ -447,11 +447,16 @@ def delete_volume(cinder_client, volume):
         :param cinder_client: Cinder API client connection point
         :param volume: volume
     """
+    volume = cinder_client.volumes.get(volume.id)  # update volume
     if volume in cinder_client.volumes.list():
+        if volume.status == 'in-use':
+            cinder_client.volumes.detach(volume.id)
         cinder_client.volumes.delete(volume)
         volume_id = volume.id
         while is_volume_exists(cinder_client, volume_id):
             sleep(1)
+    else:
+        logger.error('Volume [{0}] not in cinder.volumes.list'.format(volume))
 
 
 def check_volume_status(cinder_client, uid, status, timeout=5):
