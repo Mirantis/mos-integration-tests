@@ -325,15 +325,21 @@ def check_inst_status(nova_client, uid, status, timeout=5):
     return False
 
 
-def delete_instance(nova_client, uid):
+def delete_instance(nova_client, uid, force=False, timeout=1):
     """Delete instance and check that it is absent in the list
         :param nova_client: Nova API client connection point
         :param uid: UID of instance
+        :param force: Force delete a server
+        :param timeout: Wait for instance deletion
     """
-    if is_instance_exists(nova_client, uid):
-        nova_client.servers.delete(uid)
-        while is_instance_exists(nova_client, uid):
-            sleep(1)
+    if force:
+        nova_client.servers.force_delete(uid)
+    else:
+        if is_instance_exists(nova_client, uid):
+            nova_client.servers.delete(uid)
+    wait(lambda: not is_instance_exists(nova_client, uid),
+         timeout_seconds=timeout * 60, sleep_seconds=10,
+         waiting_for='instance {0} to be deleted'.format(uid))
 
 
 def create_instance(nova_client, inst_name, flavor_id, net_id,

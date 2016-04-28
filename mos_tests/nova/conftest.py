@@ -13,7 +13,6 @@
 #    under the License.
 
 import logging
-import tempfile
 
 import pytest
 from six.moves import configparser
