@@ -166,12 +166,11 @@ class OpenStackActions(object):
                 password='cubswin:)'
             ):
                 return True
+        except paramiko.AuthenticationException:
+            return True
         except paramiko.SSHException as e:
-            if 'authentication' in str(e).lower():
-                return True
-            else:
-                logger.debug('Instance unavailable yet: {}'.format(e))
-                return False
+            logger.debug('Instance unavailable yet: {}'.format(e))
+            return False
 
     def is_server_deleted(self, server_id):
         try:
