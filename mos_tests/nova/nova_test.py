@@ -599,5 +599,5 @@ class NovaIntegrationTests(OpenStackTestCase):
         instance.add_floating_ip(floating_ip.ip)
 
         # Check that instance is reachable
-        ping = common_functions.ping_command(self.floating_ip.ip)
+        ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after creation is not reachable")
