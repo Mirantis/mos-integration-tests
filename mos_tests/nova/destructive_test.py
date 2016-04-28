@@ -12,6 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import time
+
 import pytest
 
 from mos_tests.functions import common
@@ -19,6 +21,7 @@ from mos_tests.functions import network_checks
 
 
 @pytest.mark.testrail_id('842496')
+@pytest.mark.check_env_('is_ceph_enabled', 'has_2_or_more_computes')
 def test_evacuate(devops_env, env, os_conn, instances, keypair):
     """Evacuate instances from failed compute node
 
@@ -50,18 +53,19 @@ def test_evacuate(devops_env, env, os_conn, instances, keypair):
         timeout_seconds=5 * 60,
         waiting_for='hypervisor {0} to be in down state'.format(compute_host))
 
+    alive_host = os_conn.nova.hypervisors.find(state='up').hypervisor_hostname
+
+    # wait some time before evacuate
+    time.sleep(30)
+
     for instance in instances:
-        os_conn.nova.servers.evacuate(instance)
+        os_conn.nova.servers.evacuate(instance, host=alive_host)
 
     def is_instances_migrate():
         for instance in os_conn.nova.servers.list():
             if instance not in instances:
                 continue
-            if instance.status == 'ERROR':
-                raise Exception('Instance {0.name} is in ERROR status\n'
-                                '{0.fault[message]}\n'
-                                '{0.fault[details]}'.format(instance))
-            if not os_conn.server_status_is(instance, 'ACTIVE'):
+            if not os_conn.is_server_active(instance):
                 return False
             if getattr(instance,
                        'OS-EXT-SRV-ATTR:hypervisor_hostname') == compute_host:
@@ -72,4 +76,10 @@ def test_evacuate(devops_env, env, os_conn, instances, keypair):
                 timeout_seconds=5 * 60,
                 waiting_for='instances to migrate to another compute')
 
-    network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair)
+    for vm1, vm2 in zip(instances, instances[::-1]):
+        vm2_ip = os_conn.get_nova_instance_ips(vm2)['fixed']
+        network_checks.check_ping_from_vm(env,
+                                          os_conn,
+                                          vm1,
+                                          vm_keypair=keypair,
+                                          ip_to_ping=vm2_ip)
