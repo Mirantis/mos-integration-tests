@@ -449,7 +449,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         """
         stack_name = 'empty__543332'
         parameter = 'some_param_string'
-        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+        parameters = {'OS::project_id': self.session.get_project_id(),
                       'OS::stack_id': 'None', 'OS::stack_name': stack_name,
                       'param': parameter}
         correct_data = {'description': 'Sample template',
@@ -657,7 +657,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                             template, timeout=timeout,
                                             parameters={'param': parameter})
         self.uid_list.append(uid)
-        parameters = {'OS::project_id': self.keystone.auth_tenant_id,
+        parameters = {'OS::project_id': self.session.get_project_id(),
                       'OS::stack_id': uid,
                       'OS::stack_name': stack_name,
                       'param': parameter}

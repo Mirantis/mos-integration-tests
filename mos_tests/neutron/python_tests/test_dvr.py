@@ -16,10 +16,10 @@ from datetime import datetime
 import logging
 import time
 
+from keystoneclient.auth.identity.v2 import Password as KeystonePassword
 from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 import pytest
-from tempfile import NamedTemporaryFile
 
 from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.functions.common import gen_random_resource_name
@@ -1150,7 +1150,7 @@ class TestDVRTypeChange(TestDVRBase):
         self.check_vm_connectivity()
 
     @pytest.mark.testrail_id('542758')
-    def test_create_dvr_by_no_admin_user(self):
+    def test_create_dvr_by_no_admin_user(self, openstack_client):
         """Create distributed router with member user
 
         Steps:
@@ -1164,49 +1164,18 @@ class TestDVRTypeChange(TestDVRBase):
             8.  Log in as admin user
             9.  Check that parameter Distributed is true
         """
-
-        # Find the admin tenant
-        admin_role = self.os_conn.keystone.roles.find(name='admin')
-        admin_tenant = None
-        for tenant in self.os_conn.keystone.tenants.list():
-            if admin_role in tenant.manager.role_manager.list():
-                admin_tenant = tenant
-                break
-        assert admin_tenant, "Can't find the tenant with admin role"
-
-        # Create new user
-        # Member role is used by default
         username = 'test_dvr'
         userpass = 'test_dvr'
-        # But at first check if the same user exist
-        # try to find it and delete
-        try:
-            user = self.os_conn.keystone.users.find(name=username)
-            self.os_conn.keystone.users.delete(user)
-        except Exception as e:
-            logger.info('Tried to clean up user with result: {}'.format(e))
-        # Actual user creation is here
-        user = self.os_conn.keystone.users.create(name=username,
-                                                  password=userpass,
-                                                  tenant_id=admin_tenant.id)
+        tenant = 'admin'
 
-        # Find the certificate for the current env
-        # and log in with new user in new netron client
-        cert = self.env.certificate
-        path_to_cert = None
-        if cert:
-            with NamedTemporaryFile(prefix="fuel_cert_", suffix=".pem",
-                                    delete=False) as f:
-                f.write(cert)
-            path_to_cert = f.name
+        openstack_client.user_create(username, userpass, project=tenant)
 
-        auth_url = self.os_conn.keystone.auth_url
-        tenant_name = self.os_conn.keystone.project_name
-        neutron = neutronclient.Client(username=username,
-                                       password=userpass,
-                                       tenant_name=tenant_name,
-                                       auth_url=auth_url,
-                                       ca_cert=path_to_cert)
+        auth = KeystonePassword(username=username,
+                                password=userpass,
+                                auth_url=self.os_conn.session.auth.auth_url,
+                                tenant_name=tenant)
+
+        neutron = neutronclient.Client(auth=auth, session=self.os_conn.session)
 
         # Try to create router with explicit distributed True value
         # by user with member role but in admin tenant
@@ -1215,7 +1184,7 @@ class TestDVRTypeChange(TestDVRBase):
         with pytest.raises(NeutronClientException) as e:
             router = {'name': 'router01', 'distributed': True}
             router_id = neutron.create_router(
-                            {'router': router})['router']['id']
+                {'router': router})['router']['id']
         # allowed_msg is for double check
         # There is no separate exception for each case
         # So just check that generated exception contains the expected message
@@ -1225,12 +1194,12 @@ class TestDVRTypeChange(TestDVRBase):
         assert allowed_msg in str(e.value), err_msg
 
         # Try to create router with explicit distributed False value
-        # by user with memeber role but in admin tenant
+        # by user with member role but in admin tenant
         # exception is expected here
         with pytest.raises(NeutronClientException) as e:
             router = {'name': 'router01', 'distributed': False}
             router_id = neutron.create_router(
-                            {'router': router})['router']['id']
+                {'router': router})['router']['id']
         allowed_msg = 'disallowed by policy'
         err_msg = 'Failed to create the router, exception: {}'.format(e)
         assert allowed_msg in str(e.value), err_msg
@@ -1239,7 +1208,7 @@ class TestDVRTypeChange(TestDVRBase):
         # by user with memeber role but in admin tenant
         router = {'name': 'router01'}
         router_id = neutron.create_router(
-                        {'router': router})['router']['id']
+            {'router': router})['router']['id']
 
         # Check that the created router has distributed value set to True
         # Check is done by admin user
