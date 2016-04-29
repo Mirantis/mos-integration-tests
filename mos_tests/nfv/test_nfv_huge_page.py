@@ -28,11 +28,15 @@ logger = logging.getLogger(__name__)
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_vlan')
 class TestHugePages(TestBaseNFV):
+
     @pytest.mark.check_env_('has_3_or_more_computes')
+    @pytest.mark.parametrize('computes_with_hp_2mb',
+                             [{'host_count': 2, 'hp_count_per_host': 512}],
+                             indirect=['computes_with_hp_2mb'])
     @pytest.mark.testrail_id('838318')
     def test_cold_migration_for_huge_pages_2m(
-            self, env, os_conn, networks, nfv_flavor, security_group,
-            aggregate):
+            self, env, os_conn, networks, small_nfv_flavor, security_group,
+            computes_with_hp_2mb):
         """This test checks that cold migration executed successfully for
             instances created on computes with huge pages 2M
             Steps:
@@ -47,13 +51,15 @@ class TestHugePages(TestBaseNFV):
             huge pages
             8. Check vms connectivity
         """
-        free_pages = {0: 1024, 1: 768, 2: 512}
-        hosts = aggregate.hosts
+        count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
+        initial_conf = computes_configuration(env)
+        hosts = computes_with_hp_2mb
+
         vms = []
         vm_hosts = []
         for i in range(2):
             vm = os_conn.create_server(
-                name='vm{}'.format(i), flavor=nfv_flavor[0].id,
+                name='vm{}'.format(i), flavor=small_nfv_flavor.id,
                 security_groups=[security_group.id],
                 nics=[{'net-id': networks[i]}])
             vms.append(vm)
@@ -61,22 +67,34 @@ class TestHugePages(TestBaseNFV):
             host = getattr(vm, "OS-EXT-SRV-ATTR:host")
             assert host in hosts
             vm_hosts.append(host)
-        for host in hosts:
-            self.check_pages(os_conn, host, total_pages=1024,
-                             free_pages=free_pages[vm_hosts.count(host)])
+
+        vms_distribution = [(hosts[0], vm_hosts.count(hosts[0])),
+                            (hosts[1], vm_hosts.count(hosts[1])), ]
+        current_conf = computes_configuration(env)
+        for (host, nr_2mb) in vms_distribution:
+            exp_free_2m = initial_conf[host][page_2mb][
+                              'total'] - nr_2mb * count_to_allocate_2mb
+            assert exp_free_2m == current_conf[host][page_2mb]['free']
+
         for vm in vms:
-            self.check_instance_page_size(os_conn, vm, size=2048)
+            self.check_instance_page_size(os_conn, vm, size=page_2mb)
         network_checks.check_vm_connectivity(env, os_conn)
 
         vm_0_new = self.migrate(os_conn, vms[0])
         vm_host_0_new = getattr(vm_0_new, "OS-EXT-SRV-ATTR:host")
+
         assert vm_host_0_new in hosts
         assert vm_host_0_new != vm_hosts.pop(0)
         vm_hosts.append(vm_host_0_new)
-        for host in hosts:
-            self.check_pages(os_conn, host, total_pages=1024,
-                             free_pages=free_pages[vm_hosts.count(host)])
-        self.check_instance_page_size(os_conn, vm_0_new, size=2048)
+
+        vms_distribution = [(hosts[0], vm_hosts.count(hosts[0])),
+                            (hosts[1], vm_hosts.count(hosts[1])), ]
+        final_conf = computes_configuration(env)
+        for (host, nr_2mb) in vms_distribution:
+            exp_free_2m = initial_conf[host][page_2mb][
+                              'total'] - nr_2mb * count_to_allocate_2mb
+            assert exp_free_2m == final_conf[host][page_2mb]['free']
+        self.check_instance_page_size(os_conn, vm_0_new, size=page_2mb)
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838297')
@@ -228,3 +246,71 @@ class TestHugePages(TestBaseNFV):
             self.resize(os_conn, vms.keys()[0], flavor_to_resize=flavor)
             self.check_instance_page_size(os_conn, vms.keys()[0], size=size)
             network_checks.check_vm_connectivity(env, os_conn)
+
+    @pytest.mark.check_env_('has_3_or_more_computes')
+    @pytest.mark.parametrize('computes_with_hp_1gb',
+                             [{'host_count': 2, 'hp_count_per_host': 4}],
+                             indirect=['computes_with_hp_1gb'])
+    @pytest.mark.testrail_id('838315')
+    def test_cold_migration_for_huge_pages_1g(
+            self, env, os_conn, networks, medium_nfv_flavor, security_group,
+            computes_with_hp_1gb):
+        """This test checks that cold migration executed successfully for
+            instances created on computes with huge pages 1G
+            Steps:
+            1. Create net1 with subnet, net2 with subnet and  router1 with
+            interfaces to both nets
+            2. Launch instance vm1 in net1 with m1.small.hpgs
+            3. Check that vm1 is created on compute with huge pages
+            4. Launch instance vm2 in net2 with m1.small.hpgs
+            5. Check that vm2 is created on compute with huge pages
+            6. Check vms connectivity
+            7. Cold migrate vm1 and check that vm moved to other compute with
+            huge pages
+            8. Check vms connectivity
+        """
+        count_to_allocate_1gb = medium_nfv_flavor.ram * 1024 / page_1gb
+        initial_conf = computes_configuration(env)
+
+        hosts = computes_with_hp_1gb
+        vms = []
+        vm_hosts = []
+        for i in range(2):
+            vm = os_conn.create_server(
+                name='vm{}'.format(i), flavor=medium_nfv_flavor.id,
+                security_groups=[security_group.id],
+                nics=[{'net-id': networks[i]}])
+            vms.append(vm)
+        for vm in vms:
+            host = getattr(vm, "OS-EXT-SRV-ATTR:host")
+            assert host in hosts
+            vm_hosts.append(host)
+
+        vms_distribution = [(hosts[0], vm_hosts.count(hosts[0])),
+                            (hosts[1], vm_hosts.count(hosts[1])), ]
+        current_conf = computes_configuration(env)
+        for (host, nr_1gb) in vms_distribution:
+            exp_free_1g = initial_conf[host][page_1gb][
+                              'total'] - nr_1gb * count_to_allocate_1gb
+            assert exp_free_1g == current_conf[host][page_1gb]['free']
+
+        for vm in vms:
+            self.check_instance_page_size(os_conn, vm, size=page_1gb)
+        network_checks.check_vm_connectivity(env, os_conn)
+
+        vm_0_new = self.migrate(os_conn, vms[0])
+        vm_host_0_new = getattr(vm_0_new, "OS-EXT-SRV-ATTR:host")
+
+        assert vm_host_0_new in hosts
+        assert vm_host_0_new != vm_hosts.pop(0)
+        vm_hosts.append(vm_host_0_new)
+
+        vms_distribution = [(hosts[0], vm_hosts.count(hosts[0])),
+                            (hosts[1], vm_hosts.count(hosts[1])), ]
+        final_conf = computes_configuration(env)
+        for (host, nr_1gb) in vms_distribution:
+            exp_free_1g = initial_conf[host][page_1gb][
+                              'total'] - nr_1gb * count_to_allocate_1gb
+            assert exp_free_1g == final_conf[host][page_1gb]['free']
+        self.check_instance_page_size(os_conn, vm_0_new, size=page_1gb)
+        network_checks.check_vm_connectivity(env, os_conn)
