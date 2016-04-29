@@ -411,8 +411,6 @@ class FuelClient(object):
         if self._admin_keys is None:
             self._admin_keys = []
             with self.ssh_admin() as remote:
-                for path in ['/root/.ssh/id_rsa',
-                             '/root/.ssh/bootstrap.rsa']:
-                    with remote.open(path) as f:
-                        self._admin_keys.append(RSAKey.from_private_key(f))
+                with remote.open('/root/.ssh/id_rsa') as f:
+                    self._admin_keys.append(RSAKey.from_private_key(f))
         return self._admin_keys
