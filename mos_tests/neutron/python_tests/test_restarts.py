@@ -425,3 +425,138 @@ class TestRestarts(TestBase):
 
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
+
+    @pytest.mark.testrail_id('843870')
+    def test_check_port_binding_after_restart_node(self):
+        """[Neutron VLAN and VXLAN] Check that no redundant DHCP agents
+        assigned to the network after DHCP agents restart.
+
+        Steps:
+            1. Update quotas for creation a lot of networks:
+                neutron quota-update --network 1000 --subnet 1000
+                                     --router 1000 --port 1000:
+            2. Create 50 networks, subnets, launch and terminate instance
+            3. Check port ids on networkX:
+                neutron port-list --network_id=<yout_network_id>
+                --device_owner=network:dhcp
+            4. Check host binding for all ports:
+                Get binding:host_id from
+                network port-show <port_id>
+            5. Destroy one of controllers with dhcp agent for networkX:
+                virsh destroy <node>
+                Wait till node are down
+            6. Start destroyed controller with dhcp agent for networkX:
+                virsh start <node>
+                Wait till node are up.
+            7. Check port id's for networkX. They should be the same as before
+                restart:
+                neutron port-list --network_id=<yout_network_id>
+                --device_owner=network:dhcp
+            4. Check host binding for all ports:
+                Get binding:host_id from
+                network port-show <port_id>
+               Check that network is rescheduled from one DHCP agent to
+                another, only one host changed after restart.
+        """
+        self._prepare_openstack()
+
+        # Create 50 networks, launch and terminate instances
+        # According to the test requirements 50 networks should be created
+        # However during implementation found that only about 34 nets
+        # can be created for one tenant. Need to clarify that situation.
+        self.create_delete_number_of_instances(29, self.router, self.networks,
+                                               self.instance_keypair,
+                                               self.security_group)
+
+        # Get DHCP agents for the net9
+        net_id = self.networks[8]
+        ports_ids_before = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='network:dhcp')]
+
+        ports_binding_before = [
+            port['binding:host_id'] for port in
+            self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='network:dhcp')]
+
+        # virsh destroy of the controller with dhcp agent
+        for controller in self.env.non_primary_controllers:
+            if controller.data['fqdn'] in ports_binding_before:
+                controller_to_restart = controller
+                break
+        mac = controller_to_restart.data['mac']
+        controller_with_dhcp = DevopsClient.get_node_by_mac(
+            env_name=self.env_name, mac=mac)
+
+        self.env.warm_restart_nodes([controller_with_dhcp])
+
+        # Check ports_binding after restart node
+        ports_ids_after = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='network:dhcp')]
+        err_msg = 'Ports ids are changed after restart'
+        assert ports_ids_before == ports_ids_after, err_msg
+
+        ports_binding_after = [
+            port['binding:host_id'] for port in
+            self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='network:dhcp')]
+
+        new_dhcp_host = set(ports_binding_before) & set(ports_binding_after)
+        err_msg = 'Dhcp agents recheduled incorrect after restart'
+        assert len(new_dhcp_host) == 1, err_msg
+
+    @pytest.mark.testrail_id('851690')
+    def test_check_network_rescheduling_after_restart_node(self):
+        """[Neutron VLAN and VXLAN] Check that after destroying controller
+        network is rescheduled on another one, in total on two controllers.
+
+        Steps:
+            1. Create network1, subnet1, router1
+            2. Launch instances vm1 in network1
+            3. Get list of controllers with dhcp agents for the network
+                neutron dhcp-agent-list-hosting-net netX
+            4. Find non-primary controller on which network is
+            5. Destroy this controller with dhcp agent for networkX:
+                virsh destroy <node>
+                Wait till node are down
+            6. Start destroyed controller with dhcp agent for networkX:
+                virsh start <node>
+                Wait till node are up.
+            7. Check that network was rescheduled to another controller,
+                in total on two controllers.
+            8. Run udhcpc on vm.
+        """
+        self._prepare_openstack()
+
+        # get list of hosts with dhcp agent for the network
+        list_network_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[-1])
+        err_msg = 'Network should be on two dhcp agent hosts'
+        assert len(list_network_hosts) == 2, err_msg
+
+        # virsh destroy of the controller with dhcp agent
+        for controller in self.env.non_primary_controllers:
+            if controller.data['fqdn'] in list_network_hosts:
+                controller_to_restart = controller
+                break
+        mac = controller_to_restart.data['mac']
+        controller_with_dhcp = DevopsClient.get_node_by_mac(
+            env_name=self.env_name, mac=mac)
+
+        self.env.warm_restart_nodes([controller_with_dhcp])
+
+        # Check that network rescheduled to another host
+        wait(
+            lambda: len(self.os_conn.get_node_with_dhcp_for_network(
+                self.networks[-1])) == 2,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating network from died host to another"
+        )
+        list_network_hosts_after = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[-1])
+        err_msg = 'Network doesnt rescheduled to another host after restart'
+        assert list_network_hosts_after != list_network_hosts, err_msg
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
