@@ -211,20 +211,6 @@ class TestL3HA(TestBase):
                     waiting_for="router rescheduled from {}".format(
                         from_node))
 
-    def wait_router_migrate(self, router_id, new_node, timeout_seconds=60):
-        """Wait for router migrate to l3 agent hosted on `new node`"""
-        def check_active_router_on_host():
-            agents = self.get_active_l3_agents_for_router(router_id)
-            if not agents:
-                return False
-            return agents[0]['host'] == new_node
-        return wait(
-            check_active_router_on_host,
-            timeout_seconds=timeout_seconds,
-            waiting_for="router migrate to l3 agent hosted on {}".format(
-                new_node)
-        )
-
     @pytest.fixture
     def variables(self, init):
         """Init Openstack variables"""
@@ -429,8 +415,10 @@ class TestL3HA(TestBase):
                     remote.check_call(
                         'pcs resource ban neutron-l3-agent {}'.format(
                             node.data['fqdn']))
-                self.wait_router_migrate(router_id,
-                                         primary_controller.data['fqdn'])
+                from_node = l3_agent_controller.data['fqdn']
+                self.wait_router_rescheduled(router_id=router_id,
+                                             from_node=from_node,
+                                             timeout_seconds=5 * 60)
                 for node in other_controllers:
                     remote.check_call(
                         'pcs resource clear neutron-l3-agent {}'.format(
@@ -731,8 +719,10 @@ class TestL3HA(TestBase):
                             node.data['fqdn']))
                 # Wait until the agent is migrated
                 # to the destination controller
-                self.wait_router_migrate(router_id,
-                                         to_controller.data['fqdn'])
+                from_node = from_controller.data['fqdn']
+                self.wait_router_rescheduled(router_id=router_id,
+                                             from_node=from_node,
+                                             timeout_seconds=5 * 60)
                 for node in other_controllers:
                     remote.check_call(
                         'pcs resource clear neutron-l3-agent {}'.format(
@@ -766,9 +756,9 @@ class TestL3HA(TestBase):
                 reschedule router1 to primary by banning all another
                 and then clear them
             8. Destroy primary controller
-            9. Start ping vm2 from vm1 by floating ip
-            11. Check that ping is available
-            12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
+            9. Wait time while env is unstable
+            10. Check ping
+            11. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
 
         """
         router_id = router['router']['id']
@@ -782,11 +772,6 @@ class TestL3HA(TestBase):
         # Reschedule active l3 agent to the non primary if needed
         self.reschedule_active_l3_agt(router_id, controller,
                                       l3_agent_controller)
-
-        from_node = l3_agent_controller.data['fqdn']
-        self.wait_router_rescheduled(router_id=router_id,
-                                     from_node=from_node,
-                                     timeout_seconds=5 * 60)
 
         logger.info("Destroy non primary controller {}".format(
             controller.data['fqdn']))
@@ -802,7 +787,6 @@ class TestL3HA(TestBase):
             vm_keypair=self.instance_keypair, ip_to_ping=server2_ip)
 
         self.check_l3_ha_agent_states(router_id)
-
 
     @pytest.mark.testrail_id('542787')
     def test_reset_primary_controller(self, router,
@@ -822,10 +806,9 @@ class TestL3HA(TestBase):
                 reschedule router1 to primary by banning all another
                 and then clear them
             8. Reset primary controller
-            10. Start ping vm2 from vm1 by floating ip
-            11. Check that ping lost no more than 10 packets
-            12. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
-
+            9. Wait time while env is unstable
+            10. Check ping
+            11. One agent has ACTIVE ha_state, others (2) has STAND BY ha_state
         """
         router_id = router['router']['id']
         agents = self.get_active_l3_agents_for_router(router_id)
@@ -844,11 +827,6 @@ class TestL3HA(TestBase):
         # Reschedule active l3 agent to primary if needed
         self.reschedule_active_l3_agt(router_id, primary_controller,
                                       l3_agent_controller)
-
-        from_node = l3_agent_controller.data['fqdn']
-        self.wait_router_rescheduled(router_id=router_id,
-                                     from_node=from_node,
-                                     timeout_seconds=5 * 60)
 
         logger.info("Reset primary controller {}".format(
             primary_controller.data['fqdn']))
