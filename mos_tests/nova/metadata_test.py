@@ -98,7 +98,7 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
             waiting_for='instances to became to ACTIVE status')
         common.wait(
             lambda: all(os_conn.is_server_ssh_ready(x) for x in instances),
-            timeout_seconds=2 * 60,
+            timeout_seconds=5 * 60,
             waiting_for='instances to be ssh available')
 
         for instance in instances:
