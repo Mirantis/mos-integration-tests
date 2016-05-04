@@ -154,7 +154,7 @@ class OpenStackActions(object):
             if self.env is not None:
                 wait(lambda: self.is_server_ssh_ready(srv),
                      timeout_seconds=timeout,
-                     waiting_for='server available via ssh')
+                     waiting_for='instance to be ssh ready')
             logger.info('the server {0} is ready'.format(srv.name))
         return self.get_instance_detail(srv.id)
 
@@ -162,8 +162,8 @@ class OpenStackActions(object):
         """Check ssh connect to server"""
 
         try:
-            with self.ssh_to_instance(self.env, server, username='cirros',
-                password='cubswin:)'
+            with self.ssh_to_instance(self.env, server, username='fake',
+                password='fake'
             ):
                 return True
         except paramiko.AuthenticationException:
@@ -180,6 +180,20 @@ class OpenStackActions(object):
             return False
         except nova_exceptions.NotFound:
             return True
+
+    def get_hypervisor_capacity(self, hypervisor, flavor):
+        """Return max available count of instances, which can be booted on
+            hypervisor with choosed flavor
+
+        :returns: possible instances count
+        """
+        if hypervisor.vcpus < flavor.vcpus:
+            return 0
+        if flavor.disk > 0:
+            return min(hypervisor.disk_available_least // flavor.disk,
+                       hypervisor.free_ram_mb // flavor.ram)
+        else:
+            return hypervisor.free_ram_mb // flavor.ram
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict

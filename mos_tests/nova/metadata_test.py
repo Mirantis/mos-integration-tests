@@ -69,8 +69,7 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
     instances_count = 0
     # Determine available m1.small instances count
     for hypervisor in os_conn.nova.hypervisors.list():
-        instances_count += min(hypervisor.disk_available_least / flavor.disk,
-                               hypervisor.free_ram_mb / flavor.ram)
+        instances_count += os_conn.get_hypervisor_capacity(hypervisor, flavor)
     iterations_count = 100 / instances_count
     for i in range(100 / instances_count):
         logger.info('Check metadata iteration {i} from {iterations_count}. '
