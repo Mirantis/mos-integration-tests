@@ -501,3 +501,57 @@ class TestRestarts(TestBase):
         new_dhcp_host = set(ports_binding_before) & set(ports_binding_after)
         err_msg = 'Dhcp agents recheduled incorrect after restart'
         assert len(new_dhcp_host) == 1, err_msg
+
+    @pytest.mark.testrail_id('851690')
+    def test_check_network_rescheduling_after_restart_node(self):
+        """[Neutron VLAN and VXLAN] Check that after destroying controller
+        network is rescheduled on another one, in total on two controllers.
+
+        Steps:
+            1. Create network1, subnet1, router1
+            2. Launch instances vm1 in network1
+            3. Get list of controllers with dhcp agents for the network
+                neutron dhcp-agent-list-hosting-net netX
+            4. Find non-primary controller on which network is
+            5. Destroy this controller with dhcp agent for networkX:
+                virsh destroy <node>
+                Wait till node are down
+            6. Start destroyed controller with dhcp agent for networkX:
+                virsh start <node>
+                Wait till node are up.
+            7. Check that network was rescheduled to another controller,
+                in total on two controllers.
+            8. Run udhcpc on vm.
+        """
+        self._prepare_openstack()
+
+        # get list of hosts with dhcp agent for the network
+        list_network_hosts = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[-1])
+        err_msg = 'Network should be on two dhcp agent hosts'
+        assert len(list_network_hosts) == 2, err_msg
+
+        # virsh destroy of the controller with dhcp agent
+        for controller in self.env.non_primary_controllers:
+            if controller.data['fqdn'] in list_network_hosts:
+                controller_to_restart = controller
+                break
+        controller_with_dhcp = self.devops_env.get_node_by_fuel_node(
+            controller_to_restart)
+
+        self.env.warm_restart_nodes([controller_with_dhcp])
+
+        # Check that network rescheduled to another host
+        wait(
+            lambda: len(self.os_conn.get_node_with_dhcp_for_network(
+                self.networks[-1])) == 2,
+            timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
+            waiting_for="migrating network from died host to another"
+        )
+        list_network_hosts_after = self.os_conn.get_node_with_dhcp_for_network(
+            self.networks[-1])
+        err_msg = 'Network doesnt rescheduled to another host after restart'
+        assert list_network_hosts_after != list_network_hosts, err_msg
+
+        # Run udhcp on vm
+        self.run_udhcpc_on_vm(self.server1)
