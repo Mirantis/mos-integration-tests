@@ -15,6 +15,7 @@
 import logging
 from multiprocessing.dummy import Pool
 
+import dpath.util
 from novaclient import exceptions as nova_exceptions
 import pytest
 from six.moves import configparser
@@ -93,6 +94,11 @@ def unlimited_live_migrations(env):
             if result.is_ok:
                 remote.check_call(restart_cmd)
 
+    common.wait(env.os_conn.is_nova_ready,
+                timeout_seconds=60 * 5,
+                expected_exceptions=Exception,
+                waiting_for="Nova services to be alive")
+
 
 @pytest.fixture
 def big_hypervisors(os_conn):
@@ -129,11 +135,27 @@ def big_port_quota(os_conn):
     os_conn.neutron.update_quota(tenant_id, orig_quota)
 
 
-@pytest.mark.testrail_id('838028')
-@pytest.mark.usefixtures('unlimited_live_migrations', 'big_port_quota')
+@pytest.fixture(scope='session')
+def block_migration(env, request):
+    value = request.param
+    data = env.get_settings_data()
+    if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value') and value:
+        pytest.skip('Block migration requires Nova Ceph RBD to be disabled')
+    if not dpath.util.get(data,
+                          '*/storage/**/ephemeral_ceph/value') and not value:
+        pytest.skip('True live migration requires Nova Ceph RBD')
+    return value
+
+
+@pytest.mark.testrail_id('838028', block_migration=True)
+@pytest.mark.testrail_id('838257', block_migration=False)
+@pytest.mark.parametrize('block_migration',
+                         [True, False],
+                         ids=['block LM', 'true LM'],
+                         indirect=True)
 def test_live_migration_max_instances_with_all_flavors(
         os_conn, big_hypervisors, network, keypair, security_group, instances,
-        env):
+        env, block_migration, unlimited_live_migrations, big_port_quota):
     """LM of maximum allowed amount of instances created with all available
         flavors
 
@@ -193,7 +215,7 @@ def test_live_migration_max_instances_with_all_flavors(
         # Successive migrations
         logger.info('Start successive migrations')
         for instance in instances:
-            instance.live_migrate(block_migration=True)
+            instance.live_migrate(block_migration=block_migration)
 
         common.wait(
             lambda: is_migrated(os_conn, instances,
@@ -218,7 +240,7 @@ def test_live_migration_max_instances_with_all_flavors(
         try:
             pool.map(
                 lambda x: x.live_migrate(host=hypervisor1.hypervisor_hostname,
-                                         block_migration=True),
+                                         block_migration=block_migration),
                 instances)
         finally:
             pool.terminate()
