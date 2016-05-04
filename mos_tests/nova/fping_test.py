@@ -212,3 +212,35 @@ class TestNovaOSfpingExtension(TestBase):
 
         # Check all VMs are alive in fping
         assert all(fping_serv_result[x.id] for x in instances_on_diff_computes)
+
+    @pytest.mark.testrail_id('842502')
+    def test_ping_instances_selectively_in_tenant(
+            self, install_fping_on_controllers, instances_on_diff_computes):
+        """Ping instances in a tenant selectively with the use of fping utility
+        Actions:
+        1. Install pfing on all controllers and update 'nova.conf' if required.
+        2. Create net and subnet;
+        3. Create and run four instances (vm0-vm3) inside same net, but 2 vms
+        should be on one compute, rest 2 - on another;
+        4. Use include and exclude options and check that fping results
+        for two instances on one compute are displayed and for rest instances
+        on another compute - are not.
+        """
+        timeout = 60  # (sec) timeout to wait instance for status change
+
+        # Create 4 instances on 2 different computes.
+        # Compute2: vm0,2 | Compute1: vm1,3
+        vm0, vm1, vm2, vm3, = instances_on_diff_computes
+        include_vms_id = [vm0.id, vm2.id]  # compute 2
+        exclude_vms_id = [vm1.id, vm3.id]  # compute 1
+
+        # Get fping results
+        fping_list = self.os_conn.nova.fping.list(
+            include=include_vms_id,
+            exclude=exclude_vms_id)
+        fping_serv_result = self.fping_server_status(fping_list)
+
+        # Check vm0 and vm1 present in fping
+        assert all(i in fping_serv_result for i in include_vms_id)
+        # Check vm2 and vm3 not present in fping
+        assert all(i not in fping_serv_result for i in exclude_vms_id)
