@@ -161,41 +161,43 @@ class SSHClient(object):
     def __exit__(self, *err):
         self.clear()
 
-    def connect(self):
-        logger.debug(
-            "Connecting to '%s:%s' as '%s:%s'...." % (
-                self.host, self.port, self.username, self.password))
-        base_kwargs = dict(
-            port=self.port, username=self.username,
-            password=self.password, banner_timeout=30
-        )
-        if self._proxy is not None:
-            base_kwargs['sock'] = self._proxy
-        for private_key in self.private_keys:
-            kwargs = base_kwargs.copy()
-            kwargs['pkey'] = private_key
-            kwargs['password'] = None
-            try:
-                return self._ssh.connect(self.host, **kwargs)
-            except paramiko.AuthenticationException:
-                continue
-        if self.private_keys:
-            logger.error("Authentication with keys failed")
+    def connect(self, pkey=None, password=None):
+        if pkey:
+            logger.debug("Connecting to '{0.host}:{0.port}' "
+                         "as '{0.username}' with key....".format(self))
+        else:
+            logger.debug("Connecting to '{0.host}:{0.port}' "
+                         "as '{0.username}:{1}'....".format(self, password))
 
-        return self._ssh.connect(self.host, **base_kwargs)
+        kwargs = {}
+        if self._proxy is not None:
+            kwargs['sock'] = self._proxy
+        return self._ssh.connect(self.host, port=self.port,
+                                 username=self.username, password=password,
+                                 pkey=pkey, banner_timeout=30, **kwargs)
 
     @retry(count=3, delay=3, pass_counter='counter')
     def reconnect(self, counter):
-        self.clear()
-        self._ssh = paramiko.SSHClient()
-        self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        proxies_count = len(self.proxy_commands)
-        if proxies_count > 0:
-            proxy_command = self.proxy_commands[counter % proxies_count]
-            logger.debug('Proxy command for ssh: "{0}"'.format(proxy_command))
-            self._proxy = paramiko.ProxyCommand(proxy_command)
-            self._proxy.settimeout(self.timeout)
-        self.connect()
+        params = [{'pkey': x} for x in self.private_keys]
+        if self.password is not None:
+            params.append({'password': self.password})
+        for param in params:
+            self.clear()
+            self._ssh = paramiko.SSHClient()
+            self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            proxies_count = len(self.proxy_commands)
+            if proxies_count > 0:
+                proxy_command = self.proxy_commands[counter % proxies_count]
+                logger.debug('Proxy for ssh: "{0}"'.format(proxy_command))
+                self._proxy = paramiko.ProxyCommand(proxy_command)
+                self._proxy.settimeout(self.timeout)
+            try:
+                self.connect(**param)
+                break
+            except Exception as e:
+                logger.warning(e)
+        else:
+            raise
 
     def check_call(self, command, verbose=True):
         ret = self.execute(command, verbose)
