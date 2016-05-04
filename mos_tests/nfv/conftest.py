@@ -15,6 +15,8 @@
 import pytest
 
 from mos_tests.functions import common
+from mos_tests.nfv.base import page_1gb
+from mos_tests.nfv.base import page_2mb
 
 
 @pytest.yield_fixture
@@ -40,20 +42,19 @@ def aggregate(os_conn):
 
 
 @pytest.yield_fixture()
-def nfv_flavor(os_conn, cleanup, request):
-    flavors = getattr(
-        request, 'param', [[['m1.small.hpgs', 512, 1, 1],
-                           [{'hw:mem_page_size': 2048}, ]], ])
-    created_flavors = []
+def small_nfv_flavor(os_conn, cleanup, request):
+    flv = os_conn.nova.flavors.create("m1.small.hpgs", 512, 1, 1)
+    flv.set_keys({'hw:mem_page_size': page_2mb})
+    yield flv
+    os_conn.nova.flavors.delete(flv.id)
 
-    for flavor_params, flavor_keys in flavors:
-        flavor = os_conn.nova.flavors.create(*flavor_params)
-        for flavor_key in flavor_keys:
-            flavor.set_keys(flavor_key)
-        created_flavors.append(flavor)
-    yield created_flavors
-    for flavor in created_flavors:
-        os_conn.nova.flavors.delete(flavor.id)
+
+@pytest.yield_fixture()
+def medium_nfv_flavor(os_conn, cleanup, request):
+    flv = os_conn.nova.flavors.create("m1.medium.hpgs", 2048, 2, 20)
+    flv.set_keys({'hw:mem_page_size': page_1gb})
+    yield flv
+    os_conn.nova.flavors.delete(flv.id)
 
 
 @pytest.yield_fixture(scope="class")
@@ -87,13 +88,13 @@ def networks(os_conn):
 
 @pytest.yield_fixture(scope="class")
 def volume(os_conn):
-        image_id = [image.id for image in os_conn.nova.images.list()
-                    if image.name == 'TestVM'][0]
-        volume = common.create_volume(os_conn.cinder, image_id,
-                                      name='nfv_volume',
-                                      volume_type='volumes_lvm')
-        yield volume
-        volume.delete()
+    image_id = [image.id for image in os_conn.nova.images.list()
+                if image.name == 'TestVM'][0]
+    volume = common.create_volume(os_conn.cinder, image_id,
+                                  name='nfv_volume',
+                                  volume_type='volumes_lvm')
+    yield volume
+    volume.delete()
 
 
 @pytest.yield_fixture
@@ -104,6 +105,7 @@ def cleanup(os_conn):
             instance.delete()
         common.wait(lambda: len(os_conn.nova.servers.list()) == 0,
                     timeout_seconds=10 * 60, waiting_for='instances cleanup')
+
     initial_images = os_conn.nova.images.list()
     instances_cleanup(os_conn)
     yield
@@ -119,3 +121,97 @@ def cleanup(os_conn):
     for volume in os_conn.cinder.volumes.list():
         if volume.name != 'nfv_volume':
             volume.delete()
+
+
+@pytest.yield_fixture
+def flavor(os_conn, request):
+    param = getattr(request, 'param', {"name": "old.flavor", "ram": 2048,
+                                       "vcpu": 2, "disk": 20})
+    flv = os_conn.nova.flavors.create(param['name'], param['ram'],
+                                      param['vcpu'], param['disk'])
+    yield flv
+    os_conn.nova.flavors.delete(flv.id)
+
+
+def computes_configuration(env):
+    computes = env.get_nodes_by_role('compute')
+    computes_def = {}
+
+    def get_compute_def(host, size):
+        with host.ssh() as remote:
+            cmd = "cat /sys/kernel/mm/hugepages/hugepages-" \
+                  "{size}kB/{type}_hugepages" " || echo 0"
+            [free, total] = [remote.execute(
+                cmd.format(size=size, type=t))['stdout'][0]
+                for t in ['free', 'nr']]
+            pages_count = {'total': int(total), 'free': int(free)}
+        return pages_count
+
+    for compute in computes:
+        computes_def.update(
+            {compute.data['fqdn']: {size: get_compute_def(compute, size)
+                                    for size in [page_1gb, page_2mb]}})
+    return computes_def
+
+
+@pytest.fixture
+def computes_without_hp(env, request):
+    min_count = getattr(request, 'param', 0)
+    computes = computes_configuration(env)
+    computes_without_hp = [host for host, attr in computes.items() if
+                           attr[page_1gb]['total'] == 0 and
+                           attr[page_2mb]['total'] == 0]
+    if len(computes_without_hp) < min_count:
+        pytest.skip("Insufficient count of compute nodes without Huge Pages")
+    return computes_without_hp
+
+
+@pytest.fixture
+def computes_with_hp_1gb(env, request):
+    min_count = getattr(request, 'param', {'host_count': 1,
+                                           'hp_count_per_host': 4})
+    computes = computes_configuration(env)
+    computes_with_1gb_hp = [host for host, attr in computes.items() if
+                            attr[page_1gb]['total'] != 0]
+    if len(computes_with_1gb_hp) < min_count['host_count']:
+        pytest.skip("Insufficient count of compute nodes with 1Gb huge pages")
+    for host in computes_with_1gb_hp:
+        if computes[host][page_1gb]['total'] < min_count['hp_count_per_host']:
+            pytest.skip("Insufficient count of 1Gb huge pages for host")
+    return computes_with_1gb_hp
+
+
+@pytest.fixture
+def computes_with_hp_2mb(env, request):
+    min_count = getattr(request, 'param', {'host_count': 1,
+                                           'hp_count_per_host': 1024})
+    computes = computes_configuration(env)
+    computes_with_2mb_hp = [host for host, attr in computes.items() if
+                            attr[page_2mb]['total'] != 0]
+    if len(computes_with_2mb_hp) < min_count['host_count']:
+        pytest.skip("Insufficient count of compute nodes with 2Mb huge pages")
+    for host in computes_with_2mb_hp:
+        if computes[host][page_2mb]['total'] < min_count['hp_count_per_host']:
+            pytest.skip("Insufficient count of 2Mb huge pages for host")
+    return computes_with_2mb_hp
+
+
+@pytest.fixture
+def computes_with_mixed_hp(env, request):
+    min_count = getattr(request, 'param', {'host_count': 1,
+                                           'count_2mb': 1024,
+                                           'count_1gb': 4})
+    computes = computes_configuration(env)
+    mixed_computes = [host for host, attr in computes.items()
+                      if attr[page_2mb]['total'] != 0 and
+                      attr[page_1gb]['total'] != 0]
+    if len(mixed_computes) < min_count['host_count']:
+        pytest.skip(
+            "Insufficient count of compute nodes with 2Mb & 1Gb huge pages")
+    for host in mixed_computes:
+        counts = [(computes[host][page_1gb]['total'], min_count['count_1gb']),
+                  (computes[host][page_2mb]['total'], min_count['count_2mb'])]
+        for (act, minimum) in counts:
+            if act < minimum:
+                pytest.skip("Insufficient count huge pages for host")
+    return mixed_computes

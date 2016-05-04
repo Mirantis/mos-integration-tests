@@ -15,6 +15,9 @@ import xml.etree.ElementTree as ElementTree
 
 from mos_tests.functions import common
 
+page_1gb = 1048576
+page_2mb = 2048
+
 
 class TestBaseNFV(object):
 
@@ -37,9 +40,12 @@ class TestBaseNFV(object):
             cmd = "virsh dumpxml {0}".format(name)
             res = remote.execute(cmd)
         root = ElementTree.fromstring(res.stdout_string)
-        page_size = root.find('memoryBacking').find('hugepages').find('page')\
-            .get('size')
-        assert str(size) == page_size, "Unexpected package size"
+        if size is None:
+            assert not root.find('memoryBacking'), "Huge pages are unexpected"
+        else:
+            page_size = root.find('memoryBacking').find('hugepages').find(
+                'page').get('size')
+            assert str(size) == page_size, "Unexpected package size"
 
     def live_migrate(self, os_conn, vm, host, block_migration=True,
                      disk_over_commit=False):
@@ -64,7 +70,7 @@ class TestBaseNFV(object):
     def migrate(self, os_conn, vm):
         os_conn.nova.servers.migrate(vm)
         common.wait(
-            lambda: os_conn.nova.servers.get(vm).status == 'VERIFY_RESIZE',
+            lambda: os_conn.server_status_is(vm, 'VERIFY_RESIZE'),
             timeout_seconds=3 * 60,
             waiting_for='instance {} changes status to VERIFY_RESIZE during '
                         'migration'.format(vm.name))
@@ -73,4 +79,18 @@ class TestBaseNFV(object):
                     timeout_seconds=5 * 60,
                     waiting_for='instance {} changes status to ACTIVE after '
                                 'migration'.format(vm.name))
+        return os_conn.nova.servers.get(vm)
+
+    def resize(self, os_conn, vm, flavor_to_resize):
+        os_conn.nova.servers.resize(vm, flavor_to_resize)
+        common.wait(
+            lambda: os_conn.server_status_is(vm, 'VERIFY_RESIZE'),
+            timeout_seconds=3 * 60,
+            waiting_for='instance {} changes status to VERIFY_RESIZE during '
+                        'resizing'.format(vm.name))
+        os_conn.nova.servers.confirm_resize(vm)
+        common.wait(lambda: os_conn.is_server_active(vm),
+                    timeout_seconds=5 * 60,
+                    waiting_for='instance {} changes status to ACTIVE after '
+                                'resizing'.format(vm.name))
         return os_conn.nova.servers.get(vm)
