@@ -59,12 +59,12 @@ class TestBaseNFV(object):
                     waiting_for='instance {} changes status to ACTIVE after '
                                 'live migration'.format(vm.name))
 
-    def create_volume_from_vm(self, os_conn, vm):
+    def create_volume_from_vm(self, os_conn, vm, size=1):
         image = os_conn.nova.servers.create_image(vm, image_name="image_vm2")
         common.wait(lambda: os_conn.nova.images.get(image).status == 'ACTIVE',
                     timeout_seconds=10 * 60,
                     waiting_for='image changes status to ACTIVE')
-        volume = common.create_volume(os_conn.cinder, image)
+        volume = common.create_volume(os_conn.cinder, image, size=size)
         return volume.id
 
     def migrate(self, os_conn, vm):
@@ -173,3 +173,10 @@ class TestBaseNFV(object):
                 pid = result['stdout'][0]
                 result = vm_remote.execute('kill -9 {}'.format(pid))
                 assert not result['exit_code'], "kill failed {}".format(result)
+
+    def delete_servers(self, os_conn):
+        os_conn.delete_servers()
+        common.wait(
+            lambda: len(os_conn.nova.servers.list()) == 0,
+            timeout_seconds=3 * 60,
+            waiting_for='instances are deleted')
