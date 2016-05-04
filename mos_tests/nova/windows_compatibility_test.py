@@ -31,6 +31,37 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Windows Compatibility verification.
     """
 
+    def is_instance_ready(self, instance):
+        """Determine instance is ready by mean brightness of screenshot
+
+        Minimal registered level for booted machine was 33, so 25 is used as
+        threshold value.
+        """
+        hypervisor_hostname = getattr(self.instance,
+                                      'OS-EXT-SRV-ATTR:hypervisor_hostname')
+        instance_name = getattr(self.instance, 'OS-EXT-SRV-ATTR:instance_name')
+        compute_node = self.env.find_node_by_fqdn(hypervisor_hostname)
+        screenshot_path = '/tmp/instance_screenshot.ppm'
+
+        with compute_node.ssh() as remote:
+            remote.check_call(
+                'virsh send-key {name} --codeset win32 VK_TAB'.format(
+                    name=instance_name))
+            remote.check_call(
+                'virsh screenshot {name} --file {path}'.format(
+                    name=instance_name, path=screenshot_path),
+                verbose=False)
+            with remote.open(screenshot_path, 'rb') as f:
+                data = f.read()
+        return sum(ord(x) for x in data) / len(data) > 25
+
+    def wait_instance_to_boot(self):
+        common_functions.wait(
+            lambda: self.is_instance_ready(self.instance),
+            timeout_seconds=60 * 60,
+            sleep_seconds=60,
+            waiting_for='windows instance to boot')
+
     def setUp(self):
         super(self.__class__, self).setUp()
 
@@ -46,8 +77,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
 
         self.amount_of_images_before = len(list(self.glance.images.list()))
         self.image = None
-        self.our_own_flavor_was_created = False
-        self.expected_flavor_id = 3
+        self.expected_flavor_id = self.nova.flavors.find(name='m1.small').id
         self.instance = None
         self.security_group_name = "ms_compatibility"
         # protect for multiple definition of the same group
@@ -123,28 +153,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                 network_id = network.id
         logger.info("Starting with network interface id {}".format(network_id))
 
-        # TODO(mlaptev) add check flavor parameters vs. vm parameters
-        # Collect information about the medium flavor and create a copy of it
-        for flavor in self.nova.flavors.list():
-            # TODO(rpromyshlennikov): change flavor to medium if we will have
-            # memory issues on windows and CI will be ready for it
-            if 'small' in flavor.name and 'copy.of.' not in flavor.name:
-                new_flavor_name = "copy.of." + flavor.name
-                new_flavor_id = common_functions.get_flavor_id_by_name(
-                    self.nova,
-                    new_flavor_name)
-                # delete the flavor if it already exists
-                if new_flavor_id is not None:
-                    common_functions.delete_flavor(self.nova, new_flavor_id)
-                # create the flavor for our needs
-                expected_flavor = self.nova.flavors.create(
-                    name=new_flavor_name,
-                    ram=flavor.ram,
-                    vcpus=1,  # Only one VCPU
-                    disk=flavor.disk)
-                self.expected_flavor_id = expected_flavor.id
-                self.our_own_flavor_was_created = True
-                break
         logger.info("Starting with flavor {}".format(
             self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
@@ -165,13 +173,13 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                                                   self.instance.id,
                                                   self.floating_ip.ip))
 
+        self.wait_instance_to_boot()
+
     def tearDown(self):
         if self.instance is not None:
             common_functions.delete_instance(self.nova, self.instance.id)
         if self.image is not None:
             common_functions.delete_image(self.glance, self.image.id)
-        if self.our_own_flavor_was_created:
-            common_functions.delete_flavor(self.nova, self.expected_flavor_id)
         # delete the floating ip
         self.nova.floating_ips.delete(self.floating_ip)
         # delete the security group
@@ -230,6 +238,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Make sure that the VM in 'Unpaused' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -242,6 +251,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -280,6 +291,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Make sure that the VM in 'Resume' state
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -292,6 +304,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
@@ -349,6 +363,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # Ping the Virtual Machine
         ping_result = common_functions.ping_command(self.floating_ip.ip)
         self.assertTrue(ping_result, "Instance is not reachable")
+
         # Reboot the VM and make sure that we can ping it
         self.instance.reboot(reboot_type='HARD')
         instance_status = common_functions.check_inst_status(
@@ -361,6 +376,8 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
                     self.instance.status))
+
+        self.wait_instance_to_boot()
 
         # Waiting for up-and-run of Virtual Machine after reboot
         ping_result = common_functions.ping_command(self.floating_ip.ip)
