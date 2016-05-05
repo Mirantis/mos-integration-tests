@@ -704,7 +704,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         internal_net = [net['id'] for net in networks
                         if not net['router:external']][0]
         image_id = self.nova.images.list()[0].id
-        instance_type = 'm1.tiny'
+        instance_type = 'm1.small'
 
         # Stack creation
         stack_name = 'stack_to_cancel_update_543338'
@@ -718,7 +718,7 @@ class HeatIntegrationTests(OpenStackTestCase):
 
         # Stack update (from m1.tiny to m1.small)
         upd_params = {'network': internal_net, 'ImageId': image_id,
-                      'InstanceType': 'm1.small'}
+                      'InstanceType': 'm1.medium'}
         d_updated = {'stack_name': stack_name, 'template': template_content,
                      'parameters': upd_params}
         self.heat.stacks.update(stack_id, **d_updated)
