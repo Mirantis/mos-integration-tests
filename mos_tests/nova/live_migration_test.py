@@ -146,7 +146,7 @@ def stress_instance(os_conn, keypair, security_group, network, ubuntu_image_id,
                     block_migration):
     userdata = '\n'.join([
         '#!/bin/bash -v',
-        'apt-get install -yq stress',
+        'apt-get install -yq stress cpulimit',
         'echo "{marker}"',
     ]).format(marker=BOOT_MARKER)
     flavor = os_conn.nova.flavors.find(name='m1.small')
@@ -185,7 +185,7 @@ def router(os_conn, network):
     os_conn.delete_router(router['router']['id'])
 
 
-class TestLiveMigration(object):
+class TestLiveMigrationBase(object):
     @pytest.fixture(autouse=True)
     def init(self, env, os_conn, keypair, security_group, network):
         self.env = env
@@ -286,6 +286,8 @@ class TestLiveMigration(object):
             waiting_for='instances to migrate to '
                         '{0.hypervisor_hostname}'.format(hypervisor_to))
 
+
+class TestLiveMigration(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838028', block_migration=True)
     @pytest.mark.testrail_id('838257', block_migration=False)
     @pytest.mark.parametrize('block_migration',
@@ -428,21 +430,30 @@ class TestLiveMigration(object):
 
         self.delete_instances()
 
-    @pytest.mark.testrail_id('838032', block_migration=True)
-    @pytest.mark.testrail_id('838261', block_migration=False)
+
+class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
+
+    memory_cmd = 'stress --vm-bytes 5M --vm-keep -m 1 <&- >/dev/null 2>&1 &'
+    cpu_cmd = 'cpulimit -l 50 -- gzip -9 </dev/urandom >/dev/null 2>&1 &'
+
+    @pytest.mark.testrail_id('838032', block_migration=True, cmd=memory_cmd)
+    @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
+    @pytest.mark.testrail_id('838033', block_migration=True, cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838262', block_migration=False, cmd=cpu_cmd)
     @pytest.mark.parametrize('block_migration',
                              [True, False],
                              ids=['block LM', 'true LM'],
                              indirect=True)
+    @pytest.mark.parametrize('cmd', [memory_cmd, cpu_cmd])
     @pytest.mark.usefixtures('router')
-    def test_memory_workload(self, stress_instance, keypair, block_migration):
+    def test_lm_with_workload(self, stress_instance, keypair, block_migration,
+                              cmd):
         """LM of instance under memory workload
 
         Scenario:
             1. Boot an instance with Ubuntu image as a source and install
-                the stress utility on it
-            2. Generate a workload for free memory on instance:
-                stress --vm-bytes 5M --vm-keep -m 1
+                the some stress utilities on it
+            2. Generate a workload with executing command on instance
             3. Initiate live migration to another compute node
             4. Check that instance is hosted on another host and on ACTIVE
                 status
@@ -452,8 +463,7 @@ class TestLiveMigration(object):
                                           stress_instance,
                                           vm_keypair=keypair,
                                           username='ubuntu') as remote:
-            remote.check_call('stress --vm-bytes 5M --vm-keep -m 1 '
-                              '<&- >/dev/null 2&>1 &')
+            remote.check_call(cmd)
 
         old_host = getattr(stress_instance, 'OS-EXT-SRV-ATTR:host')
         stress_instance.live_migrate(block_migration=block_migration)
