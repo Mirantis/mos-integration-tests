@@ -385,3 +385,29 @@ class TestNovaOSfpingExtension(TestBase):
 
         # Check all VMs alive in fping(all_tenants=True)
         assert all(fping_serv_result_all[i] for i in all_vms_id)
+
+        # Check project ID is the same for VM and it's fping results
+        assert all([fping.project_id == vm.tenant_id
+                    for fping in fping_list_all
+                    for vm in (instances_on_diff_computes +
+                               newten_instances_on_diff_computes)
+                    if fping.id == vm.id])
+
+    @pytest.mark.testrail_id('842504')
+    def test_ping_every_instance_separately(
+            self, install_fping_on_controllers, instances_on_diff_computes):
+        """Ping every instance in a tenant separately with use of fping utility
+        Actions:
+        1. Install pfing on all controllers and update 'nova.conf' if required.
+        2. Create and run four instances (vm0-vm3) inside same net, but 2 vms
+        should be on one compute, rest 2 - on another;
+        3. Get fping status for all VMs one-by-one and check that tool returns
+        results for right VM.
+        """
+        # Get fping status one-by-one for all VMs
+        # Check that fping returns result for right VM and it's alive
+        for vm in instances_on_diff_computes:
+            fping_one = self.os_conn.nova.fping.get(vm.id)
+            assert (vm.id == fping_one.id and
+                    fping_one.alive is True and
+                    vm.tenant_id == fping_one.project_id)
