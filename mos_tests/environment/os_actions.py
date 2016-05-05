@@ -644,10 +644,11 @@ class OpenStackActions(object):
             mac_address=vm_mac)['ports'][0]['network_id']
         dhcp_namespace = "qdhcp-{0}".format(net_id)
         if proxy_node is None:
-            proxy_nodes = self.get_node_with_dhcp_for_network(net_id)
-            if not proxy_nodes:
-                raise Exception("Nodes with dhcp for network with id:{}"
-                                " not found.".format(net_id))
+            proxy_nodes = wait(
+                lambda: self.get_node_with_dhcp_for_network(net_id),
+                expected_exceptions=NeutronClientException,
+                timeout_seconds=60 * 3, sleep_seconds=10,
+                waiting_for="any alive DHCP agent for instance network")
         else:
             proxy_nodes = [proxy_node]
 
