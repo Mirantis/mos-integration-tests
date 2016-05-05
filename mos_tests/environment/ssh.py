@@ -15,22 +15,31 @@
 import functools
 import logging
 import os
-import paramiko
 import posixpath
+import select
 import stat
 import time
+
+import paramiko
+import six
 
 
 logger = logging.getLogger(__name__)
 
 
-def retry(count=10, delay=1):
-    """Retry until no exceptions decorator."""
+def retry(count=10, delay=1, pass_counter=None):
+    """Retry until no exceptions decorator.
+
+    :param pass_counter: argument to pass counter variable in
+    :type pass_counter: None or str
+    """
     def decorator(func):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            for _ in range(count):
+            for i in range(count):
+                if pass_counter is not None:
+                    kwargs[pass_counter] = i
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
@@ -44,17 +53,20 @@ def retry(count=10, delay=1):
     return decorator
 
 
+@six.python_2_unicode_compatible
 class CalledProcessError(Exception):
     def __init__(self, command, returncode, output=None):
         self.returncode = returncode
+        if not isinstance(output, six.text_type):
+            command = command.decode('utf-8')
         self.cmd = command
         self.output = output
 
     def __str__(self):
-        message = "Command '%s' returned non-zero exit status %s" % (
+        message = u"Command '%s' returned non-zero exit status %s" % (
             self.cmd, self.returncode)
         if self.output:
-            message += "\n%s" % '\n'.join(self.output)
+            message += u"\n%s" % repr(self.output)
         return message
 
 
@@ -99,7 +111,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_command=None, timeout=120):
+                 private_keys=None, proxy_commands=(), timeout=120):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -111,7 +123,7 @@ class SSHClient(object):
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
         self.timeout = timeout
-        self.proxy_command = proxy_command
+        self.proxy_commands = proxy_commands
         self._ssh = None
         self._sftp_client = None
         self._proxy = None
@@ -149,47 +161,52 @@ class SSHClient(object):
     def __exit__(self, *err):
         self.clear()
 
-    def connect(self):
-        logger.debug(
-            "Connecting to '%s:%s' as '%s:%s'...." % (
-                self.host, self.port, self.username, self.password))
-        base_kwargs = dict(
-            port=self.port, username=self.username,
-            password=self.password, banner_timeout=30
-        )
+    def connect(self, pkey=None, password=None):
+        if pkey:
+            logger.debug("Connecting to '{0.host}:{0.port}' "
+                         "as '{0.username}' with key....".format(self))
+        else:
+            logger.debug("Connecting to '{0.host}:{0.port}' "
+                         "as '{0.username}:{1}'....".format(self, password))
+
+        kwargs = {}
         if self._proxy is not None:
-            base_kwargs['sock'] = self._proxy
-        for private_key in self.private_keys:
-            kwargs = base_kwargs.copy()
-            kwargs['pkey'] = private_key
-            kwargs['password'] = None
+            kwargs['sock'] = self._proxy
+        return self._ssh.connect(self.host, port=self.port,
+                                 username=self.username, password=password,
+                                 pkey=pkey, banner_timeout=30, **kwargs)
+
+    @retry(count=3, delay=3, pass_counter='counter')
+    def reconnect(self, counter):
+        params = [{'pkey': x} for x in self.private_keys]
+        if self.password is not None:
+            params.append({'password': self.password})
+        for param in params:
+            self.clear()
+            self._ssh = paramiko.SSHClient()
+            self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            proxies_count = len(self.proxy_commands)
+            if proxies_count > 0:
+                proxy_command = self.proxy_commands[counter % proxies_count]
+                logger.debug('Proxy for ssh: "{0}"'.format(proxy_command))
+                self._proxy = paramiko.ProxyCommand(proxy_command)
+                self._proxy.settimeout(self.timeout)
             try:
-                return self._ssh.connect(self.host, **kwargs)
-            except paramiko.AuthenticationException:
-                continue
-        if self.private_keys:
-            logger.error("Authentication with keys failed")
+                self.connect(**param)
+                break
+            except Exception as e:
+                logger.warning(e)
+        else:
+            raise
 
-        return self._ssh.connect(self.host, **base_kwargs)
-
-    @retry(count=3, delay=3)
-    def reconnect(self):
-        self.clear()
-        self._ssh = paramiko.SSHClient()
-        self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        if self.proxy_command is not None:
-            self._proxy = paramiko.ProxyCommand(self.proxy_command)
-            self._proxy.settimeout(self.timeout)
-        self.connect()
-
-    def check_call(self, command, verbose=False):
+    def check_call(self, command, verbose=True):
         ret = self.execute(command, verbose)
         if ret['exit_code'] != 0:
             raise CalledProcessError(command, ret['exit_code'],
                                      ret['stdout'] + ret['stderr'])
         return ret
 
-    def check_stderr(self, command, verbose=False):
+    def check_stderr(self, command, verbose=True):
         ret = self.check_call(command, verbose)
         if ret['stderr']:
             raise CalledProcessError(command, ret['exit_code'],
@@ -217,16 +234,23 @@ class SSHClient(object):
     def execute(self, command, verbose=True, merge_stderr=False):
         chan, stdin, stdout, stderr = self.execute_async(
             command, merge_stderr=merge_stderr)
+
+        stdout_buf = ''
+        stderr_buf = ''
+
+        while not chan.closed or chan.recv_ready() or chan.recv_stderr_ready():
+            select.select([chan], [], [chan], 60)
+
+            if chan.recv_ready():
+                stdout_buf += chan.recv(1024)
+            if chan.recv_stderr_ready():
+                stderr_buf += chan.recv_stderr(1024)
+
         result = CommandResult({
-            'stdout': [],
-            'stderr': [],
-            'exit_code': 0
+            'stdout': stdout_buf.splitlines(True),
+            'stderr': stderr_buf.splitlines(True),
+            'exit_code': chan.recv_exit_status()
         })
-        for line in stdout:
-            result['stdout'].append(line)
-        for line in stderr:
-            result['stderr'].append(line)
-        result['exit_code'] = chan.recv_exit_status()
         stdin.close()
         stdout.close()
         stderr.close()
