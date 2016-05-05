@@ -19,6 +19,7 @@ import dpath.util
 from novaclient import exceptions as nova_exceptions
 import pytest
 from six.moves import configparser
+from waiting import ALL
 
 from mos_tests.functions import common
 from mos_tests.functions import file_cache
@@ -436,6 +437,50 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     memory_cmd = 'stress --vm-bytes 5M --vm-keep -m 1 <&- >/dev/null 2>&1 &'
     cpu_cmd = 'cpulimit -l 50 -- gzip -9 </dev/urandom >/dev/null 2>&1 &'
 
+    @pytest.yield_fixture
+    def iperf_instances(self, os_conn, keypair, security_group, network,
+                        ubuntu_image_id, block_migration):
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq iperf',
+            'iperf -u -s -p 5002 <&- >/dev/null 2>&1 &',
+            'echo "{marker}"',
+        ]).format(marker=BOOT_MARKER)
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+        instances = []
+        for i in range(2):
+            instance = os_conn.create_server(
+                name='ubuntu_iperf_{}'.format(i),
+                flavor=flavor,
+                image_id=ubuntu_image_id,
+                userdata=userdata,
+                availability_zone='nova',
+                key_name=keypair.name,
+                nics=[{'net-id': network['network']['id']}],
+                security_groups=[security_group.id],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+            instances.append(instance)
+        predicates = [lambda: os_conn.is_server_active(x) for x in instances]
+        common.wait(
+            ALL(predicates),
+            timeout_seconds=5 * 60,
+            waiting_for="iperf instances to became to active status")
+        predicates = [lambda: BOOT_MARKER in x.get_console_output()
+                      for x in instances]
+        common.wait(
+            ALL(predicates),
+            timeout_seconds=5 * 60,
+            waiting_for="iperf instances to be ready")
+        yield instances
+        for instance in instances:
+            instance.delete()
+        predicates = [lambda: os_conn.is_server_deleted(x) for x in instances]
+        common.wait(
+            ALL(predicates),
+            timeout_seconds=2 * 60,
+            waiting_for='instances to be deleted')
+
     @pytest.mark.testrail_id('838032', block_migration=True, cmd=memory_cmd)
     @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
     @pytest.mark.testrail_id('838033', block_migration=True, cmd=cpu_cmd)
@@ -475,3 +520,48 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             waiting_for='instance to migrate from {0}'.format(old_host))
 
         assert self.os_conn.is_server_ssh_ready(stress_instance)
+
+    @pytest.mark.testrail_id('838034', block_migration=True)
+    @pytest.mark.testrail_id('838263', block_migration=False)
+    @pytest.mark.parametrize('block_migration',
+                             [True, False],
+                             ids=['block LM', 'true LM'],
+                             indirect=True)
+    @pytest.mark.usefixtures('router')
+    def test_lm_with_network_workload(self, iperf_instances, keypair,
+                                      block_migration):
+        """LM of instance under memory workload
+
+        Scenario:
+            1. Boot 2 instances with Ubuntu image as a source and install
+                the iperf on it
+            2. Start iperf server on first instance:
+                iperf -u -s -p 5002
+            2. Generate a workload with executing command on second instance:
+                iperf --port 5002 -u --client <vm1_fixed_ip> --len 64 \
+                --bandwidth 5M --time 60 -i 10
+            3. Initiate live migration first instance to another compute node
+            4. Check that instance is hosted on another host and on ACTIVE
+                status
+            5. Check that network connectivity to instance is OK
+        """
+        client, server = iperf_instances
+        server_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
+        with self.os_conn.ssh_to_instance(self.env,
+                                          client,
+                                          vm_keypair=keypair,
+                                          username='ubuntu') as remote:
+            remote.check_call('iperf -u -c {ip} -p 5002 -t 60 --len 64'
+                              '--bandwidth 5M <&- >/dev/null 2&>1 &'.format(
+                                  ip=server_ip))
+
+        old_host = getattr(server, 'OS-EXT-SRV-ATTR:host')
+        server.live_migrate(block_migration=block_migration)
+
+        common.wait(
+            lambda: is_migrated(self.os_conn, [server],
+                                source=old_host),
+            timeout_seconds=5 * 60,
+            waiting_for='instance to migrate from {0}'.format(old_host))
+
+        assert self.os_conn.is_server_ssh_ready(server)
