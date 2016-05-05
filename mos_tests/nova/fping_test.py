@@ -17,6 +17,7 @@ import pytest
 
 from six.moves import configparser
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common as common_functions
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -78,6 +79,107 @@ def instances_on_diff_computes(
             waiting_for='instances to be deleted')
         for fip in floating_ips:
             os_conn.delete_floating_ip(fip)
+
+
+@pytest.yield_fixture
+def newten_os_conn(env, openstack_client):
+    """Returns OpenStackActions class (os_conn) for new tenant and new user.
+    """
+    new_user = {'name': 'someuser', 'password': 'somepassword'}
+    new_prj_name = 'newprj'
+
+    # create new tenant
+    tenant = openstack_client.project_create(new_prj_name)
+    # create user in new tenant
+    user = openstack_client.user_create(project=tenant['id'], **new_user)
+    # add admin role for a new tenant to a new user
+    openstack_client.assign_role_to_user(
+        role_name='admin', user=user['id'], project=tenant['id'])
+
+    # login to env as a new user from a new tenant
+    new_os_conn = OpenStackActions(
+        controller_ip=env.get_primary_controller_ip(),
+        user=new_user['name'],
+        password=new_user['password'],
+        tenant=tenant['name'],
+        cert=env.certificate,
+        env=env)
+
+    yield new_os_conn
+    # cleanUp
+    openstack_client.user_delete(new_user['name'])
+    openstack_client.project_delete(tenant['name'])
+
+
+@pytest.yield_fixture
+def newten_key_secgroup(newten_os_conn):
+    """Create new SSH key and security group for new tenant"""
+    # create keypair
+    keypair = newten_os_conn.create_key(key_name='someinstancekey')
+    # create security group
+    sec_group = newten_os_conn.create_sec_group_for_ssh()
+    yield keypair, sec_group
+    # cleanUp
+    newten_os_conn.delete_key(key_name=keypair.name)
+    newten_os_conn.delete_security_group(name=sec_group.name)
+
+
+@pytest.yield_fixture
+def newten_instances_on_diff_computes(
+        request, newten_os_conn, newten_key_secgroup):
+    """Create instances inside newly created tenant(project) (2 by default)
+    on 2 compute nodes at 'admin_internal_net' and associate floating IP to
+    each VM
+    """
+    limit_computes = 2  # Limit computes usage. For e.g. use only 2 from all
+    zone = newten_os_conn.nova.availability_zones.find(zoneName="nova")
+    compute_hosts = zone.hosts.keys()[:limit_computes]
+    param = getattr(request, 'param', {'count': 2})
+
+    keypair, security_group = newten_key_secgroup
+
+    # Get ID of admin_internal_net
+    nets = newten_os_conn.neutron.list_networks()['networks']
+    netid = [net['id'] for net in nets if not net['router:external'] and
+             net['name'] == 'admin_internal_net'][0]
+
+    instances = []
+    for i in range(param['count']):
+        compute = compute_hosts.pop(0)
+        compute_hosts.append(compute)  # add back in list pop-ed value
+        # create instances
+        instance = newten_os_conn.create_server(
+            name='newprj_server%02d' % i,
+            availability_zone='{}:{}'.format(zone.zoneName, compute),
+            key_name=keypair.name,
+            nics=[{'net-id': netid}],
+            security_groups=[security_group.id],
+            wait_for_active=False,
+            wait_for_avaliable=False)
+        instances.append(instance)
+    common_functions.wait(
+        lambda: all(newten_os_conn.is_server_active(x) for x in instances),
+        timeout_seconds=2 * 60,
+        waiting_for='instances to became to ACTIVE status')
+    common_functions.wait(
+        lambda: all(newten_os_conn.is_server_ssh_ready(x) for x in instances),
+        timeout_seconds=2 * 60,
+        waiting_for='instances to be ssh available')
+    # add floating IP to each instance
+    floating_ips = []
+    for instance in instances:
+        floating_ip = newten_os_conn.nova.floating_ips.create()
+        floating_ips.append(floating_ip)
+        instance.add_floating_ip(floating_ip.ip)
+    yield instances
+    for instance in instances:
+        instance.force_delete()
+    common_functions.wait(
+        lambda: all(newten_os_conn.is_server_deleted(x.id) for x in instances),
+        timeout_seconds=60,
+        waiting_for='instances to be deleted')
+    for fip in floating_ips:
+        newten_os_conn.delete_floating_ip(fip)
 
 
 @pytest.yield_fixture
@@ -158,13 +260,12 @@ class TestNovaOSfpingExtension(TestBase):
         """Ping all instances in a tenant with the use of fping utility
         Actions:
         1. Install pfing on all controllers and update 'nova.conf' if required.
-        2. Create net and subnet;
-        3. Create and run four instances (vm0-vm3) inside same net, but 2 vms
+        2. Create and run four instances (vm0-vm3) inside same net, but 2 vms
         should be on one compute, rest 2 - on another;
-        4. Stop 2 vms from different computes and wait for SHUTOFF state;
-        5. Run fping;
-        6. Check that 2 vms are alive according fping and 2 vms are not alive;
-        7. Start 2 stopped vms and check that all VMs are alive in fping.
+        3. Stop 2 vms from different computes and wait for SHUTOFF state;
+        4. Run fping;
+        5. Check that 2 vms are alive according fping and 2 vms are not alive;
+        6. Start 2 stopped vms and check that all VMs are alive in fping.
         """
         timeout = 60  # (sec) timeout to wait instance for status change
 
@@ -219,18 +320,15 @@ class TestNovaOSfpingExtension(TestBase):
         """Ping instances in a tenant selectively with the use of fping utility
         Actions:
         1. Install pfing on all controllers and update 'nova.conf' if required.
-        2. Create net and subnet;
-        3. Create and run four instances (vm0-vm3) inside same net, but 2 vms
+        2. Create and run four instances (vm0-vm3) inside same net, but 2 vms
         should be on one compute, rest 2 - on another;
-        4. Use include and exclude options and check that fping results
+        3. Use include and exclude options and check that fping results
         for two instances on one compute are displayed and for rest instances
         on another compute - are not.
         """
-        timeout = 60  # (sec) timeout to wait instance for status change
-
         # Create 4 instances on 2 different computes.
         # Compute2: vm0,2 | Compute1: vm1,3
-        vm0, vm1, vm2, vm3, = instances_on_diff_computes
+        vm0, vm1, vm2, vm3 = instances_on_diff_computes
         include_vms_id = [vm0.id, vm2.id]  # compute 2
         exclude_vms_id = [vm1.id, vm3.id]  # compute 1
 
@@ -244,3 +342,46 @@ class TestNovaOSfpingExtension(TestBase):
         assert all(i in fping_serv_result for i in include_vms_id)
         # Check vm2 and vm3 not present in fping
         assert all(i not in fping_serv_result for i in exclude_vms_id)
+
+    @pytest.mark.testrail_id('842503')
+    def test_ping_instances_all_tenants(
+            self, install_fping_on_controllers,
+            newten_instances_on_diff_computes, instances_on_diff_computes):
+        """Ping instances in all tenants with the use of fping utility
+        Actions:
+        1. Install pfing on all controllers and update 'nova.conf' if required.
+        2. Create and run four instances (vm0-vm3) inside same net, but 2 vms
+        should be on one compute, rest 2 - on another;
+        3. Create new tenant(project) and new user inside it;
+        4. Create and run 2 instances in a new tenant, but 1 vm should be
+        on one compute, second - on another;
+        5. Check that instances from new tenant are not present in fping
+        results with 'fping.list(all_tenants=False)';
+        6. Check that instances from new tenant presents in fping
+        results with 'fping.list(all_tenants=True)';
+        7. Check that all instances are alive.
+        """
+        # Create 4 instances on 2 different computes.
+        # Compute2: vm0,2 | Compute1: vm1,3
+        vm0, vm1, vm2, vm3 = instances_on_diff_computes
+
+        # Create 2 instances on 2 different computes in a new tenant
+        # Compute2: nvm0 | Compute1: nvm1
+        nvm0, nvm1 = newten_instances_on_diff_computes
+
+        # Get fping results for one tenant/all tenants
+        fping_list = self.os_conn.nova.fping.list(all_tenants=False)
+        fping_serv_result = self.fping_server_status(fping_list)
+
+        fping_list_all = self.os_conn.nova.fping.list(all_tenants=True)
+        fping_serv_result_all = self.fping_server_status(fping_list_all)
+
+        # Check nvm0 and nvm1 not present in fping(all_tenants=False)
+        assert all(i not in fping_serv_result for i in (nvm0.id, nvm1.id))
+
+        # Check all VMs present in fping(all_tenants=True)
+        all_vms_id = vm0.id, vm1.id, vm2.id, vm3.id, nvm0.id, nvm1.id
+        assert all(i in fping_serv_result_all for i in all_vms_id)
+
+        # Check all VMs alive in fping(all_tenants=True)
+        assert all(fping_serv_result_all[i] for i in all_vms_id)
