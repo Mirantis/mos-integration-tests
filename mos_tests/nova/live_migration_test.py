@@ -21,9 +21,12 @@ import pytest
 from six.moves import configparser
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
+BOOT_MARKER = 'INSTANCE BOOT COMPLETED'
 
 
 def is_migrated(os_conn, instances, target=None, source=None):
@@ -122,6 +125,64 @@ def block_migration(env, request):
                           '*/storage/**/ephemeral_ceph/value') and not value:
         pytest.skip('True live migration requires Nova Ceph RBD')
     return value
+
+
+@pytest.yield_fixture(scope='module')
+def ubuntu_image_id(os_conn):
+    logger.info('Creating ubuntu image')
+    image = os_conn.glance.images.create(name="image_ubuntu",
+                                         disk_format='qcow2',
+                                         container_format='bare')
+    with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
+        os_conn.glance.images.upload(image.id, f)
+
+    logger.info('Ubuntu image created')
+    yield image.id
+    os_conn.glance.images.delete(image.id)
+
+
+@pytest.yield_fixture
+def stress_instance(os_conn, keypair, security_group, network, ubuntu_image_id,
+                    block_migration):
+    userdata = '\n'.join([
+        '#!/bin/bash -v',
+        'apt-get install -yq stress',
+        'echo "{marker}"',
+    ]).format(marker=BOOT_MARKER)
+    flavor = os_conn.nova.flavors.find(name='m1.small')
+    instance = os_conn.create_server(
+        name='ubuntu_stress',
+        flavor=flavor,
+        image_id=ubuntu_image_id,
+        userdata=userdata,
+        availability_zone='nova',
+        key_name=keypair.name,
+        nics=[{'net-id': network['network']['id']}],
+        security_groups=[security_group.id],
+        wait_for_avaliable=False)
+    common.wait(lambda: BOOT_MARKER in instance.get_console_output(),
+                timeout_seconds=5 * 60,
+                waiting_for="stress instance to be ready")
+    yield instance
+    instance.delete()
+    common.wait(lambda: os_conn.is_server_deleted(instance.id),
+                timeout_seconds=2 * 60,
+                waiting_for='instance to be deleted')
+
+
+@pytest.yield_fixture
+def router(os_conn, network):
+    router = os_conn.create_router(name='router01')
+    os_conn.router_gateway_add(router_id=router['router']['id'],
+                               network_id=os_conn.ext_network['id'])
+
+    subnet = os_conn.neutron.list_subnets(
+        network_id=network['network']['id'])['subnets'][0]
+
+    os_conn.router_interface_add(router_id=router['router']['id'],
+                                 subnet_id=subnet['id'])
+    yield router
+    os_conn.delete_router(router['router']['id'])
 
 
 class TestLiveMigration(object):
@@ -283,7 +344,7 @@ class TestLiveMigration(object):
                 waiting_for='instances to be ssh available')  # yapf: disable
 
             self.concurrent_migration(block_migration,
-                                     hypervisor_to=hypervisor1)
+                                      hypervisor_to=hypervisor1)
 
             common.wait(
                 lambda: all(self.os_conn.is_server_ssh_ready(x)
@@ -366,3 +427,41 @@ class TestLiveMigration(object):
             waiting_for='instances to be ssh available')  # yapf: disable
 
         self.delete_instances()
+
+    @pytest.mark.testrail_id('838032', block_migration=True)
+    @pytest.mark.testrail_id('838261', block_migration=False)
+    @pytest.mark.parametrize('block_migration',
+                             [True, False],
+                             ids=['block LM', 'true LM'],
+                             indirect=True)
+    @pytest.mark.usefixtures('router')
+    def test_memory_workload(self, stress_instance, keypair, block_migration):
+        """LM of instance under memory workload
+
+        Scenario:
+            1. Boot an instance with Ubuntu image as a source and install
+                the stress utility on it
+            2. Generate a workload for free memory on instance:
+                stress --vm-bytes 5M --vm-keep -m 1
+            3. Initiate live migration to another compute node
+            4. Check that instance is hosted on another host and on ACTIVE
+                status
+            5. Check that network connectivity to instance is OK
+        """
+        with self.os_conn.ssh_to_instance(self.env,
+                                          stress_instance,
+                                          vm_keypair=keypair,
+                                          username='ubuntu') as remote:
+            remote.check_call('stress --vm-bytes 5M --vm-keep -m 1 '
+                              '<&- >/dev/null 2&>1 &')
+
+        old_host = getattr(stress_instance, 'OS-EXT-SRV-ATTR:host')
+        stress_instance.live_migrate(block_migration=block_migration)
+
+        common.wait(
+            lambda: is_migrated(self.os_conn, [stress_instance],
+                                source=old_host),
+            timeout_seconds=5 * 60,
+            waiting_for='instance to migrate from {0}'.format(old_host))
+
+        assert self.os_conn.is_server_ssh_ready(stress_instance)
