@@ -626,7 +626,7 @@ def wait(*args, **kwargs):
 
     frame = inspect.stack()[1]
     called_from = '{0.f_globals[__name__]}:{2}'.format(*frame)
-    event = kwargs.get('waiting_for', args[0].__name__)
+    event = kwargs.get('waiting_for', repr(args[0]))
     msg = '{called_from}: waiting for {event}'.format(event=event,
                                                       called_from=called_from)
     logger = logging.getLogger('waiting')
