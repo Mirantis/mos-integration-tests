@@ -425,7 +425,7 @@ def is_volume_exists(cinder_client, uid):
 
 
 def create_volume(cinder_client, image_id, size=1, timeout=5,
-                  name='Test_volume', volume_type=None,):
+                  name='Test_volume', volume_type=None):
     """Check volume creation
         :param cinder_client: Cinder API client connection point
         :param image_id: UID of image
@@ -435,17 +435,13 @@ def create_volume(cinder_client, image_id, size=1, timeout=5,
         :param volume_type: type for volume
         :return volume
     """
-    end_time = time() + 60 * timeout
     volume = cinder_client.volumes.create(size, name=name, imageRef=image_id,
                                           volume_type=volume_type)
-    status = cinder_client.volumes.get(volume.id).status
-    while status != 'available':
-        if time() > end_time:
-            raise AssertionError(
-                "Volume status is '{}' instead of 'available".format(status))
-        sleep(1)
-        status = cinder_client.volumes.get(volume.id).status
-    return volume
+
+    wait(lambda: cinder_client.volumes.get(volume.id).status == 'available',
+         timeout_seconds=60 * timeout,
+         waiting_for='volume became to available status')
+    return cinder_client.volumes.get(volume.id)
 
 
 def delete_volume(cinder_client, volume):
@@ -453,14 +449,15 @@ def delete_volume(cinder_client, volume):
         :param cinder_client: Cinder API client connection point
         :param volume: volume
     """
-    volume = cinder_client.volumes.get(volume.id)  # update volume
     if volume in cinder_client.volumes.list():
-        if volume.status == 'in-use':
-            cinder_client.volumes.detach(volume.id)
+        volume.get()
+        if len(volume.attachments) > 0:
+            volume.detach()
         cinder_client.volumes.delete(volume)
         volume_id = volume.id
-        while is_volume_exists(cinder_client, volume_id):
-            sleep(1)
+        wait(lambda: not is_volume_exists(cinder_client, volume_id),
+             timeout_seconds=60,
+             waiting_for='volume to be deleted')
     else:
         logger.error('Volume [{0}] not in cinder.volumes.list'.format(volume))
 
