@@ -83,7 +83,7 @@ class PingThread(threading.Thread):
 
     def run(self):
         remote = self.remote
-        command = 'ping {0} 2&>1'.format(self.ip_to_ping)
+        command = 'ping {0} 2>&1'.format(self.ip_to_ping)
         self.chan, self.stdin, stdout, _ = remote.execute_async(command)
         for line in stdout:
             self.stdout_q.put(line)

@@ -165,7 +165,7 @@ def servers(os_conn, os_clients, networks, sec_groups):
 
 def restart_ping(os_clients, env, servers, group_num=None):
     os_conn1, os_conn2 = os_clients
-    ping_cmd = 'ping {target_ip} < /dev/null > /dev/null 2&>1 &'
+    ping_cmd = 'ping {target_ip} < /dev/null > /dev/null 2>&1 &'
     if group_num is None or group_num % 2 == 0:
         with os_conn1.ssh_to_instance(env, servers[0], username='cirros',
                                       password='cubswin:)') as remote:
