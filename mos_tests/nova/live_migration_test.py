@@ -147,7 +147,7 @@ def stress_instance(os_conn, keypair, security_group, network, ubuntu_image_id,
                     block_migration):
     userdata = '\n'.join([
         '#!/bin/bash -v',
-        'apt-get install -yq stress cpulimit',
+        'apt-get install -yq stress cpulimit sysstat',
         'echo "{marker}"',
     ]).format(marker=BOOT_MARKER)
     flavor = os_conn.nova.flavors.find(name='m1.small')
@@ -436,6 +436,14 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
     memory_cmd = 'stress --vm-bytes 5M --vm-keep -m 1 <&- >/dev/null 2>&1 &'
     cpu_cmd = 'cpulimit -l 50 -- gzip -9 </dev/urandom >/dev/null 2>&1 &'
+    hdd_cmd = """for i in {1..3}; do
+        killall stress
+        stress --hdd $i <&- >/dev/null 2>&1 &
+        sleep 5
+        util=$(iostat -d -x -y 5 1| grep '[hsv]d[abc]' | awk '{print $14}')
+        echo "util is $util"
+        if [ "$(echo $util'>95' | bc -l)" -eq "1" ]; then break; fi
+    done"""
 
     @pytest.yield_fixture
     def iperf_instances(self, os_conn, keypair, security_group, network,
@@ -485,11 +493,13 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
     @pytest.mark.testrail_id('838033', block_migration=True, cmd=cpu_cmd)
     @pytest.mark.testrail_id('838262', block_migration=False, cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838035', block_migration=True, cmd=hdd_cmd)
+    @pytest.mark.testrail_id('838264', block_migration=False, cmd=hdd_cmd)
     @pytest.mark.parametrize('block_migration',
                              [True, False],
                              ids=['block LM', 'true LM'],
                              indirect=True)
-    @pytest.mark.parametrize('cmd', [memory_cmd, cpu_cmd])
+    @pytest.mark.parametrize('cmd', [memory_cmd, cpu_cmd, hdd_cmd], ids=['memory', 'cpu', 'hdd'])
     @pytest.mark.usefixtures('router')
     def test_lm_with_workload(self, stress_instance, keypair, block_migration,
                               cmd):
