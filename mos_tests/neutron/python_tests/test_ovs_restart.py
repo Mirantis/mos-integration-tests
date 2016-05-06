@@ -442,7 +442,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
         Steps:
             1. Go to vm1's console and run arping
                to initiate broadcast traffic:
-                    sudo arping -I eth0 <vm2_fixed_ip>
+                    arping -I eth0 <vm2_fixed_ip>
             2. Disable ovs-agents on all controllers
             3. Restart service 'neutron-plugin-openvswitch-agent'
                on all computes
@@ -458,7 +458,7 @@ class TestOVSRestartsOneNetwork(OvsBase):
         vm_ip = self.os_conn.get_nova_instance_ips(
             self.os_conn.nova.servers.find(name=srv2.name))['fixed']
 
-        arping_cmd = 'sudo arping -I eth0 {}'.format(vm_ip)
+        arping_cmd = 'arping -I eth0 {}'.format(vm_ip)
         cmd = ' '.join((arping_cmd, '< /dev/null > ~/arp.log 2>&1 &'))
         result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
                                           self.instance_keypair, cmd)
