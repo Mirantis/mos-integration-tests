@@ -78,8 +78,7 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
 
         self.amount_of_images_before = len(list(self.glance.images.list()))
         self.image = None
-        self.our_own_flavor_was_created = False
-        self.expected_flavor_id = 3
+        self.expected_flavor_id = self.nova.flavors.find(name='m1.medium').id
         self.instance = None
         self.security_group_name = "ms_compatibility"
         # protect for multiple definition of the same group
@@ -155,28 +154,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                 network_id = network.id
         logger.info("Starting with network interface id {}".format(network_id))
 
-        # TODO(mlaptev) add check flavor parameters vs. vm parameters
-        # Collect information about the medium flavor and create a copy of it
-        for flavor in self.nova.flavors.list():
-            # TODO(rpromyshlennikov): change flavor to medium if we will have
-            # memory issues on windows and CI will be ready for it
-            if 'small' in flavor.name and 'copy.of.' not in flavor.name:
-                new_flavor_name = "copy.of." + flavor.name
-                new_flavor_id = common_functions.get_flavor_id_by_name(
-                    self.nova,
-                    new_flavor_name)
-                # delete the flavor if it already exists
-                if new_flavor_id is not None:
-                    common_functions.delete_flavor(self.nova, new_flavor_id)
-                # create the flavor for our needs
-                expected_flavor = self.nova.flavors.create(
-                    name=new_flavor_name,
-                    ram=flavor.ram,
-                    vcpus=1,  # Only one VCPU
-                    disk=flavor.disk)
-                self.expected_flavor_id = expected_flavor.id
-                self.our_own_flavor_was_created = True
-                break
         logger.info("Starting with flavor {}".format(
             self.nova.flavors.get(self.expected_flavor_id)))
         # nova boot
@@ -204,8 +181,6 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
             common_functions.delete_instance(self.nova, self.instance.id)
         if self.image is not None:
             common_functions.delete_image(self.glance, self.image.id)
-        if self.our_own_flavor_was_created:
-            common_functions.delete_flavor(self.nova, self.expected_flavor_id)
         # delete the floating ip
         self.nova.floating_ips.delete(self.floating_ip)
         # delete the security group
