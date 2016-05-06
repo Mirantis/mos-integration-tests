@@ -439,7 +439,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                               flavor=None):
         userdata = '\n'.join([
             '#!/bin/bash -v',
-            'apt-get install -yq stress cpulimit sysstat',
+            'apt-get install -yq stress cpulimit sysstat iperf',
         ])
         flavor = flavor or self.os_conn.nova.flavors.find(name='m1.small')
         self.create_instances(zone=zone,
@@ -564,7 +564,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                           client,
                                           vm_keypair=keypair,
                                           username='ubuntu') as remote:
-            remote.check_call('iperf -u -c {ip} -p 5002 -t 60 --len 64'
+            remote.check_call('iperf -u -c {ip} -p 5002 -t 240 --len 64'
                               '--bandwidth 5M <&- >/dev/null 2&>1 &'.format(
                                   ip=server_ip))
 
@@ -616,6 +616,81 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                               vm_keypair=keypair,
                                               username='ubuntu') as remote:
                 remote.check_call(self.cpu_cmd)
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
+
+        self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
+
+    @pytest.mark.testrail_id('838038', block_migration=True)
+    @pytest.mark.testrail_id('838266', block_migration=False)
+    @pytest.mark.parametrize('block_migration',
+                             [True, False],
+                             ids=['block LM', 'true LM'],
+                             indirect=True)
+    @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
+    def test_lm_under_network_work_multi_instances(
+            self, stress_instances, keypair, big_hypervisors, block_migration):
+        """LM of multiple instances under CPU workload
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Restart nova-api services on controllers and
+                nova-compute services on computes
+            3. Create maximum allowed number of instances on a single compute
+                node and install iperf utility on it
+            4. Group instances to pairs and run iperf server on firsh instances
+                on each pair:
+                iperf -u -s -p 5002
+            5. Launch iperf client on seconf instances in pairs:
+                iperf --port 5002 -u --client <vm1_fixed_ip> --len 64 \
+                --bandwidth 5M --time 60 -i 10
+            4. Initiate serial block LM of previously created instances
+                to another compute node
+            5. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            6. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            7. Initiate concurrent block LM of previously created instances
+                to another compute node
+            8. Check that all live-migrated instances are hosted on target host
+                and are in Active state
+            9. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+        hypervisor1, _ = big_hypervisors
+        clients = self.instances[::2]
+        servers = self.instances[1::2]
+        for server in servers:
+            with self.os_conn.ssh_to_instance(self.env,
+                                              server,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call('iperf -u -s -p 5002 <&- >/dev/null 2>&1 &')
+
+        if len(servers) < len(clients):
+            servers.append(servers[-1])
+        for client, server in zip(clients, servers):
+
+            server_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
+            with self.os_conn.ssh_to_instance(self.env,
+                                              client,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call(
+                    'iperf -u -c {ip} -p 5002 -t 240 --len 64 --bandwidth 5M '
+                    '<&- >/dev/null 2&>1 &'.format(ip=server_ip))
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
