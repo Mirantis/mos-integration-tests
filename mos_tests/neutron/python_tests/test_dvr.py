@@ -1122,9 +1122,7 @@ class TestDVRTypeChange(TestDVRBase):
 
         # Search l3 agent on another controller, and hot hosted router
         for l3_agent in self.os_conn.list_l3_agents():
-            if (l3_agent['host'] in other_controllers_fqdn and
-                l3_agent['id'] not in l3_agent_ids
-            ):
+            if l3_agent['host'] in other_controllers_fqdn:
                 break
         else:
             raise Exception("Can't find new l3 agent to reschedule router")
