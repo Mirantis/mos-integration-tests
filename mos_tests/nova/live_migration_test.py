@@ -143,35 +143,6 @@ def ubuntu_image_id(os_conn):
 
 
 @pytest.yield_fixture
-def stress_instance(os_conn, keypair, security_group, network, ubuntu_image_id,
-                    block_migration):
-    userdata = '\n'.join([
-        '#!/bin/bash -v',
-        'apt-get install -yq stress cpulimit sysstat',
-        'echo "{marker}"',
-    ]).format(marker=BOOT_MARKER)
-    flavor = os_conn.nova.flavors.find(name='m1.small')
-    instance = os_conn.create_server(
-        name='ubuntu_stress',
-        flavor=flavor,
-        image_id=ubuntu_image_id,
-        userdata=userdata,
-        availability_zone='nova',
-        key_name=keypair.name,
-        nics=[{'net-id': network['network']['id']}],
-        security_groups=[security_group.id],
-        wait_for_avaliable=False)
-    common.wait(lambda: BOOT_MARKER in instance.get_console_output(),
-                timeout_seconds=5 * 60,
-                waiting_for="stress instance to be ready")
-    yield instance
-    instance.delete()
-    common.wait(lambda: os_conn.is_server_deleted(instance.id),
-                timeout_seconds=2 * 60,
-                waiting_for='instance to be deleted')
-
-
-@pytest.yield_fixture
 def router(os_conn, network):
     router = os_conn.create_router(name='router01')
     os_conn.router_gateway_add(router_id=router['router']['id'],
@@ -197,12 +168,21 @@ class TestLiveMigrationBase(object):
         self.instances = []
         self.volumes = []
 
-    def create_instances(self, zone, flavor, instances_count):
+    def create_instances(self,
+                         zone,
+                         flavor,
+                         instances_count,
+                         image_id=None,
+                         userdata=None):
         logger.info('Start with flavor {0.name}, '
                     'creates {1} instances'.format(flavor, instances_count))
+        if userdata is not None:
+            userdata += '\necho "{marker}"'.format(marker=BOOT_MARKER)
         for i in range(instances_count):
             instance = self.os_conn.create_server(
                 name='server%02d' % i,
+                image_id=image_id,
+                userdata=userdata,
                 flavor=flavor,
                 availability_zone=zone,
                 key_name=self.keypair.name,
@@ -211,17 +191,23 @@ class TestLiveMigrationBase(object):
                 wait_for_active=False,
                 wait_for_avaliable=False)
             self.instances.append(instance)
+        predicates = [lambda: self.os_conn.is_server_active(x)
+                      for x in self.instances]
         common.wait(
-            lambda: all(self.os_conn.is_server_active(x)
-                        for x in self.instances),
+            ALL(predicates),
             timeout_seconds=3 * 60,
-            waiting_for='instances to became to ACTIVE status'
-        )  # yapf: disable
+            waiting_for="instances to became to ACTIVE status")
+
+        if userdata is None:
+            predicates = [lambda: self.os_conn.is_server_active(x)
+                          for x in self.instances]
+        else:
+            predicates = [lambda: BOOT_MARKER in x.get_console_output()
+                          for x in self.instances]
         common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+            ALL(predicates),
+            timeout_seconds=5 * 60,
+            waiting_for="instances to be ready")
 
     def delete_instances(self, force=False):
         for instance in self.instances:
@@ -238,6 +224,7 @@ class TestLiveMigrationBase(object):
                         for x in self.instances),
             timeout_seconds=2 * 60,
             waiting_for='instances to be deleted')  # yapf: disable
+        self.instances = []
 
     @pytest.yield_fixture
     def cleanup_instances(self):
@@ -445,6 +432,47 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
         if [ "$(echo $util'>95' | bc -l)" -eq "1" ]; then break; fi
     done"""
 
+    def make_stress_instances(self,
+                              ubuntu_image_id,
+                              instances_count,
+                              zone,
+                              flavor=None):
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq stress cpulimit sysstat iperf',
+        ])
+        flavor = flavor or self.os_conn.nova.flavors.find(name='m1.small')
+        self.create_instances(zone=zone,
+                              flavor=flavor,
+                              instances_count=instances_count,
+                              image_id=ubuntu_image_id,
+                              userdata=userdata)
+
+    @pytest.yield_fixture
+    def stress_instance(self, ubuntu_image_id, block_migration):
+        self.make_stress_instances(ubuntu_image_id,
+                                   instances_count=1,
+                                   zone='nova')
+        instance = self.instances[0]
+        yield instance
+        self.delete_instances(force=True)
+
+    @pytest.yield_fixture
+    def stress_instances(self, ubuntu_image_id, block_migration,
+                         big_hypervisors):
+        hypervisor1, hypervisor2 = big_hypervisors
+        flavor = self.os_conn.nova.flavors.find(name='m1.small')
+        instances_count = min(
+            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
+            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
+        instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
+        self.make_stress_instances(ubuntu_image_id,
+                                   instances_count=instances_count,
+                                   zone=instances_zone,
+                                   flavor=flavor)
+        yield self.instances
+        self.delete_instances(force=True)
+
     @pytest.yield_fixture
     def iperf_instances(self, os_conn, keypair, security_group, network,
                         ubuntu_image_id, block_migration):
@@ -452,42 +480,15 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             '#!/bin/bash -v',
             'apt-get install -yq iperf',
             'iperf -u -s -p 5002 <&- >/dev/null 2>&1 &',
-            'echo "{marker}"',
-        ]).format(marker=BOOT_MARKER)
+        ])
         flavor = os_conn.nova.flavors.find(name='m1.small')
-        instances = []
-        for i in range(2):
-            instance = os_conn.create_server(
-                name='ubuntu_iperf_{}'.format(i),
-                flavor=flavor,
-                image_id=ubuntu_image_id,
-                userdata=userdata,
-                availability_zone='nova',
-                key_name=keypair.name,
-                nics=[{'net-id': network['network']['id']}],
-                security_groups=[security_group.id],
-                wait_for_active=False,
-                wait_for_avaliable=False)
-            instances.append(instance)
-        predicates = [lambda: os_conn.is_server_active(x) for x in instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=5 * 60,
-            waiting_for="iperf instances to became to active status")
-        predicates = [lambda: BOOT_MARKER in x.get_console_output()
-                      for x in instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=5 * 60,
-            waiting_for="iperf instances to be ready")
-        yield instances
-        for instance in instances:
-            instance.delete()
-        predicates = [lambda: os_conn.is_server_deleted(x) for x in instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=2 * 60,
-            waiting_for='instances to be deleted')
+        self.create_instances(zone='nova',
+                              flavor=flavor,
+                              instances_count=2,
+                              image_id=ubuntu_image_id,
+                              userdata=userdata)
+        yield self.instances
+        self.delete_instances(force=True)
 
     @pytest.mark.testrail_id('838032', block_migration=True, cmd=memory_cmd)
     @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
@@ -499,7 +500,9 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                              [True, False],
                              ids=['block LM', 'true LM'],
                              indirect=True)
-    @pytest.mark.parametrize('cmd', [memory_cmd, cpu_cmd, hdd_cmd], ids=['memory', 'cpu', 'hdd'])
+    @pytest.mark.parametrize('cmd',
+                             [memory_cmd, cpu_cmd, hdd_cmd],
+                             ids=['memory', 'cpu', 'hdd'])
     @pytest.mark.usefixtures('router')
     def test_lm_with_workload(self, stress_instance, keypair, block_migration,
                               cmd):
@@ -561,7 +564,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                           client,
                                           vm_keypair=keypair,
                                           username='ubuntu') as remote:
-            remote.check_call('iperf -u -c {ip} -p 5002 -t 60 --len 64'
+            remote.check_call('iperf -u -c {ip} -p 5002 -t 240 --len 64'
                               '--bandwidth 5M <&- >/dev/null 2&>1 &'.format(
                                   ip=server_ip))
 
@@ -575,3 +578,132 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             waiting_for='instance to migrate from {0}'.format(old_host))
 
         assert self.os_conn.is_server_ssh_ready(server)
+
+    @pytest.mark.testrail_id('838037', block_migration=True)
+    @pytest.mark.testrail_id('838265', block_migration=False)
+    @pytest.mark.parametrize('block_migration',
+                             [True, False],
+                             ids=['block LM', 'true LM'],
+                             indirect=True)
+    @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
+    def test_lm_under_cpu_work_multi_instances(
+            self, stress_instances, keypair, big_hypervisors, block_migration):
+        """LM of multiple instances under CPU workload
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Restart nova-api services on controllers and
+                nova-compute services on computes
+            3. Create maximum allowed number of instances on a single compute
+                node and install stress utilities on it
+            4. Initiate serial block LM of previously created instances
+                to another compute node
+            5. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            6. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            7. Initiate concurrent block LM of previously created instances
+                to another compute node
+            8. Check that all live-migrated instances are hosted on target host
+                and are in Active state
+            9. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+        hypervisor1, _ = big_hypervisors
+        for instance in self.instances:
+            with self.os_conn.ssh_to_instance(self.env,
+                                              instance,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call(self.cpu_cmd)
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
+
+        self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
+
+    @pytest.mark.testrail_id('838038', block_migration=True)
+    @pytest.mark.testrail_id('838266', block_migration=False)
+    @pytest.mark.parametrize('block_migration',
+                             [True, False],
+                             ids=['block LM', 'true LM'],
+                             indirect=True)
+    @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
+    def test_lm_under_network_work_multi_instances(
+            self, stress_instances, keypair, big_hypervisors, block_migration):
+        """LM of multiple instances under CPU workload
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Restart nova-api services on controllers and
+                nova-compute services on computes
+            3. Create maximum allowed number of instances on a single compute
+                node and install iperf utility on it
+            4. Group instances to pairs and run iperf server on firsh instances
+                on each pair:
+                iperf -u -s -p 5002
+            5. Launch iperf client on seconf instances in pairs:
+                iperf --port 5002 -u --client <vm1_fixed_ip> --len 64 \
+                --bandwidth 5M --time 60 -i 10
+            4. Initiate serial block LM of previously created instances
+                to another compute node
+            5. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            6. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            7. Initiate concurrent block LM of previously created instances
+                to another compute node
+            8. Check that all live-migrated instances are hosted on target host
+                and are in Active state
+            9. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+        hypervisor1, _ = big_hypervisors
+        clients = self.instances[::2]
+        servers = self.instances[1::2]
+        for server in servers:
+            with self.os_conn.ssh_to_instance(self.env,
+                                              server,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call('iperf -u -s -p 5002 <&- >/dev/null 2>&1 &')
+
+        if len(servers) < len(clients):
+            servers.append(servers[-1])
+        for client, server in zip(clients, servers):
+
+            server_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
+            with self.os_conn.ssh_to_instance(self.env,
+                                              client,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call(
+                    'iperf -u -c {ip} -p 5002 -t 240 --len 64 --bandwidth 5M '
+                    '<&- >/dev/null 2&>1 &'.format(ip=server_ip))
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
+
+        self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
+
+        common.wait(
+            lambda: all(self.os_conn.is_server_ssh_ready(x)
+                        for x in self.instances),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')  # yapf: disable
