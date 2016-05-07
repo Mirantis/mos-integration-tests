@@ -44,10 +44,22 @@ resources:
   wait_handle:
     type: OS::Heat::WaitConditionHandle
 
+  docker_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 2376
+          port_range_max: 2376
+
   docker_server:
     type: OS::Nova::Server
     properties:
-      networks: [{network: {get_param: int_network_id}}]
+      networks:
+        - { network: {get_param: int_network_id} }
+      security_groups:
+        - { get_resource: docker_secgroup }
       key_name: {get_param: key}
       image: { get_param: image }
       flavor: { get_param: flavor}
@@ -60,11 +72,23 @@ resources:
             echo '- INSTALL DOCKER -'
             # sudo dnf update -y
             curl -fsSL https://get.docker.com/ | sudo sh
-            # sudo systemctl start docker  # fedora hangs here
+
+            # Config docker
+            sudo mkdir /etc/systemd/system/docker.service.d
+
+            cat << EOF > /tmp/docker.conf
+            [Service]
+            ExecStart=
+            ExecStart=/usr/bin/docker daemon -D --tls=false --host=tcp://0.0.0.0:2376
+            EOF
+
+            sudo mv /tmp/docker.conf /etc/systemd/system/docker.service.d/
+
+            sudo systemctl daemon-reload
+
+            sudo systemctl restart docker
             echo '- NOTIFY -'
             wc_notify --data-binary '{"status": "SUCCESS"}'  # wait untill OS will finish booting
-            echo '- RUN DOCKER BIND -'
-            sudo /usr/bin/docker daemon -D --tls=false --host=tcp://0.0.0.0:2376
           params:
             wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
 

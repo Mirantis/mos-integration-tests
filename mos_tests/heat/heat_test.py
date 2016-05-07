@@ -1097,18 +1097,7 @@ class HeatIntegrationTests(OpenStackTestCase):
         # Delete keypair:
         keypair.delete()
 
-    @pytest.fixture(scope="session")
-    def fedora_docker_image(self):
-        return file_cache.get_file_path(settings.FEDORA_DOCKER_URL)
-
-    @pytest.fixture(autouse=True)
-    def skip_if_no_ubuntu_docker_image(self, request, fedora_docker_image):
-        if request.node.get_marker('require_QCOW2_fedora_docker_image') \
-                and fedora_docker_image is None:
-            pytest.skip("Unable to find QCOW2 fedora docker image")
-
     @pytest.mark.testrail_id('631877')
-    @pytest.mark.require_QCOW2_fedora_docker_image
     def test_heat_create_stack_docker_resources(self):
         """This test creates stack with Docker resource
 
@@ -1131,9 +1120,6 @@ class HeatIntegrationTests(OpenStackTestCase):
 
         image_name = '543346_Fedora-docker' + '_' + str(randint(100, 10000))
 
-        # Download image on node. Like: /tmp/fedora-software-config.qcow2
-        image_path = self.fedora_docker_image()
-
         # Create image in Glance
         image = self.glance.images.create(name=image_name,
                                           os_distro='Fedora',
@@ -1147,7 +1133,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                  "Expected [queued]".format(image.status))
 
         # Put image-file in created Image
-        with open(image_path, 'rb') as image_content:
+        with file_cache.get_file(settings.FEDORA_QCOW2_URL) as image_content:
             self.glance.images.upload(image.id, image_content)
 
         # Check that status of image is 'active'
@@ -1200,44 +1186,35 @@ class HeatIntegrationTests(OpenStackTestCase):
                                              'public_net': pub_network_name,
                                              'int_network_id': int_network_id,
                                              'timeout': 600},
-                                            15)
+                                             15)
 
         # Get resource ID of 'docker_server'. We know this name from template
-        instance_id = self.heat.resources.get(uid, 'docker_server').to_dict()
-        instance_id = instance_id['physical_resource_id']
+        instance = self.heat.resources.get(uid, 'docker_server')
 
         # Get public floating IP of created server instance in stack
-        floating_ip_list = self.nova.floating_ips.list()
-        floating_ip = [x.ip for x in floating_ip_list
-                       if x.instance_id == instance_id]
-        floating_ip = floating_ip[0]
-
-        # Check that floating IP is not empty
-        self.assertIsNotNone(
-            floating_ip,
-            'ERROR: Floating IP of Docker host instance is empty')
-
-        # Read template for Docker stack creation
-        template = common_functions.read_template(
-            self.templates_dir,
-            'Heat_Docker_Resources_543346_docker.yaml')
+        addresses = {x['OS-EXT-IPS:type']: x['addr']
+                     for y in instance.attributes['addresses'].values()
+                     for x in y}
+        floating_ip = addresses['floating']
 
         # Before creating new docker stack give a few second too start
         # Docker bind in first stack. We have a WaitCondition in it, but
         # anyway there may be a need to wait several seconds.
         time.sleep(5)
 
+        # Read template for Docker stack creation
+        template = common_functions.read_template(
+            self.templates_dir,
+            'Heat_Docker_Resources_543346_docker.yaml')
+
         # Prepare docker endpoint. Like: 'tcp://172.16.0.161:2376'
         # Where IP is a floating IP of host instance. And port# is in template.
         docker_endpoint = 'tcp://{0}:2376'.format(floating_ip)
 
         # Create Docker stack
-        docker_uid = \
-            common_functions.create_stack(self.heat,
-                                          'Heat_Docker_543346_docker',
-                                          template,
-                                          {'docker_endpoint': docker_endpoint},
-                                          15)
+        docker_uid = common_functions.create_stack(
+            self.heat, 'Heat_Docker_543346_docker', template,
+            {'docker_endpoint': docker_endpoint}, 15)
         # CLEANUP
         # First we need to delete second docker stack
         common_functions.delete_stack(self.heat, docker_uid)
