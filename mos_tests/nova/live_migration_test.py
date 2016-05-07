@@ -690,7 +690,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                               username='ubuntu') as remote:
                 remote.check_call(
                     'iperf -u -c {ip} -p 5002 -t 240 --len 64 --bandwidth 5M '
-                    '<&- >/dev/null 2&>1 &'.format(ip=server_ip))
+                    '<&- >/dev/null 2>&1 &'.format(ip=server_ip))
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
