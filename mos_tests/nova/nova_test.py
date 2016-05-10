@@ -594,7 +594,7 @@ class NovaIntegrationTests(OpenStackTestCase):
 
         # Assert to flavor size
         self.assertEqual(self.nova.servers.get(instance).flavor['id'],
-                         initial_flavor,
+                         initial_flavor.id,
                          "Unexpected instance flavor after creation")
 
         floating_ip = self.nova.floating_ips.create()
