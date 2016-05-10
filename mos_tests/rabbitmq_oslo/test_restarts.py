@@ -126,10 +126,10 @@ def get_mngmnt_ip_of_ctrllrs(env):
 def disable_enable_all_eth_interf(remote, sleep_sec=60):
     """Shutdown all eth interfaces on node and after sleep enable them back"""
     logger.debug('Stop/Start all eth interfaces on %s.' % remote.host)
-    background = '<&- >/dev/null 2>&1 &'
-    cmd = ('(ifdown -a ; ip -s -s neigh flush all ; '
-           'sleep {0} ; ifup -a) {1}'.format(
-                sleep_sec, background))
+    background = 'screen -S "disable_enable_all_eth_interf" -d -m'
+    cmd = ('{0} "ifdown -a ; ip -s -s neigh flush all ; '
+           'sleep {1} ; ifup -a)"'.format(
+                background, sleep_sec))
     remote.execute(cmd)
 
 
