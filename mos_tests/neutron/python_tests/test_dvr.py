@@ -1400,3 +1400,61 @@ class TestDVRRegression(TestDVRBase):
         for node in nodes:
             with node.ssh() as remote:
                 assert not remote.execute(cmd).is_ok, err_msg
+
+    @pytest.mark.testrail_id('851853')
+    def test_associating_floatingip_after_l3_agent_restart(self):
+        """Check associating of a new floatingip to existing network
+        after restart of l3 agent.
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01, connect to external network
+            3. Boot VM1 in created net01, associate floating ip
+            4. Ping VM1
+            5. Restart neutron-l3-agent on the compute node hosting the VM.
+            6. Boot VM2 on the same host as VM1, associate floating ip
+            7. Ping VM2
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        server1 = self.os_conn.create_server(
+            name='server01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        self.os_conn.assign_floating_ip(server1, use_neutron=True)
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
+
+        # Restart l3_agent
+        compute_hostname = getattr(server1, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_hostname)
+        l3_agents = self.os_conn.list_l3_agents()
+        vm_l3_agents = [x['id'] for x in l3_agents
+                       if x['host'] == compute_hostname]
+
+        with compute.ssh() as remote:
+            logger.info('disable l3 agent')
+            remote.check_call('service neutron-l3-agent stop')
+            self.os_conn.wait_agents_down(vm_l3_agents)
+            logger.info('enable l3 agent')
+            remote.check_call('service neutron-l3-agent start')
+            self.os_conn.wait_agents_alive(vm_l3_agents)
+
+        server2 = self.os_conn.create_server(
+            name='server02',
+            availability_zone='nova:{}'.format(compute_hostname),
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        self.os_conn.assign_floating_ip(server2)
+        network_checks.check_vm_connectivity(self.env, self.os_conn)
