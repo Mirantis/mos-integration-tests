@@ -462,9 +462,17 @@ class TestRestarts(TestBase):
 
         # Create 50 networks, launch and terminate instances
         # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 34 nets
+        # However during implementation found that only about 29 nets
         # can be created for one tenant. Need to clarify that situation.
-        self.create_delete_number_of_instances(29, self.router, self.networks,
+        # Some instances have been already created in _prepare_openstack.
+        instances_count = 29
+        servers = self.os_conn.nova.servers.list()
+        if servers:
+            instances_count -= len(servers)
+
+        self.create_delete_number_of_instances(instances_count,
+                                               self.router,
+                                               self.networks,
                                                self.instance_keypair,
                                                self.security_group)
 
