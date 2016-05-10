@@ -133,7 +133,7 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     remote.execute(cmd)
 
 
-def restart_rabbitmq_serv(env, remote=None, sleep=10):
+def restart_rabbitmq_serv(env, remote=None, sleep=60):
     """Restart rabbitmq-server service on one or all controllers.
     After each restart, check that rabbit is up and running.
     :param env: Environment
@@ -142,7 +142,10 @@ def restart_rabbitmq_serv(env, remote=None, sleep=10):
     :param sleep: Seconds to wait after service restart
     """
     # 'sleep' is to wait for service startup. It'll be also checked later
-    restart_cmd = 'service rabbitmq-server restart && sleep %s' % sleep
+    restart_cmd = 'pcs resource restart --wait=%s p_rabbitmq-server' % sleep
+    restart_cmd_single = 'pcs resource --wait={wait_time} disable p_rabbitmq-server;' \
+                         'pcs resource --wait={wait_time} ' \
+                         'enable p_rabbitmq-server'.format(wait_time=sleep)
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
@@ -158,7 +161,7 @@ def restart_rabbitmq_serv(env, remote=None, sleep=10):
         # restart on one controller
         logger.debug('Restart RabbinMQ server on ONE controller %s.' %
                      remote.host)
-        remote.check_call(restart_cmd)
+        remote.check_call(restart_cmd_single)
         wait_for_rabbit_running_nodes(remote, len(controllers))
 
 
