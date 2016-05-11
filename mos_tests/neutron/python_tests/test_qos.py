@@ -289,6 +289,7 @@ class DifferentComputesInstancesMixin(object):
         return instances
 
 
+@pytest.mark.check_env_('is_qos_enabled')
 class TestTraficBetweenComputes(DifferentComputesInstancesMixin, TestQoSBase):
     @pytest.mark.testrail_id('838303')
     def test_qos_between_vms_on_different_computes(self, instances, os_conn,
@@ -487,6 +488,7 @@ class TestTraficBetweenComputes(DifferentComputesInstancesMixin, TestQoSBase):
         self.check_iperf_bandwidth(instance2, instance1, limit=3000 * 1024)
 
 
+@pytest.mark.check_env_('is_qos_enabled')
 class TestPolicyWithNetCreate(DifferentComputesInstancesMixin, TestQoSBase):
     @classmethod
     @pytest.fixture(scope='class')
@@ -654,6 +656,7 @@ class TwoNetAndComputesThreeInstances(object):
         return instances
 
 
+@pytest.mark.check_env_('is_qos_enabled')
 @pytest.mark.incremental
 class TestTraficBetween3InstancesInDifferentNet(
         TwoNetAndComputesThreeInstances, TestQoSBase):
@@ -782,6 +785,7 @@ class TestTraficBetween3InstancesInDifferentNet(
         self.check_iperf_bandwidth(instance1, instance3, limit=1000 * 1024)
 
 
+@pytest.mark.check_env_('is_qos_enabled')
 class TestWithFloating(TwoNetAndComputesThreeInstances, TestQoSBase):
     @classmethod
     @pytest.fixture(scope='class')
