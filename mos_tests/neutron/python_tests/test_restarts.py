@@ -15,6 +15,7 @@
 import logging
 
 import pytest
+from neutronclient.common.exceptions import ServiceUnavailable
 
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
@@ -457,25 +458,21 @@ class TestRestarts(TestBase):
                 another, only one host changed after restart.
         """
         self._prepare_openstack()
-
         # Create 50 networks, launch and terminate instances
-        # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 29 nets
-        # can be created for one tenant. Need to clarify that situation.
-        # Some instances have been already created in _prepare_openstack.
-        instances_count = 29
-        servers = self.os_conn.nova.servers.list()
-        if servers:
-            instances_count -= len(servers)
-
-        self.create_delete_number_of_instances(instances_count,
-                                               self.router,
-                                               self.networks,
-                                               self.instance_keypair,
-                                               self.security_group)
+        # There are quotas for the total amount of the nets
+        # And also only certain amount of VLANs per one tenant
+        # Solution is simple
+        # The instances are created until the exception is thrown
+        try:
+            self.create_delete_number_of_instances(50, self.router,
+                                                   self.networks,
+                                                   self.instance_keypair,
+                                                   self.security_group)
+        except ServiceUnavailable as e:
+            logger.info(e)
 
         # Get DHCP agents for the net9
-        net_id = self.networks[8]
+        net_id = self.networks[-1]
         ports_ids_before = [
             port['id'] for port in self.os_conn.list_ports_for_network(
                 network_id=net_id, device_owner='network:dhcp')]
