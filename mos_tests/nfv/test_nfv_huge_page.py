@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_vlan')
 class TestHugePages(TestBaseNFV):
 
+    mixed_hp_computes = {'host_count': 2, 'count_2mb': 1024, 'count_1gb': 4}
+
     @pytest.mark.check_env_('has_3_or_more_computes')
     @pytest.mark.parametrize('computes_with_hp_2mb',
                              [{'host_count': 2, 'hp_count_per_host': 512}],
@@ -202,7 +204,7 @@ class TestHugePages(TestBaseNFV):
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838316')
-    def test_resizing_of_vms_with_puge_pages(self, env, os_conn,
+    def test_resizing_of_vms_with_huge_pages(self, env, os_conn,
                                              computes_with_mixed_hp,
                                              networks, small_nfv_flavor,
                                              medium_nfv_flavor, flavor,
