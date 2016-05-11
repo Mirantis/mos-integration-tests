@@ -13,10 +13,13 @@
 #    under the License.
 
 import logging
+import re
 import time
 
 import pytest
+from neutronclient.common.exceptions import ServiceUnavailable
 
+from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
@@ -319,3 +322,92 @@ class TestDHCPAgent(TestBase):
         err_msg = 'Amount of dhcp agents for network {} is incorrect'.format(
             net_id)
         assert len(network_agt) == dhcp_agent_num, err_msg
+
+    @pytest.mark.testrail_id('851869')
+    def test_tap_interfaces_after_disable_service(self):
+        """[Neutron VLAN and VXLAN] Check number of tap interfaces and that all
+        tap's id are unique on controllers after DHCP agents restart.
+
+        Steps:
+            1. Update quotas for creation a lot of networks:
+                neutron quota-update --network 1000 --subnet 1000
+                                     --router 1000 --port 1000:
+            2. Create 50 networks, subnets, launch and terminate instance
+            3. Disable all dhcp-agents:
+                pcs resource disable neutron-dhcp-agent
+                Wait till agents are down
+            4. Make all dhcp ports as reserved_dhcp_port.
+                a) mysql
+                mysql> use neutron;
+                mysql> delete from networkdhcpagentbindings;
+                mysql> exit
+                b) Update all dhcp ports with device_id='reserved_dhcp_port':
+                neutron port-update <port-id> --device-id 'reserved_dhcp_port'
+            5. Enable all dhcp-agents:
+                pcs resource enable neutron-dhcp-agent
+                Wait till agents are up.
+            6. Wait till all dhcp ports are acquired by dhcp agents
+            7. Check ip a and find tap-interfaces for all nets on controllers:
+                ip netns exec qdhcp-<netX-id> ip a | grep tap
+        """
+
+        # Create 50 networks, launch and terminate instances
+        # There are quotas for the total amount of the nets
+        # And also only certain amount of VLANs per one tenant
+        # Solution is simple
+        # The instances are created until the exception is thrown
+        try:
+            self.create_delete_number_of_instances(50, self.router,
+                                                   self.networks,
+                                                   self.instance_keypair,
+                                                   self.security_group)
+        except ServiceUnavailable as e:
+            logger.info(e)
+
+        dhcp_ports_id = self.os_conn.neutron.list_ports(
+            device_owner='network:dhcp')['ports']
+
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            logger.info('disable all dhcp agents')
+            remote.check_call('pcs resource disable neutron-dhcp-agent')
+            self.os_conn.wait_agents_down(self.dhcp_agent_ids)
+            logger.info('delete binding between dhcp agents and dhcp ports')
+            remote.check_call('mysql --database="neutron" -e '
+                              '"delete from networkdhcpagentbindings;"')
+
+        logger.info('making all dhcp ports as "reserved_dhcp_port"')
+        for port in dhcp_ports_id:
+            self.os_conn.neutron.update_port(port['id'],
+                                             {'port': {'device_id':
+                                                       'reserved_dhcp_port'}})
+        with controller.ssh() as remote:
+            logger.info('enable all dhcp agents')
+            remote.check_call('pcs resource enable neutron-dhcp-agent')
+            self.os_conn.wait_agents_alive(self.dhcp_agent_ids)
+
+        wait(lambda:
+             len(self.os_conn.neutron.list_ports(
+                 device_id='reserved_dhcp_port')['ports']) == 0,
+             timeout_seconds=60 * 3,
+             waiting_for='all reserved ports are acquired by dhcp agents')
+        time.sleep(60)
+
+        logger.info("check uniqueness of tap interface's ids")
+        for net_id in self.networks:
+            namespace = 'qdhcp-{0}'.format(net_id)
+            cmd = 'ip netns exec {0} ip a | grep tap'.format(namespace)
+            output_list = []
+            controllers = self.env.get_nodes_by_role('controller')
+            for controller in controllers:
+                with controller.ssh() as remote:
+                    if remote.execute(cmd).is_ok:
+                        output_list.append(remote.execute(cmd).stdout_string)
+            taps_list = []
+            err_msg = 'Number of tap interfaces is more than 1'
+            for out in output_list:
+                result = set(re.findall(r'tap[\w]+-[\w]+', out))
+                assert len(result) == 1, err_msg
+                taps_list.extend(result)
+            err_msg = "Tap interface's ids are not unique on controllers"
+            assert len(set(taps_list)) == len(taps_list), err_msg
