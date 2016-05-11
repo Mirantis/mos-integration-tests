@@ -28,34 +28,18 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 class TestFailoverRestarts(TestBase):
 
-    def check_common_services(self, openstack_client):
-        # check several times that all needed services are up
-        for x in range(5):
-            for server in self.os_conn.nova.servers.list():
-                assert server.status == 'ACTIVE'
+    def check_common_services(self):
+        for service in self.os_conn.keystone.services.list():
+            assert service.enabled is True
 
-            # Get user list and check that all users are enabled
-            result = openstack_client('user list --long -f json')
-            for user in json.loads(result):
-                assert user['Enabled'] is True
+        for service in self.os_conn.nova.services.list():
+            assert service.status == 'enabled'
 
-            # Get list of services IDs and than description for each service
-            result = openstack_client('service list -f json')
-            id_list = [service['ID'] for service in json.loads(result)]
-            for service_id in id_list:
-                cmd = 'service show {} -f json'.format(service_id)
-                result = openstack_client(cmd)
-                service = json.loads(result)
-                assert service['enabled'] is True
-
-            for service in self.os_conn.nova.services.list():
-                assert service.status == 'enabled'
-
-            for image in self.os_conn.glance.images.list():
-                assert image.status == 'active'
+        for image in self.os_conn.glance.images.list():
+            assert image.status == 'active'
 
     @pytest.mark.testrail_id('542818')
-    def test_restart_galera_services_with_replicaton(self):
+    def test_restart_galera_services_with_replication(self):
         """Restart all Galera services with data replication
 
         Scenario:
@@ -104,20 +88,21 @@ class TestFailoverRestarts(TestBase):
             logger.info('wait until all mysql processes started')
             wait(is_mysql_started, timeout_seconds=3 * 60, sleep_seconds=5)
 
+        self.check_common_services()
+
     @pytest.mark.testrail_id('542817')
-    def test_restart_rabbitmq_services_with_replicaton(self, openstack_client):
+    def test_restart_rabbitmq_services_with_replication(self):
         """Restart all RabbitMQ services with data replication
         Scenario
-            1. Login to the first Openstack controller node
-               and disable RabbitMQ service:
+            1. Login to the primary Openstack controller node and disable
+               RabbitMQ service:
                    pcs resource disable master_p_rabbitmq-server
                    pcs resource disable p_rabbitmq-server
             2. Wait for several seconds and enable the RabbitMQ service back:
                    pcs resource enable master_p_rabbitmq-server
                    pcs resource enable p_rabbitmq-server
-            3. Repeat steps 1-2 for all controller nodes in your cluster
-            4. Execute 'rabbitmqctl cluster_status' on each contrloller
-            5. Verify that all RabbitMQ nodes are in the same cluster.
+            3. Execute 'rabbitmqctl cluster_status' on each controller
+            4. Verify that all RabbitMQ nodes are in the same cluster.
 
             The test might fail due to the bug:
                 https://bugs.launchpad.net/fuel/+bug/1524024
@@ -139,25 +124,23 @@ class TestFailoverRestarts(TestBase):
             return True
 
         controllers = self.env.get_nodes_by_role('controller')
+        prim_controller = self.env.primary_controller
 
         logger.info('kill all rabbitmq servers')
-        for controller in controllers:
-            with controller.ssh() as remote:
-                logger.info('disable rabbitmq services on node {}'.format(
-                            controller.data['ip']))
-                remote.check_call(
-                    'pcs resource disable master_p_rabbitmq-server')
-                remote.check_call('pcs resource disable p_rabbitmq-server')
-                # just a little sleep before enabling the services
-                time.sleep(5)
-                logger.info('enable rabbitmq services on node {}'.format(
-                            controller.data['ip']))
-                remote.check_call(
-                    'pcs resource enable master_p_rabbitmq-server')
-                remote.check_call('pcs resource enable p_rabbitmq-server')
+        with prim_controller.ssh() as remote:
+            remote.check_call(
+                'pcs resource disable master_p_rabbitmq-server')
+            remote.check_call('pcs resource disable p_rabbitmq-server')
 
-            logger.info('wait until all rabbits come alive')
-            wait(is_rabbit_alive, timeout_seconds=10 * 60, sleep_seconds=5)
+            # just a little sleep before enabling the services
+            time.sleep(5)
+
+            remote.check_call(
+                'pcs resource enable master_p_rabbitmq-server')
+            remote.check_call('pcs resource enable p_rabbitmq-server')
+
+        logger.info('wait until all rabbits come alive')
+        wait(is_rabbit_alive, timeout_seconds=10 * 60, sleep_seconds=5)
 
         logger.info('check that all rabbitmq nodes are in the same cluster')
         # OSTF contain test "RabbitMQ availability"
@@ -169,10 +152,10 @@ class TestFailoverRestarts(TestBase):
         # It will guaranty that all services are recovered.
         self.env.wait_for_ostf_pass()
 
-        self.check_common_services(openstack_client)
+        self.check_common_services()
 
     @pytest.mark.testrail_id('542815')
-    def test_instance_folder_after_hard_reboot(self, clean_os):
+    def test_instance_folder_after_hard_reboot(self):
         """Re-creating instance folder after hard reboot
 
         Scenario:
