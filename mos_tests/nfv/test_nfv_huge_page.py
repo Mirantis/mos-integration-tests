@@ -314,3 +314,54 @@ class TestHugePages(TestBaseNFV):
             assert exp_free_1g == final_conf[host][page_1gb]['free']
         self.check_instance_page_size(os_conn, vm_0_new, size=page_1gb)
         network_checks.check_vm_connectivity(env, os_conn)
+
+    @pytest.mark.parametrize('computes_without_hp', [1],
+                             indirect=['computes_without_hp'])
+    @pytest.mark.parametrize('flavor', [{"name": "old.flavor", "ram": 512,
+                                         "vcpu": 1, "disk": 1}],
+                             indirect=['flavor'])
+    @pytest.mark.testrail_id('838311')
+    def test_allocation_huge_pages_2m_for_vms_with_old_flavor(
+            self, env, os_conn, networks, computes_with_hp_2mb,
+            computes_without_hp, small_nfv_flavor, flavor, security_group):
+        """This test checks that Huge pages set for vm1, vm2 and vm3 shouldn't
+            use Huge pages, connectivity works properly
+            Steps:
+            1. Create net1 with subnet, net2 with subnet and  router1 with
+            interfaces to both nets
+            2. Create vm1 in net1 on compute1 with 2Mb flavor
+            3. Create vm2 in net2 on compute2 with old flavor
+            4. Create vm3 in net1 on compute1 with old flavor
+            5. Check huge pages. Check that it was allocated only HP for vm1
+            6. Check pings from all vms to all vms by all ips
+        """
+        count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
+        initial_conf = computes_configuration(env)
+        hosts_hp = computes_with_hp_2mb
+        hosts_no_hp = computes_without_hp
+
+        vms_params = [
+            (hosts_hp[0], networks[0], small_nfv_flavor, page_2mb),
+            (hosts_no_hp[0], networks[1], flavor, None),
+            (hosts_hp[0], networks[0], flavor, None)]
+        vms = {}
+
+        for i, (host, network, flavor, size) in enumerate(vms_params):
+            vm = os_conn.create_server(
+                name='vm{}'.format(i), flavor=flavor.id,
+                nics=[{'net-id': network}],
+                availability_zone='nova:{}'.format(host),
+                security_groups=[security_group.id])
+            vms.update({vm: size})
+
+        for vm, exp_size in vms.items():
+            self.check_instance_page_size(os_conn, vm, size=exp_size)
+
+        vms_distribution = [(hosts_hp[0], 1), (hosts_no_hp[0], 0), ]
+        final_conf = computes_configuration(env)
+        for (host, nr_2mb) in vms_distribution:
+            exp_free_2m = initial_conf[host][page_2mb][
+                              'total'] - nr_2mb * count_to_allocate_2mb
+            assert exp_free_2m == final_conf[host][page_2mb]['free']
+
+        network_checks.check_vm_connectivity(env, os_conn)
