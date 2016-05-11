@@ -81,7 +81,33 @@ def instance_keypair(os_conn):
 
 @pytest.fixture(scope='class')
 def security_group(os_conn):
-    return os_conn.create_sec_group_for_ssh()
+    secgroup = os_conn.create_sec_group_for_ssh()
+    iperf_ruleset = [
+        {
+            'ip_protocol': 'tcp',
+            'from_port': TCP_PORT,
+            'to_port': TCP_PORT,
+            'cidr': '0.0.0.0/0',
+        },
+        {
+            'ip_protocol': 'udp',
+            'from_port': UDP_PORT,
+            'to_port': UDP_PORT,
+            'cidr': '0.0.0.0/0',
+        }
+    ]
+    for ruleset in iperf_ruleset:
+        os_conn.nova.security_group_rules.create(
+            secgroup.id, **ruleset)
+    return secgroup
+
+
+@pytest.fixture(scope='class')
+def flavor(os_conn):
+    return os_conn.nova.flavors.create(name='iperf_flavor',
+                                       ram=1024,
+                                       vcpus=1,
+                                       disk=5)
 
 
 @pytest.mark.check_env_('is_qos_enabled')
@@ -130,7 +156,7 @@ class TestQoSBase(base.TestBase):
         delete_ports_policy(os_conn)
 
     @classmethod
-    def boot_iperf_instance(cls, name, compute_node, net, udp=False):
+    def boot_iperf_instance(cls, name, compute_node, net, udp=False, flavor=2):
         userdata = '\n'.join([
             '#!/bin/bash -v',
             'apt-get install -yq iperf',
@@ -145,7 +171,7 @@ class TestQoSBase(base.TestBase):
             name=name,
             availability_zone='{}:{}'.format(cls.zone.zoneName, compute_node),
             image_id=cls.image_id,
-            flavor=2,
+            flavor=flavor,
             userdata=userdata,
             key_name=cls.instance_keypair.name,
             nics=[{'net-id': net['network']['id']}],
@@ -212,13 +238,14 @@ class TestQoSBase(base.TestBase):
 class TestSingleCompute(TestQoSBase):
     @classmethod
     @pytest.fixture(scope='class')
-    def instances(cls, variables, network, iperf_image_id, os_conn):
+    def instances(cls, variables, network, iperf_image_id, os_conn, flavor):
         instances = []
         compute_node = cls.zone.hosts.keys()[0]
         for i in range(2):
             instance = cls.boot_iperf_instance(name='server%02d' % i,
                                                compute_node=compute_node,
-                                               net=cls.net)
+                                               net=cls.net,
+                                               flavor=flavor)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
         return instances
@@ -277,13 +304,14 @@ class TestSingleCompute(TestQoSBase):
 class DifferentComputesInstancesMixin(object):
     @classmethod
     @pytest.fixture(scope='class')
-    def instances(cls, variables, network, iperf_image_id, os_conn):
+    def instances(cls, variables, network, iperf_image_id, os_conn, flavor):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
         for i in range(2):
             instance = cls.boot_iperf_instance(name='server%02d' % i,
                                                compute_node=compute_nodes[i],
-                                               net=cls.net)
+                                               net=cls.net,
+                                               flavor=flavor)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
         return instances
@@ -553,14 +581,15 @@ class TestPolicyWithNetCreate(DifferentComputesInstancesMixin, TestQoSBase):
 class TestTraficBetween3InstancesInOneNet(TestQoSBase):
     @classmethod
     @pytest.fixture(scope='class')
-    def instances(cls, variables, network, iperf_image_id, os_conn):
+    def instances(cls, variables, network, iperf_image_id, os_conn, flavor):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
         compute_nodes.insert(0, compute_nodes[0])
         for i, node in enumerate(compute_nodes):
             instance = cls.boot_iperf_instance(name='server%02d' % i,
                                                compute_node=node,
-                                               net=cls.net)
+                                               net=cls.net,
+                                               flavor=flavor)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
         return instances
@@ -638,7 +667,8 @@ class TestTraficBetween3InstancesInOneNet(TestQoSBase):
 class TwoNetAndComputesThreeInstances(object):
     @classmethod
     @pytest.fixture(scope='class')
-    def instances(cls, variables, network, iperf_image_id, os_conn, network2):
+    def instances(cls, variables, network, iperf_image_id, os_conn, network2,
+                  flavor):
         instances = []
         compute_nodes = cls.zone.hosts.keys()[:2]
         compute_nodes.insert(0, compute_nodes[0])
@@ -646,7 +676,8 @@ class TwoNetAndComputesThreeInstances(object):
         for i, (node, net) in enumerate(zip(compute_nodes, networks)):
             instance = cls.boot_iperf_instance(name='server%02d' % i,
                                                compute_node=node,
-                                               net=net)
+                                               net=net,
+                                               flavor=flavor)
             instances.append(instance)
         wait_instances_to_boot(os_conn, instances)
         for instance in instances:
