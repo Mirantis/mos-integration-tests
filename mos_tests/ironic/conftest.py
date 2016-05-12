@@ -15,6 +15,7 @@
 import logging
 import os
 import pytest
+import subprocess
 
 import yaml
 
@@ -35,9 +36,19 @@ def ironic(os_conn):
     return actions.IronicActions(os_conn)
 
 
+@pytest.yield_fixture(scope='session')
+def libvirt_proxy_ip(devops_env):
+    base_dir = os.path.dirname(__file__)
+    proxy_file = os.path.join(base_dir, 'proxy.py')
+    ip = str(devops_env.get_network(name='public').default_gw)
+    logger.info('Start proxy to libvirt sock file at {}:16509'.format(ip))
+    process = subprocess.Popen(['python', proxy_file, ip])
+    yield ip
+    process.terminate()
+
+
 @pytest.fixture(scope='session')
-def ironic_drivers_params(devops_env):
-    server_ip = str(devops_env.get_network(name='public').default_gw)
+def ironic_drivers_params(libvirt_proxy_ip):
     base_dir = os.path.dirname(__file__)
 
     with open(os.path.join(base_dir, 'ironic_nodes.yaml')) as f:
@@ -48,7 +59,7 @@ def ironic_drivers_params(devops_env):
         driver_info = node['driver_info']
         if driver_info['libvirt_uri'] is None:
             driver_info['libvirt_uri'] = 'qemu+tcp://{ip}/system'.format(
-                ip=server_ip)
+                ip=libvirt_proxy_ip)
     return config
 
 
