@@ -15,6 +15,7 @@
 import logging
 
 import pytest
+from six.moves import configparser
 
 from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests import base
@@ -624,17 +625,22 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
         """
         param = param or 'dhcp_agents_per_network'
         path = path or '/etc/neutron/neutron.conf'
-        param_change_value = (
-            r"sed -i 's/^\({param} *= *\).*/\1{value}/' {path}".format(
-                param=param, value=value, path=path)
-        )
-        restart_service = "service neutron-server restart"
-        res = remote.check_call(
-            '{} && {}'.format(param_change_value, restart_service))
+
+        parser = configparser.ConfigParser()
+        with remote.open(path) as f:
+            parser.readfp(f)
+
+        if parser.getint('DEFAULT', param) == value:
+            return
+
+        parser.set('DEFAULT', param, value)
+        with remote.open(path, 'w') as f:
+            parser.write(f)
+
+        remote.check_call("service neutron-server restart")
         logger.info(
             'Applied new neutron config value {} for param {}'.format(value,
                                                                       param))
-        return res
 
     def _prepare_neutron_server_and_env(self, net_count):
         """Prepares neutron service network count on dhcp agent
@@ -653,12 +659,7 @@ class TestBanDHCPAgentWithSettings(TestBaseDHCPAgent):
         all_controllers = self.env.get_nodes_by_role('controller')
         for controller in all_controllers:
             with controller.ssh() as remote:
-                res = self._apply_new_neutron_param_value(remote, net_count)
-                error_msg = (
-                    'Neutron service restart with new value failed, '
-                    'exit code {exit_code},'
-                    'stdout {stdout}, stderr {stderr}').format(**res)
-                assert 0 == res['exit_code'], error_msg
+                self._apply_new_neutron_param_value(remote, net_count)
 
         wait(
             lambda: _check_neutron_restart(),
