@@ -12,8 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import csv
 import logging
-import os
 from random import randint
 import re
 import time
@@ -21,6 +21,7 @@ import time
 import pytest
 
 from mos_tests.functions.common import wait
+from mos_tests.functions import file_cache
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
@@ -606,71 +607,51 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
 class TestOVSRestartWithIperfTraffic(OvsBase):
     """Restart ovs-agents with iperf traffic background"""
 
-    def create_image(self, full_path):
+    def create_image(self):
         """Create image
-
-        :param full_path: full path to image file
         :return: image object for Glance
         """
         image = self.os_conn.glance.images.create(name="image_ubuntu",
                                                   disk_format='qcow2',
                                                   container_format='bare')
-        with open(full_path, 'rb') as image_file:
-            self.os_conn.glance.images.upload(image['id'], image_file)
+        with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
+            self.os_conn.glance.images.upload(image['id'], f)
         return image
 
     def get_lost_percentage(self, output):
         """Get lost percentage
 
-        :param output: list of lines (output of iperf client)
+        :param output: output of iperf client
         :return: percentage of lost datagrams
         """
-        logger.debug('iperf output:\n{}'.format(''.join(output)))
-        lost_datagrams_rate_pattern = re.compile(r'\d+/\d+ \(([\d.]+)%\)')
-        server_report_flag = False
-        for line in output:
-            if server_report_flag:
-                result = lost_datagrams_rate_pattern.search(line)
-                if result:
-                    return float(result.group(1))
-            elif line.endswith("Server Report:\n"):
-                server_report_flag = True
-        return None
-
-    def launch_iperf_server(self, vm, keypair, vm_login, vm_pwd):
-        """Launch iperf server"""
-        server_cmd = 'iperf -u -s -p 5002 </dev/null > ~/iperf.log 2>&1 &'
-        res_srv = network_checks.run_on_vm(self.env, self.os_conn, vm, keypair,
-                                           server_cmd, vm_login=vm_login,
-                                           vm_password=vm_pwd)
-        return res_srv
+        output = output.strip()
+        logger.debug('Iperf result:\n{}'.format(output))
+        reader = csv.reader(output.splitlines())
+        rows = list(reader)
+        return float(rows[-1][12])
 
     def launch_iperf_client(self, client, server, keypair, vm_login,
-                            vm_pwd, background=False):
+                            stdout):
         """Launch iperf client"""
-        client_cmd = 'iperf --port 5002 -u --client {0} --len 64' \
-                     ' --bandwidth 1M --time 60 -i 10' \
-            .format(self.os_conn.get_nova_instance_ips(server)['fixed'])
-        if background:
-            client_cmd += ' < /dev/null > ~/iperf_client.log 2>&1 &'
-        res = network_checks.run_on_vm(self.env, self.os_conn, client, keypair,
-                                       client_cmd, vm_login=vm_login,
-                                       vm_password=vm_pwd)
-        return res
+        client_cmd = ('iperf --port 5002 -u --client {0} --len 64'
+                      ' --bandwidth 1M --time 60 -i 10 -y C -x CDMS').format(
+                          self.os_conn.get_nova_instance_ips(server)['fixed'])
+        with self.os_conn.ssh_to_instance(self.env,
+                                          vm=client,
+                                          vm_keypair=keypair,
+                                          username=vm_login) as remote:
+            return remote.background_call(client_cmd, stdout=stdout)
 
-    @pytest.fixture
-    def ubuntu_iperf_image(self):
-        image_path = os.path.join(settings.TEST_IMAGE_PATH,
-                                  settings.UBUNTU_IPERF_QCOW2)
-        if os.path.exists(image_path):
-            return image_path
-        return None
-
-    @pytest.fixture(autouse=True)
-    def skip_if_no_ubuntu_iperf_image(self, request, ubuntu_iperf_image):
-        if request.node.get_marker('require_QCOW2_ubuntu_image_with_iperf') \
-                and ubuntu_iperf_image is None:
-            pytest.skip("Unable to find QCOW2 ubuntu image with iperf")
+    def wait_command_done(self, pid, vm, keypair, vm_login):
+        with self.os_conn.ssh_to_instance(self.env,
+                                          vm=vm,
+                                          vm_keypair=keypair,
+                                          username=vm_login) as remote:
+            cmd = 'ps -o pid | grep {}'.format(pid)
+            wait(lambda: not remote.execute(cmd).is_ok,
+                 timeout_seconds=2 * 60,
+                 sleep_seconds=15,
+                 waiting_for='command with pid {} to be done'.format(pid))
 
     def _prepare_openstack(self):
         """Prepare OpenStack for scenarios run
@@ -688,7 +669,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         """
 
         self.setup_rules_for_default_sec_group()
-        vm_image = self.create_image(self.ubuntu_iperf_image())
+        vm_image = self.create_image()
 
         self.instance_keypair = self.os_conn.create_key(
             key_name='instancekey')
@@ -698,20 +679,43 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         # create router
         router = self.os_conn.create_router(name="router01")
 
+        ext_network = self.os_conn.ext_network
+
+        self.os_conn.router_gateway_add(router_id=router['router']['id'],
+                                        network_id=ext_network['id'])
+
+        ready_marker = 'ironic_iperf_boot_complete'
+
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq iperf',
+            'iperf -u -s -p 5002 <&- > /tmp/iperf_udp.log 2>&1 &',
+            'echo "{marker}"',
+        ]).format(marker=ready_marker)
+
         # create 2 networks and 2 instances
+        instances = []
         for i, hostname in enumerate(hosts, 1):
             net, subnet = self.create_internal_network_with_subnet(suffix=i)
             self.os_conn.router_interface_add(
                 router_id=router['router']['id'],
                 subnet_id=subnet['subnet']['id'])
-            self.os_conn.create_server(
+            instance = self.os_conn.create_server(
                 name='server%02d' % i,
                 availability_zone='{}:{}'.format(zone.zoneName, hostname),
                 image_id=vm_image.id,
+                userdata=userdata,
                 flavor=2,
                 timeout=60 * 10,
                 key_name=self.instance_keypair.name,
-                nics=[{'net-id': net['network']['id']}])
+                nics=[{'net-id': net['network']['id']}],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+            instances.append(instance)
+
+        self.os_conn.wait_servers_active(instances)
+
+        self.os_conn.wait_marker_in_servers_log(instances, marker = ready_marker)
 
         # check pings
         self.server1 = self.os_conn.nova.servers.find(name="server01")
@@ -735,7 +739,6 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                                      if agt['host'] in controllers]
 
     @pytest.mark.testrail_id('542659')
-    @pytest.mark.require_QCOW2_ubuntu_image_with_iperf
     def test_ovs_restart_with_iperf_traffic(self):
         """Checks that iperf traffic is not interrupted during ovs restart
 
@@ -751,37 +754,45 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                 and not more than 20% datagrams are lost
         """
         self._prepare_openstack()
-        # Launch iperf server on server2
-        res = self.launch_iperf_server(self.server2, self.instance_keypair,
-                                       vm_login='ubuntu', vm_pwd='ubuntu')
-        err_msg = 'Failed to start the iperf server on vm result: {}'.format(
-            res)
-        assert not res['exit_code'], err_msg
 
-        # Launch iperf client on server1
-        res = self.launch_iperf_client(self.server1, self.server2,
+        iperf_log_file = '/tmp/iperf_client.log'
+
+        client = self.server1
+        server = self.server2
+
+        # Launch iperf client
+        pid = self.launch_iperf_client(client, server,
                                        self.instance_keypair,
-                                       vm_login='ubuntu', vm_pwd='ubuntu')
-        err_msg = 'Failed to start the iperf client on vm result: {}'.format(
-            res)
-        assert not res['exit_code'], err_msg
+                                       vm_login='ubuntu',
+                                       stdout=iperf_log_file)
+
+        time.sleep(60)
+
+        self.wait_command_done(pid,
+                       vm=client,
+                       keypair=self.instance_keypair,
+                       vm_login='ubuntu')
+
+        with self.os_conn.ssh_to_instance(self.env,
+                                          vm=client,
+                                          vm_keypair=self.instance_keypair,
+                                          username='ubuntu') as remote:
+            with remote.open(iperf_log_file) as f:
+                iperf_result = f.read()
 
         # Check iperf traffic before restart
-        lost = self.get_lost_percentage(res['stdout'])
-        err_msg = "Packet losses more than 0%. Actual value is {0}%".format(
+        lost = self.get_lost_percentage(iperf_result)
+        err_msg = "Packet losses more than 1%. Actual value is {0}%".format(
             lost)
-        assert lost == 0, err_msg
+        assert lost < 1, err_msg
 
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Launch client in background and restart agents
-        res = self.launch_iperf_client(self.server1, self.server2,
+        pid = self.launch_iperf_client(client, server,
                                        self.instance_keypair,
-                                       vm_login='ubuntu', vm_pwd='ubuntu',
-                                       background=True)
-        err_msg = 'Failed to start the iperf client on vm result: {}'.format(
-            res)
-        assert not res['exit_code'], err_msg
+                                       vm_login='ubuntu',
+                                       stdout=iperf_log_file)
 
         self.disable_ovs_agents_on_controller()
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
@@ -789,16 +800,17 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.enable_ovs_agents_on_controllers()
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
-        cmd = 'cat ~/iperf_client.log'
+        self.wait_command_done(pid,
+                       vm=client,
+                       keypair=self.instance_keypair,
+                       vm_login='ubuntu')
 
-        def get_lost():
-            result = network_checks.run_on_vm(
-                self.env, self.os_conn, self.server1, self.instance_keypair,
-                cmd, vm_login='ubuntu', vm_password='ubuntu')
-            return self.get_lost_percentage(result['stdout'])
-
-        lost = wait(get_lost, timeout_seconds=5 * 60, sleep_seconds=5,
-                    waiting_for='interrupt iperf traffic')
+        with self.os_conn.ssh_to_instance(self.env,
+                                          vm=client,
+                                          vm_keypair=self.instance_keypair,
+                                          username='ubuntu') as remote:
+            with remote.open(iperf_log_file) as f:
+                iperf_result = f.read()
 
         err_msg = "{0}% datagrams lost. Should be < 20%".format(lost)
         assert lost < 20, err_msg

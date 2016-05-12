@@ -216,9 +216,10 @@ class SSHClient(object):
     def background_call(self, command, stdout='/dev/null'):
         bg_command = command + ' <&- >{stdout} 2>&1 & echo $!'.format(
             stdout=stdout)
-        result = self.check_call(bg_command)
+        result = self.check_call(bg_command, verbose=False)
         pid = result.stdout_string
-        result = self.execute('ps -o pid | grep {pid}'.format(pid=pid))
+        result = self.execute('ps -o pid | grep {pid}'.format(pid=pid),
+                              verbose=False)
         assert result.is_ok, ("Can't find `{command}` (PID: {pid}) in "
                               "processes".format(command=command, pid=pid))
         return pid

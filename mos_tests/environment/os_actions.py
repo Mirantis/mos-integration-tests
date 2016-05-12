@@ -27,6 +27,7 @@ from novaclient import client as nova_client
 from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
+from waiting import ALL
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
@@ -134,6 +135,28 @@ class OpenStackActions(object):
     def is_server_active(self, server):
         return self.server_status_is(server, 'ACTIVE')
 
+    def wait_servers_active(self, servers, timeout=3 * 60):
+        predicates = [lambda: self.is_server_active(x) for x in servers]
+        wait(
+            ALL(predicates),
+            timeout_seconds=timeout,
+            waiting_for='instances to become at ACTIVE status')
+
+    def wait_servers_ssh_ready(self, servers, timeout=3 * 60):
+        predicates = [lambda: self.is_server_ssh_ready(x) for x in servers]
+        wait(
+            ALL(predicates),
+            timeout_seconds=timeout,
+            waiting_for='instances to be ssh ready')
+
+    def wait_marker_in_servers_log(self, servers, marker, timeout=3 * 60):
+        predicates = [lambda: marker in x.get_console_output()
+                      for x in servers]
+        wait(
+            ALL(predicates),
+            timeout_seconds=timeout,
+            waiting_for='marker appears in all servers log')
+
     def create_server(self, name, image_id=None, flavor=1, userdata=None,
                       files=None, key_name=None, timeout=300,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
@@ -149,18 +172,11 @@ class OpenStackActions(object):
                                        **kwargs)
 
         if wait_for_active:
-            wait(lambda: self.is_server_active(srv),
-                 timeout_seconds=timeout, sleep_seconds=5,
-                 waiting_for='instance {0} changes status to ACTIVE'.format(
-                    name))
+            self.wait_servers_active([srv], timeout=timeout)
 
         # wait for ssh ready
         if wait_for_avaliable:
-            if self.env is not None:
-                wait(lambda: self.is_server_ssh_ready(srv),
-                     timeout_seconds=timeout,
-                     waiting_for='instance to be ssh ready')
-            logger.info('the server {0} is ready'.format(srv.name))
+            self.wait_servers_ssh_ready([srv], timeout=timeout)
         return self.get_instance_detail(srv.id)
 
     def is_server_ssh_ready(self, server):
