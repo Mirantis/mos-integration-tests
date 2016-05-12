@@ -586,14 +586,15 @@ class TestDVR(TestDVRBase):
                 'pcs resource clear neutron-l3-agent {fqdn}'.format(
                     **node_to_clear.data))
 
-            # Wait for SNAT back to node
-            wait(lambda: self.find_snat_controller(
-                    self.router_id, alive_only=True) == node_to_clear,
-                 timeout_seconds=60 * 3, sleep_seconds=20,
-                 waiting_for="snat go back to {}".format(node_to_clear))
+        # Wait for SNAT back to node
+        wait(lambda: self.find_snat_controller(
+                self.router_id, alive_only=True) == node_to_clear,
+             timeout_seconds=60 * 3, sleep_seconds=20,
+             waiting_for="snat go back to {}".format(node_to_clear))
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair)
+                                          vm_keypair=self.instance_keypair,
+                                          timeout=5 * 60)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
