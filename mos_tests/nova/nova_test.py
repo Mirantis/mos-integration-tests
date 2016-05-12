@@ -581,10 +581,10 @@ class NovaIntegrationTests(OpenStackTestCase):
         # 3. Create instance from newly created volume, associate floating_ip
         name = 'TestVM_1517671_instance'
         flavor_list = {f.name: f.id for f in self.nova.flavors.list()}
-        initial_flavor = flavor_list['m1.tiny']
+        initial_flavor_id = flavor_list['m1.tiny']
         bdm = {'vda': volume.id}
         instance = common_functions.create_instance(self.nova, name,
-                                                    initial_flavor, net_id,
+                                                    initial_flavor_id, net_id,
                                                     [self.sec_group.name],
                                                     block_device_mapping=bdm,
                                                     inst_list=self.instances)
@@ -597,7 +597,7 @@ class NovaIntegrationTests(OpenStackTestCase):
 
         # Assert to flavor size
         self.assertEqual(self.nova.servers.get(instance).flavor['id'],
-                         initial_flavor.id,
+                         initial_flavor_id,
                          "Unexpected instance flavor after creation")
 
         floating_ip = self.nova.floating_ips.create()
