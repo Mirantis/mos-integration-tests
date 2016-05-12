@@ -27,7 +27,6 @@ from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
-BOOT_MARKER = 'INSTANCE BOOT COMPLETED'
 
 
 def is_migrated(os_conn, instances, target=None, source=None):
@@ -173,12 +172,21 @@ class TestLiveMigrationBase(object):
                          flavor,
                          instances_count,
                          image_id=None,
-                         userdata=None):
+                         userdata=None,
+                         create_args=None):
+        boot_marker = 'INSTANCE BOOT COMPLETED'
+
         logger.info('Start with flavor {0.name}, '
                     'creates {1} instances'.format(flavor, instances_count))
         if userdata is not None:
-            userdata += '\necho "{marker}"'.format(marker=BOOT_MARKER)
+            userdata += '\necho "{marker}"'.format(marker=boot_marker)
+
+        if create_args is not None:
+            assert len(create_args) == instances_count
+        else:
+            create_args = [{}] * instances_count
         for i in range(instances_count):
+            kwargs = create_args[i]
             instance = self.os_conn.create_server(
                 name='server%02d' % i,
                 image_id=image_id,
@@ -189,20 +197,21 @@ class TestLiveMigrationBase(object):
                 nics=[{'net-id': self.network['network']['id']}],
                 security_groups=[self.security_group.id],
                 wait_for_active=False,
-                wait_for_avaliable=False)
+                wait_for_avaliable=False,
+                **kwargs)
             self.instances.append(instance)
         predicates = [lambda: self.os_conn.is_server_active(x)
                       for x in self.instances]
         common.wait(
             ALL(predicates),
-            timeout_seconds=3 * 60,
+            timeout_seconds=5 * 60,
             waiting_for="instances to became to ACTIVE status")
 
         if userdata is None:
-            predicates = [lambda: self.os_conn.is_server_active(x)
+            predicates = [lambda: self.os_conn.is_server_ssh_ready(x)
                           for x in self.instances]
         else:
-            predicates = [lambda: BOOT_MARKER in x.get_console_output()
+            predicates = [lambda: boot_marker in x.get_console_output()
                           for x in self.instances]
         common.wait(
             ALL(predicates),
@@ -248,12 +257,6 @@ class TestLiveMigrationBase(object):
             timeout_seconds=5 * 60,
             waiting_for='instances to migrate from '
                         '{0.hypervisor_hostname}'.format(hypervisor_from))
-        hyp1_id = hypervisor_from.id
-        common.wait(
-            lambda: (
-                self.os_conn.nova.hypervisors.get(hyp1_id).running_vms == 0),
-            timeout_seconds=2 * 60,
-            waiting_for='hypervisor info be updated')  # yapf: disable
 
     def concurrent_migration(self, block_migration, hypervisor_to):
         pool = Pool(len(self.instances))
@@ -274,17 +277,39 @@ class TestLiveMigrationBase(object):
             waiting_for='instances to migrate to '
                         '{0.hypervisor_hostname}'.format(hypervisor_to))
 
+    def wait_hypervisor_be_free(self, hypervisor):
+        hyp_id = hypervisor.id
+        common.wait(
+            lambda: (
+                self.os_conn.nova.hypervisors.get(hyp_id).running_vms == 0),
+            timeout_seconds=2 * 60,
+            waiting_for='hypervisor info be updated')  # yapf: disable
+
+    def wait_instances_to_be_ssh_available(self):
+        predicates = [lambda: self.os_conn.is_server_ssh_ready(x)
+                      for x in self.instances]
+        common.wait(
+            ALL(predicates),
+            timeout_seconds=3 * 60,
+            waiting_for='instances to be ssh available')
+
 
 class TestLiveMigration(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838028', block_migration=True)
-    @pytest.mark.testrail_id('838257', block_migration=False)
-    @pytest.mark.parametrize('block_migration',
-                             [True, False],
-                             ids=['block LM', 'true LM'],
-                             indirect=True)
-    @pytest.mark.usefixtures('unlimited_live_migrations', 'cleanup_instances')
+    @pytest.mark.testrail_id('838257',
+                             block_migration=False,
+                             with_volume=False)
+    @pytest.mark.testrail_id('838231', block_migration=False, with_volume=True)
+    @pytest.mark.parametrize(
+        'block_migration, with_volume',
+        [(True, False), (False, False), (False, True)],
+        ids=['block LM w/o vol', 'true LM w/o vol', 'true LM w vol'],
+        indirect=['block_migration'])
+    @pytest.mark.usefixtures('unlimited_live_migrations', 'cleanup_instances',
+                             'cleanup_volumes')
     def test_live_migration_max_instances_with_all_flavors(
-            self, big_hypervisors, block_migration, big_port_quota):
+            self, big_hypervisors, block_migration, big_port_quota,
+            with_volume):
         """LM of maximum allowed amount of instances created with all available
             flavors
 
@@ -308,6 +333,22 @@ class TestLiveMigration(TestLiveMigrationBase):
                 connectivity between these hosts is alive
             10. Repeat pp.3-9 for every available flavor
         """
+        project_id = self.os_conn.session.get_project_id()
+        image = self.os_conn._get_cirros_image()
+
+        instances_create_args = []
+        if with_volume:
+            max_volumes = self.os_conn.cinder.quotas.get(project_id).volumes
+            for i in range(max_volumes):
+                vol = common.create_volume(self.os_conn.cinder,
+                                           image['id'],
+                                           size=10,
+                                           timeout=5,
+                                           name='volume_i'.format(i))
+                self.volumes.append(vol)
+                instances_create_args.append(dict(block_device_mapping=
+                                                  {'vda': vol.id}))
+
         zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         hypervisor1, hypervisor2 = big_hypervisors
         flavors = sorted(self.os_conn.nova.flavors.list(),
@@ -316,31 +357,36 @@ class TestLiveMigration(TestLiveMigrationBase):
             # Skip small flavors
             if flavor.ram < 512:
                 continue
+
             instances_count = min(
                 self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
                 self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
 
             instance_zone = '{}:{}'.format(zone.zoneName,
                                            hypervisor1.hypervisor_hostname)
-            self.create_instances(instance_zone, flavor, instances_count)
+            if with_volume:
+                instances_count = min(instances_count, max_volumes)
+                create_args = instances_create_args[:instances_count]
+            else:
+                create_args = None
+            self.create_instances(instance_zone,
+                                  flavor,
+                                  instances_count,
+                                  create_args=create_args)
 
             self.successive_migration(block_migration,
                                       hypervisor_from=hypervisor1)
 
-            common.wait(
-                lambda: all(self.os_conn.is_server_ssh_ready(x)
-                            for x in self.instances),
-                timeout_seconds=3 * 60,
-                waiting_for='instances to be ssh available')  # yapf: disable
+            self.wait_instances_to_be_ssh_available()
+
+            self.wait_hypervisor_be_free(hypervisor1)
 
             self.concurrent_migration(block_migration,
                                       hypervisor_to=hypervisor1)
 
-            common.wait(
-                lambda: all(self.os_conn.is_server_ssh_ready(x)
-                            for x in self.instances),
-                timeout_seconds=3 * 60,
-                waiting_for='instances to be ssh available')  # yapf: disable
+            self.wait_instances_to_be_ssh_available()
+
+            self.wait_hypervisor_be_free(hypervisor2)
 
             self.delete_instances()
 
@@ -402,19 +448,13 @@ class TestLiveMigration(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
+
+        self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
 
         self.delete_instances()
 
@@ -532,7 +572,9 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             timeout_seconds=5 * 60,
             waiting_for='instance to migrate from {0}'.format(old_host))
 
-        assert self.os_conn.is_server_ssh_ready(stress_instance)
+        common.wait(lambda: self.os_conn.is_server_ssh_ready(stress_instance),
+                    timeout_seconds=2 * 60,
+                    waiting_for='instance to be available via ssh')
 
     @pytest.mark.testrail_id('838034', block_migration=True)
     @pytest.mark.testrail_id('838263', block_migration=False)
@@ -577,7 +619,9 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             timeout_seconds=5 * 60,
             waiting_for='instance to migrate from {0}'.format(old_host))
 
-        assert self.os_conn.is_server_ssh_ready(server)
+        common.wait(lambda: self.os_conn.is_server_ssh_ready(server),
+                    timeout_seconds=2 * 60,
+                    waiting_for='instance to be available via ssh')
 
     @pytest.mark.testrail_id('838037', block_migration=True)
     @pytest.mark.testrail_id('838265', block_migration=False)
@@ -619,19 +663,13 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
+
+        self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
 
     @pytest.mark.testrail_id('838038', block_migration=True)
     @pytest.mark.testrail_id('838266', block_migration=False)
@@ -694,16 +732,10 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
+
+        self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        common.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in self.instances),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')  # yapf: disable
+        self.wait_instances_to_be_ssh_available()
