@@ -453,18 +453,16 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self._prepare_openstack()
         # Run arping in background on server01 towards server02
         srv_list = self.os_conn.nova.servers.list()
-        srv1 = srv_list.pop()
-        srv2 = srv_list.pop()
-        vm_ip = self.os_conn.get_nova_instance_ips(
-            self.os_conn.nova.servers.find(name=srv2.name))['fixed']
+        srv1, srv2 = srv_list[:2]
+        vm_ip = self.os_conn.get_nova_instance_ips(srv2)['fixed']
 
-        arping_cmd = 'arping -I eth0 {}'.format(vm_ip)
-        cmd = ' '.join((arping_cmd, '< /dev/null > ~/arp.log 2>&1 &'))
-        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
-                                          self.instance_keypair, cmd)
-        err_msg = 'Failed to start the arping on vm result: {}'.format(
-                                                                result)
-        assert not result['exit_code'], err_msg
+        arping_cmd = 'sudo /usr/sbin/arping -I eth0 {}'.format(vm_ip)
+        arping_log = '/tmp/arp.log'
+        with self.os_conn.ssh_to_instance(self.env,
+                                          srv1,
+                                          vm_keypair=self.instance_keypair,
+                                          username='cirros') as remote:
+            pid = remote.background_call(arping_cmd, stdout=arping_log)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -485,22 +483,17 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Check that arping is still executing
-        cmd = 'ps'
-        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
-                                          self.instance_keypair, cmd)
-        arping_is_run = False
-        for line in result['stdout']:
-            if arping_cmd in line:
-                arping_is_run = True
-                break
-        err_msg = 'arping was not found in stdout: {}'.format(result['stdout'])
-        assert arping_is_run, err_msg
+        cmd = 'ps -o pid | grep {}'.format(pid)
+        with self.os_conn.ssh_to_instance(self.env,
+                                          srv1,
+                                          vm_keypair=self.instance_keypair,
+                                          username='cirros') as remote:
+            result = remote.execute(cmd)
+            assert result.is_ok, 'Arping command is died'
 
-        # Read log of arpping execution for future possible debug
-        cmd = 'cat ~/arp.log'
-        result = network_checks.run_on_vm(self.env, self.os_conn, srv1,
-                                          self.instance_keypair, cmd)
-        logger.debug(result)
+            # Read log of arpping execution for future possible debug
+            with remote.open(arping_log) as f:
+                logger.debug(f.read())
 
         # Check connectivity
         network_checks.check_vm_connectivity(self.env, self.os_conn)

@@ -213,6 +213,16 @@ class SSHClient(object):
                                      ret['stdout'] + ret['stderr'])
         return ret
 
+    def background_call(self, command, stdout='/dev/null'):
+        bg_command = command + ' <&- >{stdout} 2>&1 & echo $!'.format(
+            stdout=stdout)
+        result = self.check_call(bg_command)
+        pid = result.stdout_string
+        result = self.execute('ps -o pid | grep {pid}'.format(pid=pid))
+        assert result.is_ok, ("Can't find `{command}` (PID: {pid}) in "
+                              "processes".format(command=command, pid=pid))
+        return pid
+
     @classmethod
     def execute_together(cls, remotes, command):
         futures = {}
