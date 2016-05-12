@@ -381,8 +381,8 @@ class FuelClient(object):
         """There is ugly way to reconfigure fuelclient APIClient singleton"""
         os.environ.update({
             'SERVER_ADDRESS': ip,
-            'OS_USERNAME': login,
-            'OS_PASSWORD': password,
+            'KEYSTONE_USER': login,
+            'KEYSTONE_PASS': password,
         })
         fuelclient_settings._SETTINGS = None
         client.APIClient.__init__()
