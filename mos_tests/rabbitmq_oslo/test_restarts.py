@@ -18,6 +18,7 @@ import random
 import re
 import requests
 import sys
+import time
 
 import pytest
 from six.moves import configparser
@@ -37,16 +38,22 @@ def vars_config(remote):
     config_vars = {
         'repo': settings.RABBITOSLO_REPO,
         'pkg': settings.RABBITOSLO_PKG,
+        'config_remote_location': '/etc/nova/nova.conf',
         'repo_path': '/root/oslo_messaging_check_tool/',
-        'nova_user': 'nova'}
+    }
+    # get user and password of oslo_messaging_rabbit
+    with remote.open(config_vars['config_remote_location']) as f:
+        parser = configparser.RawConfigParser()
+        parser.readfp(f)
+        config_vars['rabbit_userid'] = parser.get('oslo_messaging_rabbit',
+                                                  'rabbit_userid')
+        config_vars['rabbit_password'] = parser.get('oslo_messaging_rabbit',
+                                                    'rabbit_password')
     # like: /root/oslo_messaging_check_tool/oslo_msg_check.conf
     config_vars['cfg_file_path'] = '{}oslo_msg_check.conf'.format(
         config_vars['repo_path'])
     config_vars['sample_cfg_file_path'] = '{}oslo_msg_check.conf.sample'.\
         format(config_vars['repo_path'])
-    # get password of nova user (the same on all controllers)
-    cmd = "grep '^rabbit_password' /etc/nova/nova.conf | awk '{print $3}'"
-    config_vars['nova_pass'] = remote.check_call(cmd)['stdout'][0].strip()
     return config_vars
 
 
@@ -55,7 +62,11 @@ def install_oslomessagingchecktool(remote, **kwargs):
     https://github.com/dmitrymex/oslo.messaging-check-tool
     :param remote: SSH connection point to controller
     """
-    cmd1 = ("apt-get update ; "
+    cmd1 = ("apt-get update 2> /tmp/keymissing ; for key in "
+            "$(grep 'NO_PUBKEY' /tmp/keymissing | sed 's/.*NO_PUBKEY //') ; "
+            "do echo -e '\nProcessing key: $key' ; "
+            "apt-key adv --keyserver keyserver.ubuntu.com --recv-keys $key ; "
+            "done;"
             "apt-get install git dpkg-dev debhelper dh-systemd "
             "openstack-pkg-tools po-debconf python-all python-pbr "
             "python-setuptools python-sphinx python-babel "
@@ -72,13 +83,14 @@ def install_oslomessagingchecktool(remote, **kwargs):
     remote.check_call(cmd2)
 
 
-def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
+def configure_oslomessagingchecktool(remote, ctrl_ips, rabbit_userid,
+                                     rabbit_password,
                                      cfg_file_path, sample_cfg_file_path):
     """Write configuration file on controller.
     :param remote: SSH connection point to controller;
     :param ctrl_ips: List of controllers IPs;
-    :param nova_user: Name of Rabbit admin;
-    :param nova_pass: Password of Rabbit admin;
+    :param rabbit_userid: Name of Rabbit admin;
+    :param rabbit_password: Password of Rabbit admin;
     :param cfg_file_path: Path where config file will be written;
     :param sample_cfg_file_path: Path for sample config file.
     """
@@ -89,8 +101,8 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, nova_user, nova_pass,
         parser = configparser.RawConfigParser()
         parser.readfp(f)
         parser.set('oslo_messaging_rabbit', 'rabbit_hosts', rabbit_hosts)
-        parser.set('oslo_messaging_rabbit', 'rabbit_userid', nova_user)
-        parser.set('oslo_messaging_rabbit', 'rabbit_password', nova_pass)
+        parser.set('oslo_messaging_rabbit', 'rabbit_userid', rabbit_userid)
+        parser.set('oslo_messaging_rabbit', 'rabbit_password', rabbit_password)
         # Dump to cfg file to screen
         parser.write(sys.stdout)
         logger.debug('Write [{0}] config file to {1}.'.format(
@@ -104,7 +116,7 @@ def get_api_info(remote, api_path, host='localhost', port='15672'):
     """RabbitMQ HTTP API.
     Not stable in case of usage right after rabbit service restart
     """
-    cmd = ('curl -u {nova_user}:{nova_pass} '
+    cmd = ('curl -u {rabbit_userid}:{rabbit_password} '
            'http://{host}:{port}/api/{api_path}').format(api_path=api_path,
                                                          host=host, port=port,
                                                          **vars_config(remote))
@@ -127,43 +139,47 @@ def get_mngmnt_ip_of_ctrllrs(env):
 def disable_enable_all_eth_interf(remote, sleep_sec=60):
     """Shutdown all eth interfaces on node and after sleep enable them back"""
     logger.debug('Stop/Start all eth interfaces on %s.' % remote.host)
-    background = 'screen -S "disable_enable_all_eth_interf" -d -m'
-    cmd = ('{0} "ifdown -a ; ip -s -s neigh flush all ; '
-           'sleep {1} ; ifup -a)"'.format(background, sleep_sec))
+    cmd = 'screen -dm bash -c "ifdown -a ; ip -s -s neigh flush all ; ' \
+          'sleep %s ; ifup -a"' % sleep_sec
     remote.execute(cmd)
 
 
-def restart_rabbitmq_serv(env, remote=None, sleep=60):
+def restart_rabbitmq_serv(env, remote=None, one_by_one=True):
     """Restart rabbitmq-server service on one or all controllers.
     After each restart, check that rabbit is up and running.
     :param env: Environment
     :param remote: SSH connection point to controller.
+    :param one_by_one: Restart rabbitmq on controllers one by one or together.
         Leave empty if you want to restart service on all controllers.
-    :param sleep: Seconds to wait after service restart
     """
-    # 'sleep' is to wait for service startup. It'll be also checked later
-    restart_cmd = 'pcs resource restart --wait=%s p_rabbitmq-server' % sleep
-    restart_cmd_single = (
-        'pcs resource --wait={wait_time} disable p_rabbitmq-server;'
-        'pcs resource --wait={wait_time} enable p_rabbitmq-server'
-        .format(wait_time=sleep))
+    restart_cmd_together = 'pcs resource restart p_rabbitmq-server'
+    restart_cmd_one_by_one = 'pcs resource disable p_rabbitmq-server;' \
+                             'pcs resource enable p_rabbitmq-server'
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
-        logger.debug('Restart RabbinMQ server on ALL controllers one-by-one')
+        if one_by_one:
+            logger.debug('Restart RabbinMQ server on ALL controllers '
+                         'one-by-one')
+        else:
+            logger.debug('Restart RabbinMQ server on ALL controllers together')
         for controller in controllers:
             with controller.ssh() as remote:
                 # Before and after restart check that rabbit is ok.
                 # Useful if we as restarting all controllers.
                 wait_for_rabbit_running_nodes(remote, len(controllers))
-                remote.check_call(restart_cmd)
-                wait_for_rabbit_running_nodes(remote, len(controllers))
+                if one_by_one:
+                    remote.check_call(restart_cmd_one_by_one)
+                    wait_for_rabbit_running_nodes(remote, len(controllers))
+                else:
+                    remote.check_call(restart_cmd_together)
+                    break
     else:
         # restart on one controller
         logger.debug('Restart RabbinMQ server on ONE controller %s.' %
                      remote.host)
-        remote.check_call(restart_cmd_single)
-        wait_for_rabbit_running_nodes(remote, len(controllers))
+        remote.check_call(restart_cmd_one_by_one)
+    wait_for_rabbit_running_nodes(remote, len(controllers))
 
 
 def num_of_rabbit_running_nodes(remote, timeout_min=5):
@@ -327,8 +343,9 @@ def test_load_messages_and_restart_one_all_controller(
         wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
-            remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+            remote, ctrl_ips, kwargs['rabbit_userid'],
+            kwargs['rabbit_password'], kwargs['cfg_file_path'],
+            kwargs['sample_cfg_file_path'])
 
         # Generate messages
         num_of_msg_to_gen = 10000
@@ -350,7 +367,6 @@ def test_load_messages_and_restart_one_all_controller(
 
 # Because of https://bugs.launchpad.net/fuel/+bug/1563321 it is DESTRUCTIVE
 # For e.g. "pcs resource" is not working after test below.
-# @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838286')
 def test_load_messages_and_shutdown_eth_on_all(env):
@@ -384,8 +400,9 @@ def test_load_messages_and_shutdown_eth_on_all(env):
         wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
-            remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+            remote, ctrl_ips, kwargs['rabbit_userid'],
+            kwargs['rabbit_password'], kwargs['cfg_file_path'],
+            kwargs['sample_cfg_file_path'])
         # Generate messages
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
@@ -395,6 +412,9 @@ def test_load_messages_and_shutdown_eth_on_all(env):
         with one.ssh() as one_remote:
             disable_enable_all_eth_interf(one_remote,
                                           sleep_min * 60)
+
+    # Wait for commands was apply on one of controllers
+    time.sleep(sleep_min * 60)
 
     # Wait when eth interface on controllers will be alive
     wait(lambda: controller.is_ssh_avaliable() is True,
@@ -450,8 +470,9 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
         wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
-            remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+            remote, ctrl_ips, kwargs['rabbit_userid'],
+            kwargs['rabbit_password'], kwargs['cfg_file_path'],
+            kwargs['sample_cfg_file_path'])
         # Generate messages
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
@@ -467,7 +488,6 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
          'of %s controller.' % restart_ctrlr)
 
 
-@pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838289', params={'restart_ctrlr': 'one'})
 @pytest.mark.testrail_id('838290', params={'restart_ctrlr': 'all'})
@@ -521,8 +541,9 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
                 wait_for_rabbit_running_nodes(remote, len(controllers))
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
-                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+                remote, ctrl_ips, kwargs['rabbit_userid'],
+                kwargs['rabbit_password'], kwargs['cfg_file_path'],
+                kwargs['sample_cfg_file_path'])
 
     # client: run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -554,7 +575,6 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
 
 # Because of https://bugs.launchpad.net/fuel/+bug/1563321 it is DESTRUCTIVE
 # For e.g. "pcs resource" is not working after test below.
-# @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838291')
 def test_start_rpc_srv_client_shutdown_eth_on_all(
@@ -595,8 +615,9 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
                 wait_for_rabbit_running_nodes(remote, len(controllers))
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
-                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+                remote, ctrl_ips, kwargs['rabbit_userid'],
+                kwargs['rabbit_password'], kwargs['cfg_file_path'],
+                kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -619,6 +640,9 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
         with one.ssh() as one_remote:
             disable_enable_all_eth_interf(one_remote, sleep_min * 60)
 
+    # Wait for commands was apply on one of controllers
+    time.sleep(sleep_min * 60)
+
     # Wait when eth interface on controllers will be alive
     wait(controller.is_ssh_avaliable,
          timeout_seconds=60 * (sleep_min + 2),
@@ -634,7 +658,6 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
     assert get_http_code(rpc_client_ip) == exp_resp
 
 
-@pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838294', params={'patch_iptables': 'drop'})
 @pytest.mark.testrail_id('838295', params={'patch_iptables': 'reject'})
@@ -673,8 +696,9 @@ def test_start_rpc_srv_client_iptables_modify(
             kwargs = vars_config(remote)
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
-                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+                remote, ctrl_ips, kwargs['rabbit_userid'],
+                kwargs['rabbit_password'], kwargs['cfg_file_path'],
+                kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -695,7 +719,6 @@ def test_start_rpc_srv_client_iptables_modify(
     assert get_http_code(rpc_client_ip) == exp_resp
 
 
-@pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838296')
 def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
@@ -743,8 +766,9 @@ def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
             kwargs = vars_config(remote)
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
-                remote, ctrl_ips, kwargs['nova_user'], kwargs['nova_pass'],
-                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
+                remote, ctrl_ips, kwargs['rabbit_userid'],
+                kwargs['rabbit_password'], kwargs['cfg_file_path'],
+                kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
