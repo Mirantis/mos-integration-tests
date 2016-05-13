@@ -62,12 +62,13 @@ class TestDHCPAgent(TestBase):
 
         Steps:
             1. Update quotas for creation a lot of networks:
-                neutron quota-update --network 1000 --subnet 1000
-                                     --router 1000 --port 1000:
-            2. Create 50 networks, subnets, launch and terminate instance
+                neutron quota-update --network 50 --subnet 50
+                                     --router 50 --port 250:
+            2. Create max count networks, subnets, launch and terminate
+                instance on each
             3. Get the table with all agents:
                 neutron agent-list
-            4. Checl networks on each dhcp-agent:
+            4. Check networks on each dhcp-agent:
                 neutron net-list-on-dhcp-agent <id_agent_from_the_table>
                 Check that there are nets on all of agent
             5. Check networks quantity on each dhcp-agent:
@@ -75,13 +76,8 @@ class TestDHCPAgent(TestBase):
               Check that quantity on agents are nearly equal
         """
 
-        # Create 50 networks, launch and terminate instances
-        # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 34 nets
-        # can be created for one tenant. Need to clarify that situation.
-        self.create_delete_number_of_instances(29, self.router, self.networks,
-                                               self.instance_keypair,
-                                               self.security_group)
+        self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
+        self.networks = self.create_max_networks_with_instances(self.router)
 
         # Count networks for each dhcp agent
         # Each agent should contain networks
@@ -91,7 +87,7 @@ class TestDHCPAgent(TestBase):
             amount = len(self.os_conn.neutron.list_networks_on_dhcp_agent(
                          agt_id)['networks'])
             err_msg = "The dhcp agent {} has no networks!".format(agt_id)
-            assert amount, err_msg
+            assert amount > 0, err_msg
             networks_amount_on_each_agt.append(amount)
             logger.info('the dhcp agent {0} has {1} networks'.
                         format(agt_id, amount))
@@ -269,9 +265,10 @@ class TestDHCPAgent(TestBase):
 
         Steps:
             1. Update quotas for creation a lot of networks:
-                neutron quota-update --network 1000 --subnet 1000
-                                     --router 1000 --port 1000:
-            2. Create 50 networks, subnets, launch and terminate instance
+                neutron quota-update --network 50 --subnet 50
+                                     --router 50 --port 250:
+            2. Create max count of networks, subnets, launch and terminate
+                instance on each
             3. Check amount of dhcp agents on networkX
                 neutron dhcp-agent-list-hosting-net netX
             4. Disable dhcp-agents:
@@ -286,16 +283,11 @@ class TestDHCPAgent(TestBase):
                as before disable
         """
 
-        # Create 50 networks, launch and terminate instances
-        # According to the test requirements 50 networks should be created
-        # However during implementation found that only about 34 nets
-        # can be created for one tenant. Need to clarify that situation.
-        self.create_delete_number_of_instances(29, self.router, self.networks,
-                                               self.instance_keypair,
-                                               self.security_group)
+        self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
+        self.networks = self.create_max_networks_with_instances(self.router)
 
-        # Get amount of DHCP agents for the net9
-        net_id = self.networks[8]
+        # Get amount of DHCP agents for the last net
+        net_id = self.networks[-1]
         network_agt = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
             net_id)['agents']
         dhcp_agent_num = len(network_agt)

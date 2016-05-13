@@ -15,7 +15,6 @@
 import logging
 
 import pytest
-from neutronclient.common.exceptions import ServiceUnavailable
 
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
@@ -434,7 +433,8 @@ class TestRestarts(TestBase):
             1. Update quotas for creation a lot of networks:
                 neutron quota-update --network 1000 --subnet 1000
                                      --router 1000 --port 1000:
-            2. Create 50 networks, subnets, launch and terminate instance
+            2. Create max number of networks, subnets, launch and terminate
+                instance
             3. Check port ids on networkX:
                 neutron port-list --network_id=<yout_network_id>
                 --device_owner=network:dhcp
@@ -458,20 +458,10 @@ class TestRestarts(TestBase):
                 another, only one host changed after restart.
         """
         self._prepare_openstack()
-        # Create 50 networks, launch and terminate instances
-        # There are quotas for the total amount of the nets
-        # And also only certain amount of VLANs per one tenant
-        # Solution is simple
-        # The instances are created until the exception is thrown
-        try:
-            self.create_delete_number_of_instances(50, self.router,
-                                                   self.networks,
-                                                   self.instance_keypair,
-                                                   self.security_group)
-        except ServiceUnavailable as e:
-            logger.info(e)
+        self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
+        self.networks = self.create_max_networks_with_instances(self.router)
 
-        # Get DHCP agents for the net9
+        # Get DHCP agents for the last created net
         net_id = self.networks[-1]
         ports_ids_before = [
             port['id'] for port in self.os_conn.list_ports_for_network(
