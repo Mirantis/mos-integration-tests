@@ -1,4 +1,7 @@
+import json
 from launchpadlib.launchpad import Launchpad
+from datetime import datetime
+import urllib
 
 STATUSES_FOR_CHECK = ["Confirmed", "New"]
 CHECKS = {
@@ -27,6 +30,11 @@ TAG = 'need-info'
 cache_dir = '~/.launchpad/autocheck'
 lp = Launchpad.login_with('autocheck', 'production', cache_dir)
 
+def _check_date(bug):
+    bugs_created = bug.date_created.replace(tzinfo=None)
+    delta = datetime.today() - bugs_created
+    need_check = True if delta.days in [-1, 0] else False
+    return need_check
 
 def _check_bug(bug):
     print "Checking of %s\n" % bug.web_link
@@ -43,7 +51,7 @@ def _check_bug(bug):
         if TAG in bug.tags:
             _remove_tag(bug)
     else:
-        if TAG not in bug.tags:
+        if TAG not in bug.tags and _check_date(bug):
             _add_tag(bug)
             _post_comment(bug, incomplete)
 
@@ -85,6 +93,14 @@ def _post_comment(bug, fields):
 def get_project_bugs(project_name, milestones=[]):
     print "\n\nGetting project %s...\n\n" % project_name
     project = lp.projects[project_name]
+    print "\nGetting active milestones ...\n"
+    if not milestones:
+        json_file = urllib.urlopen(
+            project.active_milestones_collection_link).read()
+        data = json.loads(json_file)
+        for milestone in data['entries']:
+            milestones.append(milestone['name'])
+    print "\nActive milestones %s\n" % str(milestones)
     for milestone in milestones:
         current_milestone = project.getMilestone(
             name=milestone)
@@ -101,6 +117,5 @@ def get_project_bugs(project_name, milestones=[]):
 
 
 if __name__=='__main__':
-    test_milestone = ['9.0']
-    get_project_bugs("fuel", test_milestone)
-    get_project_bugs("mos", test_milestone)
+    get_project_bugs("fuel")
+    get_project_bugs("mos")
