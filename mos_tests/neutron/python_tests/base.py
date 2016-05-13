@@ -13,7 +13,10 @@
 #    under the License.
 
 import logging
+import warnings
 
+from neutronclient.common.exceptions import OverQuotaClient
+from neutronclient.common.exceptions import ServiceUnavailable
 import paramiko
 from paramiko import ssh_exception
 import pytest
@@ -234,6 +237,10 @@ class TestBase(object):
         :param security_group: security group that instance is related to
         :returns: -
         """
+        warnings.warn('This method is deprecated and will be removed in '
+                      'future. Use `set_neutron_quota` and '
+                      '`create_max_networks_with_instances` instead.',
+                      DeprecationWarning)
         exists_nets_count = len(self.os_conn.list_networks()['networks'])
         tenant = self.os_conn.neutron.get_quotas_tenant()
         tenant_id = tenant['tenant']['tenant_id']
@@ -255,3 +262,62 @@ class TestBase(object):
                 wait_for_avaliable=False)
             logger.info('Delete the server {}'.format(srv.name))
             self.os_conn.nova.servers.delete(srv)
+
+    def set_neutron_quota(self,
+                          network=50,
+                          router=50,
+                          subnet=50,
+                          port=150,
+                          **kwargs):
+        tenant = self.os_conn.neutron.get_quotas_tenant()
+        tenant_id = tenant['tenant']['tenant_id']
+        quota = {'network': network,
+                 'router': router,
+                 'subnet': subnet,
+                 'port': port}
+        quota.update(kwargs)
+        self.os_conn.neutron.update_quota(tenant_id, {'quota': quota})
+
+    def create_max_networks_with_instances(self, router):
+        """Create max possible networks, boot and delete instances on it"""
+
+        def delete_instances(servers):
+            self.os_conn.wait_servers_active(servers)
+            logger.info('Delete created servers')
+            for server in servers:
+                server.delete()
+            self.os_conn.wait_servers_deleted(servers)
+
+        hypervisors = self.os_conn.nova.hypervisors.list()
+        flavor = self.os_conn.nova.flavors.find(name='m1.micro')
+        capacities = []
+        for hypervisor in hypervisors:
+            capacities.append(self.os_conn.get_hypervisor_capacity(hypervisor, flavor))
+        max_instances = sum(capacities)
+
+        i = 0
+        net_list = []
+        servers = []
+        try:
+            while True:
+                i += 1
+                logger.info('Create network #{}'.format(i))
+                net_id = self.os_conn.add_net(router['id'])
+                net_list.append(net_id)
+                if len(servers) >= max_instances:
+                    delete_instances(servers)
+                    servers = []
+
+                logger.info('Create server #{}'.format(i))
+                srv = self.os_conn.create_server(name='instanceNo{}'.format(i),
+                                                 nics=[{'net-id': net_id}],
+                                                 flavor=flavor,
+                                                 wait_for_active=False,
+                                                 wait_for_avaliable=False)
+                servers.append(srv)
+        except (ServiceUnavailable, OverQuotaClient) as e:
+            logger.info(e)
+
+        delete_instances(servers)
+
+        return net_list

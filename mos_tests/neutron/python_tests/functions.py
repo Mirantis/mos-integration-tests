@@ -67,6 +67,7 @@ def ban_dhcp_agent(os_conn, env, node_to_ban, host, network_name=None,
             waiting_for="DHCP agent to reschedule")
     return node_to_ban
 
+
 def check_neutron_logs(controllers_list, logs_path, logs_start_marker,
                        log_msg):
     """Check neutron log, search for ERRORS.
@@ -80,9 +81,6 @@ def check_neutron_logs(controllers_list, logs_path, logs_start_marker,
     :param log_msg: message to search
     :returns: -
     """
-    err_msg = ("ERROR message was found during rescheduling in {}.".format(
-        logs_path))
-
     logger.debug("Verify that the error log is absent in {}".format(
         logs_path))
     for controller in controllers_list:
@@ -94,7 +92,8 @@ def check_neutron_logs(controllers_list, logs_path, logs_start_marker,
                     if logs_start_marker in line:
                         break
                 for line in lines:
-                    assert log_msg not in line, err_msg
+                    assert log_msg not in line
+
 
 def mark_neutron_logs(controllers):
     """Mark logs to know which logs are generated during the test"""
