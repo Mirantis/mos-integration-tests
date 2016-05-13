@@ -53,13 +53,7 @@ class OpenStackActions(object):
     def __init__(self, controller_ip, user='admin', password='admin',
                  tenant='admin', cert=None, env=None, proxy_session=None):
         logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
-        if env:
-            user = env.get_settings_data()['editable'][
-                'access']['user']['value']
-            password = env.get_settings_data()['editable'][
-                'access']['password']['value']
-            tenant = env.get_settings_data()['editable'][
-                'access']['tenant']['value']
+
         self.controller_ip = controller_ip
         self.username = user
         self.password = password
