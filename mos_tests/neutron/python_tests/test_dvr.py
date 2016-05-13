@@ -560,15 +560,16 @@ class TestDVR(TestDVRBase):
                         self.router_id,
                         excluded=[controller_with_snat.data['fqdn']]),
                     timeout_seconds=60 * 3,
-                    sleep_seconds=20,
+                    sleep_seconds=10,
                     waiting_for="snat is rescheduled")
                 assert controller_with_snat != new_controller_with_snat
                 controller_with_snat = new_controller_with_snat
-            else:
-                # Wait for SNAT leave controller
+            elif node_to_clear_key == 'last':
+                # Wait for SNAT on last controller will die
                 wait(lambda: self.find_snat_controller(self.router_id) is None,
-                    timeout_seconds=60 * 3, sleep_seconds=10,
-                    waiting_for="snat leave {}".format(controller_with_snat))
+                     timeout_seconds=60 * 3, sleep_seconds=10,
+                     waiting_for="snat on {} to die".format(
+                         controller_with_snat))
 
         banned_nodes['last'] = controller_with_snat
 
@@ -579,13 +580,14 @@ class TestDVR(TestDVRBase):
                 'pcs resource clear p_neutron-l3-agent {fqdn}'.format(
                     **node_to_clear.data))
 
-            # Wait for SNAT back to node
-            wait(lambda: self.find_snat_controller(
-                    self.router_id) == node_to_clear,
-                 timeout_seconds=60 * 3, sleep_seconds=20,
-                 waiting_for="snat go back to {}".format(node_to_clear))
+        # Wait for SNAT back to node
+        wait(lambda: self.find_snat_controller(
+                self.router_id) == node_to_clear,
+             timeout_seconds=60 * 3, sleep_seconds=20,
+             waiting_for="snat go back to {}".format(node_to_clear))
 
-        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair)
+        self.check_ping_from_vm(self.server, vm_keypair=self.instance_keypair,
+                                timeout=5 * 60)
 
 
 @pytest.mark.check_env_('has_2_or_more_computes')
