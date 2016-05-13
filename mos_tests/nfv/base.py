@@ -94,3 +94,36 @@ class TestBaseNFV(object):
                     waiting_for='instance {} changes status to ACTIVE after '
                                 'resizing'.format(vm.name))
         return os_conn.nova.servers.get(vm)
+
+    def check_cpu_for_vm(self, os_conn, vm, numa_count, host_conf):
+        """Checks vcpus allocation for vm. Vcpus should be on the same numa
+        node if flavor metadata 'hw:numa_nodes':1. In case of
+        'hw:numa_nodes':2 vcpus from the different numa nodes are used.
+
+        :param os_conn: os_conn
+        :param vm: vm to check cpu
+        :param numa_count: count of numa nodes for vm (depends on flavor)
+        :param host_conf: (dictionary) host configuration, vcpu's distribution
+        per numa node. It can be calculated by method
+        get_cpu_distribition_per_numa_node(env) from conftest.py
+        :return:
+        """
+        name = getattr(os_conn.nova.servers.get(vm),
+                       "OS-EXT-SRV-ATTR:instance_name")
+        host = os_conn.env.find_node_by_fqdn(
+            getattr(os_conn.nova.servers.get(vm), "OS-EXT-SRV-ATTR:host"))
+        with host.ssh() as remote:
+            cmd = "virsh dumpxml {0}".format(name)
+            dump = remote.execute(cmd)
+        root = ElementTree.fromstring(dump.stdout_string)
+        actual_numa = root.find('numatune').findall('memnode')
+        assert len(actual_numa) == numa_count
+        vcpus = [int(v.get('cpuset'))
+                 for v in root.find('cputune').findall('vcpupin')]
+        cnt_of_used_numa = 0
+        for host in host_conf.values():
+            if set(host) & set(vcpus):
+                cnt_of_used_numa += 1
+        assert cnt_of_used_numa == numa_count, (
+            "Unexpected count of numa nodes in use: {0} instead of {1}".
+            format(cnt_of_used_numa, numa_count))

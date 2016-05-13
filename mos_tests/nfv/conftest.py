@@ -21,22 +21,23 @@ from mos_tests.nfv.base import page_2mb
 
 @pytest.yield_fixture
 def aggregate(os_conn):
-    hp_computes = []
+    numa_computes = []
     for compute in os_conn.env.get_nodes_by_role('compute'):
         with compute.ssh() as remote:
-            res = remote.execute(
-                'grep HugePages_Total /proc/meminfo')['stdout']
+            res = remote.execute('lscpu')['stdout']
         if res:
-            if res[0].split(':')[1].strip() != '0':
-                hp_computes.append(compute)
-    if len(hp_computes) < 2:
-        pytest.skip("Insufficient count of compute nodes with Huge Pages")
-    aggr = os_conn.nova.aggregates.create('hpgs-aggr', 'nova')
-    os_conn.nova.aggregates.set_metadata(aggr, {'hpgs': 'true'})
-    for host in hp_computes:
+            numa_node_count = [line.split(':')[-1].strip() for line in res
+                               if 'NUMA node(s)' in line][0]
+            if int(numa_node_count) > 1:
+                numa_computes.append(compute)
+    if len(numa_computes) < 2:
+        pytest.skip("Insufficient count of compute with Numa Nodes")
+    aggr = os_conn.nova.aggregates.create('performance', 'nova')
+    os_conn.nova.aggregates.set_metadata(aggr, {'pinned': 'true'})
+    for host in numa_computes:
         os_conn.nova.aggregates.add_host(aggr, host.data['fqdn'])
     yield aggr
-    for host in hp_computes:
+    for host in numa_computes:
         os_conn.nova.aggregates.remove_host(aggr, host.data['fqdn'])
     os_conn.nova.aggregates.delete(aggr)
 
@@ -129,6 +130,9 @@ def flavor(os_conn, request):
                                        "vcpu": 2, "disk": 20})
     flv = os_conn.nova.flavors.create(param['name'], param['ram'],
                                       param['vcpu'], param['disk'])
+    if param.get('key', None):
+        flv.set_keys(param['key'])
+
     yield flv
     os_conn.nova.flavors.delete(flv.id)
 
@@ -139,11 +143,11 @@ def computes_configuration(env):
 
     def get_compute_def(host, size):
         with host.ssh() as remote:
-            cmd = "cat /sys/kernel/mm/hugepages/hugepages-" \
-                  "{size}kB/{type}_hugepages" " || echo 0"
+            cmd = ("cat /sys/kernel/mm/hugepages/hugepages-"
+                   "{size}kB/{type}_hugepages" " || echo 0")
             [free, total] = [remote.execute(
                 cmd.format(size=size, type=t))['stdout'][0]
-                for t in ['free', 'nr']]
+                             for t in ['free', 'nr']]
             pages_count = {'total': int(total), 'free': int(free)}
         return pages_count
 
@@ -198,9 +202,7 @@ def computes_with_hp_2mb(env, request):
 
 @pytest.fixture
 def computes_with_mixed_hp(env, request):
-    min_count = getattr(request, 'param', {'host_count': 1,
-                                           'count_2mb': 1024,
-                                           'count_1gb': 4})
+    min_count = getattr(request.cls, 'mixed_hp_computes')
     computes = computes_configuration(env)
     mixed_computes = [host for host, attr in computes.items()
                       if attr[page_2mb]['total'] != 0 and
@@ -215,3 +217,79 @@ def computes_with_mixed_hp(env, request):
             if act < minimum:
                 pytest.skip("Insufficient count huge pages for host")
     return mixed_computes
+
+
+@pytest.fixture
+def computes_with_numa_nodes(env, request):
+    min_count = getattr(request, 'param', {"hosts_count": 2,
+                                           "numa_count": 2})
+    cpus_distribution = get_cpu_distribition_per_numa_node(env)
+    conf = {compute: cpus_distribution[compute]
+            for compute in cpus_distribution.keys()
+            if cpus_distribution[compute].keys() >= min_count["numa_count"]}
+    if len(conf.keys()) < min_count["hosts_count"]:
+        pytest.skip("Insufficient count of computes with required numa nodes")
+    return conf
+
+
+def get_cpu_distribition_per_numa_node(env):
+    """Returns dictionary like below:
+    {u'node-10.test.domain.local': {'numa0': [0, 1, 2, 3], 'numa1': [4, 5]},
+    u'node-9.test.domain.local': {'numa0': [0, 1, 2, 3], 'numa1': [4, 5]}}
+    Two settings are taken into account: vcpus per numa node and vcpus
+    allocated for cpu pinning.
+    """
+
+    def convert_vcpu(s):
+        result = []
+        for item in s.split(','):
+            bounds = item.split('-')
+            if len(bounds) == 2:
+                result.extend(range(int(bounds[0]), int(bounds[1]) + 1))
+            else:
+                result.append(int(bounds[0]))
+        return result
+    host_def = {}
+    computes = env.get_nodes_by_role('compute')
+    for host in computes:
+        with host.ssh() as remote:
+            nodes = {}
+            cpus = remote.execute('cat /proc/cmdline')['stdout'][0]
+            isolcpus = set(convert_vcpu({x[0]: x[2] for x in [
+                    y.partition('=') for y in cpus.split()]}['isolcpus']))
+            res = remote.execute("lscpu | grep 'NUMA node(s)'")['stdout']
+            count = int(res[0].split(':')[1])
+            for i in range(count):
+                cmd = "lscpu | grep 'NUMA node{0} CPU(s)'".format(i)
+                res = remote.execute(cmd)['stdout'][0]
+                vcpu_set = set(convert_vcpu(res.split(':')[1].strip()))
+                vcpus = list(vcpu_set & isolcpus)
+                nodes.update({'numa{0}'.format(i): vcpus})
+            host_def.update({host.data['fqdn']: nodes})
+    return host_def
+
+
+def get_hp_distribution_per_numa_node(env, numa_count=1):
+    computes = env.get_nodes_by_role('compute')
+
+    def huge_pages_per_numa_node(host, node, size):
+        with host.ssh() as remote:
+            cmd = ("cat /sys/devices/system/node/node{0}/hugepages/hugepages-"
+                   "{size}kB/{type}_hugepages" " || echo 0")
+            [free, total] = [remote.execute(
+                cmd.format(node, size=size, type=t))['stdout'][0]
+                             for t in ['free', 'nr']]
+            pages_count = {'total': int(total), 'free': int(free)}
+        return pages_count
+
+    def huge_pages_per_compute(compute):
+        node_def = {}
+        for node in range(numa_count):
+            sizes = {size: huge_pages_per_numa_node(compute, node, size)
+                     for size in [page_1gb, page_2mb]}
+            node_def.update({'numa{0}'.format(node): sizes})
+        return node_def
+
+    computes_def = {compute.data['fqdn']: huge_pages_per_compute(compute)
+                    for compute in computes}
+    return computes_def
