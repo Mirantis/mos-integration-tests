@@ -19,17 +19,23 @@ import time
 
 import pytest
 
-from mos_tests.functions.base import OpenStackTestCase
-from mos_tests.functions import common as common_functions
+from mos_tests.functions import common
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
-class WindowCompatibilityIntegrationTests(OpenStackTestCase):
+class TestWindowCompatibility(object):
     """Basic automated tests for OpenStack Windows Compatibility verification.
     """
+
+    video_ram_mb = 16
+
+    @pytest.fixture(autouse=True)
+    def variables(self, env, os_conn):
+        self.env = env
+        self.os_conn = os_conn
 
     def is_instance_ready(self, instance):
         """Determine instance is ready by mean brightness of screenshot
@@ -37,165 +43,107 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         Minimal registered level for booted machne was 33, so 25 is used as
         threshold value.
         """
-        hypervisor_hostname = getattr(self.instance,
+        hypervisor_hostname = getattr(instance,
                                       'OS-EXT-SRV-ATTR:hypervisor_hostname')
-        instance_name = getattr(self.instance, 'OS-EXT-SRV-ATTR:instance_name')
+        instance_name = getattr(instance, 'OS-EXT-SRV-ATTR:instance_name')
         compute_node = self.env.find_node_by_fqdn(hypervisor_hostname)
         screenshot_path = '/tmp/instance_screenshot.ppm'
         with compute_node.ssh() as remote:
             remote.check_call(
                 'virsh send-key {name} --codeset win32 VK_TAB'.format(
                     name=instance_name))
-            remote.check_call(
-                'virsh screenshot {name} --file {path}'.format(
-                    name=instance_name, path=screenshot_path),
-                verbose=False)
+            remote.check_call('virsh screenshot {name} --file {path}'.format(
+                name=instance_name,
+                path=screenshot_path),
+                              verbose=False)
             with remote.open(screenshot_path, 'rb') as f:
                 data = f.read()
-        with open(screenshot_path, 'wb') as f:
+        with open('temp/{name}_{time:.0f}.ppm'.format(name=self.test_name,
+                                                      time=int(time.time())),
+                  'wb') as f:
             f.write(data)
         return sum(ord(x) for x in data) / len(data) > 25
 
-    def wait_instance_to_boot(self):
-        common_functions.wait(
-            lambda: self.is_instance_ready(self.instance),
-            timeout_seconds=45 * 60,
+    def wait_to_boot(self, instance):
+        common.wait(
+            lambda: self.is_instance_ready(instance),
+            timeout_seconds=60 * 60,
             sleep_seconds=60,
             waiting_for='windows instance to boot')
 
-    def setUp(self):
-        super(self.__class__, self).setUp()
+    @pytest.yield_fixture(scope='class')
+    def image(self, os_conn):
+        image_path = os.path.join(settings.TEST_IMAGE_PATH,
+                                  settings.WIN_SERVER_QCOW2)
+        video_ram = str(self.video_ram_mb)
+        image = os_conn.glance.images.create(name='win_server_2012_r2',
+                                             disk_format='qcow2',
+                                             container_format='bare',
+                                             cpu_arch='x86_64',
+                                             os_distro='windows',
+                                             hw_video_model='vga',
+                                             hw_video_ram=video_ram)
+        with open(image_path, 'rb') as f:
+            os_conn.glance.images.upload(image.id, f)
+        yield image
+        os_conn.glance.images.delete(image.id)
 
-        # Get path on node to 'images' dir
-        self.image_name = os.path.join(settings.TEST_IMAGE_PATH,
-                                       settings.WIN_SERVER_QCOW2)
+    @pytest.yield_fixture(scope='class')
+    def sec_group(self, os_conn):
+        sec_group = os_conn.create_sec_group_for_ssh()
+        yield sec_group
+        os_conn.delete_security_group(name=sec_group.name)
 
-        self.uid_list = []
+    @pytest.yield_fixture(scope='class')
+    def floating_ip(self, os_conn):
+        pool_name = os_conn.nova.floating_ip_pools.list()[0].name
+        ip = os_conn.nova.floating_ips.create(pool_name)
+        yield ip
+        os_conn.nova.floating_ips.delete(ip)
 
-        # timeouts (in minutes)
-        self.ping_timeout = 3
-        self.hypervisor_timeout = 10
+    @pytest.yield_fixture(scope='class')
+    def flavor(self, os_conn):
+        flavor = os_conn.nova.flavors.create('win_flavor',
+                                             ram=4096,
+                                             vcpus=1,
+                                             disk=25)
+        flavor.set_keys({"hw_video:ram_max_mb": self.video_ram_mb})
+        yield flavor
+        flavor.delete()
 
-        self.amount_of_images_before = len(list(self.glance.images.list()))
-        self.image = None
-        self.expected_flavor_id = self.nova.flavors.find(name='m1.medium').id
-        self.instance = None
-        self.security_group_name = "ms_compatibility"
-        # protect for multiple definition of the same group
-        for sg in self.nova.security_groups.list():
-            if sg.name == self.security_group_name:
-                self.nova.security_groups.delete(sg)
-        # adding required security group
-        self.the_security_group = self.nova.security_groups.create(
-            name=self.security_group_name,
-            description="Windows Compatibility")
-        # Add rules for ICMP, TCP/22
-        self.icmp_rule = self.nova.security_group_rules.create(
-            self.the_security_group.id,
-            ip_protocol="icmp",
-            from_port=-1,
-            to_port=-1,
-            cidr="0.0.0.0/0")
-        self.tcp_rule = self.nova.security_group_rules.create(
-            self.the_security_group.id,
-            ip_protocol="tcp",
-            from_port=22,
-            to_port=22,
-            cidr="0.0.0.0/0")
-        # Add both rules to default group
-        self.default_security_group_id = 0
-        for sg in self.nova.security_groups.list():
-            if sg.name == 'default':
-                self.default_security_group_id = sg.id
-                break
-        self.icmp_rule_default = self.nova.security_group_rules.create(
-            self.default_security_group_id,
-            ip_protocol="icmp",
-            from_port=-1,
-            to_port=-1,
-            cidr="0.0.0.0/0")
-        self.tcp_rule_default = self.nova.security_group_rules.create(
-            self.default_security_group_id,
-            ip_protocol="tcp",
-            from_port=22,
-            to_port=22,
-            cidr="0.0.0.0/0")
-        # adding floating ip
-        self.floating_ip = self.nova.floating_ips.create(
-            self.nova.floating_ip_pools.list()[0].name)
+    @pytest.yield_fixture
+    def instance(self, request, os_conn, image, sec_group, floating_ip,
+                 flavor):
+        func_name = request.node.function.func_name
+        self.test_name = func_name.split('test_')[-1]
 
-        # creating of the image
-        self.image = self.glance.images.create(
-            name='MyTestSystem',
-            disk_format='qcow2',
-            container_format='bare')
-        with open(self.image_name, 'rb') as win_image_file:
-            self.glance.images.upload(
-                self.image.id,
-                win_image_file)
-        # check that required image in active state
-        is_activated = False
-        while not is_activated:
-            for image_object in self.glance.images.list():
-                if image_object.id == self.image.id:
-                    self.image = image_object
-                    logger.info(
-                        "Image in the {} state".format(self.image.status))
-                    if self.image.status == 'active':
-                        is_activated = True
-                        break
-            time.sleep(1)
+        int_networks = os_conn.neutron.list_networks(
+            **{'router:external': False,
+               'status': 'ACTIVE'})['networks']
+        network_id = int_networks[0]['id']
 
-        # Default - the first
-        network_id = self.nova.networks.list()[0].id
-        # More detailed check of network list
-        for network in self.nova.networks.list():
-            if 'internal' in network.label:
-                network_id = network.id
-        logger.info("Starting with network interface id {}".format(network_id))
+        instance = os_conn.create_server(name="win_server_2012_r2",
+                                         image_id=image.id,
+                                         flavor=flavor.id,
+                                         nics=[{'net-id': network_id}],
+                                         security_groups=[sec_group.name],
+                                         timeout=10 * 60,
+                                         wait_for_avaliable=False)
 
-        logger.info("Starting with flavor {}".format(
-            self.nova.flavors.get(self.expected_flavor_id)))
-        # nova boot
-        self.instance = common_functions.create_instance(
-            nova_client=self.nova,
-            inst_name="MyTestSystemWithNova",
-            flavor_id=self.expected_flavor_id,
-            net_id=network_id,
-            security_groups=[self.the_security_group.name, 'default'],
-            image_id=self.image.id)
+        instance.add_floating_ip(floating_ip)
 
-        logger.info("Using following floating ip {}".format(
-            self.floating_ip.ip))
+        self.wait_to_boot(instance)
 
-        self.instance.add_floating_ip(self.floating_ip)
+        yield instance
 
-        self.assertTrue(common_functions.check_ip(self.nova,
-                                                  self.instance.id,
-                                                  self.floating_ip.ip))
-
-        self.wait_instance_to_boot()
-
-    def tearDown(self):
-        if self.instance is not None:
-            common_functions.delete_instance(self.nova, self.instance.id)
-        if self.image is not None:
-            common_functions.delete_image(self.glance, self.image.id)
-        # delete the floating ip
-        self.nova.floating_ips.delete(self.floating_ip)
-        # delete the security group
-        self.nova.security_group_rules.delete(self.icmp_rule)
-        self.nova.security_group_rules.delete(self.tcp_rule)
-        self.nova.security_groups.delete(self.the_security_group.id)
-        # delete security rules from the 'default' group
-        self.nova.security_group_rules.delete(self.icmp_rule_default)
-        self.nova.security_group_rules.delete(self.tcp_rule_default)
-        self.assertEqual(self.amount_of_images_before,
-                         len(list(self.glance.images.list())),
-                         "Length of list with images should be the same")
+        instance.remove_floating_ip(floating_ip)
+        instance.delete()
+        common.wait(lambda: os_conn.is_server_deleted(instance),
+                    timeout_seconds=3 * 60,
+                    waiting_for='instance to be deleted')
 
     @pytest.mark.testrail_id('634680')
-    def test_create_instance_with_windows_image(self):
+    def test_create_instance_with_windows_image(self, request, floating_ip):
         """This test checks that instance with Windows image could be created
 
         Steps:
@@ -203,13 +151,14 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         2. Create VM with this Windows image
         3. Assign floating IP to this VM
         4. Ping this VM and verify that we can ping it
-        :return: Nothing
         """
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        request.getfuncargvalue("instance")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
     @pytest.mark.testrail_id('634681')
-    def test_pause_and_unpause_instance_with_windows_image(self):
+    def test_pause_and_unpause_instance_with_windows_image(self, instance,
+                                                           floating_ip):
         """This test checks that instance with Windows image could be paused
         and unpaused
 
@@ -226,41 +175,41 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         :return: Nothing
         """
         # Initial check
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
         # Paused state check
-        self.instance.pause()
+        instance.pause()
         # Make sure that the VM in 'Paused' state
-        ping_result = common_functions.ping_command(self.floating_ip.ip,
-                                                    should_be_available=False)
-        self.assertTrue(ping_result, "Instance is reachable")
+        ping_result = common.ping_command(floating_ip.ip,
+                                          should_be_available=False)
+        assert ping_result, "Instance is reachable"
         # Unpaused state check
-        self.instance.unpause()
+        instance.unpause()
         # Make sure that the VM in 'Unpaused' state
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
         # Reboot the VM and make sure that we can ping it
-        self.instance.reboot(reboot_type='HARD')
-        instance_status = common_functions.check_inst_status(
-            self.nova,
-            self.instance.id,
+        instance.reboot(reboot_type='HARD')
+        instance_status = common.check_inst_status(
+            self.os_conn.nova,
+            instance.id,
             'ACTIVE')
-        self.instance = [s for s in self.nova.servers.list()
-                         if s.id == self.instance.id][0]
+        instance = self.os_conn.nova.servers.get(instance.id)
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.instance.status))
+                    instance.status))
 
-        self.wait_instance_to_boot()
+        self.wait_to_boot(instance)
 
         # Waiting for up-and-run of Virtual Machine after reboot
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
     @pytest.mark.testrail_id('638381')
-    def test_suspend_and_resume_instance_with_windows_image(self):
+    def test_suspend_and_resume_instance_with_windows_image(self, instance,
+                                                            floating_ip):
         """This test checks that instance with Windows image can be suspended
         and resumed
 
@@ -277,43 +226,42 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         :return: Nothing
         """
         # Initial check
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
         # Suspend state check
-        self.instance.suspend()
+        instance.suspend()
         # Make sure that the VM in 'Suspended' state
-        ping_result = common_functions.ping_command(
-            self.floating_ip.ip,
+        ping_result = common.ping_command(
+            floating_ip.ip,
             should_be_available=False
         )
-        self.assertTrue(ping_result, "Instance is reachable")
+        assert ping_result, "Instance is reachable"
         # Resume state check
-        self.instance.resume()
+        instance.resume()
         # Make sure that the VM in 'Resume' state
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
         # Reboot the VM and make sure that we can ping it
-        self.instance.reboot(reboot_type='HARD')
-        instance_status = common_functions.check_inst_status(
-            self.nova,
-            self.instance.id,
+        instance.reboot(reboot_type='HARD')
+        instance_status = common.check_inst_status(
+            self.os_conn.nova,
+            instance.id,
             'ACTIVE')
-        self.instance = [s for s in self.nova.servers.list()
-                         if s.id == self.instance.id][0]
+        instance = self.os_conn.nova.servers.get(instance.id)
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.instance.status))
+                    instance.status))
 
-        self.wait_instance_to_boot()
+        self.wait_to_boot(instance)
 
         # Waiting for up-and-run of Virtual Machine after reboot
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
     @pytest.mark.testrail_id('634682')
-    def test_live_migration_for_windows_instance(self):
+    def test_live_migration_for_windows_instance(self, instance, floating_ip):
         """This test checks that instance with Windows Image could be
         migrated without any issues
 
@@ -333,22 +281,22 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
         # 1. 2. 3. -> Into setUp function
         # 4. Ping this VM and verify that we can ping it
         hypervisor_hostname_attribute = "OS-EXT-SRV-ATTR:hypervisor_hostname"
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
         hypervisors = {h.hypervisor_hostname: h for h
-                       in self.nova.hypervisors.list()}
-        old_hyper = getattr(self.instance,
+                       in self.os_conn.nova.hypervisors.list()}
+        old_hyper = getattr(instance,
                             hypervisor_hostname_attribute)
         logger.info("Old hypervisor is: {}".format(old_hyper))
         new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
         logger.info("New hypervisor is: {}".format(new_hyper))
         # Execute the live migrate
-        self.instance.live_migrate(new_hyper, block_migration=True)
+        instance.live_migrate(new_hyper, block_migration=True)
 
-        self.instance = self.nova.servers.get(self.instance.id)
-        end_time = time.time() + 60 * self.hypervisor_timeout
+        instance = self.os_conn.nova.servers.get(instance.id)
+        end_time = time.time() + 60 * 10
         debug_string = "Waiting for changes."
-        while getattr(self.instance,
+        while getattr(instance,
                       hypervisor_hostname_attribute) != new_hyper:
             if time.time() > end_time:
                 # it can fail because of this issue
@@ -358,28 +306,27 @@ class WindowCompatibilityIntegrationTests(OpenStackTestCase):
                     "Hypervisor is not changed after live migration")
             time.sleep(30)
             debug_string += "."
-            self.instance = self.nova.servers.get(self.instance.id)
+            instance = self.os_conn.nova.servers.get(instance.id)
         logger.info(debug_string)
-        self.assertEqual(self.instance.status, 'ACTIVE')
+        assert self.instance.status == 'ACTIVE'
         # Ping the Virtual Machine
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
 
         # Reboot the VM and make sure that we can ping it
-        self.instance.reboot(reboot_type='HARD')
-        instance_status = common_functions.check_inst_status(
-            self.nova,
-            self.instance.id,
+        instance.reboot(reboot_type='HARD')
+        instance_status = common.check_inst_status(
+            self.os_conn.nova,
+            instance.id,
             'ACTIVE')
-        self.instance = [s for s in self.nova.servers.list()
-                         if s.id == self.instance.id][0]
+        instance = self.os_conn.nova.servers.get(instance.id)
         if not instance_status:
             raise AssertionError(
                 "Instance status is '{0}' instead of 'ACTIVE".format(
-                    self.instance.status))
+                    instance.status))
 
-        self.wait_instance_to_boot()
+        self.wait_to_boot(instance)
 
         # Waiting for up-and-run of Virtual Machine after reboot
-        ping_result = common_functions.ping_command(self.floating_ip.ip)
-        self.assertTrue(ping_result, "Instance is not reachable")
+        ping_result = common.ping_command(floating_ip.ip)
+        assert ping_result, "Instance is not reachable"
