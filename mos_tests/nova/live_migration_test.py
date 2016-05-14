@@ -285,14 +285,6 @@ class TestLiveMigrationBase(object):
             timeout_seconds=2 * 60,
             waiting_for='hypervisor info be updated')
 
-    def wait_instances_to_be_ssh_available(self):
-        predicates = [lambda: self.os_conn.is_server_ssh_ready(x)
-                      for x in self.instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=3 * 60,
-            waiting_for='instances to be ssh available')
-
 
 class TestLiveMigration(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838028', block_migration=True)
@@ -377,14 +369,14 @@ class TestLiveMigration(TestLiveMigrationBase):
             self.successive_migration(block_migration,
                                       hypervisor_from=hypervisor1)
 
-            self.wait_instances_to_be_ssh_available()
+            self.os_conn.wait_servers_ssh_ready(self.instances)
 
             self.wait_hypervisor_be_free(hypervisor1)
 
             self.concurrent_migration(block_migration,
                                       hypervisor_to=hypervisor1)
 
-            self.wait_instances_to_be_ssh_available()
+            self.os_conn.wait_servers_ssh_ready(self.instances)
 
             self.wait_hypervisor_be_free(hypervisor2)
 
@@ -448,13 +440,13 @@ class TestLiveMigration(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)
 
         self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)
 
         self.delete_instances()
 
@@ -663,13 +655,13 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)
 
         self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)
 
     @pytest.mark.testrail_id('838038', block_migration=True)
     @pytest.mark.testrail_id('838266', block_migration=False)
@@ -732,10 +724,10 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)
 
         self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
-        self.wait_instances_to_be_ssh_available()
+        self.os_conn.wait_servers_ssh_ready(self.instances)

@@ -13,6 +13,7 @@
 #    under the License.
 
 import functools
+import itertools
 import logging
 import os
 import posixpath
@@ -27,25 +28,19 @@ import six
 logger = logging.getLogger(__name__)
 
 
-def retry(count=10, delay=1, pass_counter=None):
-    """Retry until no exceptions decorator.
-
-    :param pass_counter: argument to pass counter variable in
-    :type pass_counter: None or str
-    """
+def retry(count=10, delay=1):
+    """Retry until no exceptions decorator"""
     def decorator(func):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             for i in range(count):
-                if pass_counter is not None:
-                    kwargs[pass_counter] = i
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
+                    logger.warning(e)
                     time.sleep(delay)
             else:
-                logger.warning(e)
                 raise
 
         return wrapper
@@ -132,18 +127,21 @@ class SSHClient(object):
         if self._sftp_client is not None:
             try:
                 self._sftp_client.close()
+                self._sftp_client = None
             except Exception:
                 logger.exception("Could not close sftp connection")
 
         if self._ssh is not None:
             try:
                 self._ssh.close()
+                self._ssh = None
             except Exception:
                 logger.exception("Could not close ssh connection")
 
         if self._proxy is not None:
             try:
                 self._proxy.close()
+                self._proxy = None
             except Exception:
                 logger.exception("Could not close proxy connection")
 
@@ -161,7 +159,7 @@ class SSHClient(object):
     def __exit__(self, *err):
         self.clear()
 
-    def connect(self, pkey=None, password=None):
+    def connect(self, pkey=None, password=None, proxy_command=None):
         if pkey:
             logger.debug("Connecting to '{0.host}:{0.port}' "
                          "as '{0.username}' with key....".format(self))
@@ -169,35 +167,61 @@ class SSHClient(object):
             logger.debug("Connecting to '{0.host}:{0.port}' "
                          "as '{0.username}:{1}'....".format(self, password))
 
-        kwargs = {}
-        if self._proxy is not None:
-            kwargs['sock'] = self._proxy
+        sock = None
+        if proxy_command is not None:
+            logger.debug('Proxy for ssh: "{0}"'.format(proxy_command))
+            self._proxy = paramiko.ProxyCommand(proxy_command)
+            self._proxy.settimeout(self.timeout)
+            sock = self._proxy
+
+        self._ssh = paramiko.SSHClient()
+        self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         return self._ssh.connect(self.host, port=self.port,
                                  username=self.username, password=password,
-                                 pkey=pkey, banner_timeout=30, **kwargs)
+                                 pkey=pkey, banner_timeout=30, sock=sock)
 
-    @retry(count=3, delay=3, pass_counter='counter')
-    def reconnect(self, counter):
+    def check_connection(self, close=True):
+        """Check is ssh connection are available
+
+        :rtype: bool | Exception
+        :return:
+            - True, if connect and authorization is ok,
+            - paramiko.AuthenticationException, if connect is ok,
+            but authorization fail
+            - False otherwise
+        """
         params = [{'pkey': x} for x in self.private_keys]
         if self.password is not None:
             params.append({'password': self.password})
-        for param in params:
-            self.clear()
-            self._ssh = paramiko.SSHClient()
-            self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            proxies_count = len(self.proxy_commands)
-            if proxies_count > 0:
-                proxy_command = self.proxy_commands[counter % proxies_count]
-                logger.debug('Proxy for ssh: "{0}"'.format(proxy_command))
-                self._proxy = paramiko.ProxyCommand(proxy_command)
-                self._proxy.settimeout(self.timeout)
-            try:
-                self.connect(**param)
-                break
-            except Exception as e:
-                logger.warning(e)
+
+        proxies = self.proxy_commands or [None]
+        try:
+            for proxy_command, param in itertools.product(proxies, params):
+                self.clear()
+                try:
+                    self.connect(proxy_command=proxy_command, **param)
+                    return True
+                except paramiko.AuthenticationException as e:
+                    logger.debug('Authentication exception: {}'.format(e))
+                    return e
+                except Exception as e:
+                    logger.debug('Instance unavailable: {}'.format(e))
+        finally:
+            if close:
+                self.clear()
+        return False
+
+    @retry(count=3, delay=3)
+    def reconnect(self):
+        check_result = self.check_connection(close=False)
+        if check_result is True:
+            return
         else:
-            raise
+            self.clear()
+            if isinstance(check_result, Exception):
+                raise check_result
+            else:
+                raise Exception("Can't connect to server")
 
     def check_call(self, command, verbose=True):
         ret = self.execute(command, verbose)

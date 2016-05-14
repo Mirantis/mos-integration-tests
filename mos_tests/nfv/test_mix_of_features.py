@@ -13,7 +13,6 @@
 #    under the License.
 import pytest
 
-from mos_tests.functions import common as common_functions
 from mos_tests.functions import network_checks
 from mos_tests.nfv.base import page_1gb
 from mos_tests.nfv.base import page_2mb
@@ -129,14 +128,8 @@ class TestMixedFeatures(TestBaseNFV):
                 security_groups=[security_group.id], wait_for_active=False,
                 wait_for_avaliable=False)
             vms.update({vm: {'numa': numa_count, 'size': size}})
-        common_functions.wait(
-            lambda: all(os_conn.is_server_active(x) for x in vms),
-            timeout_seconds=2 * 60,
-            waiting_for='instances to became to ACTIVE status')
-        common_functions.wait(
-            lambda: all(os_conn.is_server_ssh_ready(x) for x in vms),
-            timeout_seconds=2 * 60,
-            waiting_for='instances to be ssh available')
+        os_conn.wait_servers_active(vms)
+        os_conn.wait_servers_ssh_ready(vms)
 
         for vm, param in vms.items():
             self.check_instance_page_size(os_conn, vm, param['size'])
