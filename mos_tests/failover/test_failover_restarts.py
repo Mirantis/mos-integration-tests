@@ -28,29 +28,18 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 class TestFailoverRestarts(TestBase):
 
-    def check_common_services(self):
-        for service in self.os_conn.keystone.services.list():
-            assert service.enabled is True
-
-        for service in self.os_conn.nova.services.list():
-            assert service.status == 'enabled'
-
-        for image in self.os_conn.glance.images.list():
-            assert image.status == 'active'
-
     @pytest.mark.testrail_id('542818')
     def test_restart_galera_services_with_replication(self):
         """Restart all Galera services with data replication
 
         Scenario:
-            1. 'pcs resource disable clone_p_mysqld' for stop Galera service.
-            2. 'ps -ef | grep mysql' and check that
-                all mysql processes was killed.
-            3. 'pcs resource enable clone_p_mysqld' for start Galera service.
-            4. 'ps -ef | grep mysql' and check that mysql processes worked.
-            5.  Execute 'nova list', 'keystone user-list', 'glance image-list',
-                'nova-manage service list', 'keystone service-list'
-                several times and verify that all works fine.
+            1. 'pcs resource disable clone_p_mysqld' to stop Galera service.
+            2. 'ps -ef | grep mysql' and check that all mysql processes were
+               killed.
+            3. 'pcs resource enable clone_p_mysqld' to start Galera service.
+            4. 'ps -ef | grep mysql' and check that mysql processes work.
+            5. Get a list of servers and images to make sure that data base
+               is operational.
         """
 
         def is_mysql_stopped():
@@ -73,7 +62,6 @@ class TestFailoverRestarts(TestBase):
         controller = self.env.primary_controller
 
         with controller.ssh() as remote:
-
             cmd = 'pcs resource disable clone_p_mysqld'
             logger.info('disable all galera services with cmd {}'.format(cmd))
             remote.check_call(cmd)
@@ -88,14 +76,16 @@ class TestFailoverRestarts(TestBase):
             logger.info('wait until all mysql processes started')
             wait(is_mysql_started, timeout_seconds=3 * 60, sleep_seconds=5)
 
-        self.check_common_services()
+        self.os_conn.nova.servers.list()
+        self.os_conn.glance.images.list()
 
     @pytest.mark.testrail_id('542817')
     def test_restart_rabbitmq_services_with_replication(self):
         """Restart all RabbitMQ services with data replication
-        Scenario
+
+        Scenario:
             1. Login to the primary Openstack controller node and disable
-               RabbitMQ service:
+               the RabbitMQ service:
                    pcs resource disable master_p_rabbitmq-server
                    pcs resource disable p_rabbitmq-server
             2. Wait for several seconds and enable the RabbitMQ service back:
@@ -151,8 +141,6 @@ class TestFailoverRestarts(TestBase):
         # So the below call seems to be the best check in this case.
         # It will guaranty that all services are recovered.
         self.env.wait_for_ostf_pass()
-
-        self.check_common_services()
 
     @pytest.mark.testrail_id('542815')
     def test_instance_folder_after_hard_reboot(self):
