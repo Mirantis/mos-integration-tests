@@ -315,7 +315,7 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
         3. Ping 8.8.8.8 from instance
     INFO:
     Kyrylo Romanenko: USERDATA CURRENTLY NOT WORKING FOR IRONIC
-    https://bugs.launchpad.net/fuel/+bug/1558558
+    https://bugs.launchpad.net/mos/+bug/1555516
     """
     userdata_file = '/userdata_result'
 
