@@ -313,22 +313,20 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
         1. Boot ironic instance with user data file user_data.sh
         2. Check that user_data.sh is present on instance
         3. Ping 8.8.8.8 from instance
-    INFO:
-    Kyrylo Romanenko: USERDATA CURRENTLY NOT WORKING FOR IRONIC
-    https://bugs.launchpad.net/mos/+bug/1555516
     """
     userdata_file = '/userdata_result'
 
     instance = ironic.boot_instance(image=ubuntu_image,
                                     flavor=flavors[0],
                                     keypair=keypair,
-                                    userdata='touch {0}'.format(userdata_file))
+                                    userdata=(
+                                        '#!/bin/bash\n'
+                                        'touch {0}').format(userdata_file))
 
     with os_conn.ssh_to_instance(env,
                                  instance,
                                  vm_keypair=keypair,
                                  username='ubuntu') as remote:
-        # Kyrylo Romanenko: userdata currently not working for ironic
         remote.check_call('ls {0}'.format(userdata_file))
         remote.check_call('ping -c1 {}'.format(settings.PUBLIC_TEST_IP))
 
