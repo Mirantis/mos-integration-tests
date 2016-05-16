@@ -161,6 +161,7 @@ class TestGlanceSecurity(TestBase):
         assert image.id not in images_id
 
     @pytest.mark.testrail_id('836636')
+    @pytest.mark.check_env_('not is_ceph_enabled')
     @pytest.mark.parametrize('glance', [2], indirect=['glance'])
     def test_image_direct_url_false(self, glance, image_file_remote, suffix):
         """Check absence of 'direct_url' property for glance image by default
@@ -188,6 +189,7 @@ class TestGlanceSecurity(TestBase):
         assert image.id not in images_id
 
     @pytest.mark.testrail_id('843822')
+    @pytest.mark.check_env_('not is_ceph_enabled')
     @pytest.mark.usefixtures('enable_image_direct_url_glance')
     @pytest.mark.parametrize('glance', [2], indirect=['glance'])
     def test_image_direct_url_true(self, glance, image_file_remote, suffix):
