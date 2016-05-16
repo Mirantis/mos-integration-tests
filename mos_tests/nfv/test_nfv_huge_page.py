@@ -367,3 +367,73 @@ class TestHugePages(TestBaseNFV):
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
         network_checks.check_vm_connectivity(env, os_conn)
+
+    @pytest.mark.check_env_('is_ceph_enabled')
+    @pytest.mark.parametrize('computes_with_hp_2mb',
+                             [{'host_count': 2, 'hp_count_per_host': 512}],
+                             indirect=['computes_with_hp_2mb'])
+    @pytest.mark.testrail_id('838317')
+    def test_evacuation_for_huge_pages_2m(
+            self, env, os_conn, devops_env, networks, small_nfv_flavor,
+            security_group, computes_with_hp_2mb):
+        """This test checks that evacuation executed successfully for
+            instances created on computes with huge pages 2M
+            Steps:
+            1. Create net1 with subnet, net2 with subnet and  router1 with
+               interfaces to both nets
+            2. Launch instance vm1 in net1 with m1.small.hpgs on compute-1
+            3. Launch instance vm2 in net2 with m1.small.hpgs on compute-2
+            4. Check vms connectivity
+            5. Kill the compute-1
+            6. Evacuate vm1 from compute-1
+            7. Check vms connectivity
+            8. Make compute-1 alive
+            9. Check that resources for vm1 were deleted from compute-1
+        """
+        count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
+        initial_conf = computes_configuration(env)
+        hosts = computes_with_hp_2mb
+        vms = []
+        for i in range(2):
+            vm = os_conn.create_server(
+                name='vm{}'.format(i), flavor=small_nfv_flavor.id,
+                availability_zone='nova:{}'.format(hosts[i]),
+                security_groups=[security_group.id],
+                nics=[{'net-id': networks[i]}])
+            vms.append(vm)
+
+        vms_distribution = [(hosts[0], 1), (hosts[1], 1)]
+        current_conf = computes_configuration(env)
+        for (host, nr_2mb) in vms_distribution:
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
+            act_free_2m = current_conf[host][page_2mb]['free']
+            assert exp_free_2m == act_free_2m, (
+                "Unexpected count of free 2Mb huge pages: {0} instead of {1} "
+                "for host {2}".format(act_free_2m, exp_free_2m, host))
+
+        for vm in vms:
+            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+        network_checks.check_vm_connectivity(env, os_conn)
+        self.compute_change_state(os_conn, devops_env, hosts[0], state='down')
+
+        vm_0_new = self.evacuate(os_conn, devops_env, vms[0])
+
+        assert hosts[1] == getattr(vm_0_new, "OS-EXT-SRV-ATTR:host"), (
+            "Wrong host found for {0} after evacuation. Expected host is {1}".
+            format(vm_0_new, hosts[1]))
+        network_checks.check_vm_connectivity(env, os_conn)
+        for vm in vms:
+            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+
+        self.compute_change_state(os_conn, devops_env, hosts[0], state='up')
+
+        vms_distribution = [(hosts[0], 0), (hosts[1], 2)]
+        current_conf = computes_configuration(env)
+        for (host, nr_2mb) in vms_distribution:
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
+            act_free_2m = current_conf[host][page_2mb]['free']
+            assert exp_free_2m == act_free_2m, (
+                "Unexpected count of free 2Mb huge pages: {0} instead of {1} "
+                "for host {2}".format(act_free_2m, exp_free_2m, host))

@@ -13,6 +13,7 @@
 #    under the License.
 import xml.etree.ElementTree as ElementTree
 
+from mos_tests.environment.os_actions import InstanceError
 from mos_tests.functions import common
 
 page_1gb = 1048576
@@ -127,3 +128,33 @@ class TestBaseNFV(object):
         assert cnt_of_used_numa == numa_count, (
             "Unexpected count of numa nodes in use: {0} instead of {1}".
             format(cnt_of_used_numa, numa_count))
+
+    def compute_change_state(self, os_conn, devops_env, host, state):
+        def is_compute_state():
+            hypervisor = [i for i in os_conn.nova.hypervisors.list()
+                          if i.hypervisor_hostname == host][0]
+            return hypervisor.state == state
+
+        compute = os_conn.env.find_node_by_fqdn(host)
+        devops_node = devops_env.get_node_by_fuel_node(compute)
+        if state == 'down':
+            devops_node.suspend()
+        else:
+            devops_node.resume()
+        common.wait(is_compute_state,
+                    timeout_seconds=20 * 60,
+                    waiting_for='compute is {}'.format(state))
+
+    def evacuate(self, os_conn, devops_env, vm, on_shared_storage=True,
+                 password=None):
+        os_conn.nova.servers.evacuate(vm, on_shared_storage=on_shared_storage)
+        try:
+            common.wait(
+                lambda: os_conn.is_server_active(vm), timeout_seconds=5 * 60,
+                waiting_for='instance {} changes status to ACTIVE after '
+                            'evacuation'.format(vm.name))
+            return os_conn.nova.servers.get(vm)
+        except InstanceError:
+            host = getattr(vm, "OS-EXT-SRV-ATTR:host")
+            self.compute_change_state(os_conn, devops_env, host, state='up')
+            raise
