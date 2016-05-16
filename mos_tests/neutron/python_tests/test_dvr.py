@@ -225,7 +225,7 @@ class TestDVR(TestDVRBase):
 
     @pytest.mark.testrail_id('638477')
     def test_connectivity_after_reset_primary_controller_with_snat(self,
-            devops_env):
+                                                                   devops_env):
         """Check North-South connectivity without floating after resetting
             primary controller with snat
 
@@ -262,10 +262,10 @@ class TestDVR(TestDVRBase):
                           if x['host'] == controller_with_snat.data['fqdn']][0]
             new_l3_agent = [x for x in l3_agents
                             if x['host'] == leader_controller.data['fqdn']][0]
-            self.os_conn.remove_router_from_l3_agent(router_id=self.router_id,
-                l3_agent_id=snat_agent['id'])
-            self.os_conn.add_router_to_l3_agent(router_id=self.router_id,
-                l3_agent_id=new_l3_agent['id'])
+            self.os_conn.remove_router_from_l3_agent(
+                router_id=self.router_id, l3_agent_id=snat_agent['id'])
+            self.os_conn.add_router_to_l3_agent(
+                router_id=self.router_id, l3_agent_id=new_l3_agent['id'])
 
         devops_node = devops_env.get_node_by_fuel_node(leader_controller)
         devops_node.reset()
@@ -404,7 +404,7 @@ class TestDVR(TestDVRBase):
                         **agent))
 
         cmd = 'pcs resource {{action}} neutron-l3-agent {fqdn}'.format(
-                **controller.data)
+            **controller.data)
         with controller.ssh() as remote:
             for i in range(1, 41):
                 logger.info('Ban/clear l3 agent on {node} - {i}'.format(
@@ -572,10 +572,10 @@ class TestDVR(TestDVRBase):
             elif node_to_clear_key == 'last':
                 # Wait for SNAT on last controller will die
                 wait(lambda: self.find_snat_controller(
-                        self.router_id, alive_only=True) is None,
-                    timeout_seconds=60 * 3, sleep_seconds=10,
-                    waiting_for="snat on {} to die".format(
-                        controller_with_snat))
+                     self.router_id, alive_only=True) is None,
+                     timeout_seconds=60 * 3, sleep_seconds=10,
+                     waiting_for="snat on {} to die".format(
+                         controller_with_snat))
 
         banned_nodes['last'] = controller_with_snat
 
@@ -588,9 +588,9 @@ class TestDVR(TestDVRBase):
 
         # Wait for SNAT back to node
         wait(lambda: self.find_snat_controller(
-                self.router_id, alive_only=True) == node_to_clear,
-             timeout_seconds=60 * 3, sleep_seconds=20,
-             waiting_for="snat go back to {}".format(node_to_clear))
+            self.router_id, alive_only=True) == node_to_clear,
+            timeout_seconds=60 * 3, sleep_seconds=20,
+            waiting_for="snat go back to {}".format(node_to_clear))
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
                                           vm_keypair=self.instance_keypair,
@@ -730,8 +730,8 @@ class TestDVRWestEastConnectivity(TestDVRBase):
 
     @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')
-    def test_east_west_connectivity_after_destroy_controller(self, devops_env,
-            prepare_openstack):
+    def test_east_west_connectivity_after_destroy_controller(
+            self, devops_env, prepare_openstack):
         """Check East-West connectivity after destroy controller
 
         Scenario:
@@ -889,9 +889,8 @@ class TestDVRTypeChange(TestDVRBase):
         # exception is expected here
         # in case if no exception is generated the py.test will fail
         with pytest.raises(NeutronClientException) as e:
-            self.os_conn.neutron.update_router(router_id,
-                                           {'router': {
-                                            'distributed': False}})
+            self.os_conn.neutron.update_router(
+                router_id, {'router': {'distributed': False}})
 
         # allowed_msg is for doulbe check
         # There is no separate exception for each case
@@ -919,7 +918,7 @@ class TestDVRTypeChange(TestDVRBase):
         # In case of dvr feature distributed default value should be True
         router = {'name': 'router01'}
         router_id = self.os_conn.neutron.create_router(
-                        {'router': router})['router']['id']
+            {'router': router})['router']['id']
         logger.info('router {} was created'.format(router_id))
 
         # Check that router is distributed by default
@@ -940,8 +939,8 @@ class TestDVRTypeChange(TestDVRBase):
             1. Create centralized router1 and connect it with external net
         """
 
-        router = self.os_conn.create_router(
-                     name="router01", distributed=False)['router']
+        router = self.os_conn.create_router(name="router01",
+                                            distributed=False)['router']
         self.os_conn.router_gateway_add(
             router_id=router['id'],
             network_id=self.os_conn.ext_network['id'])
@@ -956,8 +955,8 @@ class TestDVRTypeChange(TestDVRBase):
             1. Create distributed router1 and connect it with external net
         """
 
-        router = self.os_conn.create_router(
-                     name="router01", distributed=True)['router']
+        router = self.os_conn.create_router(name="router01",
+                                            distributed=True)['router']
         self.os_conn.router_gateway_add(
             router_id=router['id'],
             network_id=self.os_conn.ext_network['id'])
@@ -1131,8 +1130,7 @@ class TestDVRTypeChange(TestDVRBase):
         # Search l3 agent on another controller, and hot hosted router
         for l3_agent in self.os_conn.list_l3_agents():
             if (l3_agent['host'] in other_controllers_fqdn and
-                l3_agent['id'] not in l3_agent_ids
-            ):
+                    l3_agent['id'] not in l3_agent_ids):
                 break
         else:
             raise Exception("Can't find new l3 agent to reschedule router")
@@ -1192,7 +1190,7 @@ class TestDVRTypeChange(TestDVRBase):
         with pytest.raises(NeutronClientException) as e:
             router = {'name': 'router01', 'distributed': True}
             router_id = neutron.create_router(
-                            {'router': router})['router']['id']
+                {'router': router})['router']['id']
         # allowed_msg is for double check
         # There is no separate exception for each case
         # So just check that generated exception contains the expected message
@@ -1207,7 +1205,7 @@ class TestDVRTypeChange(TestDVRBase):
         with pytest.raises(NeutronClientException) as e:
             router = {'name': 'router01', 'distributed': False}
             router_id = neutron.create_router(
-                            {'router': router})['router']['id']
+                {'router': router})['router']['id']
         allowed_msg = 'disallowed by policy'
         err_msg = 'Failed to create the router, exception: {}'.format(e)
         assert allowed_msg in str(e.value), err_msg
@@ -1215,8 +1213,7 @@ class TestDVRTypeChange(TestDVRBase):
         # Try to create router with default distributed value
         # by user with memeber role but in admin tenant
         router = {'name': 'router01'}
-        router_id = neutron.create_router(
-                        {'router': router})['router']['id']
+        router_id = neutron.create_router({'router': router})['router']['id']
 
         # Check that the created router has distributed value set to True
         # Check is done by admin user
@@ -1247,14 +1244,14 @@ class TestDVRRegression(TestDVRBase):
         def disable_debug_logging(node):
             with node.ssh() as remote:
                 remote.execute('mv /etc/neutron/neutron.conf.orig '
-                                  '/etc/neutron/neutron.conf')
+                               '/etc/neutron/neutron.conf')
                 remote.execute('service neutron-l3-agent restart')
 
         l3_agent_ids = [agt['id'] for agt in os_conn.neutron.list_agents(
                         binary='neutron-l3-agent')['agents']]
 
         settings = self.env.get_settings_data()
-        if settings['editable']['common']['debug']['value'] == False:
+        if settings['editable']['common']['debug']['value'] is False:
             nodes = self.env.get_all_nodes()
             for node in nodes:
                 enable_debug_logging(node)
@@ -1441,7 +1438,7 @@ class TestDVRRegression(TestDVRBase):
         compute = self.env.find_node_by_fqdn(compute_hostname)
         l3_agents = self.os_conn.list_l3_agents()
         vm_l3_agents = [x['id'] for x in l3_agents
-                       if x['host'] == compute_hostname]
+                        if x['host'] == compute_hostname]
 
         with compute.ssh() as remote:
             logger.info('disable l3 agent')

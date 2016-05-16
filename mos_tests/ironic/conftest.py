@@ -114,9 +114,9 @@ def make_ironic_node(config, devops_env, ironic, name, fuel_env):
     devops_node = None
     if config['driver'] == 'fuel_libvirt':
         devops_node = make_devops_node(config=config,
-                                            devops_env=devops_env,
-                                            fuel_env=fuel_env,
-                                            name=name)
+                                       devops_env=devops_env,
+                                       fuel_env=fuel_env,
+                                       name=name)
     node = ironic.create_node(config['driver'], config['driver_info'],
                               config['node_properties'], config['mac_address'])
     return devops_node, node

@@ -50,8 +50,8 @@ class TestGlanceHA(TestBase):
 
         name = 'Test_{}'.format(suffix[:6])
         cmd = ('image-create --name {name} --container-format bare '
-               '--disk-format qcow2 --file {file}'.format(
-                    name=name, file=image_file))
+               '--disk-format qcow2 --file {file}'.format(name=name,
+                                                          file=image_file))
         image = parser.details(glance(cmd))
         logger.info('Image starts to upload')
 
@@ -89,8 +89,8 @@ class TestGlanceHA(TestBase):
         name = 'Test_{}'.format(suffix[:6])
         image_url = settings.GLANCE_IMAGE_URL
         cmd = ('image-create --name {name} --container-format bare '
-               '--disk-format qcow2 --location {image_url}'.format(
-                    name=name, image_url=image_url))
+               '--disk-format qcow2 --location {image_url}'
+               .format(name=name, image_url=image_url))
         image = parser.details(glance(cmd))
         logger.info('Image starts to upload')
 

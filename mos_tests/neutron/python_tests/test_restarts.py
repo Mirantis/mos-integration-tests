@@ -86,9 +86,9 @@ class TestRestarts(TestBase):
         self.non_primary_host = non_primary_controller.data['fqdn']
 
         # make a list of all l3 agent ids
-        self.l3_agent_ids = [agt['id'] for agt in
-                             self.os_conn.neutron.list_agents(
-                                binary='neutron-l3-agent')['agents']]
+        self.l3_agent_ids = [
+            agt['id'] for agt in self.os_conn.neutron.list_agents(
+                binary='neutron-l3-agent')['agents']]
 
         self.dhcp_agent_ids = [agt['id'] for agt in
                                self.os_conn.neutron.list_agents(
@@ -134,7 +134,7 @@ class TestRestarts(TestBase):
         self._prepare_openstack()
         # Get current L3 agent on router01
         l3_agent = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                        self.router['id'])['agents'][0]
+            self.router['id'])['agents'][0]
         # Check if the agent is not on the primary controller
         # Reschedule if needed
         if l3_agent['host'] != self.primary_host:
@@ -142,7 +142,7 @@ class TestRestarts(TestBase):
             self.os_conn.reschedule_router_to_primary_host(self.router['id'],
                                                            self.primary_host)
             l3_agent = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                            self.router['id'])['agents'][0]
+                self.router['id'])['agents'][0]
 
         # virsh destroy of the primary controller
         self.env.destroy_nodes([self.primary_node])
@@ -190,14 +190,14 @@ class TestRestarts(TestBase):
         self._prepare_openstack()
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                        self.router['id'])['agents'][0]
+            self.router['id'])['agents'][0]
         # Check if the agent is not on the primary controller
         # Reschedule if needed
         if router_agt['host'] != self.primary_host:
             self.os_conn.reschedule_router_to_primary_host(self.router['id'],
                                                            self.primary_host)
             router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                            self.router['id'])['agents'][0]
+                self.router['id'])['agents'][0]
 
         # virsh destroy of the primary controller
         self.env.warm_restart_nodes([self.primary_node])
@@ -237,7 +237,7 @@ class TestRestarts(TestBase):
         self._prepare_openstack()
         # Get current L3 agent on router01
         router_agt = self.os_conn.neutron.list_l3_agent_hosting_routers(
-                self.router['id'])['agents'][0]
+            self.router['id'])['agents'][0]
 
         # Find the current controller ip with the router01
         controller_ip = ''

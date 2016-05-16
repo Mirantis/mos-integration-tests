@@ -105,8 +105,9 @@ def get_api_info(remote, api_path, host='localhost', port='15672'):
     Not stable in case of usage right after rabbit service restart
     """
     cmd = ('curl -u {nova_user}:{nova_pass} '
-           'http://{host}:{port}/api/{api_path}').format(
-                api_path=api_path, host=host, port=port, **vars_config(remote))
+           'http://{host}:{port}/api/{api_path}').format(api_path=api_path,
+                                                         host=host, port=port,
+                                                         **vars_config(remote))
     out = remote.check_call(cmd)['stdout']
     return json.loads(out[0])
 
@@ -128,8 +129,7 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     logger.debug('Stop/Start all eth interfaces on %s.' % remote.host)
     background = 'screen -S "disable_enable_all_eth_interf" -d -m'
     cmd = ('{0} "ifdown -a ; ip -s -s neigh flush all ; '
-           'sleep {1} ; ifup -a)"'.format(
-                background, sleep_sec))
+           'sleep {1} ; ifup -a)"'.format(background, sleep_sec))
     remote.execute(cmd)
 
 
@@ -143,9 +143,10 @@ def restart_rabbitmq_serv(env, remote=None, sleep=60):
     """
     # 'sleep' is to wait for service startup. It'll be also checked later
     restart_cmd = 'pcs resource restart --wait=%s p_rabbitmq-server' % sleep
-    restart_cmd_single = 'pcs resource --wait={wait_time} disable p_rabbitmq-server;' \
-                         'pcs resource --wait={wait_time} ' \
-                         'enable p_rabbitmq-server'.format(wait_time=sleep)
+    restart_cmd_single = (
+        'pcs resource --wait={wait_time} disable p_rabbitmq-server;'
+        'pcs resource --wait={wait_time} enable p_rabbitmq-server'
+        .format(wait_time=sleep))
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
@@ -216,8 +217,7 @@ def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
     cmd = ('oslo_msg_load_generator '
            '--config-file {0} '
            '--messages-to-send {1} '
-           '--nodebug'.format(
-                cfg_file_path, num_of_msg_to_gen))
+           '--nodebug'.format(cfg_file_path, num_of_msg_to_gen))
     remote.check_call(cmd)
 
 

@@ -21,16 +21,12 @@ pytestmark = pytest.mark.undestructive
 @pytest.mark.testrail_id('842486', param='-m image.size -p 100')
 @pytest.mark.testrail_id('842487',
                          param='-m storage.containers.objects -p 100')
-@pytest.mark.testrail_id(
-    '842488',
-    param='-m image -q project={project_id}; user={user_id}')
-@pytest.mark.testrail_id(
-    '842489',
-    param='-m image.size -q project={project_id}; user={user_id}')
-@pytest.mark.testrail_id(
-    '842490',
-    param=
-    '-m storage.containers.objects -q project={project_id}; user={user_id}')
+@pytest.mark.testrail_id('842488', param='-m image '
+                         '-q project={project_id}; user={user_id}')
+@pytest.mark.testrail_id('842489', param='-m image.size '
+                         '-q project={project_id}; user={user_id}')
+@pytest.mark.testrail_id('842490', param='-m storage.containers.objects '
+                         '-q project={project_id}; user={user_id}')
 @pytest.mark.parametrize(
     'param',
     ['-m image.size -p 100',

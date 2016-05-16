@@ -57,7 +57,7 @@ def run_test(path, node):
 @pytest.mark.shell
 @pytest.mark.check_env_('is_dvr')
 @pytest.mark.parametrize('filename', [x['name'] for x in compute_tests],
-                        ids=[x['id'] for x in compute_tests])
+                         ids=[x['id'] for x in compute_tests])
 def test_sh_compute(filename, env):
     node = env.get_nodes_by_role('compute')[0]
     run_test(filename, node)
@@ -66,7 +66,7 @@ def test_sh_compute(filename, env):
 @pytest.mark.undestructive
 @pytest.mark.shell
 @pytest.mark.parametrize('filename', [x['name'] for x in controller_tests],
-                        ids=[x['id'] for x in controller_tests])
+                         ids=[x['id'] for x in controller_tests])
 def test_sh_controller(filename, env):
     node = env.get_nodes_by_role('controller')[0]
     run_test(filename, node)

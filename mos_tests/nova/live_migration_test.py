@@ -346,8 +346,8 @@ class TestLiveMigration(TestLiveMigrationBase):
                                            timeout=5,
                                            name='volume_i'.format(i))
                 self.volumes.append(vol)
-                instances_create_args.append(dict(block_device_mapping=
-                                                  {'vda': vol.id}))
+                instances_create_args.append(
+                    dict(block_device_mapping={'vda': vol.id}))
 
         zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         hypervisor1, hypervisor2 = big_hypervisors

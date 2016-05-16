@@ -136,7 +136,7 @@ def user(openstack_client, suffix, project):
     name = "user_{}".format(suffix[:6])
     password = "password"
     user = openstack_client.user_create(name=name, password=password,
-                                project=project['id'])
+                                        project=project['id'])
     yield user
     openstack_client.user_delete(user['id'])
 

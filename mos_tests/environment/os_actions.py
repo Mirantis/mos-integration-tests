@@ -184,9 +184,8 @@ class OpenStackActions(object):
         """Check ssh connect to server"""
 
         try:
-            with self.ssh_to_instance(self.env, server, username='fake',
-                password='fake'
-            ):
+            with self.ssh_to_instance(self.env, server,
+                                      username='fake', password='fake'):
                 return True
         except paramiko.AuthenticationException:
             return True
@@ -356,8 +355,8 @@ class OpenStackActions(object):
             flip = self.neutron.create_floatingip(body)
             #   Wait active state for port
             port_id = flip['floatingip']['port_id']
-            wait(lambda: self.neutron.show_port(port_id)['port']['status'] ==
-                    "ACTIVE",
+            wait(lambda:
+                 self.neutron.show_port(port_id)['port']['status'] == "ACTIVE",
                  timeout_seconds=60,
                  waiting_for="floating_ip port is active")
             return flip['floatingip']
@@ -737,7 +736,7 @@ class OpenStackActions(object):
 
     def reschedule_router_to_primary_host(self, router_id, primary_host):
         agent_list = self.neutron.list_agents(
-                          binary='neutron-l3-agent')['agents']
+            binary='neutron-l3-agent')['agents']
         agt_id_to_move_on = [agt['id'] for agt in agent_list
                              if agt['host'] == primary_host][0]
         self.force_l3_reschedule(router_id, agt_id_to_move_on)
@@ -747,13 +746,13 @@ class OpenStackActions(object):
         logger.info('going to reschedule the router on new agent')
         if current_l3_agt_id is None:
             l3_agents = self.neutron.list_l3_agent_hosting_routers(
-                                     router_id)['agents']
+                router_id)['agents']
             if len(l3_agents) != 1:
                 raise Exception("Can't determine l3 agent to move router from")
             current_l3_agt_id = l3_agents[0]['id']
         if new_l3_agt_id is None:
             all_l3_agts = self.neutron.list_agents(
-                              binary='neutron-l3-agent')['agents']
+                binary='neutron-l3-agent')['agents']
             available_l3_agts = [agt for agt in all_l3_agts
                                  if agt['id'] != current_l3_agt_id]
             new_l3_agt_id = available_l3_agts[0]['id']

@@ -74,8 +74,8 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = initial_conf[host][page_2mb][
-                              'total'] - nr_2mb * count_to_allocate_2mb
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
         for vm in vms:
@@ -93,8 +93,8 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = initial_conf[host][page_2mb][
-                              'total'] - nr_2mb * count_to_allocate_2mb
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
         self.check_instance_page_size(os_conn, vm_0_new, size=page_2mb)
         network_checks.check_vm_connectivity(env, os_conn)
@@ -144,8 +144,8 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 3), (hosts[1], 1), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = initial_conf[host][page_2mb][
-                              'total'] - nr_2mb * count_to_allocate_2mb
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
         os_conn.assign_floating_ip(vms[0])
@@ -194,10 +194,10 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 1, 1), (hosts[1], 0, 1), ]
         final_conf = computes_configuration(env)
         for (host, nr_1gb, nr_2mb) in vms_distribution:
-            exp_free_1g = initial_conf[host][page_1gb][
-                              'total'] - nr_1gb * count_to_allocate_1gb
-            exp_free_2m = initial_conf[host][page_2mb][
-                              'total'] - nr_2mb * count_to_allocate_2mb
+            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+                           nr_1gb * count_to_allocate_1gb)
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -292,8 +292,8 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         current_conf = computes_configuration(env)
         for (host, nr_1gb) in vms_distribution:
-            exp_free_1g = initial_conf[host][page_1gb][
-                              'total'] - nr_1gb * count_to_allocate_1gb
+            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+                           nr_1gb * count_to_allocate_1gb)
             assert exp_free_1g == current_conf[host][page_1gb]['free']
 
         for vm in vms:
@@ -311,8 +311,8 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         final_conf = computes_configuration(env)
         for (host, nr_1gb) in vms_distribution:
-            exp_free_1g = initial_conf[host][page_1gb][
-                              'total'] - nr_1gb * count_to_allocate_1gb
+            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+                           nr_1gb * count_to_allocate_1gb)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
         self.check_instance_page_size(os_conn, vm_0_new, size=page_1gb)
         network_checks.check_vm_connectivity(env, os_conn)
@@ -362,8 +362,8 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts_hp[0], 1), (hosts_no_hp[0], 0), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = initial_conf[host][page_2mb][
-                              'total'] - nr_2mb * count_to_allocate_2mb
+            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+                           nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
         network_checks.check_vm_connectivity(env, os_conn)

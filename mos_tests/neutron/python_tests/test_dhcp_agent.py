@@ -16,9 +16,9 @@ import logging
 import re
 import time
 
-import pytest
 from neutronclient.common.exceptions import OverQuotaClient
 from neutronclient.common.exceptions import ServiceUnavailable
+import pytest
 
 from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
@@ -138,9 +138,8 @@ class TestDHCPAgent(TestBase):
 
         # Get current DHCP agent for the net_id
         network_agt = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
-                          net_id)['agents']
-        err_msg = 'No dhcp agents were found for network {}'.format(
-                     net_id)
+            net_id)['agents']
+        err_msg = 'No dhcp agents were found for network {}'.format(net_id)
         assert len(network_agt), err_msg
 
         # Find controller ip where network resides
@@ -148,7 +147,7 @@ class TestDHCPAgent(TestBase):
             network_agt[0]['host'])
         # If ip is empty than no controller was found
         err_msg = 'No controller with hostname {} was found'.format(
-                network_agt[0]['host'])
+            network_agt[0]['host'])
         assert controller_ip, err_msg
 
         # Disable rabbit's port
@@ -161,16 +160,15 @@ class TestDHCPAgent(TestBase):
 
         # Update current DHCP agent for the net_id
         network_agt = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
-                          net_id)['agents']
-        err_msg = 'No dhcp agents were found for network {}'.format(
-                     net_id)
+            net_id)['agents']
+        err_msg = 'No dhcp agents were found for network {}'.format(net_id)
 
         # Update controller ip where network resides
         controller_ip = self.env.get_node_ip_by_host_name(
             network_agt[0]['host'])
         # If ip is empty than no controller was found
         err_msg = 'No controller with hostname {} was found'.format(
-                network_agt[0]['host'])
+            network_agt[0]['host'])
         assert controller_ip, err_msg
 
         # Run udhcpc once again
@@ -221,10 +219,9 @@ class TestDHCPAgent(TestBase):
 
         # Get current DHCP agent for the self.networks[0]
         network_agts = self.os_conn.neutron.list_dhcp_agent_hosting_networks(
-                          net_id)['agents']
+            net_id)['agents']
 
-        err_msg = 'No dhcp agents were found for network {}'.format(
-                     net_id)
+        err_msg = 'No dhcp agents were found for network {}'.format(net_id)
         assert len(network_agts), err_msg
 
         # Find controller ip where network resides
@@ -232,7 +229,7 @@ class TestDHCPAgent(TestBase):
             network_agts[0]['host'])
         # If ip is empty than no controller was found
         err_msg = 'No controller with hostname {} was found'.format(
-                network_agts[0]['host'])
+            network_agts[0]['host'])
         assert controller_ip, err_msg
 
         with self.env.get_ssh_to_node(controller_ip) as remote:
@@ -253,10 +250,9 @@ class TestDHCPAgent(TestBase):
             self.os_conn.wait_agents_alive(self.dhcp_agent_ids)
             for agt in network_agts:
                 nets = self.os_conn.neutron.list_networks_on_dhcp_agent(
-                           agt['id'])['networks']
-                err_msg = 'No networks on the dhcp agent {}'.format(
-                        agt['id'])
-                assert len(nets)
+                    agt['id'])['networks']
+                err_msg = 'No networks on the dhcp agent {}'.format(agt['id'])
+                assert len(nets), err_msg
             time.sleep(6)
 
         # Run udhcp again

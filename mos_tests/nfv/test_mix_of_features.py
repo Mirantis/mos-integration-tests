@@ -149,9 +149,8 @@ class TestMixedFeatures(TestBaseNFV):
         final_conf = computes_configuration(env)
         vms_distribution = [(hosts[0], 0, 1), (hosts[1], 1, 1), ]
         for (host, nr_1gb, nr_2mb) in vms_distribution:
-            exp_free_1g = initial_conf_hp[host][page_1gb][
-                              'total'] - nr_1gb * 1
-            exp_free_2m = initial_conf_hp[host][page_2mb][
-                              'total'] - nr_2mb * 512
+            exp_free_1g = initial_conf_hp[host][page_1gb]['total'] - nr_1gb * 1
+            exp_free_2m = (
+                initial_conf_hp[host][page_2mb]['total'] - nr_2mb * 512)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
             assert exp_free_2m == final_conf[host][page_2mb]['free']

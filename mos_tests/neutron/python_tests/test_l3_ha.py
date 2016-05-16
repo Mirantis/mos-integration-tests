@@ -814,12 +814,7 @@ class TestL3HA(TestBase):
         agents = self.get_active_l3_agents_for_router(router_id)
         l3_agent_controller = self.env.find_node_by_fqdn(agents[0]['host'])
         primary_controller = self.env.primary_controller
-        for node in self.env.get_nodes_by_role('controller'):
-            if node != primary_controller:
-                proxy_node = node.data['fqdn']
-                break
-        else:
-            raise Exception("Can't find non primary controller")
+
         server1 = self.os_conn.nova.servers.find(name="server01")
         server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']

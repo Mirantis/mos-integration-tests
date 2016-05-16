@@ -84,6 +84,11 @@ To fix it, execute next commands:
     locale-gen en_US.UTF-8
     sudo dpkg-reconfigure locales
 
+
+## Recommendations
+
+Before submitting new code, please, run `tox -e py27-static_check` and `tox -e py34-static_check` to avoid flake8 violations.
+
 ## Documentation
 
 To build docs:

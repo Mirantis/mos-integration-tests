@@ -55,7 +55,7 @@ class TestWindowCompatibility(object):
             remote.check_call('virsh screenshot {name} --file {path}'.format(
                 name=instance_name,
                 path=screenshot_path),
-                              verbose=False)
+                verbose=False)
             with remote.open(screenshot_path, 'rb') as f:
                 data = f.read()
         with open('temp/{name}_{time:.0f}.ppm'.format(name=self.test_name,

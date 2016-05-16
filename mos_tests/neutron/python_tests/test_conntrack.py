@@ -241,8 +241,8 @@ def check_zones_assigment_to_devices(compute):
 class TestConntrackZones(TestBase):
 
     @pytest.mark.testrail_id('542629')
-    def test_connectivity_between_vms_with_same_internal_ips(self, env,
-            servers, os_clients):
+    def test_connectivity_between_vms_with_same_internal_ips(
+            self, env, servers, os_clients):
         """Check connectivity between vms with the same internal ips in
         different tenants
 
