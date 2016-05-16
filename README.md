@@ -14,7 +14,7 @@ $ sudo apt-get install libpq-dev \
 
 ### Python requirements
 
-    $ virtualenv venv
+    $ virtualenv --clear venv
     $ source venv/bin/activate
     $ pip install -U pip
     $ pip install tox
