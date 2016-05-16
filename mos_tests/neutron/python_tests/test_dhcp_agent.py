@@ -16,8 +16,6 @@ import logging
 import re
 import time
 
-from neutronclient.common.exceptions import OverQuotaClient
-from neutronclient.common.exceptions import ServiceUnavailable
 import pytest
 
 from mos_tests.functions.common import wait
@@ -319,9 +317,10 @@ class TestDHCPAgent(TestBase):
 
         Steps:
             1. Update quotas for creation a lot of networks:
-                neutron quota-update --network 1000 --subnet 1000
-                                     --router 1000 --port 1000:
-            2. Create 50 networks, subnets, launch and terminate instance
+                neutron quota-update --network 50 --subnet 50
+                                     --router 50 --port 250:
+            2. Create max count of networks, subnets, launch and terminate
+                instance on each
             3. Disable all dhcp-agents:
                 pcs resource disable neutron-dhcp-agent
                 Wait till agents are down
@@ -340,18 +339,8 @@ class TestDHCPAgent(TestBase):
                 ip netns exec qdhcp-<netX-id> ip a | grep tap
         """
 
-        # Create 50 networks, launch and terminate instances
-        # There are quotas for the total amount of the nets
-        # And also only certain amount of VLANs per one tenant
-        # Solution is simple
-        # The instances are created until the exception is thrown
-        try:
-            self.create_delete_number_of_instances(50, self.router,
-                                                   self.networks,
-                                                   self.instance_keypair,
-                                                   self.security_group)
-        except (ServiceUnavailable, OverQuotaClient) as e:
-            logger.info(e)
+        self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
+        self.networks = self.create_max_networks_with_instances(self.router)
 
         dhcp_ports_id = self.os_conn.neutron.list_ports(
             device_owner='network:dhcp')['ports']
