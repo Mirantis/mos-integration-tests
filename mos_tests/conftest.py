@@ -54,18 +54,18 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # register an additional marker
     config.addinivalue_line("markers",
-        "check_env_(check1, check2): mark test to run only on env, which pass "
-        "all checks")
+                            "check_env_(check1, check2): mark test "
+                            "to run only on env, which pass all checks")
     config.addinivalue_line("markers",
-        "need_devops: mark test wich need devops to run")
+                            "need_devops: mark test wich need devops to run")
+    config.addinivalue_line("markers", "neeed_tshark: mark test wich "
+                                       "need tshark to be installed to run")
     config.addinivalue_line("markers",
-        "neeed_tshark: mark test wich need tshark to be installed to run")
+                            "undestructive: mark test wich has teardown")
     config.addinivalue_line("markers",
-        "undestructive: mark test wich has teardown")
-    config.addinivalue_line("markers",
-        "testrail_id(id, params={'name': value,...}): add suffix to "
-        "test name. If defined, `params` apply case_id only if it "
-        "matches test params.")
+                            "testrail_id(id, params={'name': value,...}): "
+                            "add suffix to test name. If defined, `params` "
+                            "apply case_id only if it matches test params.")
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)

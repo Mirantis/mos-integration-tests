@@ -114,7 +114,7 @@ def test_baremetal_network_settings(new_env, admin_remote):
              '/editable/storage/ephemeral_ceph/value': True,
              '/editable/storage/volumes_ceph/value': True,
              '/editable/storage/volumes_lvm/value': False,
-         }
+    }
 ])
 def test_edit_config_with_yaml(new_env, admin_remote, new_config):
     """Ironic role can be enabled in cluster via yaml config file

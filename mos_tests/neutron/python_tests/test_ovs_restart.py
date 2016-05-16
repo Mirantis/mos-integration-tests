@@ -425,14 +425,14 @@ class TestOVSRestartsOneNetwork(OvsBase):
         network_checks.check_vm_connectivity(self.env, self.os_conn)
 
         # make a list of all ovs agent ids
-        self.ovs_agent_ids = [agt['id'] for agt in
-                              self.os_conn.neutron.list_agents(
-                                 binary='neutron-openvswitch-agent')['agents']]
+        self.ovs_agent_ids = [
+            agt['id'] for agt in self.os_conn.neutron.list_agents(
+                binary='neutron-openvswitch-agent')['agents']]
         # make a list of ovs agents that resides only on controllers
         controllers = [node.data['fqdn']
                        for node in self.env.get_nodes_by_role('controller')]
         ovs_agts = self.os_conn.neutron.list_agents(
-                       binary='neutron-openvswitch-agent')['agents']
+            binary='neutron-openvswitch-agent')['agents']
         self.ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                      if agt['host'] in controllers]
 
@@ -715,7 +715,7 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
 
         self.os_conn.wait_servers_active(instances)
 
-        self.os_conn.wait_marker_in_servers_log(instances, marker = ready_marker)
+        self.os_conn.wait_marker_in_servers_log(instances, marker=ready_marker)
 
         # check pings
         self.server1 = self.os_conn.nova.servers.find(name="server01")
@@ -768,10 +768,8 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
 
         time.sleep(60)
 
-        self.wait_command_done(pid,
-                       vm=client,
-                       keypair=self.instance_keypair,
-                       vm_login='ubuntu')
+        self.wait_command_done(pid, vm=client, keypair=self.instance_keypair,
+                               vm_login='ubuntu')
 
         with self.os_conn.ssh_to_instance(self.env,
                                           vm=client,
@@ -800,10 +798,8 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
         self.enable_ovs_agents_on_controllers()
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
-        self.wait_command_done(pid,
-                       vm=client,
-                       keypair=self.instance_keypair,
-                       vm_login='ubuntu')
+        self.wait_command_done(pid, vm=client, keypair=self.instance_keypair,
+                               vm_login='ubuntu')
 
         with self.os_conn.ssh_to_instance(self.env,
                                           vm=client,

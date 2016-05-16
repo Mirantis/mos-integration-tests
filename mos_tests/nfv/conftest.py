@@ -145,9 +145,9 @@ def computes_configuration(env):
         with host.ssh() as remote:
             cmd = ("cat /sys/kernel/mm/hugepages/hugepages-"
                    "{size}kB/{type}_hugepages" " || echo 0")
-            [free, total] = [remote.execute(
-                cmd.format(size=size, type=t))['stdout'][0]
-                             for t in ['free', 'nr']]
+            [free, total] = [
+                remote.execute(cmd.format(size=size, type=t))['stdout'][0]
+                for t in ['free', 'nr']]
             pages_count = {'total': int(total), 'free': int(free)}
         return pages_count
 
@@ -255,8 +255,8 @@ def get_cpu_distribition_per_numa_node(env):
         with host.ssh() as remote:
             nodes = {}
             cpus = remote.execute('cat /proc/cmdline')['stdout'][0]
-            isolcpus = set(convert_vcpu({x[0]: x[2] for x in [
-                    y.partition('=') for y in cpus.split()]}['isolcpus']))
+            isolcpus = set(convert_vcpu({x[0]: x[2] for x in [y.partition('=')
+                           for y in cpus.split()]}['isolcpus']))
             res = remote.execute("lscpu | grep 'NUMA node(s)'")['stdout']
             count = int(res[0].split(':')[1])
             for i in range(count):
@@ -278,7 +278,7 @@ def get_hp_distribution_per_numa_node(env, numa_count=1):
                    "{size}kB/{type}_hugepages" " || echo 0")
             [free, total] = [remote.execute(
                 cmd.format(node, size=size, type=t))['stdout'][0]
-                             for t in ['free', 'nr']]
+                for t in ['free', 'nr']]
             pages_count = {'total': int(total), 'free': int(free)}
         return pages_count
 

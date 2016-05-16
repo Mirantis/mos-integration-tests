@@ -292,7 +292,8 @@ class TestBase(object):
         flavor = self.os_conn.nova.flavors.find(name='m1.micro')
         capacities = []
         for hypervisor in hypervisors:
-            capacities.append(self.os_conn.get_hypervisor_capacity(hypervisor, flavor))
+            capacities.append(
+                self.os_conn.get_hypervisor_capacity(hypervisor, flavor))
         max_instances = sum(capacities)
 
         i = 0

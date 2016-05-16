@@ -101,7 +101,8 @@ def create_stack(heat_client, stack_name, template, parameters={}, timeout=20,
             return True
 
     wait(is_stack_created, timeout_seconds=timeout * 60, sleep_seconds=10,
-        waiting_for='stack {} status to be CREATE_COMPLETE'.format(stack_name))
+         waiting_for='stack {} status to be '
+                     'CREATE_COMPLETE'.format(stack_name))
     return uid
 
 
@@ -360,13 +361,13 @@ def create_instance(nova_client, inst_name, flavor_id, net_id,
     """
     end_time = time() + 60 * timeout
     inst = nova_client.servers.create(
-            name=inst_name,
-            nics=[{"net-id": net_id}],
-            flavor=flavor_id,
-            image=image_id,
-            security_groups=security_groups,
-            block_device_mapping=block_device_mapping,
-            key_name=key_name)
+        name=inst_name,
+        nics=[{"net-id": net_id}],
+        flavor=flavor_id,
+        image=image_id,
+        security_groups=security_groups,
+        block_device_mapping=block_device_mapping,
+        key_name=key_name)
     if inst_list:
         inst_list.append(inst.id)
     inst_status = [s.status for s in nova_client.servers.list()
@@ -404,8 +405,8 @@ def check_ip(nova_client, uid, fip, timeout=1):
     """
     if is_instance_exists(nova_client, uid):
         start_time = time()
-        ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[
-                'admin_internal_net']]
+        ips = [ip['addr']
+               for ip in nova_client.servers.ips(uid)['admin_internal_net']]
         while fip not in ips and time() < start_time + 60 * timeout:
             sleep(1)
             ips = [ip['addr'] for ip in nova_client.servers.ips(uid)[

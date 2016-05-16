@@ -268,11 +268,8 @@ class TestVxlan(TestVxlanBase):
         log_file2 = gen_temp_file(prefix='vxlan', suffix='.log')
         with tcpdump_vxlan(
                 ip=compute1.data['ip'], env=self.env,
-                log_path=log_file1.name
-            ), tcpdump_vxlan(
-                ip=compute2.data['ip'], env=self.env,
-                log_path=log_file2.name
-        ):
+                log_path=log_file1.name), tcpdump_vxlan(
+                ip=compute2.data['ip'], env=self.env, log_path=log_file2.name):
             # Ping server1 from server2
             server1_ip = self.os_conn.get_nova_instance_ips(
                 server1).values()[0]

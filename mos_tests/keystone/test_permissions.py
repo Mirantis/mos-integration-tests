@@ -17,10 +17,8 @@ import pytest
 
 @pytest.mark.testrail_id('851868')
 def test_keystone_permission_lose(os_conn):
-    """
-    :type os_conn: OpenStackActions
+    """Test to cover bugs #1386696, #1326668, #1430951
 
-    Test to cover bugs #1386696, #1326668, #1430951
     Steps to reproduce:
     1. Admin login
     2. Create a new project

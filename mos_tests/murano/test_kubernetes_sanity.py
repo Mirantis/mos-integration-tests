@@ -51,8 +51,8 @@ def test_deploy_k8s_grafana(environment, murano, session, cluster, pod):
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('package', [('DockerMongoDB',)], indirect=['package'])
 @pytest.mark.testrail_id('836467')
-def test_deploy_k8s_mongodb(environment, murano, session, cluster, pod,
-                               package):
+def test_deploy_k8s_mongodb(environment, murano,
+                            session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.mongodb(pod))
     deployed_environment = murano.deploy_environment(environment, session)

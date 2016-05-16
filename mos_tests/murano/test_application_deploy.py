@@ -18,8 +18,7 @@ import pytest
 @pytest.mark.parametrize('package', [('databases.MySql',)],
                          indirect=['package'])
 @pytest.mark.testrail_id('836380')
-def test_deploy_database_mysql(environment, murano, session,
-                                            package, keypair):
+def test_deploy_database_mysql(environment, murano, session, package, keypair):
 
     murano.create_service(environment, session, murano.mysql_app(keypair))
     murano.deploy_environment(environment, session)
@@ -29,8 +28,7 @@ def test_deploy_database_mysql(environment, murano, session,
 @pytest.mark.parametrize('package', [('ApacheHttpServer',)],
                          indirect=['package'])
 @pytest.mark.testrail_id('836384')
-def test_deploy_apache_http(environment, murano, session,
-                                            package, keypair):
+def test_deploy_apache_http(environment, murano, session, package, keypair):
 
     murano.create_service(environment, session, murano.apache(keypair))
     murano.deploy_environment(environment, session)
@@ -68,8 +66,8 @@ def test_deploy_apache_tomcat(environment, murano, session, package, keypair):
 @pytest.mark.parametrize('package', [('databases.PostgreSql',)],
                          indirect=['package'])
 @pytest.mark.testrail_id('836385')
-def test_deploy_database_postgres(environment, murano, session, package,
-                                    keypair):
+def test_deploy_database_postgres(environment, murano,
+                                  session, package, keypair):
 
     murano.create_service(environment, session, murano.postgres_app(keypair))
     murano.deploy_environment(environment, session)

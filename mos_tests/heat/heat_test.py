@@ -1185,8 +1185,7 @@ class HeatIntegrationTests(OpenStackTestCase):
                                              'image': image_name,
                                              'public_net': pub_network_name,
                                              'int_network_id': int_network_id,
-                                             'timeout': 600},
-                                             15)
+                                             'timeout': 600}, 15)
 
         # Get resource ID of 'docker_server'. We know this name from template
         instance = self.heat.resources.get(uid, 'docker_server')

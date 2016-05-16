@@ -231,7 +231,7 @@ def test_k8s_deploy_postgresql_wait_deploy_influxdb(environment, murano, pod,
                          indirect=['package'])
 @pytest.mark.testrail_id('836453')
 def test_k8s_deploy_mongodb_wait_deploy_nginx(environment, murano, pod,
-                                                  cluster, session, package):
+                                              cluster, session, package):
     murano.create_service(environment, session, murano.mongodb(pod))
     deployed_environment = murano.deploy_environment(environment, session)
     murano.check_instances(gateways_count=1, nodes_count=1)

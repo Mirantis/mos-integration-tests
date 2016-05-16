@@ -58,7 +58,7 @@ class CLICLient(object):
         return u' '.join([prefix, self.command, flags, action, params])
 
     def __call__(self, action, flags='', params='', prefix='', fail_ok=False,
-                merge_stderr=False):
+                 merge_stderr=False):
         command = self.build_command(action, flags, params, prefix)
         return os_execute(self.remote, command, fail_ok=fail_ok,
                           merge_stderr=merge_stderr)
