@@ -366,7 +366,8 @@ class TestVxlanL2pop(TestVxlanBase):
             log_path=broadcast_log_file.name,
             tcpdump_args=tcpdump_args.format(source_ip=server1_ip)
         ):
-            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            cmd = 'sudo /usr/sbin/arping -I eth0 -c 4 {0}; true'.format(
+                server2_ip)
             network_checks.run_on_vm(self.env, self.os_conn, server1,
                                      self.instance_keypair, cmd)
 
@@ -575,7 +576,8 @@ class TestVxlanL2pop(TestVxlanBase):
                 ip=server1_ip,
                 interface=server2_tap,)
         ):
-            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            cmd = 'sudo /usr/sbin/arping -I eth0 -c 4 {0}; true'.format(
+                server2_ip)
             network_checks.run_on_vm(self.env, self.os_conn, server1,
                                      self.instance_keypair, cmd)
 
@@ -592,7 +594,8 @@ class TestVxlanL2pop(TestVxlanBase):
                 ip=server1_ip,
                 interface=server3_tap,)
         ):
-            cmd = 'sudo arping -I eth0 -c 4 {0}; true'.format(server2_ip)
+            cmd = 'sudo /usr/sbin/arping -I eth0 -c 4 {0}; true'.format(
+                server2_ip)
             network_checks.run_on_vm(self.env, self.os_conn, server1,
                                      self.instance_keypair, cmd)
 
