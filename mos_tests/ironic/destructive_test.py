@@ -71,7 +71,7 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
                 waiting_for='ironic conductor service to start')
 
     result = env.wait_network_verification()
-    assert result.status == 'ready'
+    assert result.status == 'ready', 'Result data:\n{0}'.format(result.data)
 
     common.wait(lambda: env.is_ostf_tests_pass('sanity'),
                 timeout_seconds=60 * 5,
