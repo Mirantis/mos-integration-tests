@@ -79,6 +79,7 @@ class TestScale(object):
             4. Run network verification
             5. Run OSTF sanity tests
             6. Boot ironic instance
+        BUG: https://bugs.launchpad.net/fuel/+bug/1578724
         """
         if 'ceph' in roles and not conftest.is_ceph_enabled(env):
             pytest.skip('This test requires CEPH')
