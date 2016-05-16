@@ -74,7 +74,9 @@ def install_oslomessagingchecktool(remote, **kwargs):
             "python-oslo.log python-oslo.messaging python-oslosphinx -y && "
             "rm -rf {repo_path} && "
             "git clone {repo} {repo_path} ;").format(**kwargs)
-    cmd2 = ("cd {repo_path} && "
+    cmd2 = ("dpkg -r oslo.messaging-check-tool || "
+            "echo 'Trying to remove package';"
+            "cd {repo_path};"
             "dpkg -i {pkg} || "
             "apt-get -f install -y").format(**kwargs)
     logger.debug('Install "oslo.messaging-check-tool" on %s.' %
@@ -144,25 +146,30 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     remote.execute(cmd)
 
 
-def restart_rabbitmq_serv(env, remote=None, one_by_one=True):
+def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
     """Restart rabbitmq-server service on one or all controllers.
     After each restart, check that rabbit is up and running.
     :param env: Environment
     :param remote: SSH connection point to controller.
     :param one_by_one: Restart rabbitmq on controllers one by one or together.
-        Leave empty if you want to restart service on all controllers.
+    :param sleep_sec: Delay for restart (ban/clean pcs) rabbitmq.
     """
     restart_cmd_together = 'pcs resource restart p_rabbitmq-server'
-    restart_cmd_one_by_one = 'pcs resource disable p_rabbitmq-server;' \
-                             'pcs resource enable p_rabbitmq-server'
+    # Run in screen for dodge ssh connection timeout errors
+    restart_cmd_one_by_one = 'screen -dm bash -c ' \
+                             '"pcs resource ban p_rabbitmq-server ' \
+                             '--wait={wait_ban}; ' \
+                             'pcs resource clear p_rabbitmq-server ' \
+                             '--wait={wait_clear}"'.\
+        format(wait_ban=sleep_sec, wait_clear=sleep_sec*2)
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
         if one_by_one:
-            logger.debug('Restart RabbinMQ server on ALL controllers '
+            logger.debug('Restart RabbitMQ server on ALL controllers '
                          'one-by-one')
         else:
-            logger.debug('Restart RabbinMQ server on ALL controllers together')
+            logger.debug('Restart RabbitMQ server on ALL controllers together')
         for controller in controllers:
             with controller.ssh() as remote:
                 # Before and after restart check that rabbit is ok.
@@ -170,13 +177,19 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True):
                 wait_for_rabbit_running_nodes(remote, len(controllers))
                 if one_by_one:
                     remote.check_call(restart_cmd_one_by_one)
+                    # Make local delay for dodge ssh connection timeout errors
+                    # Use sleep_sec*3 because = ban(sleep_sec)+clear(sleep_sec)
+                    logger.debug(
+                        'Local %i sec delay for rabbit restart on %s host' %
+                        (int(sleep_sec*3), remote.host))
+                    time.sleep(sleep_sec*3)
                     wait_for_rabbit_running_nodes(remote, len(controllers))
                 else:
                     remote.check_call(restart_cmd_together)
                     break
     else:
         # restart on one controller
-        logger.debug('Restart RabbinMQ server on ONE controller %s.' %
+        logger.debug('Restart RabbitMQ server on ONE controller %s.' %
                      remote.host)
         remote.check_call(restart_cmd_one_by_one)
     wait_for_rabbit_running_nodes(remote, len(controllers))
@@ -351,7 +364,7 @@ def test_load_messages_and_restart_one_all_controller(
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
 
-        # Restart RabbinMQ server on one/all controller
+        # Restart RabbitMQ server on one/all controller
         if restart_controllers == 'one':
             restart_rabbitmq_serv(env, remote=remote)
         elif restart_controllers == 'all':
@@ -477,7 +490,7 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
 
-        # Restart RabbinMQ server on (non)primary controller
+        # Restart RabbitMQ server on (non)primary controller
         restart_rabbitmq_serv(env, remote=remote)
 
         # Consume generated messages
@@ -561,7 +574,7 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
          sleep_seconds=20,
          waiting_for='RPC server/client to start')
 
-    # Restart RabbinMQ server on one/all controller(s)
+    # Restart RabbitMQ server on one/all controller(s)
     with controller.ssh() as remote:
         if restart_ctrlr in ('one', 'prim', 'non_prim'):
             restart_rabbitmq_serv(env, remote=remote)
