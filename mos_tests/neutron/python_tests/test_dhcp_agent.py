@@ -17,6 +17,7 @@ import re
 import time
 
 import pytest
+from neutronclient.common.exceptions import OverQuotaClient
 from neutronclient.common.exceptions import ServiceUnavailable
 
 from mos_tests.functions.common import wait
@@ -353,7 +354,7 @@ class TestDHCPAgent(TestBase):
                                                    self.networks,
                                                    self.instance_keypair,
                                                    self.security_group)
-        except ServiceUnavailable as e:
+        except (ServiceUnavailable, OverQuotaClient) as e:
             logger.info(e)
 
         dhcp_ports_id = self.os_conn.neutron.list_ports(
