@@ -158,6 +158,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
         4. Baremetal node must be reassigned to another Ironic-conductor
         5. Run OSTF including Ironic tests.
         6. Check that Ironic instance still ACTIVE and operable
+    Info: https://bugs.launchpad.net/mos/+bug/1557464
     """
     flavor, ironic_node = zip(flavors, ironic_nodes)[0]
 
@@ -166,6 +167,16 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
         for conductor in conductors:
             with conductor.ssh() as remote:
                 result = remote.execute(cmd)
+                if result.is_ok:
+                    return conductor
+
+    def find_takeover_node(ironic_node_uuid, conductors):
+        grep = 'grep "taking over node {inst_uid}" {log}'.format(
+            inst_uid=ironic_node_uuid,
+            log='/var/log/ironic/ironic-conductor.log')
+        for conductor in conductors:
+            with conductor.ssh() as remote:
+                result = remote.execute(grep)
                 if result.is_ok:
                     return conductor
 
@@ -183,15 +194,11 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
 
     conductors.remove(conductor)
     common.wait(
-        lambda: (find_conductor_node(ironic_node.uuid, conductors)
+        lambda: (find_takeover_node(ironic_node.uuid, conductors)
                  not in (conductor, None)),  # yapf: disable
         timeout_seconds=10 * 60,
         waiting_for='node to migrate to another conductor',
-        sleep_seconds=20)
-
-    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
-                timeout_seconds=5 * 60,
-                waiting_for='OSTF sanity tests to pass')
+        sleep_seconds=60)
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
