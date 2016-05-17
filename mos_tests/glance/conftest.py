@@ -15,6 +15,7 @@
 from functools import partial
 import tempfile
 
+from glanceclient.exc import HTTPServiceUnavailable
 import pytest
 from six.moves import configparser
 from tempest.lib.cli import base
@@ -26,7 +27,7 @@ from mos_tests.functions import os_cli
 def wait_for_glance_alive(os_conn):
     common.wait(lambda: len(list(os_conn.glance.images.list())) > 0,
                 timeout_seconds=60,
-                expected_exceptions=Exception,
+                expected_exceptions=HTTPServiceUnavailable,
                 waiting_for='glance to be alive')
 
 
