@@ -36,7 +36,6 @@ def short_lifetime_keystone(env):
 
     def set_lifetime(node):
         with node.ssh() as remote:
-            remote.check_call('service apache2 stop')
             remote.check_call('mv /etc/keystone/keystone.conf '
                               '/etc/keystone/keystone.conf.orig')
             with remote.open('/etc/keystone/keystone.conf.orig') as f:
@@ -45,14 +44,13 @@ def short_lifetime_keystone(env):
                 parser.set('token', 'expiration', 30)
                 with remote.open('/etc/keystone/keystone.conf', 'w') as new_f:
                     parser.write(new_f)
-            remote.check_call('service apache2 restart')
+            remote.check_call('service apache2 reload')
 
     def reset_lifetime(node):
         with node.ssh() as remote:
-            remote.check_call('service apache2 stop')
             remote.check_call('mv /etc/keystone/keystone.conf.orig '
                               '/etc/keystone/keystone.conf')
-            remote.check_call('service apache2 restart')
+            remote.check_call('service apache2 reload')
 
     def wait_keystone_alive():
         session = env.os_conn.session
