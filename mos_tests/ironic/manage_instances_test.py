@@ -171,7 +171,7 @@ def env2_flavors(env2_ironic_drivers_params, env2):
 
 
 @pytest.yield_fixture
-def env2_ubuntu_image(env2, image_file):
+def env2_ubuntu_image(env2):
     image_name = 'ironic_trusty'
 
     logger.info('Creating ubuntu image')
