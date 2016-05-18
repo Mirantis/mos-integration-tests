@@ -195,7 +195,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
     conductors.remove(conductor)
     common.wait(
         lambda: (find_takeover_node(ironic_node.uuid, conductors)
-                 not in (conductor, None)),  # yapf: disable
+                 not in (conductor, None)),
         timeout_seconds=10 * 60,
         waiting_for='node to migrate to another conductor',
         sleep_seconds=60)

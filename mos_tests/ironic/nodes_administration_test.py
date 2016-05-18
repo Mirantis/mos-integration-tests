@@ -31,7 +31,7 @@ def cleanup_ironic(ironic):
     exists_nodes = [x.uuid for x in ironic.client.node.list()]
     yield
     new_nodes = [x for x in ironic.client.node.list()
-                 if x.uuid not in exists_nodes]  # yapf: disable
+                 if x.uuid not in exists_nodes]
     for node in new_nodes:
         ironic.delete_node(node)
 
@@ -172,7 +172,7 @@ def test_crud_operations(config, devops_node, os_conn, ironic, cleanup_ironic,
 
     common.wait(
         lambda: not os_conn.nova.hypervisors.findall(
-            hypervisor_hostname=node.uuid),  # yapf: disable
+            hypervisor_hostname=node.uuid),
         timeout_seconds=2 * 60,
         sleep_seconds=10,
         waiting_for='ironic hypervisor to disappear in nova '

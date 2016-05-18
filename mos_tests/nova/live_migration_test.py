@@ -232,7 +232,7 @@ class TestLiveMigrationBase(object):
             lambda: all(self.os_conn.is_server_deleted(x.id)
                         for x in self.instances),
             timeout_seconds=2 * 60,
-            waiting_for='instances to be deleted')  # yapf: disable
+            waiting_for='instances to be deleted')
         self.instances = []
 
     @pytest.yield_fixture
@@ -283,7 +283,7 @@ class TestLiveMigrationBase(object):
             lambda: (
                 self.os_conn.nova.hypervisors.get(hyp_id).running_vms == 0),
             timeout_seconds=2 * 60,
-            waiting_for='hypervisor info be updated')  # yapf: disable
+            waiting_for='hypervisor info be updated')
 
     def wait_instances_to_be_ssh_available(self):
         predicates = [lambda: self.os_conn.is_server_ssh_ready(x)

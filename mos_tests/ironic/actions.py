@@ -115,7 +115,7 @@ class IronicActions(object):
             self.os_conn.nova.servers.delete(node.instance_uuid)
             common.wait(
                 lambda: len(self.os_conn.nova.servers.findall(
-                    id=node.instance_uuid)) == 0,  # yapf: disable
+                    id=node.instance_uuid)) == 0,
                 timeout_seconds=60,
                 waiting_for='instance to be deleted')
         for port in self.client.node.list_ports(node.uuid):
