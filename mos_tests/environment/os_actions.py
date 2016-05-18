@@ -638,6 +638,13 @@ class OpenStackActions(object):
              timeout_seconds=5 * 60,
              waiting_for='agents go down')
 
+    def wait_no_routers_on_l3_agent(self, agt_id_to_check):
+        wait(lambda: len(self.neutron.list_routers_on_l3_agent(
+                 agt_id_to_check)['routers']) == 0,
+             timeout_seconds=3 * 60,
+             waiting_for="no routers on l3 agent({0})".format(
+                 agt_id_to_check))
+
     def add_net(self, router_id):
         i = len(self.neutron.list_networks()['networks']) + 1
         network = self.create_network(name='net%02d' % i)['network']
