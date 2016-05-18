@@ -21,6 +21,7 @@ import signal
 import subprocess
 import threading
 
+from neutronclient.common.exceptions import InternalServerError
 import pytest
 from six.moves.queue import Empty
 from six.moves.queue import Queue
@@ -208,6 +209,7 @@ class TestL3HA(TestBase):
                 return new_agents[0]
 
         return wait(new_active_agent, timeout_seconds=timeout_seconds,
+                    expected_exceptions=(InternalServerError,),
                     waiting_for="router rescheduled from {}".format(
                         from_node))
 
