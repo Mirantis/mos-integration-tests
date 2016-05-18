@@ -37,7 +37,7 @@ def cpu_flavor(os_conn, cleanup, request):
 
 
 @pytest.mark.check_env_('is_vlan')
-class TestCpuPinning(TestBaseNFV):
+class TestCpuPinningOneNuma(TestBaseNFV):
 
     numa_count = 1
 
@@ -75,5 +75,48 @@ class TestCpuPinning(TestBaseNFV):
             host = getattr(vm, "OS-EXT-SRV-ATTR:host")
             assert host in hosts
             self.check_cpu_for_vm(os_conn, vm, 1, cpus[host])
+
+        network_checks.check_vm_connectivity(env, os_conn)
+
+
+@pytest.mark.check_env_('is_vlan')
+class TestCpuPinningTwoNumas(TestBaseNFV):
+
+    numa_count = 2
+
+    @pytest.mark.undestructive
+    @pytest.mark.testrail_id('838321')
+    def test_cpu_pinning_two_numas_cell(
+            self, env, os_conn, networks, cpu_flavor, security_group,
+            aggregate):
+        """This test checks that cpu pinning executed successfully for
+        instances created on computes with 2 NUMAs
+        Steps:
+            1. Create net1 with subnet, net2 with subnet and router1 with
+            interfaces to both nets
+            2. Launch instances vm1, vm3 in net1 with m1.small.performance on
+            compute-1, vm2 on compute-2.
+            3. Check numa nodes for all vms
+            4. Check parameter in /etc/defaults/grub
+            5. Check vms connectivity
+        """
+        hosts = aggregate.hosts
+        vms = []
+        network_for_instances = [networks[0], networks[1], networks[0]]
+        hosts_for_instances = [hosts[0], hosts[1], hosts[0]]
+        cpus = get_cpu_distribition_per_numa_node(env)
+
+        for i in range(2):
+            vms.append(os_conn.create_server(
+                name='vm{}'.format(i),
+                flavor=cpu_flavor.id,
+                nics=[{'net-id': network_for_instances[i]}],
+                availability_zone='nova:{}'.format(hosts_for_instances[i]),
+                security_groups=[security_group.id]))
+
+        for vm in vms:
+            host = getattr(vm, "OS-EXT-SRV-ATTR:host")
+            assert host in hosts
+            self.check_cpu_for_vm(os_conn, vm, 2, cpus[host])
 
         network_checks.check_vm_connectivity(env, os_conn)
