@@ -45,7 +45,11 @@ def aggregate(os_conn):
 
 @pytest.yield_fixture()
 def small_nfv_flavor(os_conn, cleanup, request):
-    flv = os_conn.nova.flavors.create("m1.small.hpgs", 512, 1, 1)
+    param = getattr(
+        request.cls, 'small_nfv_flavor',
+        {"name": "m1.small.hpgs", "ram": 512, "vcpu": 1, "disk": 1})
+    flv = os_conn.nova.flavors.create(param['name'], param['ram'],
+                                      param['vcpu'], param['disk'])
     flv.set_keys({'hw:mem_page_size': page_2mb})
     yield flv
     os_conn.nova.flavors.delete(flv.id)
@@ -92,9 +96,7 @@ def networks(os_conn):
 def volume(os_conn):
     image_id = [image.id for image in os_conn.nova.images.list()
                 if image.name == 'TestVM'][0]
-    volume = common.create_volume(os_conn.cinder, image_id,
-                                  name='nfv_volume',
-                                  volume_type='volumes_lvm')
+    volume = common.create_volume(os_conn.cinder, image_id, name='nfv_volume')
     yield volume
     volume.delete()
 
@@ -131,9 +133,6 @@ def flavor(os_conn, request):
                                        "vcpu": 2, "disk": 20})
     flv = os_conn.nova.flavors.create(param['name'], param['ram'],
                                       param['vcpu'], param['disk'])
-    if param.get('key', None):
-        flv.set_keys(param['key'])
-
     yield flv
     os_conn.nova.flavors.delete(flv.id)
 

@@ -64,8 +64,7 @@ class TestBaseNFV(object):
         common.wait(lambda: os_conn.nova.images.get(image).status == 'ACTIVE',
                     timeout_seconds=10 * 60,
                     waiting_for='image changes status to ACTIVE')
-        volume = common.create_volume(os_conn.cinder, image,
-                                      volume_type='volumes_lvm')
+        volume = common.create_volume(os_conn.cinder, image)
         return volume.id
 
     def migrate(self, os_conn, vm):
@@ -158,3 +157,19 @@ class TestBaseNFV(object):
             host = getattr(vm, "OS-EXT-SRV-ATTR:host")
             self.compute_change_state(os_conn, devops_env, host, state='up')
             raise
+
+    def cpu_load(self, env, os_conn, vm, vm_keypair=None, vm_login=None,
+                 vm_password=None, action='start'):
+        if action == 'start':
+            cmd = 'cpulimit -l 50 -- gzip -9 < /dev/urandom > /dev/null'
+            with os_conn.ssh_to_instance(env, vm, vm_keypair=vm_keypair,
+                                         username=vm_login) as vm_remote:
+                vm_remote.check_call(cmd)
+        if action == 'stop':
+            cmd = "ps -aux | grep cpulimit | awk '{print $2}'"
+            with os_conn.ssh_to_instance(env, vm, vm_keypair=vm_keypair,
+                                         username=vm_login) as vm_remote:
+                result = vm_remote.check_call(cmd)
+                pid = result['stdout'][0]
+                result = vm_remote.execute('kill -9 {}'.format(pid))
+                assert not result['exit_code'], "kill failed {}".format(result)
