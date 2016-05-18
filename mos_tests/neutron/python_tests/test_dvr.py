@@ -48,7 +48,8 @@ class TestDVRBase(base.TestBase):
         for hostname in hostnames:
             node = self.env.find_node_by_fqdn(hostname)
             devops_node = devops_env.get_node_by_fuel_node(node)
-            devops_node.reset()
+            devops_node.destroy()
+            devops_node.start()
 
         def get_agents_on_hosts():
             agents = self.os_conn.neutron.list_agents()['agents']
