@@ -21,6 +21,7 @@ import signal
 import subprocess
 import threading
 
+from neutronclient.common.exceptions import InternalServerError
 import pytest
 from six.moves.queue import Empty
 from six.moves.queue import Queue
@@ -83,7 +84,7 @@ class PingThread(threading.Thread):
 
     def run(self):
         remote = self.remote
-        command = 'ping {0} 2&>1'.format(self.ip_to_ping)
+        command = 'ping {0} 2>&1'.format(self.ip_to_ping)
         self.chan, self.stdin, stdout, _ = remote.execute_async(command)
         for line in stdout:
             self.stdout_q.put(line)
@@ -208,6 +209,7 @@ class TestL3HA(TestBase):
                 return new_agents[0]
 
         return wait(new_active_agent, timeout_seconds=timeout_seconds,
+                    expected_exceptions=(InternalServerError,),
                     waiting_for="router rescheduled from {}".format(
                         from_node))
 
