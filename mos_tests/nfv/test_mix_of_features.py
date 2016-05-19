@@ -23,24 +23,6 @@ from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
 from mos_tests.nfv.conftest import get_hp_distribution_per_numa_node
 
 
-@pytest.yield_fixture()
-def flavors(os_conn, request):
-    flvs = getattr(request.cls, 'flavors_to_create')
-    created_flavors = []
-    for flv in flvs:
-        flavor = os_conn.nova.flavors.create(flv['name'], 1024, 2, 20)
-        if 'numa_nodes' in flv.keys():
-            flavor.set_keys({'hw:cpu_policy': 'dedicated'})
-            flavor.set_keys({'aggregate_instance_extra_specs:pinned': 'true'})
-            flavor.set_keys({'hw:numa_nodes': flv['numa_nodes']})
-        if 'page_size' in flv.keys():
-            flavor.set_keys({'hw:mem_page_size': flv['page_size']})
-        created_flavors.append(flavor)
-    yield created_flavors
-    for flavor in created_flavors:
-        os_conn.nova.flavors.delete(flavor.id)
-
-
 @pytest.fixture()
 def computes_for_mixed_cases(os_conn, env, computes_with_mixed_hp,
                              computes_with_numa_nodes):
@@ -71,10 +53,21 @@ class TestMixedFeatures(TestBaseNFV):
 
     flavors_to_create = [
         {'name': 'm1.small.old'},
-        {'name': 'm1.small.hpgs', 'page_size': page_1gb},
-        {'name': 'm1.small_hpgs_n1', 'numa_nodes': 1, 'page_size': page_2mb},
-        {'name': 'm1.small_hpgs_n2', 'numa_nodes': 2, 'page_size': page_2mb},
-        {'name': 'm1.small_perf_n2', 'numa_nodes': 2}]
+        {'name': 'm1.small.hpgs', 'keys': {'hw:mem_page_size': page_1gb}},
+        {'name': 'm1.small_hpgs_n1',
+         'keys': {'hw:mem_page_size': page_2mb,
+                  'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 1}},
+        {'name': 'm1.small_hpgs_n2',
+         'keys': {'hw:mem_page_size': page_2mb,
+                  'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 2}},
+        {'name': 'm1.small_perf_n2',
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 2}}]
 
     mixed_hp_computes = {'host_count': 2, 'count_2mb': 1024, 'count_1gb': 2}
 
