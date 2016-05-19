@@ -246,7 +246,7 @@ class OpenStackSwift(CLICLient):
 
     def object_create(self, container, filename):
         output = self('object create {container} {filename} -f json'.format(
-                container=container, filename=filename))
+            container=container, filename=filename))
         return json.loads(output)
 
     def object_delete(self, container, filename):
