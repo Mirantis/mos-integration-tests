@@ -150,31 +150,59 @@ class Environment(environment.Environment):
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
 
-    def is_ostf_tests_pass(self, *test_groups):
-        """Check for OpenStack tests pass"""
+    def get_tests(self):
+        return self.connection.get_request('tests/{0}'.format(self.id),
+                                           ostf=True)
 
-        def test_is_done():
-            res = self.get_state_of_tests()[0]
-            if res['status'] == 'finished':
+    def run_tests(self, tests_to_run):
+        """Run specified OSTF tests"""
+        all_tests = [x for x in self.get_tests() if x.get('status') is None]
+        tests_data = []
+        for test in all_tests:
+            if test['id'] in tests_to_run:
+                tests_data.append({
+                    'testset': test['testset'],
+                    'tests': [test['id']],
+                    "metadata": {
+                        "config": {},
+                        "cluster_id": self.id
+                    }
+                })
+        if len(tests_data) == 0:
+            logger.info("Can't find tests to run")
+        testruns = self.connection.post_request("testruns",
+                                                tests_data,
+                                                ostf=True)
+        self._testruns_ids = [tr['id'] for tr in testruns]
+        return testruns
+
+    def is_last_test_result_ok(self):
+
+        def tests_is_done():
+            res = self.get_state_of_tests()
+            if all([x['status'] == 'finished' for x in res]):
                 return res
 
-        if len(test_groups) == 0:
-            test_groups = ('ha',)
-        logger.info('[Re]start OSTF tests {}'.format(test_groups))
-        self.run_test_sets(test_groups)
-        result = wait(test_is_done, timeout_seconds=10 * 60,
-                      waiting_for='OSTF tests to finish')
+        results = wait(tests_is_done, timeout_seconds=10 * 60,
+                       waiting_for='OSTF tests to finish')
 
-        for test in result['tests']:
-            if test['status'] not in ('success', 'skipped'):
-                logger.warning(
-                    'Test "{name}" status is {status}; {message}'.format(
-                        **test))
-                return False
+        for result in results:
+            for test in result['tests']:
+                if test['status'] not in ('success', 'skipped', 'disabled'):
+                    logger.warning(
+                        'Test "{name}" status is {status}; {message}'.format(
+                            **test))
+                    return False
         return True
 
-    def wait_for_ostf_pass(self):
-        wait(self.is_ostf_tests_pass, timeout_seconds=20 * 60,
+    def wait_for_ostf_pass(self, test_groups=('ha',), timeout_seconds=20 * 60):
+        logger.info('[Re]start OSTF tests {}'.format(test_groups))
+
+        def run_tests_and_wailt_result():
+            self.run_test_sets(test_groups)
+            return self.is_last_test_result_ok()
+
+        wait(run_tests_and_wailt_result, timeout_seconds=timeout_seconds,
              sleep_seconds=20,
              waiting_for='OpenStack to pass OSTF tests')
 

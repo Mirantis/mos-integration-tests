@@ -43,23 +43,15 @@ class TestFailoverRestarts(TestBase):
 
         def is_mysql_stopped():
             cmd = "ps -ef | grep [m]ysql"
-            result = remote.execute(cmd)
-            # Mysql stops only after some time
-            # Need to wait until all processes go down
-            # If the stdout is empty then no mysql processes are run
-            if not result['stdout']:
-                return True
+            return not remote.execute(cmd).is_ok
 
         def is_mysql_started():
-            cmd = "ps -ef | grep \"[/]usr/sbin/mysqld\""
-            result = remote.execute(cmd)
-            # If /usr/sbin/mysqld is started then mysql available
-            if result['stdout']:
-                return True
+            self.env.run_tests("fuel_health.tests.ha.test_mysql_replication."
+                               "TestMysqlReplication.test_mysql_replication")
+            return self.env.is_last_test_result_ok()
 
         # Find the primary controller in cluster
         controller = self.env.primary_controller
-
         with controller.ssh() as remote:
             cmd = 'pcs resource disable clone_p_mysqld'
             logger.info('disable all galera services with cmd {}'.format(cmd))
@@ -75,6 +67,9 @@ class TestFailoverRestarts(TestBase):
             logger.info('wait until all mysql processes started')
             wait(is_mysql_started, timeout_seconds=3 * 60, sleep_seconds=5)
 
+        wait(is_mysql_started, timeout_seconds=5 * 60)
+
+        self.env.wait_for_ostf_pass()
         self.os_conn.nova.servers.list()
         self.os_conn.glance.images.list()
 
