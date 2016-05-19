@@ -19,7 +19,6 @@ import subprocess
 
 import yaml
 
-from mos_tests.functions import common
 from mos_tests.ironic import actions
 from mos_tests.ironic import testutils
 
@@ -139,9 +138,8 @@ def ironic_nodes(request, env, ironic_drivers_params, ironic, devops_env):
         if devops_node is not None:
             devops_nodes.append(devops_node)
 
-    common.wait(lambda: env.is_ostf_tests_pass('sanity'),
-                timeout_seconds=60 * 5,
-                waiting_for='OSTF sanity tests to pass')
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
     yield nodes
 
     for node in nodes:

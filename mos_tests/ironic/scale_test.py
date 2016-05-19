@@ -132,9 +132,7 @@ class TestScale(object):
         result = env.wait_network_verification()
         assert result.status == 'ready'
 
-        common.wait(lambda: env.is_ostf_tests_pass('sanity'),
-                    timeout_seconds=5 * 60,
-                    waiting_for='OSTF sanity tests to pass')
+        env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
 
         with fuel_node.ssh() as remote:
             remote.check_call('service ironic-conductor status | grep running')
