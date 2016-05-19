@@ -161,7 +161,7 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
                              '--wait={wait_ban}; ' \
                              'pcs resource clear p_rabbitmq-server ' \
                              '--wait={wait_clear}"'.\
-        format(wait_ban=sleep_sec, wait_clear=sleep_sec*2)
+        format(wait_ban=sleep_sec, wait_clear=sleep_sec * 2)
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
@@ -181,8 +181,8 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
                     # Use sleep_sec*3 because = ban(sleep_sec)+clear(sleep_sec)
                     logger.debug(
                         'Local %i sec delay for rabbit restart on %s host' %
-                        (int(sleep_sec*3), remote.host))
-                    time.sleep(sleep_sec*3)
+                        (int(sleep_sec * 3), remote.host))
+                    time.sleep(sleep_sec * 3)
                     wait_for_rabbit_running_nodes(remote, len(controllers))
                 else:
                     remote.check_call(restart_cmd_together)
