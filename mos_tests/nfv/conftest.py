@@ -63,6 +63,23 @@ def medium_nfv_flavor(os_conn, cleanup, request):
     os_conn.nova.flavors.delete(flv.id)
 
 
+@pytest.yield_fixture()
+def flavors(os_conn, request):
+    flvs = getattr(request.cls, 'flavors_to_create')
+    params = {'ram': 1024, 'vcpu': 2, 'disk': 20}
+    created_flavors = []
+    for flv in flvs:
+        params.update(flv.get('params', {}))
+        flavor = os_conn.nova.flavors.create(flv['name'], params['ram'],
+                                             params['vcpu'],
+                                             params['disk'])
+        flavor.set_keys(flv.get('keys', {}))
+        created_flavors.append(flavor)
+    yield created_flavors
+    for flavor in created_flavors:
+        os_conn.nova.flavors.delete(flavor.id)
+
+
 @pytest.yield_fixture(scope="class")
 def keypair(os_conn):
     key = os_conn.create_key(key_name='nfv_key')
