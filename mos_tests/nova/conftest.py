@@ -117,12 +117,9 @@ def instances(request, os_conn, security_group, keypair, network):
             wait_for_active=False,
             wait_for_avaliable=False)
         instances.append(instance)
-    common.wait(lambda: all(os_conn.is_server_active(x) for x in instances),
-                timeout_seconds=2 * 60,
-                waiting_for='instances to became to ACTIVE status')
-    common.wait(lambda: all(os_conn.is_server_ssh_ready(x) for x in instances),
-                timeout_seconds=2 * 60,
-                waiting_for='instances to be ssh available')
+    os_conn.wait_servers_active(instances)
+    os_conn.wait_servers_ssh_ready(instances)
+
     yield instances
     if 'undestructive' in request.node.keywords:
         for instance in instances:

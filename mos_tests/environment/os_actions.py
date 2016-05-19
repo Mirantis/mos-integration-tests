@@ -183,15 +183,11 @@ class OpenStackActions(object):
     def is_server_ssh_ready(self, server):
         """Check ssh connect to server"""
 
-        try:
-            with self.ssh_to_instance(self.env, server,
-                                      username='fake', password='fake'):
-                return True
-        except paramiko.AuthenticationException:
-            return True
-        except paramiko.SSHException as e:
-            logger.debug('Instance unavailable yet: {}'.format(e))
-            return False
+        ssh_client = self.ssh_to_instance(self.env,
+                                          server,
+                                          username='fake',
+                                          password='fake')
+        return bool(ssh_client.check_connection())
 
     def is_server_deleted(self, server_id):
         try:

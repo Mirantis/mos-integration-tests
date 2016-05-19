@@ -55,14 +55,8 @@ def instances_on_diff_computes(
             wait_for_active=False,
             wait_for_avaliable=False)
         instances.append(instance)
-    common_functions.wait(
-        lambda: all(os_conn.is_server_active(x) for x in instances),
-        timeout_seconds=2 * 60,
-        waiting_for='instances to became to ACTIVE status')
-    common_functions.wait(
-        lambda: all(os_conn.is_server_ssh_ready(x) for x in instances),
-        timeout_seconds=2 * 60,
-        waiting_for='instances to be ssh available')
+    os_conn.wait_servers_active(instances)
+    os_conn.wait_servers_ssh_ready(instances)
     # add floating IP to each instance
     floating_ips = []
     for instance in instances:
@@ -157,14 +151,8 @@ def newten_instances_on_diff_computes(
             wait_for_active=False,
             wait_for_avaliable=False)
         instances.append(instance)
-    common_functions.wait(
-        lambda: all(newten_os_conn.is_server_active(x) for x in instances),
-        timeout_seconds=2 * 60,
-        waiting_for='instances to became to ACTIVE status')
-    common_functions.wait(
-        lambda: all(newten_os_conn.is_server_ssh_ready(x) for x in instances),
-        timeout_seconds=2 * 60,
-        waiting_for='instances to be ssh available')
+    newten_os_conn.wait_servers_active(instances)
+    newten_os_conn.wait_servers_ssh_ready(instances)
     # add floating IP to each instance
     floating_ips = []
     for instance in instances:
@@ -301,11 +289,8 @@ class TestNovaOSfpingExtension(TestBase):
             vm.start()
 
         # Wait for servers became alive and ssh available
-        common_functions.wait(
-            lambda: all(self.os_conn.is_server_ssh_ready(x)
-                        for x in vms_for_operations),
-            timeout_seconds=timeout, sleep_seconds=5,
-            waiting_for='SSH became available on instances')
+        self.os_conn.wait_servers_ssh_ready(vms_for_operations,
+                                            timeout=timeout)
 
         # Update fping results
         fping_list = self.os_conn.nova.fping.list()
