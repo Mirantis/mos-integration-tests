@@ -29,8 +29,7 @@ def cpu_flavor(os_conn, cleanup, request):
     flavor = os_conn.nova.flavors.create(name='m1.small.perfomance', ram=2048,
                                          vcpus=2, disk=20)
     flavor.set_keys({'hw:cpu_policy': 'dedicated',
-                     'aggregate_instance_extra_specs:pinned': 2048,
-                     'aggregate_instance_extra_specs': 1,
+                     'aggregate_instance_extra_specs:pinned': 'true',
                      'hw:numa_nodes': numa_count})
     yield flavor
     os_conn.nova.flavors.delete(flavor.id)
