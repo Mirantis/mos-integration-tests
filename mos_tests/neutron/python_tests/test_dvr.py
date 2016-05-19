@@ -1261,6 +1261,8 @@ class TestDVRRegression(TestDVRBase):
             for node in nodes:
                 disable_debug_logging(node)
             os_conn.wait_agents_alive(l3_agent_ids)
+        else:
+            yield
 
     @pytest.mark.testrail_id('843828')
     def test_add_router_interface_with_port_id(self):
