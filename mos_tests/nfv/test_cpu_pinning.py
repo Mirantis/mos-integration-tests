@@ -23,27 +23,20 @@ from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
 logger = logging.getLogger(__name__)
 
 
-@pytest.yield_fixture()
-def cpu_flavor(os_conn, cleanup, request):
-    numa_count = getattr(request.cls, 'numa_count')
-    flavor = os_conn.nova.flavors.create(name='m1.small.perfomance', ram=2048,
-                                         vcpus=2, disk=20)
-    flavor.set_keys({'hw:cpu_policy': 'dedicated',
-                     'aggregate_instance_extra_specs:pinned': 'true',
-                     'hw:numa_nodes': numa_count})
-    yield flavor
-    os_conn.nova.flavors.delete(flavor.id)
-
-
 @pytest.mark.check_env_('is_vlan')
 class TestCpuPinningOneNuma(TestBaseNFV):
 
-    numa_count = 1
+    flavors_to_create = [
+        {'name': 'm1.small.perfomance',
+         'params': {'ram': 2048, 'vcpus': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 1}}]
 
     @pytest.mark.undestructive
     @pytest.mark.testrail_id('838318')
     def test_cpu_pinning_one_numa_cell(
-            self, env, os_conn, networks, cpu_flavor, security_group,
+            self, env, os_conn, networks, flavors, security_group,
             aggregate):
         """This test checks that cpu pinning executed successfully for
         instances created on computes with 1 NUMA
@@ -65,7 +58,7 @@ class TestCpuPinningOneNuma(TestBaseNFV):
         for i in range(2):
             vms.append(os_conn.create_server(
                 name='vm{}'.format(i),
-                flavor=cpu_flavor.id,
+                flavor=flavors[0].id,
                 nics=[{'net-id': network_for_instances[i]}],
                 availability_zone='nova:{}'.format(hosts_for_instances[i]),
                 security_groups=[security_group.id]))
@@ -81,12 +74,17 @@ class TestCpuPinningOneNuma(TestBaseNFV):
 @pytest.mark.check_env_('is_vlan')
 class TestCpuPinningTwoNumas(TestBaseNFV):
 
-    numa_count = 2
+    flavors_to_create = [
+        {'name': 'm1.small.perfomance',
+         'params': {'ram': 2048, 'vcpus': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 2}}]
 
     @pytest.mark.undestructive
     @pytest.mark.testrail_id('838321')
     def test_cpu_pinning_two_numas_cell(
-            self, env, os_conn, networks, cpu_flavor, security_group,
+            self, env, os_conn, networks, flavors, security_group,
             aggregate):
         """This test checks that cpu pinning executed successfully for
         instances created on computes with 2 NUMAs
@@ -108,7 +106,7 @@ class TestCpuPinningTwoNumas(TestBaseNFV):
         for i in range(2):
             vms.append(os_conn.create_server(
                 name='vm{}'.format(i),
-                flavor=cpu_flavor.id,
+                flavor=flavors[0].id,
                 nics=[{'net-id': network_for_instances[i]}],
                 availability_zone='nova:{}'.format(hosts_for_instances[i]),
                 security_groups=[security_group.id]))
