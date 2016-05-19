@@ -5,8 +5,8 @@
 screen -S SERVER_SIG -d -m -- sh -c 'tailf /var/log/neutron/server.log > log_server'
 TEST_FAILED=0
 echo "Get a pid of a process for neutron-server"
-string1=$(pstree -up | grep neutron-server | awk '{print $1}')
-pid_before=$(echo $string1 | awk -F '-' '{print$3}' | awk -F '(' '{print$2}' | awk -F ',' '{print$1}')
+echo $(pstree -up | grep neutron-server)
+pid_before=$(pstree -up | grep neutron-server | awk '{print $1}' | awk -F'[^0-9]*' '{print $2}')
 echo "Pid for parent neutron-server process is "$pid_before
 echo "Kill a process with HUP "
 kill -SIGHUP $pid_before
@@ -14,8 +14,7 @@ sleep 10
 echo "Check health agents"
 neutron agent-list
 echo "Check status of a process after HUP restar"
-string1=$(pstree -up | grep neutron-server | awk '{print $1}')
-pid_after=$(echo $string1 | awk -F '-' '{print$3}' | awk -F '(' '{print$2}' | awk -F ',' '{print$1}')
+pid_after=$(pstree -up | grep neutron-server | awk '{print $1}' | awk -F'[^0-9]*' '{print $2}')
 echo "PID after ="$pid_after
 if [ $pid_before = $pid_after ]; then
     echo "PIDs are equal"
