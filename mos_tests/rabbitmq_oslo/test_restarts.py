@@ -105,6 +105,8 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, rabbit_userid,
         parser.set('oslo_messaging_rabbit', 'rabbit_hosts', rabbit_hosts)
         parser.set('oslo_messaging_rabbit', 'rabbit_userid', rabbit_userid)
         parser.set('oslo_messaging_rabbit', 'rabbit_password', rabbit_password)
+        # For use message ha replication
+        parser.set('DEFAULT', 'topic', 'event.run_tests')
         # Dump to cfg file to screen
         parser.write(sys.stdout)
         logger.debug('Write [{0}] config file to {1}.'.format(
@@ -146,7 +148,7 @@ def disable_enable_all_eth_interf(remote, sleep_sec=60):
     remote.execute(cmd)
 
 
-def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
+def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=300):
     """Restart rabbitmq-server service on one or all controllers.
     After each restart, check that rabbit is up and running.
     :param env: Environment
@@ -154,14 +156,16 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
     :param one_by_one: Restart rabbitmq on controllers one by one or together.
     :param sleep_sec: Delay for restart (ban/clean pcs) rabbitmq.
     """
-    restart_cmd_together = 'pcs resource restart p_rabbitmq-server'
-    # Run in screen for dodge ssh connection timeout errors
-    restart_cmd_one_by_one = 'screen -dm bash -c ' \
-                             '"pcs resource ban p_rabbitmq-server ' \
-                             '--wait={wait_ban}; ' \
-                             'pcs resource clear p_rabbitmq-server ' \
-                             '--wait={wait_clear}"'.\
-        format(wait_ban=sleep_sec, wait_clear=sleep_sec * 2)
+    # In some cases pcs can return non-zero exit code - it's normal.
+    # 'echo' commands are here to fix it.
+    restart_commands = {
+        'start': 'pcs resource clear p_rabbitmq-server --wait=%d || '
+                 'echo "Started p_rabbitmq-server"' % sleep_sec,
+        'stop': 'pcs resource ban p_rabbitmq-server --wait=%d || '
+                'echo "Stopped p_rabbitmq-server"' % sleep_sec,
+        'restart_all': 'pcs resource restart p_rabbitmq-server --wait=%d || '
+                       'echo "Restarted p_rabbitmq-server"' % sleep_sec * 2
+    }
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
         # restart on all controllers
@@ -176,51 +180,38 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=150):
                 # Useful if we as restarting all controllers.
                 wait_for_rabbit_running_nodes(remote, len(controllers))
                 if one_by_one:
-                    remote.check_call(restart_cmd_one_by_one)
-                    # Make local delay for dodge ssh connection timeout errors
-                    # Use sleep_sec*3 because = ban(sleep_sec)+clear(sleep_sec)
-                    logger.debug(
-                        'Local %i sec delay for rabbit restart on %s host' %
-                        (int(sleep_sec * 3), remote.host))
-                    time.sleep(sleep_sec * 3)
+                    remote.check_call(restart_commands['stop'])
+                    remote.check_call(restart_commands['start'])
                     wait_for_rabbit_running_nodes(remote, len(controllers))
                 else:
-                    remote.check_call(restart_cmd_together)
+                    remote.check_call(restart_commands['restart_commands'])
+                    wait_for_rabbit_running_nodes(remote, len(controllers))
                     break
     else:
         # restart on one controller
-        logger.debug('Restart RabbitMQ server on ONE controller %s.' %
-                     remote.host)
-        remote.check_call(restart_cmd_one_by_one)
-    wait_for_rabbit_running_nodes(remote, len(controllers))
+        logger.debug('Restart RabbitMQ server on ONE controller')
+        remote.check_call(restart_commands['stop'])
+        remote.check_call(restart_commands['start'])
+        wait_for_rabbit_running_nodes(remote, len(controllers))
 
 
-def num_of_rabbit_running_nodes(remote, timeout_min=5):
-    """Get number of 'running_nodes' from 'rabbitmqctl cluster_status'
+def num_of_rabbit_running_nodes(remote):
+    """Get number of 'Started/Master' hosts from pacemaker.
     :param remote: SSH connection point to controller.
-    :param timeout_min: Timeout in minutes to wait for successful cmd execution
     """
-    def rabbit_status():
-        result = remote.execute('rabbitmqctl cluster_status', verbose=False)
-        if result.is_ok and 'running_nodes' in result.stdout_string:
-            return result['stdout']
-
-    out = wait(rabbit_status,
-               timeout_seconds=60 * timeout_min,
-               sleep_seconds=30,
-               waiting_for='RabbitMQ service start.')
-    # Parse output to get only list with 'running_nodes'
-    out = map(str.strip, out)
-    out = out[1:]
-    out = ''.join(out)
-    out = re.sub('["\']', '', out)
-    running_nodes = re.findall('{running_nodes,\[(.*?)\]}', out)
-    running_nodes = running_nodes[0].split(',')
-    return len(running_nodes)
+    result = remote.execute('pcs status --full | '
+                            'grep p_rabbitmq-server | '
+                            'grep ocf | '
+                            'grep -c -E "Master|Started"', verbose=False)
+    count = result['stdout'][0].strip()
+    if count.isdigit():
+        return int(count)
+    else:
+        return 0
 
 
 def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
-    """Waits until number of 'running_nodes' from 'rabbitmqctl cluster_status'
+    """Waits until number of 'Started/Master' hosts from pacemaker
     will be as expected number of controllers.
     :param remote: SSH connection point to controller.
     :param exp_nodes: Expected number of rabbit nodes.
@@ -317,7 +308,6 @@ def kill_rabbitmq_on_node(remote, timeout_min=7):
 # ----------------------------------------------------------------------------
 
 
-@pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838284', params={'restart_controllers': 'one'})
 @pytest.mark.testrail_id('838285', params={'restart_controllers': 'all'})
@@ -449,7 +439,6 @@ def test_load_messages_and_shutdown_eth_on_all(env):
          'after eth interfaces shutdown.')
 
 
-@pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838288', params={'restart_ctrlr': 'primary'})
 @pytest.mark.testrail_id('838287', params={'restart_ctrlr': 'non_primary'})
