@@ -41,9 +41,9 @@ def openstack_client(ctrl_remote):
 
 
 @pytest.fixture
-def swift_client(ctrl_remote):
+def os_swift_client(ctrl_remote):
     """Client to Swift"""
-    return os_cli.Swift(ctrl_remote)
+    return os_cli.OpenStackSwift(ctrl_remote)
 
 
 @pytest.fixture
@@ -53,14 +53,14 @@ def s3cmd_client(ctrl_remote):
 
 
 @pytest.yield_fixture
-def swift_container(swift_client):
-    """Creates container with Swift client"""
+def swift_container(os_swift_client):
+    """Creates container with OpenStack Swift client"""
     bucketname = 'TESTBUCKET{0}'.format(random.randint(0, 10000))
-    swift_client.post(bucketname)
-    yield bucketname
+    container = os_swift_client.container_create(bucketname)[0]
+    yield container['container']
     # remove buckets if it wasn't done in test
     try:
-        swift_client.delete(bucketname)
+        os_swift_client.container_delete(bucketname)
     except Exception:
         pass
 

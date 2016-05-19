@@ -191,29 +191,6 @@ class Aodh(CLICLient):
         return Result('\n'.join(lines))
 
 
-class Swift(CLICLient):
-    command = 'swift'
-
-    def post(self, name):
-        return self('post {0}'.format(name))
-
-    def list(self, name=''):
-        output = self('list -l', params=name)
-        return output.split('\n')
-
-    def delete(self, name, filename=None):
-        params = name
-        if filename:
-            params += ' {0}'.format(filename)
-        return self('delete', params=params)
-
-    def upload(self, name, filename, option=None):
-        if option:
-            return self('upload {0} {1} {2}'.format(name, option, filename))
-        else:
-            return self('upload {0} {1}'.format(name, filename))
-
-
 class S3CMD(CLICLient):
     command = 's3cmd'
 
@@ -241,6 +218,46 @@ class S3CMD(CLICLient):
 
     def bucket_del_file(self, bucket_name, filename):
         return self('del s3://{0}/{1}'.format(bucket_name, filename))
+
+
+class OpenStackSwift(CLICLient):
+    command = 'openstack'
+
+    def container_list(self):
+        output = self('container list --long -f json')
+        return json.loads(output)
+
+    def container_create(self, name):
+        output = self('container create {name} -f json'.format(name=name))
+        return json.loads(output)
+
+    def container_delete(self, name):
+        output = self('container delete --recursive {name}'.format(name=name))
+        return output
+
+    def container_show(self, name):
+        output = self('container show {name} -f json'.format(name=name))
+        return json.loads(output)
+
+    def object_list(self, container):
+        output = self('object list {container} --long -f json'.format(
+            container=container))
+        return json.loads(output)
+
+    def object_create(self, container, filename):
+        output = self('object create {container} {filename} -f json'.format(
+                container=container, filename=filename))
+        return json.loads(output)
+
+    def object_delete(self, container, filename):
+        output = self('object delete {container} {filename}'.format(
+            container=container, filename=filename))
+        return output
+
+    def object_show(self, container, filename):
+        output = self('object show {container} {filename} -f json'.format(
+            container=container, filename=filename))
+        return json.loads(output)
 
 
 class Nova(CLICLient):
