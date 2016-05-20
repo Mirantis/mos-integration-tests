@@ -12,8 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
 import re
 import subprocess
+import tarfile
+from random import randint
 from time import sleep
 from time import time
 
@@ -25,8 +28,10 @@ import six
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests.functions import file_cache
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
+from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
@@ -607,6 +612,89 @@ class NovaIntegrationTests(OpenStackTestCase):
         # Check that instance is reachable
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after creation is not reachable")
+
+
+@pytest.mark.undestructive
+class TestNovaBasicFunctionality(TestBase):
+    """Basic automated tests for OpenStack Nova verification. """
+
+    @classmethod
+    @pytest.yield_fixture
+    def cleanup_instance(cls, os_conn, security_group):
+        logger.info('Store instance list before test')
+        instances = os_conn.nova.servers.list()
+        yield
+
+        new_instances = [i for i in os_conn.nova.servers.list()
+                         if i not in instances]
+        logger.info('Delete instance if created')
+        for inst in new_instances:
+            inst.delete()
+        os_conn.wait_servers_deleted(new_instances)
+
+    @classmethod
+    @pytest.yield_fixture
+    def arch_cirros_image_id(cls, os_conn):
+        logger.info('Creating Cirros image from archive')
+        image = os_conn.glance.images.create(name="cirros_image_{}"
+                                             .format(str(randint(1, 1000))),
+                                             disk_format='qcow2',
+                                             visibility='public',
+                                             container_format='bare')
+
+        with file_cache.get_file(settings.GLANCE_IMAGE_URL) as img_file:
+            archive = os.path.join(settings.TEST_IMAGE_PATH, "Cirros.tar.gz")
+            with tarfile.open(archive, "w:gz") as tar_img:
+                tar_img.add(img_file.name)
+                tar_img.close()
+            with open(archive, 'rb') as tar_file:
+                os_conn.glance.images.upload(image.id, tar_file)
+
+        # Check that status of image is 'active'
+        assert os_conn.glance.images.get(image.id)['status'] == 'active'
+        logger.info('Cirros image created')
+
+        yield image.id
+        os_conn.glance.images.delete(image.id)
+
+    @pytest.mark.testrail_id('851850')
+    def test_launch_instance_from_image_created_from_archive(
+            self, arch_cirros_image_id, security_group, cleanup_instance):
+        """This test checks that it is possible to create image
+            from archive(tar.gz) and nova allows launch instance from it
+
+            Steps:
+            1. Create archive with img file
+            2. Create image from archive
+            3. Boot instance from newly created image
+            4. Add the floating ip to the instance
+            5. Ping the instance by the floating ip
+            6. Delete the floating ip, created image, instance
+        """
+
+        networks = self.os_conn.neutron.list_networks()['networks']
+        logger.info("Try to find internal network")
+        int_net = [n['id'] for n in networks if not n['router:external']][0]
+
+        inst = self.os_conn.create_server(
+                   name="851850_inst_{}".format(str(randint(1, 1000))),
+                   image_id=arch_cirros_image_id,
+                   availability_zone='nova',
+                   wait_for_avaliable=False,
+                   security_groups=[security_group.id],
+                   nics=[{'net-id': int_net}])
+        logger.info('Instance launched')
+
+        # Add IP and ping the instance
+        floating_ip = self.os_conn.nova.floating_ips.create()
+        inst.add_floating_ip(floating_ip.ip)
+        ping = common_functions.ping_command(floating_ip.ip)
+
+        # Delete floating IP
+        self.os_conn.nova.floating_ips.delete(floating_ip)
+
+        logger.info('Check that instance is reachable')
+        assert ping is True
 
 
 @pytest.mark.undestructive
