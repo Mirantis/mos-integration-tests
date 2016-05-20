@@ -19,7 +19,8 @@ from mos_tests.functions.common import wait
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
-                                     'initial_nodes': 2, 'max_nodes': 2}],
+                                     'initial_nodes': 2, 'max_nodes': 2,
+                                      'cadvisor': True}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836658')
 def test_kub_node_down(environment, murano, session, cluster, influx):
@@ -60,7 +61,8 @@ def test_kub_node_down(environment, murano, session, cluster, influx):
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
-                                     'initial_nodes': 1, 'max_nodes': 2}],
+                                     'initial_nodes': 1, 'max_nodes': 2,
+                                      'cadvisor': True}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836657')
 def test_kub_nodes_up(murano, environment, session, cluster, influx):
@@ -99,7 +101,8 @@ def test_kub_nodes_up(murano, environment, session, cluster, influx):
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 2, 'max_gateways': 2,
-                                     'initial_nodes': 1, 'max_nodes': 2}],
+                                     'initial_nodes': 1, 'max_nodes': 2,
+                                      'cadvisor': True}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836662')
 def test_kub_gateway_down(murano, environment, session, cluster, influx):
@@ -140,7 +143,8 @@ def test_kub_gateway_down(murano, environment, session, cluster, influx):
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
-                                     'initial_nodes': 1, 'max_nodes': 2}],
+                                     'initial_nodes': 1, 'max_nodes': 2,
+                                      'cadvisor': True}],
                          indirect=['cluster'])
 @pytest.mark.testrail_id('836659')
 def test_kub_gateway_up(murano, environment, session, cluster, influx):
@@ -358,3 +362,39 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
         res = remote.check_call('sudo docker ps | grep httpd')['stdout']
         assert len(res) == exp_count, "{0} replicas instead of {1}".format(
             len(res), exp_count)
+
+
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
+@pytest.mark.parametrize('package', [('DockerMySQL',)], indirect=['package'])
+@pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 1,
+                                     'initial_nodes': 1, 'max_nodes': 1,
+                                      'cadvisor': False}],
+                         indirect=['cluster'])
+@pytest.mark.testrail_id('543019')
+def test_k8s_deploy_without_cadvisor(
+        environment, murano, session, cluster, pod, package):
+    """ Check deploy Kubernetes cluster without cAdvisor monitoring
+    Steps:
+        1. Create Murano environment
+        2. Add Kubernetes Cluster application without cAdvisor to the
+        environment:
+        Set initial_gateways=1, max_gateways=1, initial_nodes=1, max_nodes=1,
+        cadvisor=False
+        3. Add Kubernetes Pod to the environment with replicas=1
+        4. Add some application to the environment
+        5. Deploy environment
+        6. Check deployment status and make sure that all nodes are active
+        7. Check that cAdvisor monitoring is inaccessible
+        8. Delete environment
+    """
+    murano.create_service(environment, session, murano.mysql(pod))
+    deployed_environment = murano.deploy_environment(environment, session)
+    murano.check_instances(gateways_count=1, nodes_count=1)
+    murano.status_check(deployed_environment,
+                        [[cluster['name'], "master-1", 8080],
+                         [cluster['name'], "gateway-1", 3306]
+                         ],
+                        kubernetes=True)
+    murano.status_check(deployed_environment,
+                        [[cluster['name'], "minion-1", 4194]],
+                        kubernetes=True, negative=True)
