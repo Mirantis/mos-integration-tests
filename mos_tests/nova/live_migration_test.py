@@ -19,7 +19,6 @@ import dpath.util
 from novaclient import exceptions as nova_exceptions
 import pytest
 from six.moves import configparser
-from waiting import ALL
 
 from mos_tests.functions import common
 from mos_tests.functions import file_cache
@@ -200,23 +199,14 @@ class TestLiveMigrationBase(object):
                 wait_for_avaliable=False,
                 **kwargs)
             self.instances.append(instance)
-        predicates = [lambda: self.os_conn.is_server_active(x)
-                      for x in self.instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=5 * 60,
-            waiting_for="instances to became to ACTIVE status")
+        self.os_conn.wait_servers_active(self.instances, timeout=5 * 60)
 
         if userdata is None:
-            predicates = [lambda: self.os_conn.is_server_ssh_ready(x)
-                          for x in self.instances]
+            self.os_conn.wait_servers_ssh_ready(self.instances, timeout=5 * 60)
         else:
-            predicates = [lambda: boot_marker in x.get_console_output()
-                          for x in self.instances]
-        common.wait(
-            ALL(predicates),
-            timeout_seconds=5 * 60,
-            waiting_for="instances to be ready")
+            self.os_conn.wait_marker_in_servers_log(self.instances,
+                                                    marker=boot_marker,
+                                                    timeout=5 * 60)
 
     def delete_instances(self, force=False):
         for instance in self.instances:

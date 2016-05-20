@@ -27,7 +27,6 @@ from novaclient import client as nova_client
 from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
-from waiting import ALL
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
@@ -130,33 +129,24 @@ class OpenStackActions(object):
         return self.server_status_is(server, 'ACTIVE')
 
     def wait_servers_active(self, servers, timeout=3 * 60):
-        predicates = [lambda: self.is_server_active(x) for x in servers]
-        wait(
-            ALL(predicates),
-            timeout_seconds=timeout,
-            waiting_for='instances to become at ACTIVE status')
+        wait(lambda: all(self.is_server_active(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to become at ACTIVE status')
 
     def wait_servers_ssh_ready(self, servers, timeout=3 * 60):
-        predicates = [lambda: self.is_server_ssh_ready(x) for x in servers]
-        wait(
-            ALL(predicates),
-            timeout_seconds=timeout,
-            waiting_for='instances to be ssh ready')
+        wait(lambda: all(self.is_server_ssh_ready(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to be ssh ready')
 
     def wait_servers_deleted(self, servers, timeout=3 * 60):
-        predicates = [lambda: self.is_server_deleted(x) for x in servers]
-        wait(
-            ALL(predicates),
-            timeout_seconds=timeout,
-            waiting_for='instances to be deleted')
+        wait(lambda: all(self.is_server_deleted(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to be deleted')
 
     def wait_marker_in_servers_log(self, servers, marker, timeout=3 * 60):
-        predicates = [lambda: marker in x.get_console_output()
-                      for x in servers]
-        wait(
-            ALL(predicates),
-            timeout_seconds=timeout,
-            waiting_for='marker appears in all servers log')
+        wait(lambda: all(marker in x.get_console_output() for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='marker appears in all servers log')
 
     def create_server(self, name, image_id=None, flavor=1, userdata=None,
                       files=None, key_name=None, timeout=300,
