@@ -163,8 +163,7 @@ def restart_rabbitmq_serv(env, remote=None, one_by_one=True, sleep_sec=300):
                  'echo "Started p_rabbitmq-server"' % sleep_sec,
         'stop': 'pcs resource ban p_rabbitmq-server --wait=%d || '
                 'echo "Stopped p_rabbitmq-server"' % sleep_sec,
-        'restart_all': 'pcs resource restart p_rabbitmq-server --wait=%d || '
-                       'echo "Restarted p_rabbitmq-server"' % sleep_sec * 2
+        'restart_all': 'pcs resource restart p_rabbitmq-server'
     }
     controllers = env.get_nodes_by_role('controller')
     if remote is None:
