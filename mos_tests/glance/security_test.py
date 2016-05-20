@@ -14,16 +14,26 @@
 #    under the License.
 
 
+import datetime
+import logging
 import pytest
+import re
 import requests
+import time
 
 from glanceclient.exc import Forbidden
 
+from multiprocessing.dummy import Process
 from six.moves import configparser
 
+from mos_tests.functions import file_cache
+from mos_tests.functions.common import wait
 from mos_tests.glance.conftest import wait_for_glance_alive
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -58,7 +68,61 @@ def change_glance_credentials(env, openstack_client, os_conn):
     wait_for_glance_alive(os_conn)
 
 
+@pytest.fixture
+def set_file_glance_storage_with_quota(env, os_conn):
+    """Enable file storage and set storage quota to 604979776 Bytes"""
+
+    config_api = '/etc/glance/glance-api.conf'
+
+    def change_storage(node):
+        with node.ssh() as remote:
+            with remote.open(config_api) as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+                parser.set('glance_store', 'stores', 'file,http')
+                parser.set('glance_store', 'default_store', 'file')
+                parser.set('DEFAULT', 'user_storage_quota', '604979776')
+            with remote.open(config_api, 'w') as f:
+                parser.write(f)
+
+            remote.check_call('service glance-api restart')
+
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        change_storage(controller)
+    wait_for_glance_alive(os_conn)
+
+
 class TestGlanceSecurity(TestBase):
+
+    def get_used_space_for_glance_images(self, timeout, sleep_sec):
+        used_space_list = []
+        controllers = self.env.get_nodes_by_role('controller')
+        for controller in controllers:
+            with controller.ssh() as remote:
+                wait(lambda: len(remote.check_call(
+                    'ls /var/lib/glance/images')['stdout']) == 0,
+                     timeout_seconds=timeout,
+                     sleep_seconds=sleep_sec,
+                     waiting_for='used space to be cleared')
+                cmd = 'df -k | grep /dev/mapper/image-glance'
+                out = remote.execute(cmd).stdout_string
+            used_space = int(re.findall(r'\d+', out)[1]) * 1024
+            used_space_list.append(used_space)
+        return used_space_list
+
+    def get_images_values_from_mysql_db(self, images_id):
+        images_values = {}
+        controller = self.env.get_nodes_by_role('controller')[0]
+        with controller.ssh() as remote:
+            for image_id in images_id:
+                cmd = ('mysql --database="glance" -e '
+                       '"select * from images where id=\'{0}\'";'
+                       .format(image_id))
+                out = remote.check_call(cmd).stdout_string.split('\n')
+                out_values = [i.split('\t') for i in out][1]
+                images_values[image_id] = out_values
+            return images_values
 
     @pytest.mark.undestructive
     @pytest.mark.testrail_id('836638')
@@ -259,3 +323,138 @@ class TestGlanceSecurity(TestBase):
         err_msg = ('Glance image status is changed to [{0}].'
                    'Expected is [active]').format(image_status)
         assert image_status == 'active', err_msg
+
+    @pytest.mark.testrail_id('542939')
+    @pytest.mark.usefixtures('set_file_glance_storage_with_quota')
+    @pytest.mark.parametrize('glance_remote', [1], indirect=['glance_remote'])
+    def test_glance_user_storage_quota_bypass_1_1(self, glance_remote, suffix,
+                                                  env):
+        """If deleting images in 'saving' status, storage quota is overcome by
+        user because images in deleted state are not taken into account by
+        quota. These image files should be deleted after the upload of files
+        is completed.
+
+        Scenario:
+            1. Set 'file' storage on glance-api.conf
+            2. Set 'user_storage_quota' to 604979776 in glance-api.conf
+            (a little more than the size of the image) and restart glance-api
+            service
+            3. Run 5-min cycle which creates image, wait 3 sec and then
+            deletes it in "saving" status (and in any other status if any) on
+            every iteration
+            4. After the end of cycle wait until the upload of deleted images
+            is completed and then check disk usage of /dev/mapper/image-glance
+            with 'df' command and make sure that used disk space is less then
+            storage quota
+            5. When the upload of files is completed, check that images
+            statuses are "deleted" in mysql database
+
+        Duration 25m
+        """
+        user_storage_quota = 604979776
+        start_time = datetime.datetime.now()
+        duration = datetime.timedelta(seconds=300)
+        stop_time = start_time + duration
+        name = "Test_{0}".format(suffix[:6])
+        image_url = ("http://releases.ubuntu.com/14.04/"
+                     "ubuntu-14.04.4-server-i386.iso")
+        images_id = []
+        cmd = ('image-create --name {name} --container-format ami '
+               '--disk-format ami --copy-from {image_url} --progress'
+               .format(name=name, image_url=image_url))
+
+        while 1:
+            image = glance_remote(cmd).details()
+            logger.info("Image status = {0}".format(image['status']))
+            time.sleep(3)
+            image = self.os_conn.glance.images.get(image['id'])
+            if image.status == "saving":
+                logger.info("Image status = {0}".format(image.status))
+                self.os_conn.glance.images.delete(image.id)
+                logger.info("Image {0} is deleted in saving state"
+                            .format(image.id))
+            else:
+                self.os_conn.glance.images.delete(image.id)
+            images_id.append(image.id)
+            if datetime.datetime.now() >= stop_time:
+                break
+
+        used_space_list = self.get_used_space_for_glance_images(60 * 25, 30)
+        err_msg = "Glance user storage quota is exceeded"
+        for used_space in used_space_list:
+            assert used_space <= user_storage_quota, err_msg
+
+        images_values = self.get_images_values_from_mysql_db(images_id)
+        for image_id in images_values:
+            image_values = images_values[image_id]
+            err_msg = 'Status of image {0} is not deleted'.format(image_id)
+            assert "deleted" in image_values, err_msg
+
+    @pytest.mark.testrail_id('857203')
+    @pytest.mark.usefixtures('set_file_glance_storage_with_quota')
+    @pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+    def test_glance_user_storage_quota_bypass_1_2(self, glance_remote, suffix,
+                                                  env):
+        """If deleting images in 'saving' status, storage quota is overcome by
+        user because images in deleted state are not taken into account by
+        quota. These image files should be deleted after the upload of files
+        is completed.
+
+        Scenario:
+            1. Set 'file' storage on glance-api.conf
+            2. Set 'user_storage_quota' to 604979776 in glance-api.conf
+            (a little more than the size of the image) and restart glance-api
+            service
+            3. Run 5-min cycle which creates image, wait 3 sec and then
+            deletes it in "saving" status (and in any other status if any) on
+            every iteration
+            4. After the end of cycle wait until the upload of deleted images
+            is completed and then check disk usage of /dev/mapper/image-glance
+            with 'df' command and make sure that used disk space is less then
+            storage quota
+            5. When the upload of files is completed, check that images
+            statuses are "deleted" in mysql database
+
+        Duration 5m
+        """
+        user_storage_quota = 604979776
+        name = "Test_{0}".format(suffix[:6])
+        image_url = ("http://releases.ubuntu.com/14.04/"
+                     "ubuntu-14.04.4-server-i386.iso")
+        file_path = file_cache.get_file_path(image_url)
+        start_time = datetime.datetime.now()
+        duration = datetime.timedelta(seconds=300)
+        stop_time = start_time + duration
+        images_id = []
+
+        while 1:
+            image = self.os_conn.glance.images.create(name=name,
+                                                      disk_format='qcow2',
+                                                      container_format='bare')
+            p = Process(target=self.os_conn.glance.images.upload,
+                        args=(image.id, open(file_path), ))
+            p.start()
+            time.sleep(3)
+            image = self.os_conn.glance.images.get(image.id)
+            if image.status == 'saving':
+                logger.info("Image status = {0}".format(image.status))
+                self.os_conn.glance.images.delete(image.id)
+                logger.info("Image {0} is deleted in saving state"
+                            .format(image.id))
+            else:
+                self.os_conn.glance.images.delete(image.id)
+            images_id.append(image.id)
+            p.join()
+            if datetime.datetime.now() >= stop_time:
+                break
+
+        used_space_list = self.get_used_space_for_glance_images(60, 1)
+        err_msg = "Glance user storage quota is exceeded"
+        for used_space in used_space_list:
+            assert used_space <= user_storage_quota, err_msg
+
+        images_values = self.get_images_values_from_mysql_db(images_id)
+        for image_id in images_values:
+            image_values = images_values[image_id]
+            err_msg = 'Status of image {0} is not deleted'.format(image_id)
+            assert "deleted" in image_values, err_msg
