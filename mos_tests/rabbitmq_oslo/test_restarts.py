@@ -19,6 +19,7 @@ import re
 import requests
 import sys
 import time
+import uuid
 
 import pytest
 from six.moves import configparser
@@ -106,7 +107,8 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, rabbit_userid,
         parser.set('oslo_messaging_rabbit', 'rabbit_userid', rabbit_userid)
         parser.set('oslo_messaging_rabbit', 'rabbit_password', rabbit_password)
         # For use message ha replication
-        parser.set('DEFAULT', 'topic', 'event.run_tests')
+        parser.set('DEFAULT', 'topic', 'event.oslo_messaging_tool_%s' %
+                   uuid.uuid4())
         # Dump to cfg file to screen
         parser.write(sys.stdout)
         logger.debug('Write [{0}] config file to {1}.'.format(
