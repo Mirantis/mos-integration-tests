@@ -23,6 +23,7 @@ from mos_tests.functions import network_checks
 from mos_tests.nfv.base import page_2mb
 from mos_tests.nfv.base import TestBaseNFV
 from mos_tests.nfv.conftest import computes_configuration
+from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
 from mos_tests.settings import UBUNTU_QCOW2_URL
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,16 @@ def nova_ceph(env):
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_vlan', 'is_ceph_enabled')
 class TestLiveMigrationCeph(TestBaseNFV):
+
+    flavors_to_create = [
+        {'name': 'm1.medium.perfomance_1',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 1}},
+        {'name': 'm1.medium.perfomance_2',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}}]
 
     @pytest.mark.parametrize('computes_with_hp_2mb',
                              [{'host_count': 2, 'hp_count_per_host': 768}],
@@ -133,12 +144,88 @@ class TestLiveMigrationCeph(TestBaseNFV):
             self.check_instance_page_size(os_conn, vm, size=page_2mb)
         network_checks.check_vm_connectivity(env, os_conn)
 
+    @pytest.mark.testrail_id('838329')
+    def test_lm_ceph_for_cpu_pinning(self, env, os_conn, networks, nova_ceph,
+                                     volume, flavors, security_group,
+                                     aggregate):
+        """This test checks that live migration executed successfully for
+            instances created on computes with ceph and 2 Numa nodes
+            Steps:
+                1. Create net1 with subnet, net2 with subnet and  router1 with
+                   interfaces to both nets
+                2. Launch instance vm1 with volume vol1 on compute-1 in net1
+                   with flavor m1.medium.performance_1
+                3. Launch instance vm2 on compute-2 in net2 with flavor
+                   m1.medium.performance_1
+                4. Make volume from vm2 volume_vm2
+                5. Launch instance vm3 on compute-2 in net2 with volume_vm2
+                   with flavor m1.medium.performance_1
+                6. Live migrate vm1 on compute-2 and check that vm moved to
+                   compute-2 with Active state
+                7. Live migrate vm2 with block-migrate parameter on compute-1
+                   and check that vm moved to compute-1 with Active state
+                8. Live migrate vm3 on compute-1 and check that vm moved to
+                   compute-1 with Active state
+                9. Check vms connectivity
+                10. Remove vm1, vm2 and vm3
+                11. Repeat actions for flavor m1.medium.performance_2
+        """
+        hosts = aggregate.hosts
+        cpus = get_cpu_distribition_per_numa_node(env)
+
+        for numa_count, cpu_flavor in enumerate(flavors, start=1):
+            vm_1 = os_conn.create_server(
+                name='vm1', flavor=cpu_flavor.id,
+                nics=[{'net-id': networks[0]}],
+                availability_zone='nova:{}'.format(hosts[0]),
+                security_groups=[security_group.id],
+                block_device_mapping={'vda': volume.id})
+            vm_2 = os_conn.create_server(
+                name='vm2', flavor=cpu_flavor.id,
+                availability_zone='nova:{}'.format(hosts[1]),
+                security_groups=[security_group.id],
+                nics=[{'net-id': networks[1]}])
+            volume_vm2 = self.create_volume_from_vm(os_conn, vm_2, size=20)
+            vm_3 = os_conn.create_server(
+                name='vm3', flavor=cpu_flavor.id,
+                nics=[{'net-id': networks[1]}],
+                availability_zone='nova:{}'.format(hosts[1]),
+                security_groups=[security_group.id],
+                block_device_mapping={'vda': volume_vm2})
+            vms = [vm_1, vm_2, vm_3]
+            network_checks.check_vm_connectivity(env, os_conn)
+
+            self.live_migrate(os_conn, vms[0], hosts[1], block_migration=False)
+            self.check_cpu_for_vm(os_conn, vms[0], numa_count, cpus[hosts[1]])
+
+            self.live_migrate(os_conn, vms[1], hosts[0])
+            self.check_cpu_for_vm(os_conn, vms[1], numa_count, cpus[hosts[0]])
+
+            self.live_migrate(os_conn, vms[2], hosts[0], block_migration=False)
+            self.check_cpu_for_vm(os_conn, vms[2], numa_count, cpus[hosts[0]])
+
+            network_checks.check_vm_connectivity(env, os_conn)
+            self.delete_servers(os_conn)
+
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_vlan', 'not is_ceph_enabled')
 class TestLiveMigrationCinder(TestBaseNFV):
 
     small_nfv_flavor = {"name": "small.hpgs", "ram": 512, "vcpu": 1, "disk": 5}
+    marker = 'cpulimit is installed'
+    userdata = '\n'.join(['#!/bin/bash -v', 'apt-get install -y cpulimit',
+                          'echo "{0}"'.format(marker)])
+
+    flavors_to_create = [
+        {'name': 'm1.medium.perfomance_1',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 1}},
+        {'name': 'm1.medium.perfomance_2',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}}]
 
     @pytest.yield_fixture
     def ubuntu_image_id(self, os_conn):
@@ -195,12 +282,9 @@ class TestLiveMigrationCinder(TestBaseNFV):
             check that vm moved to compute-2 with Active state
             11. Check vms connectivity
         """
-        marker = 'cpulimit is installed'
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
-        userdata = '\n'.join(['#!/bin/bash -v', 'apt-get install cpulimit',
-                              'echo "{0}"'.format(marker)])
 
         vm_0 = os_conn.create_server(
             name='vm1', flavor=small_nfv_flavor.id,
@@ -210,12 +294,12 @@ class TestLiveMigrationCinder(TestBaseNFV):
             block_device_mapping={'vda': volume.id})
         vm_1 = os_conn.create_server(
             name='vm2', image_id=ubuntu_image_id, flavor=small_nfv_flavor.id,
-            key_name=keypair.name, userdata=userdata,
+            key_name=keypair.name, userdata=self.userdata,
             availability_zone='nova:{}'.format(hosts[1]),
             security_groups=[security_group.id],
             nics=[{'net-id': networks[1]}])
         vms = [vm_0, vm_1]
-        common.wait(lambda: marker in vm_1.get_console_output(),
+        common.wait(lambda: self.marker in vm_1.get_console_output(),
                     timeout_seconds=5 * 60,
                     waiting_for="instance to be ready with cpulimit installed")
 
@@ -265,3 +349,65 @@ class TestLiveMigrationCinder(TestBaseNFV):
             env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
         self.cpu_load(env, os_conn, vms[1], vm_keypair=keypair,
                       vm_login='ubuntu', action='stop')
+
+    @pytest.mark.testrail_id('838325')
+    def test_lm_cinder_lvm_for_cpu_pinning(self, env, os_conn, networks,
+                                           volume, keypair, flavors,
+                                           security_group, aggregate,
+                                           ubuntu_image_id):
+        """This test checks that live migration executed successfully for
+            instances created on computes with cinder and 2 Numa nodes
+            Steps:
+                1. Create net1 with subnet, net2 with subnet and  router1 with
+                   interfaces to both nets
+                2. Launch instance vm1 with volume vol1 on compute-1 in net1
+                   with flavor m1.small.performance_1
+                3. Launch instance vm2 on compute-2 in net2 with with flavor
+                   m1.small.performance_1
+                4. Live migrate vm1 with block-migrate parameter on compute-2
+                   and check that vm moved to compute-2 with Active state
+                5. Live migrate vm2 with block-migrate parameter on compute-1
+                   and check that vm moved to compute-1 with Active state
+                6. Check vms connectivity
+                7. Run CPU load on vm2
+                8. Live migrate vm2 with block-migrate parameter on compute-2
+                   and check that vm moved to compute-2 with Active state
+                9. Check vms connectivity
+                10. Remove vm1 and vm2
+                11. Repeat actions for flavor m1.medium.performance_2
+        """
+        hosts = aggregate.hosts
+        cpus = get_cpu_distribition_per_numa_node(env)
+
+        for numa_count, cpu_flavor in enumerate(flavors, start=1):
+            vm_1 = os_conn.create_server(
+                name='vm1', flavor=cpu_flavor.id,
+                nics=[{'net-id': networks[0]}], key_name=keypair.name,
+                availability_zone='nova:{}'.format(hosts[0]),
+                security_groups=[security_group.id],
+                block_device_mapping={'vda': volume.id})
+            vm_2 = os_conn.create_server(
+                name='vm2', image_id=ubuntu_image_id,
+                flavor=cpu_flavor.id,
+                key_name=keypair.name, userdata=self.userdata,
+                availability_zone='nova:{}'.format(hosts[1]),
+                security_groups=[security_group.id],
+                nics=[{'net-id': networks[1]}])
+            vms = [vm_1, vm_2]
+            common.wait(lambda: self.marker in vm_2.get_console_output(),
+                        timeout_seconds=5 * 60,
+                        waiting_for="cpulimit installed")
+            self.check_vm_connectivity_cirros_ubuntu(
+                env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
+            self.live_migrate(os_conn, vms[0], hosts[1], block_migration=False)
+            self.live_migrate(os_conn, vms[1], hosts[0])
+            self.check_vm_connectivity_cirros_ubuntu(
+                env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
+            self.cpu_load(
+                env, os_conn, vms[1], vm_keypair=keypair, vm_login='ubuntu')
+            self.live_migrate(os_conn, vms[1], hosts[1])
+            self.check_vm_connectivity_cirros_ubuntu(
+                env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
+            self.check_cpu_for_vm(os_conn, vms[0], numa_count, cpus[hosts[1]])
+            self.check_cpu_for_vm(os_conn, vms[1], numa_count, cpus[hosts[1]])
+            self.delete_servers(os_conn)
