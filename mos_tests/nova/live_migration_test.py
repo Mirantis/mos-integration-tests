@@ -286,6 +286,147 @@ class TestLiveMigrationBase(object):
             waiting_for='hypervisor info be updated')
 
 
+@pytest.mark.testrail_id('856599')
+def test_image_access_host_device_when_resizing(os_conn,
+                                                ubuntu_image_id,
+                                                keypair,
+                                                network,
+                                                router,
+                                                security_group):
+    """Test to cover bugs #1552683 and #1548450 (CVE-2016-2140)
+
+    1. Check use_cow_images=0 value in nova config on all computes
+    2. Start instance with ephemeral disk
+    3. umount /mnt in instance
+    4. On instance create qcow2 image with baking_file
+        linked to target host device in ephemeral block device
+        something like: qemu-img create -f qcow2
+        -o backing_file=/dev/sda3,backing_fmt=raw /dev/vdb 20G
+    5. Change flavor or migrate instance
+
+    EX: /vbd in instance should not be linked to host device
+
+    Duration: 2-5 minutes
+    """
+
+    # change nova config on all computes and restart nova service
+    nova_config_path = '/etc/nova/nova.conf'
+    restart_cmd = 'service nova-compute restart'
+
+    def wait_nova_alive():
+        common.wait(os_conn.is_nova_ready,
+                    timeout_seconds=60 * 3,
+                    expected_exceptions=Exception,
+                    waiting_for="Nova services to be alive")
+
+    computes = os_conn.env.get_nodes_by_role('compute')
+
+    for node in computes:
+        with node.ssh() as remote:
+            remote.check_call('cp {0} {0}.bak'.format(nova_config_path))
+
+            parser = configparser.RawConfigParser()
+            with remote.open(nova_config_path) as f:
+                parser.readfp(f)
+            parser.set('DEFAULT', 'use_cow_images', False)
+            with remote.open(nova_config_path, 'w') as f:
+                parser.write(f)
+            remote.check_call(restart_cmd)
+
+    wait_nova_alive()
+
+    # create 2 flavors and spawn instance
+
+    flavor_little = os_conn.nova.flavors.create(name='test-eph',
+                                                ram=1024,
+                                                vcpus=1,
+                                                disk=5,
+                                                ephemeral=1)
+
+    flavor_large = os_conn.nova.flavors.create(name='test-eph-large',
+                                               ram=2048,
+                                               vcpus=1,
+                                               disk=5,
+                                               ephemeral=1)
+
+    instance = os_conn.create_server(
+        name='server-test-ubuntu',
+        availability_zone='nova',
+        key_name=keypair.name,
+        image_id=ubuntu_image_id,
+        flavor=flavor_little,
+        nics=[{'net-id': network['network']['id']}],
+        security_groups=[security_group.id],
+        wait_for_active=False,
+        wait_for_avaliable=False)
+
+    common.wait(
+        lambda: os_conn.is_server_active(instance),
+        timeout_seconds=2 * 60,
+        waiting_for="Instance to be in active status")
+
+    common.wait(
+        lambda: os_conn.is_server_ssh_ready(instance),
+        timeout_seconds=5 * 60,
+        waiting_for="Instance to be accessed via ssh")
+
+    # validate + umount /mnt and create qcow image
+
+    with os_conn.ssh_to_instance(os_conn.env,
+                                 instance,
+                                 vm_keypair=keypair,
+                                 username='ubuntu') as remote:
+        cmd_result = remote.execute('sudo lsblk')
+
+        assert (cmd_result.is_ok is True), "lsblk command fail"
+        assert ("/mnt" in cmd_result.stdout_string), "/mnt should be mounted"
+        remote.check_call('sudo apt-get install -y qemu-utils && '
+                          'sudo umount /mnt && '
+                          'sudo qemu-img create -f qcow2 '
+                          '-o backing_file=/dev/sda3,backing_fmt=raw '
+                          '/dev/vdb 20G')
+
+    # resize instance
+    instance.resize(flavor_large)
+
+    common.wait(
+        lambda: os_conn.server_status_is(instance, 'VERIFY_RESIZE'),
+        timeout_seconds=1 * 60,
+        waiting_for='instance became to VERIFY_RESIZE status')
+
+    instance.confirm_resize()
+
+    common.wait(
+        lambda: os_conn.is_server_ssh_ready(instance),
+        timeout_seconds=1 * 60,
+        waiting_for="Instance to be accessed via ssh")
+
+    # validate /mnt is not mounted
+    with os_conn.ssh_to_instance(os_conn.env,
+                                 instance,
+                                 vm_keypair=keypair,
+                                 username='ubuntu') as remote:
+        cmd_result = remote.execute('sudo lsblk')
+        assert (cmd_result.is_ok is True), "lsblk command fail"
+        assert ("/mnt" not in cmd_result.stdout_string),\
+            "/mnt mounted,instance have access to host machine"
+
+    # cleanup
+    instance.force_delete()
+
+    os_conn.nova.flavors.delete(flavor_little)
+    os_conn.nova.flavors.delete(flavor_large)
+
+    # restore configs
+    for node in computes:
+        with node.ssh() as remote:
+            result = remote.execute('cp {0}.bak {0}'.format(nova_config_path))
+            if result.is_ok:
+                remote.check_call(restart_cmd)
+
+    wait_nova_alive()
+
+
 class TestLiveMigration(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838028', block_migration=True)
     @pytest.mark.testrail_id('838257',
