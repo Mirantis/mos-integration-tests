@@ -77,9 +77,9 @@ def test_disable_ha_for_rpc_queues_by_default(env):
     assert (filter(
         lambda x: 'enable_notifications_ha=true' in x, resp_pcs) != [] and
             filter(lambda x: 'enable_notifications_ha=false' not
-                             in x, resp_pcs) != [])\
-         ('Disabled HA notifications (should be enabled)')
+                             in x, resp_pcs) != []), (
+        'Disabled HA notifications (should be enabled)')
 
     assert (filter(lambda x: 'enable_rpc_ha=false' in x, resp_pcs) != [] and
-            filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != [])\
-        ('Enabled HA RPC (should be disabled)')
+            filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != []), (
+        'Enabled HA RPC (should be disabled)')
