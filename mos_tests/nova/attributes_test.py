@@ -47,7 +47,7 @@ def test_server_address_during_boot(instance, os_conn):
         2. Boot an instance vm1 in net01
         3. Check that the network field isn't visible when the instance is
             in BUILD status
-        4. Waitwhile an instance goes to an ACTIVE status
+        4. Wait while an instance goes to an ACTIVE status
         5. Check that now the network field is visible
     """
     common.wait(lambda: os_conn.server_status_is(instance, 'BUILD'),
