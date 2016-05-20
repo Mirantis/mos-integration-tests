@@ -47,7 +47,8 @@ def environment(murano, clear_old, package):
     environment = murano.murano.environments.create(
         {'name': murano.rand_name('MuranoEnv')})
     yield environment
-    murano.murano.environments.delete(environment.id)
+    murano.murano.environments.delete(environment.id, abandon=True)
+    murano.delete_stacks(environment.id)
 
 
 @pytest.yield_fixture

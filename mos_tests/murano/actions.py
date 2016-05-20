@@ -36,6 +36,7 @@ class MuranoActions(object):
         self.murano = MuranoClient(endpoint=self.murano_endpoint,
                                    token=os_conn.session.get_token(),
                                    cacert=os_conn.path_to_cert)
+        self.heat = os_conn.heat
 
     def rand_name(self, name):
         return name + '_' + str(random.randint(1, 0x7fffffff))
@@ -56,7 +57,7 @@ class MuranoActions(object):
             if status == 'deploy failure':
                 raise Exception('Environment deploy finished with errors')
             return status == 'ready'
-        wait(is_murano_env_deployed, timeout_seconds=1200,
+        wait(is_murano_env_deployed, timeout_seconds=1800,
              waiting_for='environment is ready')
 
         environment = self.murano.environments.get(environment.id)
@@ -216,6 +217,18 @@ class MuranoActions(object):
             pass
         else:
             self.fail("Service path unavailable")
+
+    def _get_stack(self, environment_id):
+        for stack in self.heat.stacks.list():
+            if environment_id in stack.description:
+                return stack
+
+    def delete_stacks(self, environment_id):
+        stack = self._get_stack(environment_id)
+        if not stack:
+            return
+        else:
+            self.heat.stacks.delete(stack.id)
 
     def influxdb(self, host, name='Influx', db='db1;db2'):
         post_body = {
