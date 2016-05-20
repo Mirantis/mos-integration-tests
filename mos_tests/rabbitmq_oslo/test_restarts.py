@@ -41,6 +41,7 @@ def vars_config(remote):
         'pkg': settings.RABBITOSLO_PKG,
         'config_remote_location': '/etc/nova/nova.conf',
         'repo_path': '/root/oslo_messaging_check_tool/',
+        'tool_rpc_port': settings.RABBITOSLO_TOOL_PORT,
     }
     # get user and password of oslo_messaging_rabbit
     with remote.open(config_vars['config_remote_location']) as f:
@@ -87,13 +88,15 @@ def install_oslomessagingchecktool(remote, **kwargs):
 
 
 def configure_oslomessagingchecktool(remote, ctrl_ips, rabbit_userid,
-                                     rabbit_password,
+                                     rabbit_password, tool_rpc_port,
                                      cfg_file_path, sample_cfg_file_path):
     """Write configuration file on controller.
     :param remote: SSH connection point to controller;
     :param ctrl_ips: List of controllers IPs;
     :param rabbit_userid: Name of Rabbit admin;
     :param rabbit_password: Password of Rabbit admin;
+    :param tool_rpc_port: Check tool will listen for HTTP requests
+        on that port;
     :param cfg_file_path: Path where config file will be written;
     :param sample_cfg_file_path: Path for sample config file.
     """
@@ -109,6 +112,7 @@ def configure_oslomessagingchecktool(remote, ctrl_ips, rabbit_userid,
         # For use message ha replication
         parser.set('DEFAULT', 'topic', 'event.oslo_messaging_tool_%s' %
                    uuid.uuid4())
+        parser.set('DEFAULT', 'listen_port', tool_rpc_port)
         # Dump to cfg file to screen
         parser.write(sys.stdout)
         logger.debug('Write [{0}] config file to {1}.'.format(
@@ -272,7 +276,7 @@ def rabbit_rpc_client_start(remote, cfg_file_path):
     return remote.host
 
 
-def get_http_code(host_ip, port=5000):
+def get_http_code(host_ip, port=settings.RABBITOSLO_TOOL_PORT):
     # curl to client
     url = 'http://{host}:{port}'.format(host=host_ip, port=port)
     try:  # server may not be ready yet
@@ -348,8 +352,8 @@ def test_load_messages_and_restart_one_all_controller(
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['rabbit_userid'],
-            kwargs['rabbit_password'], kwargs['cfg_file_path'],
-            kwargs['sample_cfg_file_path'])
+            kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
 
         # Generate messages
         num_of_msg_to_gen = 10000
@@ -405,8 +409,8 @@ def test_load_messages_and_shutdown_eth_on_all(env):
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['rabbit_userid'],
-            kwargs['rabbit_password'], kwargs['cfg_file_path'],
-            kwargs['sample_cfg_file_path'])
+            kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
         # Generate messages
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
@@ -474,8 +478,8 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
         install_oslomessagingchecktool(remote, **kwargs)
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['rabbit_userid'],
-            kwargs['rabbit_password'], kwargs['cfg_file_path'],
-            kwargs['sample_cfg_file_path'])
+            kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+            kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
         # Generate messages
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
@@ -498,7 +502,7 @@ def test_load_messages_and_restart_prim_nonprim_ctrlr(restart_ctrlr, env):
 @pytest.mark.testrail_id('838292', params={'restart_ctrlr': 'non_prim'})
 @pytest.mark.parametrize('restart_ctrlr', ['one', 'all', 'prim', 'non_prim'])
 def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
-        env, restart_ctrlr, fixt_open_5000_port_on_nodes,
+        env, restart_ctrlr, fixt_open_tool_port_on_nodes,
         fixt_kill_rpc_server_client):
     """Tests:
     Start RabbitMQ RPC server and client and restart RabbitMQ on one controller
@@ -510,7 +514,7 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
     2. Prepare config file for both nodes above;
     3. Run 'oslo_msg_check_client' on compute node;
     4. Run 'oslo_msg_check_server' on controller node;
-    5. To be able to use port 5000 from any node open it in IPTables;
+    5. To be able to use check tool RPC port from any node open it in IPTables;
     6. Send GET curl request from any node to 'oslo_msg_check_client'
         located on compute node and check that response will '200';
     7. Restart RabbitMQ-server on one OR all controller(s) one-by-one;
@@ -545,8 +549,8 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
                 remote, ctrl_ips, kwargs['rabbit_userid'],
-                kwargs['rabbit_password'], kwargs['cfg_file_path'],
-                kwargs['sample_cfg_file_path'])
+                kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
 
     # client: run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -581,13 +585,13 @@ def test_start_rpc_srv_client_restart_rabbit_one_all_ctrllr(
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838291')
 def test_start_rpc_srv_client_shutdown_eth_on_all(
-        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client):
+        env, fixt_open_tool_port_on_nodes, fixt_kill_rpc_server_client):
     """Tests:
     Start RabbitMQ RPC server and client and shutdown eth interfaces on
         all controllers.
 
     Actions:
-    2. To be able to use port 5000 from any node open it in IPTables;
+    2. To be able to use check tool RPC port from any node open it in IPTables;
     3. Install 'oslo.messaging-check-tool' on controller and compute;
     4. Prepare config file for both nodes above;
     5. Run 'oslo_msg_check_client' on compute node;
@@ -619,8 +623,8 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
                 remote, ctrl_ips, kwargs['rabbit_userid'],
-                kwargs['rabbit_password'], kwargs['cfg_file_path'],
-                kwargs['sample_cfg_file_path'])
+                kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -667,7 +671,7 @@ def test_start_rpc_srv_client_shutdown_eth_on_all(
 @pytest.mark.parametrize('patch_iptables', ['drop', 'reject'],
                          indirect=['patch_iptables'])
 def test_start_rpc_srv_client_iptables_modify(
-        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client,
+        env, fixt_open_tool_port_on_nodes, fixt_kill_rpc_server_client,
         patch_iptables, controller):
     """Tests:
     Start RabbitMQ RPC server and client and apply IPTABLES DROP rules
@@ -676,7 +680,7 @@ def test_start_rpc_srv_client_iptables_modify(
     Actions:
     1. Apply IPTables Drop OR Reject rules to controller where
         'oslo_msg_check_server' will be launched;
-    2. To be able to use port 5000 from any node open it in IPTables;
+    2. To be able to use check tool RPC port from any node open it in IPTables;
     3. Install 'oslo.messaging-check-tool' on controller and compute;
     4. Prepare config file for both nodes above;
     5. Run 'oslo_msg_check_client' on compute node;
@@ -700,8 +704,8 @@ def test_start_rpc_srv_client_iptables_modify(
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
                 remote, ctrl_ips, kwargs['rabbit_userid'],
-                kwargs['rabbit_password'], kwargs['cfg_file_path'],
-                kwargs['sample_cfg_file_path'])
+                kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:
@@ -725,13 +729,13 @@ def test_start_rpc_srv_client_iptables_modify(
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('838296')
 def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
-        env, fixt_open_5000_port_on_nodes, fixt_kill_rpc_server_client):
+        env, fixt_open_tool_port_on_nodes, fixt_kill_rpc_server_client):
     """Tests:
     Start RabbitMQ RPC server and client and kill RabbitMQ service
         with 'kill -9' on different nodes many times.
 
     Actions:
-    1. To be able to use port 5000 from any node open it in IPTables;
+    1. To be able to use check tool RPC port from any node open it in IPTables;
     2. Install 'oslo.messaging-check-tool' on controller and compute;
     3. Prepare config file for both nodes above;
     4. Run 'oslo_msg_check_client' on compute node;
@@ -770,8 +774,8 @@ def test_start_rpc_srv_client_gen_msg_kill_rabbit_service(
             install_oslomessagingchecktool(remote, **kwargs)
             configure_oslomessagingchecktool(
                 remote, ctrl_ips, kwargs['rabbit_userid'],
-                kwargs['rabbit_password'], kwargs['cfg_file_path'],
-                kwargs['sample_cfg_file_path'])
+                kwargs['rabbit_password'], kwargs['tool_rpc_port'],
+                kwargs['cfg_file_path'], kwargs['sample_cfg_file_path'])
 
     # Client: Run 'oslo_msg_check_client' on compute
     with compute.ssh() as remote:

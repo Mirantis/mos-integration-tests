@@ -13,10 +13,10 @@
 #    under the License.
 
 import os
+from random import randint
 import re
 import subprocess
 import tarfile
-from random import randint
 from time import sleep
 from time import time
 
@@ -677,12 +677,12 @@ class TestNovaBasicFunctionality(TestBase):
         int_net = [n['id'] for n in networks if not n['router:external']][0]
 
         inst = self.os_conn.create_server(
-                   name="851850_inst_{}".format(str(randint(1, 1000))),
-                   image_id=arch_cirros_image_id,
-                   availability_zone='nova',
-                   wait_for_avaliable=False,
-                   security_groups=[security_group.id],
-                   nics=[{'net-id': int_net}])
+            name="851850_inst_{}".format(str(randint(1, 1000))),
+            image_id=arch_cirros_image_id,
+            availability_zone='nova',
+            wait_for_avaliable=False,
+            security_groups=[security_group.id],
+            nics=[{'net-id': int_net}])
         logger.info('Instance launched')
 
         # Add IP and ping the instance

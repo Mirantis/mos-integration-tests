@@ -91,3 +91,4 @@ IRONIC_DISK_GB = 50
 
 RABBITOSLO_REPO = 'https://github.com/dmitrymex/oslo.messaging-check-tool.git'
 RABBITOSLO_PKG = 'oslo.messaging-check-tool*.deb'
+RABBITOSLO_TOOL_PORT = 43134

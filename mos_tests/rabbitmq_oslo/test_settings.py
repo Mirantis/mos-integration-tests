@@ -74,11 +74,12 @@ def test_disable_ha_for_rpc_queues_by_default(env):
         wait_for_rabbit_running_nodes(remote, len(controllers))
         resp_pcs = remote.execute('pcs resource show '
                                   'p_rabbitmq-server')['stdout']
-    assert (filter(
-        lambda x: 'enable_notifications_ha=true' in x, resp_pcs) != [] and
-            filter(lambda x: 'enable_notifications_ha=false' not
-                             in x, resp_pcs) != []), (
-        'Disabled HA notifications (should be enabled)')
+    assert (
+        filter(
+            lambda x: 'enable_notifications_ha=true' in x, resp_pcs) != [] and
+        filter(
+            lambda x: 'enable_notifications_ha=false' not in x, resp_pcs) != []
+    ), 'Disabled HA notifications (should be enabled)'
 
     assert (filter(lambda x: 'enable_rpc_ha=false' in x, resp_pcs) != [] and
             filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != []), (

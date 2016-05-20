@@ -17,22 +17,25 @@ import random
 
 import pytest
 
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture
-def fixt_open_5000_port_on_nodes(env):
+def fixt_open_tool_port_on_nodes(env):
     """Required to be able to send GET request from non management IP"""
     for node in env.get_all_nodes():
         with node.ssh() as remote:
-            cmd = 'iptables -A INPUT -p tcp --dport 5000 -j ACCEPT'
+            cmd = 'iptables -A INPUT -p tcp --dport %s -j ACCEPT' % \
+                  settings.RABBITOSLO_TOOL_PORT
             remote.check_call(cmd)
     yield
     for node in env.get_all_nodes():
         with node.ssh() as remote:
             # delete rule
-            cmd = 'iptables -D INPUT -p tcp --dport 5000 -j ACCEPT'
+            cmd = 'iptables -D INPUT -p tcp --dport %s -j ACCEPT' % \
+                  settings.RABBITOSLO_TOOL_PORT
             remote.check_call(cmd)
 
 
