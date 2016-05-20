@@ -15,6 +15,7 @@
 
 
 import pytest
+import requests
 
 from glanceclient.exc import Forbidden
 from six.moves import configparser
@@ -259,3 +260,43 @@ class TestGlanceSecurity(TestBase):
 
         image_list = glance_remote('image-list').listing()
         assert image['id'] not in [x['ID'] for x in image_list]
+
+    @pytest.mark.testrail_id('856613')
+    @pytest.mark.parametrize('glance', [2], indirect=['glance'])
+    def test_image_status_after_curl_request(self, glance, suffix):
+        """Checks image status after curl PUT request
+
+        Scenario:
+            1. Execute 'keystone token-get' in controller and get Token ID
+            2. Create image from file
+            3. Check that image exists and has `active` status
+            4. Send curl PUT request:
+            curl -X PUT http://192.168.0.2:9292/v1/images/<image_id>
+            -H 'X-Auth-Token: <token>' -H 'x-image-meta-status: queued'
+            5. Check image status is not changed
+        """
+        token = self.os_conn.session.get_token()
+        endpoint = self.os_conn.session.get_endpoint(service_type='image')
+
+        name = "Test_{0}".format(suffix[:6])
+        image = self.os_conn.glance.images.create(name=name,
+                                                  disk_format='qcow2',
+                                                  container_format='bare')
+        self.os_conn.glance.images.upload(image.id, "image_content")
+
+        image_status = self.os_conn.glance.images.get(image.id)['status']
+        err_msg = ('Glance image status after creation is [{0}].'
+                   'Expected is [active]').format(image_status)
+        assert image_status == 'active', err_msg
+
+        request_headers = {'x-image-meta-status': 'queued',
+                           'X-Auth-Token': token}
+        url = '{endpoint}/images/{image_id}'.format(endpoint=endpoint,
+                                                    image_id=image.id)
+        response = requests.put(url, headers=request_headers)
+        response.raise_for_status()
+
+        image_status = self.os_conn.glance.images.get(image.id)['status']
+        err_msg = ('Glance image status is changed to [{0}].'
+                   'Expected is [active]').format(image_status)
+        assert image_status == 'active', err_msg
