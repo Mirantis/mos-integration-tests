@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from paramiko import ssh_exception
 import pytest
 
 from mos_tests.functions.common import wait
@@ -84,19 +83,6 @@ class TestFloatingIP(TestBase):
         security_group.delete()
         self.instance_keypair.delete()
 
-    def check_vm_inaccessible_by_ssh(self, vm_ip, pkeys):
-        """Check that instance is inaccessible with ssh via floating_ip.
-
-        :param vm_ip: floating_ip of instance
-        :param pkeys: ip of instance to ping
-        """
-        with pytest.raises(ssh_exception.NoValidConnectionsError):
-            with self.env.get_ssh_to_vm(vm_ip,
-                                        private_keys=pkeys,
-                                        timeout=5,
-                                        **self.cirros_creds) as vm_remote:
-                vm_remote.execute("date")
-
     @pytest.mark.testrail_id('542634')
     def test_ssh_after_deleting_floating(self, prepare_openstack):
         """Check ssh-connection by floating ip for vm after
@@ -114,33 +100,26 @@ class TestFloatingIP(TestBase):
             9. Try to go to vm1 with ssh and floating IP
 
         Duration 10m
-
         """
         ip = self.floating_ip["floating_ip_address"]
         pkeys = self.convert_private_key_for_vm(
             [self.instance_keypair.private_key])
 
-        def is_ssh_raise_exception(remote):
-            try:
-                remote.execute('uname')
-                return False
-            except (ssh_exception.SSHException,
-                    ssh_exception.NoValidConnectionsError):
-                return True
-            except Exception:
-                raise
+        float_ssh = self.env.get_ssh_to_vm(ip, private_keys=pkeys, timeout=5,
+                                           **self.cirros_creds)
+        assert float_ssh.check_connection() is True
 
-        with self.env.get_ssh_to_vm(ip,
-                                    private_keys=pkeys,
-                                    timeout=5,
-                                    **self.cirros_creds) as vm_remote:
+        with float_ssh as vm_remote:
             vm_remote.check_call("ping -c1 8.8.8.8")
-            self.os_conn.disassociate_floating_ip(self.server,
-                                                  self.floating_ip,
-                                                  use_neutron=True)
-            wait(lambda: is_ssh_raise_exception(vm_remote),
-                 timeout_seconds=60,
-                 waiting_for='ssh connection be stopped')
+
+            self.os_conn.disassociate_floating_ip(
+                self.server, self.floating_ip, use_neutron=True)
+
+            with pytest.raises(Exception) as e:
+                wait(lambda: vm_remote.execute('uname'),
+                     timeout_seconds=60,
+                     waiting_for='ssh connection be stopped')
+            assert e.typename != 'TimeoutExpired'
 
         # check that vm became inaccessible with ssh
-        self.check_vm_inaccessible_by_ssh(vm_ip=ip, pkeys=pkeys)
+        assert float_ssh.check_connection() is False
