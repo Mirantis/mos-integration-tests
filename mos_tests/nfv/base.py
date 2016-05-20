@@ -51,13 +51,17 @@ class TestBaseNFV(object):
     def live_migrate(self, os_conn, vm, host, block_migration=True,
                      disk_over_commit=False):
 
-        os_conn.nova.servers.live_migrate(
-            vm, host, block_migration=block_migration,
-            disk_over_commit=disk_over_commit)
+        os_conn.nova.servers.live_migrate(vm, host,
+                                          block_migration=block_migration,
+                                          disk_over_commit=disk_over_commit)
         common.wait(lambda: os_conn.is_server_active(vm),
                     timeout_seconds=10 * 60,
                     waiting_for='instance {} changes status to ACTIVE after '
                                 'live migration'.format(vm.name))
+        common.wait(lambda: getattr(os_conn.nova.servers.get(vm),
+                                    'OS-EXT-SRV-ATTR:host') == host,
+                    timeout_seconds=10 * 60,
+                    waiting_for='new vm {0} host after migration'.format(vm))
 
     def create_volume_from_vm(self, os_conn, vm, size=1):
         image = os_conn.nova.servers.create_image(vm, image_name="image_vm2")
@@ -158,8 +162,8 @@ class TestBaseNFV(object):
             self.compute_change_state(os_conn, devops_env, host, state='up')
             raise
 
-    def cpu_load(self, env, os_conn, vm, vm_keypair=None, vm_login=None,
-                 vm_password=None, action='start'):
+    def cpu_load(self, env, os_conn, vm, vm_keypair=None, vm_login='ubuntu',
+                 vm_password='ubuntu', action='start'):
         if action == 'start':
             cmd = 'cpulimit -l 50 -- gzip -9 < /dev/urandom > /dev/null'
             with os_conn.ssh_to_instance(env, vm, vm_keypair=vm_keypair,
