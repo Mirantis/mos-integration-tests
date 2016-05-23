@@ -58,6 +58,11 @@ class TestDHCPAgent(TestBase):
     def isclose(self, a, b, rel_tol=1e-9, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
+    def count_percent_difference(self, max_val, min_val):
+        diff = max_val - min_val
+        result = (100 * diff) / float(max_val)
+        return round(result)
+
     @pytest.mark.testrail_id('542614')
     def test_to_check_dhcp_agents_work(self):
         """[Neutron VLAN and VXLAN] Check dhcp-agents work
@@ -77,6 +82,9 @@ class TestDHCPAgent(TestBase):
                 neutron net-list-on-dhcp-agent <id_agent_from_the_table>
               Check that quantity on agents are nearly equal
         """
+        # max difference in % between max and min value for agents quantity
+        # according Kristina Kuznetsova 35% is OK.
+        perc_diff = 35  # like diff in % between 100 and 65
 
         self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
         self.networks = self.create_max_networks_with_instances(self.router)
@@ -93,11 +101,16 @@ class TestDHCPAgent(TestBase):
             networks_amount_on_each_agt.append(amount)
             logger.info('the dhcp agent {0} has {1} networks'.
                         format(agt_id, amount))
-        max_value = max(networks_amount_on_each_agt)
-        networks_amount_on_each_agt.remove(max_value)
-        err_msg = "Amounts of networks for each agent are not nearly equal."
-        for value in networks_amount_on_each_agt:
-            assert self.isclose(value, max_value, abs_tol=3), err_msg
+
+        max_val = max(networks_amount_on_each_agt)
+        min_val = min(networks_amount_on_each_agt)
+        perc_diff_betw_vals = self.count_percent_difference(max_val, min_val)
+        logger.info('Difference between {0} and {1} is: {2}%'.format(
+            max_val, min_val, perc_diff_betw_vals))
+
+        err_msg = ("Amounts of networks for each agent are not nearly equal. "
+                   "More then {0}%").format(perc_diff)
+        assert perc_diff_betw_vals <= perc_diff, err_msg
 
     @pytest.mark.testrail_id('542619')
     def test_drop_rabbit_port_check_dhcp_agent(self):
