@@ -373,7 +373,7 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
 @pytest.mark.testrail_id('543019')
 def test_k8s_deploy_without_cadvisor(
         environment, murano, session, cluster, pod, package):
-    """ Check deploy Kubernetes cluster without cAdvisor monitoring
+    """Check deploy Kubernetes cluster without cAdvisor monitoring
     Steps:
         1. Create Murano environment
         2. Add Kubernetes Cluster application without cAdvisor to the
