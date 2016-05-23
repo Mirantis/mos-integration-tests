@@ -142,6 +142,8 @@ def cleanup(os_conn):
     for volume in os_conn.cinder.volumes.list():
         if volume.name != 'nfv_volume':
             volume.delete()
+            common.wait(lambda: volume not in os_conn.cinder.volumes.list(),
+                        timeout_seconds=10 * 60, waiting_for='volumes cleanup')
 
 
 @pytest.yield_fixture
