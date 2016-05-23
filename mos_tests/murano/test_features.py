@@ -87,7 +87,7 @@ def package(murano_cli):
     murano_cli('package-delete', params=package['ID'])
 
 
-@pytest.mark.testrail_id('543125')
+@pytest.mark.testrail_id('836674')
 def test_user_with_permissions_can_share_pkg(murano_cli, package,
                                              patch_murano_policy):
     """Tests modifying Murano pkg as 'service' project user.
