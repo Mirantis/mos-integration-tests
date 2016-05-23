@@ -137,7 +137,7 @@ def docker(murano, keypair, environment, session):
 def cluster(murano, keypair, environment, session, request):
     nodes = getattr(request, 'param', {'initial_gateways': 1,
                                        'max_gateways': 1, 'initial_nodes': 1,
-                                       'max_nodes': 1})
+                                       'max_nodes': 1, 'cadvisor': True})
 
     if nodes['max_gateways'] == 1:
         gateways_data = [
@@ -222,7 +222,7 @@ def cluster(murano, keypair, environment, session, request):
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
-                "exposeCAdvisor": True
+                "exposeCAdvisor": nodes['cadvisor']
             }
         ]
     else:
@@ -245,7 +245,7 @@ def cluster(murano, keypair, environment, session, request):
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
-                "exposeCAdvisor": True
+                "exposeCAdvisor": nodes['cadvisor']
             },
             {
                 "instance": {
@@ -265,7 +265,7 @@ def cluster(murano, keypair, environment, session, request):
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
-                "exposeCAdvisor": True
+                "exposeCAdvisor": nodes['cadvisor']
             }
         ]
 
