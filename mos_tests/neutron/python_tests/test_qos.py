@@ -227,7 +227,7 @@ class TestQoSBase(base.TestBase):
                 vm_keypair=self.instance_keypair) as remote:
             for line in self.get_iperf_result(remote, server_ip, **kwargs):
                 bandwidth = int(line[8])
-                if bandwidth < 0.8 * limit:
+                if bandwidth < 0.75 * limit:
                     raise Exception(
                         'Bandwidth is too low: {0}, limit is {1}'.format(
                             bandwidth, limit))
