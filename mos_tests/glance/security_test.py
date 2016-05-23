@@ -38,15 +38,13 @@ def change_glance_credentials(env, openstack_client, os_conn):
             with remote.open(config_api) as f:
                 parser = configparser.RawConfigParser()
                 parser.readfp(f)
-            parser.set('keystone_authtoken', 'admin_user', 'glance-1')
-            parser.set('keystone_authtoken', 'admin_password', 'test')
+            parser.set('keystone_authtoken', 'password', 'test')
             with remote.open(config_api, 'w') as f:
                 parser.write(f)
 
             with remote.open(config_swift) as f:
                 parser = configparser.RawConfigParser()
                 parser.readfp(f)
-            parser.set('ref1', 'user', 'services:glance-1')
             parser.set('ref1', 'key', 'test')
             with remote.open(config_swift, 'w') as f:
                 parser.write(f)
@@ -54,8 +52,7 @@ def change_glance_credentials(env, openstack_client, os_conn):
             remote.check_call('service glance-api restart')
 
     controllers = env.get_nodes_by_role('controller')
-    openstack_client.user_set_new_name('glance', 'glance-1')
-    openstack_client.user_set_new_password('glance-1', 'test')
+    openstack_client.user_set_new_password('glance', 'test')
     for controller in controllers:
         change_credentials(controller)
     wait_for_glance_alive(os_conn)
