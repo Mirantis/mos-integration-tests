@@ -222,7 +222,8 @@ class TestDVR(TestDVRBase):
         self.reset_computes([compute_hostname], devops_env)
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair)
+                                          vm_keypair=self.instance_keypair,
+                                          timeout=5 * 60)
 
     @pytest.mark.testrail_id('638477')
     def test_connectivity_after_reset_primary_controller_with_snat(self,
@@ -416,7 +417,8 @@ class TestDVR(TestDVRBase):
                 time.sleep(10)
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair)
+                                          vm_keypair=self.instance_keypair,
+                                          timeout=6 * 60)
 
     @pytest.mark.testrail_id('542774')
     def test_north_south_floating_ip_ban_clear_l3_agent_on_compute(self):
@@ -635,7 +637,15 @@ class TestDVRWestEastConnectivity(TestDVRBase):
                                                  compute_node),
                 key_name=self.instance_keypair.name,
                 nics=[{'net-id': net['network']['id']}],
-                security_groups=[self.security_group.id])
+                security_groups=[self.security_group.id],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+
+        servers = [x for x in self.os_conn.nova.servers.list()
+                   if x.name in ('server01', 'server02')]
+
+        self.os_conn.wait_servers_active(servers)
+        self.os_conn.wait_servers_ssh_ready(servers, timeout=5 * 60)
 
         self.server1 = self.os_conn.nova.servers.find(name="server01")
         self.server1_ip = self.os_conn.get_nova_instance_ips(
@@ -727,7 +737,8 @@ class TestDVRWestEastConnectivity(TestDVRBase):
         # Check ping after reset
         network_checks.check_ping_from_vm(
             self.env, self.os_conn, vm=self.server2,
-            vm_keypair=self.instance_keypair, ip_to_ping=self.server1_ip)
+            vm_keypair=self.instance_keypair, ip_to_ping=self.server1_ip,
+            timeout=5 * 60)
 
     @pytest.mark.testrail_id('542768')
     @pytest.mark.check_env_('is_ha')

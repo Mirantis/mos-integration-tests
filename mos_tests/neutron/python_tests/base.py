@@ -158,59 +158,30 @@ class TestBase(object):
             'stdout {stdout}, stderr {stderr}').format(**res)
         assert 0 == res['exit_code'], error_msg
 
-    def check_vm_is_available(self, vm,
-                              username=None, password=None, pkeys=None):
-        """Check that instance is available for connect from controller.
-
-        :param vm: instance to ping from it compute node
-        :param username: username to login to instance
-        :param password: password to connect to instance
-        :param pkeys: private keys to connect to instance
-        """
-        vm = self.os_conn.get_instance_detail(vm)
-        srv_host = self.env.find_node_by_fqdn(
-            self.os_conn.get_srv_hypervisor_name(vm)).data['ip']
-
-        vm_ip = self.os_conn.get_nova_instance_ips(vm)['floating']
-
-        with self.env.get_ssh_to_node(srv_host) as remote:
-            cmd = "ping -c1 {0}".format(vm_ip)
-
-            waiting_for_msg = (
-                'Waiting for instance with ip {0} has '
-                'connectivity from node with ip {1}.').format(vm_ip, srv_host)
-
-            wait(lambda: remote.execute(cmd)['exit_code'] == 0,
-                 sleep_seconds=10, timeout_seconds=3 * 60,
-                 waiting_for=waiting_for_msg)
-        return self.check_vm_is_accessible_with_ssh(
-            vm_ip, username=username, password=password, pkeys=pkeys)
-
-    def check_vm_is_accessible_with_ssh(self, vm_ip, username=None,
-                                        password=None, pkeys=None):
+    def check_vm_is_accessible_with_ssh(self,
+                                        vm_ip,
+                                        username=None,
+                                        password=None,
+                                        pkeys=None):
         """Check that instance is accessible with ssh via floating_ip.
 
-        :param vm_ip: floating_ip of instance
-        :param username: username to login to instance
-        :param password: password to connect to instance
-        :param pkeys: private keys to connect to instance
-        """
-        error_msg = 'Instance with ip {0} is not accessible with ssh.'\
-            .format(vm_ip)
+            :param vm_ip: floating_ip of instance
+            :param username: username to login to instance
+            :param password: password to connect to instance
+            :param pkeys: private keys to connect to instance
+            """
+
+        error_msg = ('Instance with ip {0} '
+                     'is not accessible with ssh.').format(vm_ip)
 
         def is_accessible():
-            try:
-                with self.env.get_ssh_to_vm(
-                        vm_ip, username, password, pkeys) as vm_remote:
-                    vm_remote.execute("date")
-                    return True
-            except ssh_exception.SSHException:
-                return False
-            except ssh_exception.NoValidConnectionsError:
-                return False
+            ssh_client = self.env.get_ssh_to_vm(vm_ip, username, password,
+                                                pkeys)
+            return ssh_client.check_connection() is True
 
         wait(is_accessible,
-             sleep_seconds=10, timeout_seconds=60,
+             sleep_seconds=10,
+             timeout_seconds=60,
              waiting_for=error_msg)
 
     @staticmethod

@@ -57,7 +57,7 @@ def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
     else:
         err_msg = "SSH command: `{command}` completed with 0 exit code"
         wait(lambda: execute()['exit_code'] == 0,
-             sleep_seconds=(1, 60, 5), timeout_seconds=timeout,
+             sleep_seconds=(1, 20, 2), timeout_seconds=timeout,
              expected_exceptions=(Exception,),
              waiting_for=err_msg.format(command=command))
     return results[-1]
