@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 
 # Define pytest plugins to use
 pytest_plugins = ("plugins.incremental",
-                  "plugins.testrail_id")
+                  "plugins.testrail_id",
+                  "plugins.fuel_snapshot")
 
 
 def pytest_addoption(parser):

@@ -71,6 +71,10 @@ logging.config.dictConfig({
             'handlers': ['console'],
             'level': logging.DEBUG,
         },
+        'plugins': {
+            'handlers': ['console'],
+            'level': logging.DEBUG,
+        },
         'waiting': {
             'handlers': ['console'],
         }

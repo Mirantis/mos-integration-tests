@@ -55,3 +55,7 @@ doc/_build/
 # Certs
 /ca.crt
 /ca.pem
+
+# Temporary folders
+temp/*
+snapshots/*
