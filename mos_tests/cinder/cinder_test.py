@@ -42,7 +42,7 @@ class CinderIntegrationTests(OpenStackTestCase):
                 common_functions.delete_volume_snapshot(self.cinder, snapshot)
             self.snapshot_list = []
             for volume in self.volume_list:
-                common_functions.delete_volume(self.cinder, volume)
+                self.os_conn.delete_volume(volume)
             self.volume_list = []
         finally:
             self.cinder.quotas.update(self.project_id, snapshots=self.quota)

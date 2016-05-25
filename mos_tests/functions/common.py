@@ -445,24 +445,6 @@ def create_volume(cinder_client, image_id, size=1, timeout=5,
     return cinder_client.volumes.get(volume.id)
 
 
-def delete_volume(cinder_client, volume):
-    """Delete volume and check that it is absent in the list
-        :param cinder_client: Cinder API client connection point
-        :param volume: volume
-    """
-    if volume in cinder_client.volumes.list():
-        volume.get()
-        if len(volume.attachments) > 0:
-            volume.detach()
-        cinder_client.volumes.delete(volume)
-        volume_id = volume.id
-        wait(lambda: not is_volume_exists(cinder_client, volume_id),
-             timeout_seconds=60,
-             waiting_for='volume to be deleted')
-    else:
-        logger.error('Volume [{0}] not in cinder.volumes.list'.format(volume))
-
-
 def check_volume_status(cinder_client, uid, status, timeout=5):
     """Check status of volume
         :param cinder_client: Cinder API client connection point

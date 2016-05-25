@@ -844,3 +844,38 @@ class OpenStackActions(object):
         wait(lambda: self.nova.servers.get(srv).status == 'REBUILD',
              timeout_seconds=60, waiting_for='start of instance rebuild')
         return srv
+
+    def delete_volume(self, volume):
+        """Delete volume and check that it is absent in the list
+        :param volume: volume object
+        """
+        if volume in self.cinder.volumes.list():
+            volume.get()
+            # if volume attached to any instance
+            if len(volume.attachments) > 0:
+                attached_server_ids = [x['server_id']
+                                       for x in volume.attachments]
+                # detach volume from server(s)
+                for serv_id in attached_server_ids:
+                    self.nova.volumes.delete_server_volume(serv_id, volume.id)
+            # if volume have snapshots
+            snapshots = self.cinder.volume_snapshots.findall(
+                volume_id=volume.id)
+            if len(snapshots) > 0:
+                for snapshot in snapshots:
+                    self.cinder.volume_snapshots.delete(snapshot)
+                wait(lambda: len(self.cinder.volume_snapshots.findall(
+                        volume_id=volume.id)) == 0,
+                     timeout_seconds=60 * 5,
+                     sleep_seconds=10,
+                     waiting_for=('snapshot(s) from volume [{0.name}:{0.id}] '
+                                  'to be deleted').format(volume))
+            # delete volume
+            self.cinder.volumes.delete(volume)
+            wait(lambda: len(self.cinder.volumes.findall(id=volume.id)) == 0,
+                 timeout_seconds=60,
+                 waiting_for='volume [{0.name}:{0.id}] to be deleted'.format(
+                     volume))
+        else:
+            logger.info('Volume [{0.name}:{0.id}] not in '
+                        'cinder.volumes.list'.format(volume))

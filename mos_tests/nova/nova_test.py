@@ -81,7 +81,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             common_functions.delete_floating_ip(self.nova, fip)
         self.floating_ips = []
         for volume in self.volumes:
-            common_functions.delete_volume(self.cinder, volume)
+            self.os_conn.delete_volume(volume)
         self.volumes = []
         for flavor in self.flavors:
             common_functions.delete_flavor(self.nova, flavor.id)
@@ -710,7 +710,7 @@ class TestNovaDeferredDelete(TestBase):
         volumes = []
         yield volumes
         for volume in volumes:
-            common_functions.delete_volume(os_conn.cinder, volume)
+            os_conn.delete_volume(volume)
 
     @pytest.mark.testrail_id('842493')
     @pytest.mark.parametrize(
