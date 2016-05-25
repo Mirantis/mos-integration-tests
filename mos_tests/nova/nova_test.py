@@ -50,10 +50,9 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.flavors = []
         self.keys = []
 
-        self.sec_group = self.nova.security_groups.create('security_nova',
-                                                          'Security group, '
-                                                          'created for Nova '
-                                                          'automatic tests')
+        self.sec_group = self.nova.security_groups.create(
+            'security_nova_NovaIntegrationTests',
+            'Security group, created for Nova automatic tests')
         rules = [
             {
                 # ssh
@@ -122,7 +121,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                     "inst_543358_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    [self.sec_group.name],
+                                                    [self.sec_group.id],
                                                     image_id=image_id,
                                                     inst_list=self.instances)
             inst.add_floating_ip(floating_ip.ip)
@@ -166,7 +165,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                     "inst_543360_{}"
                                                     .format(flavor.name),
                                                     flavor.id, net,
-                                                    [self.sec_group.name],
+                                                    [self.sec_group.id],
                                                     block_device_mapping=bdm,
                                                     inst_list=self.instances)
             inst.add_floating_ip(floating_ip.ip)
@@ -204,7 +203,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         bdm = {'vda': volume.id}
         instance = common_functions.create_instance(self.nova,
                                                     name, initial_flavor, net,
-                                                    [self.sec_group.name],
+                                                    [self.sec_group.id],
                                                     block_device_mapping=bdm,
                                                     inst_list=self.instances)
         self.instances.append(instance.id)
@@ -295,7 +294,7 @@ class NovaIntegrationTests(OpenStackTestCase):
 
         self.nova.servers.create(primary_name, image_id, flavor_id,
                                  max_count=count,
-                                 security_groups=[self.sec_group.name],
+                                 security_groups=[self.sec_group.id],
                                  nics=[{"net-id": net_internal_id}])
         start_time = time()
         timeout = 5
@@ -367,7 +366,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         for volume in self.volumes:
             bdm = {'vda': volume.id}
             self.nova.servers.create(primary_name, '', flavor_id,
-                                     security_groups=[self.sec_group.name],
+                                     security_groups=[self.sec_group.id],
                                      block_device_mapping=bdm,
                                      nics=[{"net-id": net_internal_id}])
         start_time = time()
@@ -425,7 +424,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
-                                                [self.sec_group.name],
+                                                [self.sec_group.id],
                                                 image_id=image_id,
                                                 inst_list=self.instances)
         self.instances.append(inst.id)
@@ -473,7 +472,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                                                 "inst_2238776_{}"
                                                 .format(flavor.name),
                                                 flavor.id, net,
-                                                [self.sec_group.name],
+                                                [self.sec_group.id],
                                                 image_id=image_id,
                                                 key_name='key_2238776',
                                                 inst_list=self.instances)
@@ -590,7 +589,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         bdm = {'vda': volume.id}
         instance = common_functions.create_instance(self.nova, name,
                                                     initial_flavor_id, net_id,
-                                                    [self.sec_group.name],
+                                                    [self.sec_group.id],
                                                     block_device_mapping=bdm,
                                                     inst_list=self.instances)
         self.instances.append(instance.id)
