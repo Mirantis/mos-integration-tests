@@ -234,7 +234,7 @@ class TestLiveMigrationBase(object):
     def cleanup_volumes(self):
         yield
         for volume in self.volumes:
-            common.delete_volume(self.os_conn.cinder, volume)
+            self.os_conn.delete_volume(volume)
 
     def successive_migration(self, block_migration, hypervisor_from):
         logger.info('Start successive migrations')
