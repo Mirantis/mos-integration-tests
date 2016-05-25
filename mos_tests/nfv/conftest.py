@@ -67,7 +67,7 @@ def medium_nfv_flavor(os_conn, cleanup, request):
 
 
 @pytest.yield_fixture()
-def flavors(os_conn, request):
+def flavors(os_conn, request, cleanup):
     flvs = getattr(request.cls, 'flavors_to_create')
     params = {'ram': 1024, 'vcpu': 2, 'disk': 20}
     created_flavors = []
@@ -342,3 +342,26 @@ def sriov_hosts(os_conn):
         pytest.skip("Insufficient count of compute with SR-IOV")
     hosts = [compute.data['fqdn'] for compute in computes_list]
     return hosts
+
+
+@pytest.fixture
+def computes_with_dpdk_hp(env, experimental_features):
+    """This fixture checks hosts for dpdk pages count if experimental features
+    are in ON state. Otherwise test will be skipped.
+    Minimal configuration: at least 2 computes with at least 1024 dpdk hp
+    """
+    if experimental_features:
+        computes = env.get_nodes_by_role('compute')
+        hosts = {compute.data['fqdn']: compute.get_node_attributes()[
+            'hugepages']['dpdk']['value'] for compute in computes}
+        applicable_hosts = [h for h in hosts.keys() if hosts[h] >= 1024]
+        if len(applicable_hosts) < 2:
+            pytest.skip("Insufficient count of compute DPDK huge pages")
+        return applicable_hosts
+    else:
+        pytest.skip("Experimental features should be ON for DPDK")
+
+
+@pytest.fixture
+def experimental_features(fuel):
+    return 'experimental' in fuel.version['feature_groups']

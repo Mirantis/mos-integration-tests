@@ -20,6 +20,7 @@ import time
 
 import pytest
 
+from mos_tests.functions import common
 from mos_tests.functions.common import wait
 from mos_tests.functions import file_cache
 from mos_tests.functions import network_checks
@@ -32,9 +33,6 @@ logger = logging.getLogger(__name__)
 @pytest.mark.check_env_("has_1_or_more_computes")
 class OvsBase(TestBase):
     """Common functions for ovs tests"""
-
-    ovs_agent_name = 'neutron-openvswitch-agent'
-    ovs_agent_service = 'neutron-openvswitch-agent'
 
     def setup_rules_for_default_sec_group(self):
         """Add necessary rules to default security group."""
@@ -66,51 +64,6 @@ class OvsBase(TestBase):
             from_port=1,
             to_port=65535,
             cidr='0.0.0.0/0')
-
-    def disable_ovs_agents_on_controller(self):
-        """Disable openvswitch-agents on a controller."""
-        controller = self.env.get_nodes_by_role('controller')[0]
-
-        with controller.ssh() as remote:
-            remote.check_call(
-                'pcs resource disable {}'.format(self.ovs_agent_name))
-
-    def restart_ovs_agents_on_computes(self):
-        """Restart openvswitch-agents on all computes."""
-        computes = self.env.get_nodes_by_role('compute')
-
-        for node in computes:
-            with node.ssh() as remote:
-                remote.check_call(
-                    'service {} restart'.format(self.ovs_agent_service))
-
-    def enable_ovs_agents_on_controllers(self):
-        """Enable openvswitch-agents on a controller."""
-        controller = self.env.get_nodes_by_role('controller')[0]
-
-        with controller.ssh() as remote:
-            remote.check_call(
-                'pcs resource enable {}'.format(self.ovs_agent_name))
-
-    def ban_ovs_agents_controllers(self):
-        """Ban openvswitch-agents on all controllers."""
-        controllers = self.env.get_nodes_by_role('controller')
-
-        with controllers[0].ssh() as remote:
-            for node in controllers:
-                remote.check_call(
-                    'pcs resource ban {resource_name} {fqdn}'.format(
-                        resource_name=self.ovs_agent_name, **node.data))
-
-    def clear_ovs_agents_controllers(self):
-        """Clear openvswitch-agents on all controllers."""
-        controllers = self.env.get_nodes_by_role('controller')
-
-        with controllers[0].ssh() as remote:
-            for node in controllers:
-                remote.check_call(
-                    'pcs resource clear {resource_name} {fqdn}'.format(
-                        resource_name=self.ovs_agent_name, **node.data))
 
     def get_current_cookie(self, compute):
         """Get the value of the cookie parameter for br-int or br-tun bridge.
@@ -222,16 +175,16 @@ class TestOVSRestartTwoVms(OvsBase):
             self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
             # Disable ovs agent on a controller
-            self.disable_ovs_agents_on_controller()
+            common.disable_ovs_agents_on_controller(self.env)
 
             # Then check that all ovs went down
             self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
             # Restart ovs agent service on all computes
-            self.restart_ovs_agents_on_computes()
+            common.restart_ovs_agents_on_computes(self.env)
 
             # Enable ovs agent on a controller
-            self.enable_ovs_agents_on_controllers()
+            common.enable_ovs_agents_on_controllers(self.env)
 
             # Then check that all ovs agents are alive
             self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -272,16 +225,16 @@ class TestOVSRestartTwoVms(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Ban ovs agents on all controllers
-        self.ban_ovs_agents_controllers()
+        common.ban_ovs_agents_controllers(self.env)
 
         # Then check that all ovs went down
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Cleat ovs agent on all controllers
-        self.clear_ovs_agents_controllers()
+        common.clear_ovs_agents_controllers(self.env)
 
         # Restart ovs agent service on all computes
-        self.restart_ovs_agents_on_computes()
+        common.restart_ovs_agents_on_computes(self.env)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -357,7 +310,7 @@ class TestPortTags(OvsBase):
         # ban and clear ovs-agents on controllers
         controller = self.env.get_nodes_by_role('controller')[0]
         cmd = "pcs resource {{action}} {resource}".format(
-            resource=self.ovs_agent_name)
+            resource=common.ovs_agent_name)
         with controller.ssh() as remote:
             remote.check_call(cmd.format(action='disable'))
             remote.check_call(cmd.format(action='enable'))
@@ -365,7 +318,7 @@ class TestPortTags(OvsBase):
         # restart ovs-agents on computes
         for node in self.env.get_nodes_by_role('compute'):
             with node.ssh() as remote:
-                cmd = 'service {} restart'.format(self.ovs_agent_service)
+                cmd = 'service {} restart'.format(common.ovs_agent_service)
                 remote.check_call(cmd)
 
         # wait for 30 seconds
@@ -469,16 +422,16 @@ class TestOVSRestartsOneNetwork(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Disable ovs agent on all controllers
-        self.disable_ovs_agents_on_controller()
+        common.disable_ovs_agents_on_controller(self.env)
 
         # Then check that all ovs went down
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
-        self.restart_ovs_agents_on_computes()
+        common.restart_ovs_agents_on_computes(self.env)
 
         # Enable ovs agent on all controllers
-        self.enable_ovs_agents_on_controllers()
+        common.enable_ovs_agents_on_controllers(self.env)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -586,16 +539,16 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Disable ovs agent on all controllers
-        self.disable_ovs_agents_on_controller()
+        common.disable_ovs_agents_on_controller(self.env)
 
         # Then check that all ovs went down
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
-        self.restart_ovs_agents_on_computes()
+        common.restart_ovs_agents_on_computes(self.env)
 
         # Enable ovs agent on all controllers
-        self.enable_ovs_agents_on_controllers()
+        common.enable_ovs_agents_on_controllers(self.env)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -802,10 +755,10 @@ class TestOVSRestartWithIperfTraffic(OvsBase):
                                        vm_login='ubuntu',
                                        stdout=iperf_log_file)
 
-        self.disable_ovs_agents_on_controller()
+        common.disable_ovs_agents_on_controller(self.env)
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
-        self.restart_ovs_agents_on_computes()
-        self.enable_ovs_agents_on_controllers()
+        common.restart_ovs_agents_on_computes(self.env)
+        common.enable_ovs_agents_on_controllers(self.env)
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         self.wait_command_done(pid, vm=client, keypair=self.instance_keypair,
@@ -894,16 +847,16 @@ class TestOVSRestartAddFlows(OvsBase):
         assert all([len(x) < 2 for x in before_value.values()])
 
         # Disable ovs agent on all controllers
-        self.disable_ovs_agents_on_controller()
+        common.disable_ovs_agents_on_controller(self.env)
 
         # Then check that all ovs went down
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
-        self.restart_ovs_agents_on_computes()
+        common.restart_ovs_agents_on_computes(self.env)
 
         # Enable ovs agent on all controllers
-        self.enable_ovs_agents_on_controllers()
+        common.enable_ovs_agents_on_controllers(self.env)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
@@ -1037,16 +990,16 @@ class TestOVSRestartTwoSeparateVms(OvsBase):
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)
 
         # Disable ovs agent on all controllers
-        self.disable_ovs_agents_on_controller()
+        common.disable_ovs_agents_on_controller(self.env)
 
         # Then check that all ovs went down
         self.os_conn.wait_agents_down(self.ovs_conroller_agents)
 
         # Restart ovs agent service on all computes
-        self.restart_ovs_agents_on_computes()
+        common.restart_ovs_agents_on_computes(self.env)
 
         # Enable ovs agent on all controllers
-        self.enable_ovs_agents_on_controllers()
+        common.enable_ovs_agents_on_controllers(self.env)
 
         # Then check that all ovs agents are alive
         self.os_conn.wait_agents_alive(self.ovs_agent_ids)

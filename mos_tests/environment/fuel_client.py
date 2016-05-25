@@ -20,6 +20,7 @@ import dpath.util
 from fuelclient import client
 from fuelclient import fuelclient_settings
 from fuelclient.objects import environment
+from fuelclient.objects import FuelVersion
 from fuelclient.objects.node import Node as FuelNode
 from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
@@ -442,3 +443,7 @@ class FuelClient(object):
                 with remote.open('/root/.ssh/id_rsa') as f:
                     self._admin_keys.append(RSAKey.from_private_key(f))
         return self._admin_keys
+
+    @property
+    def version(self):
+        return FuelVersion.get_all_data()

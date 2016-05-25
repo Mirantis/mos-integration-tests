@@ -218,3 +218,20 @@ class TestBaseNFV(object):
                 env, os_conn, vm, vm_keypair=keypair, timeout=20,
                 ip_to_ping=ips, vm_login='ubuntu', vm_password='ubuntu',
                 vm_ip=vm_ips[vm][0])
+
+    def check_vif_type_for_vm(self, vm, os_conn):
+        vm_ports = os_conn.neutron.list_ports(device_id=vm.id)['ports']
+        vhost_ports = [port for port in vm_ports if
+                       port['binding:vif_type'] == 'vhostuser']
+        assert vhost_ports, ("Vm should have at least one port with "
+                             "binding:vif_type = vhostuser")
+
+    def get_ovs_agents(self, env, os_conn):
+        ovs_agts = os_conn.neutron.list_agents(
+            binary='neutron-openvswitch-agent')['agents']
+        ovs_agent_ids = [agt['id'] for agt in ovs_agts]
+        controllers = [node.data['fqdn']
+                       for node in env.get_nodes_by_role('controller')]
+        ovs_conroller_agents = [agt['id'] for agt in ovs_agts
+                                if agt['host'] in controllers]
+        return [ovs_agent_ids, ovs_conroller_agents]
