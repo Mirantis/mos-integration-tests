@@ -111,7 +111,7 @@ class TestWindowCompatibility(object):
         yield flavor
         flavor.delete()
 
-    @pytest.yield_fixture
+    @pytest.fixture
     def instance(self, request, os_conn, image, sec_group, floating_ip,
                  flavor):
         func_name = request.node.function.func_name
@@ -132,15 +132,18 @@ class TestWindowCompatibility(object):
 
         instance.add_floating_ip(floating_ip)
 
+        def fin():
+            instance.remove_floating_ip(floating_ip)
+            instance.delete()
+            common.wait(lambda: os_conn.is_server_deleted(instance),
+                        timeout_seconds=3 * 60,
+                        waiting_for='instance to be deleted')
+
+        request.addfinalizer(fin)
+
         self.wait_to_boot(instance)
 
-        yield instance
-
-        instance.remove_floating_ip(floating_ip)
-        instance.delete()
-        common.wait(lambda: os_conn.is_server_deleted(instance),
-                    timeout_seconds=3 * 60,
-                    waiting_for='instance to be deleted')
+        return instance
 
     @pytest.mark.testrail_id('634680')
     def test_create_instance_with_windows_image(self, request, floating_ip):
@@ -261,6 +264,7 @@ class TestWindowCompatibility(object):
         assert ping_result, "Instance is not reachable"
 
     @pytest.mark.testrail_id('634682')
+    @pytest.mark.check_env_('has_2_or_more_computes')
     def test_live_migration_for_windows_instance(self, instance, floating_ip):
         """This test checks that instance with Windows Image could be
         migrated without any issues
