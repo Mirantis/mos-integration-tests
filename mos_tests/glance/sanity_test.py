@@ -319,3 +319,61 @@ def test_update_properties_of_image(glance_remote, image_file_remote, suffix,
     glance_remote('image-delete {id}'.format(**image))
 
     check_image_not_in_list(glance_remote, image)
+
+
+@pytest.yield_fixture
+def images(os_conn):
+    """Create images for filtering"""
+    image_params = {
+        "img1": {"name": "image-1", "container_format": "ami",
+                 "disk_format": "qcow2"},
+        "img2": {"name": "image-2", "container_format": "bare",
+                 "disk_format": "qcow2"},
+        "img2_1": {"name": "image-2", "container_format": None,
+                   "disk_format": None},
+        "img3": {"name": "image-3", "container_format": "ami",
+                 "disk_format": None}
+    }
+    images = {}
+    for key, params in image_params.items():
+        image = os_conn.glance.images.create(**params)
+        images[key] = image.id
+    yield images
+    for image_id in images.values():
+        os_conn.glance.images.delete(image_id)
+
+
+@pytest.mark.testrail_id('6078969')
+@pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+def test_filtering(glance_remote, os_conn, images):
+    """Check filtering of glance
+
+    Scenario:
+        1. Create 4 images with different properties
+        2. Check that images in list
+        3. Check that filtering works correctly
+        4. Delete all images
+        5. Check that all images was deleted
+    """
+    filters = {
+        "--property-filter name=in:image-1": {images["img1"]},
+        "--property-filter name=in:image-1,image-2": {images["img1"],
+                                                      images["img2"],
+                                                      images["img2_1"]},
+        "--property-filter disk_format=in:qcow2": {images["img1"],
+                                                   images["img2"]},
+        "--property-filter container_format=in:ami": {images["img1"],
+                                                      images["img3"]},
+        "--property-filter id=in:{image1},{image3}".format(
+            image1=images["img1"],
+            image3=images["img3"]): {images["img1"],
+                                     images["img3"]},
+        "--property-filter name=in:image-1 "
+        "--property-filter disk_format=in:bare": set()
+    }
+
+    for fltr, expected_ids in filters.items():
+        image_list = glance_remote(
+            'image-list {0}'.format(fltr)).listing()
+        filtered_image_ids = {x['ID'] for x in image_list}
+        assert filtered_image_ids & set(images.values()) == expected_ids
