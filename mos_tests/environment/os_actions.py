@@ -638,45 +638,70 @@ class OpenStackActions(object):
 
         return result
 
-    def ssh_to_instance(self, env, vm, vm_keypair=None, username='cirros',
-                        password=None, proxy_node=None):
+    def ssh_to_instance(self,
+                        env,
+                        vm,
+                        vm_keypair=None,
+                        username='cirros',
+                        password=None,
+                        proxy_node=None,
+                        vm_ip=None):
         """Returns direct ssh client to instance via proxy"""
         # Update vm data
         vm.get()
-        logger.debug('Try to connect to vm {0}'.format(vm.name))
-        net_name = [x for x in vm.addresses if len(vm.addresses[x]) > 0][0]
-        vm_ip = vm.addresses[net_name][0]['addr']
-        vm_mac = vm.addresses[net_name][0]['OS-EXT-IPS-MAC:mac_addr']
-        net_id = self.neutron.list_ports(
-            mac_address=vm_mac)['ports'][0]['network_id']
-        dhcp_namespace = "qdhcp-{0}".format(net_id)
-        if proxy_node is None:
-            proxy_nodes = wait(
-                lambda: self.get_node_with_dhcp_for_network(net_id),
-                expected_exceptions=NeutronClientException,
-                timeout_seconds=60 * 3, sleep_seconds=10,
-                waiting_for="any alive DHCP agent for instance network")
+        instance_ips = {ip['addr']: {'type': ip['OS-EXT-IPS:type'],
+                                     'mac': ip['OS-EXT-IPS-MAC:mac_addr'],
+                                     'net': n}
+                        for n, ips in vm.addresses.items() for ip in ips}
+        if vm_ip is not None:
+            ip_type = instance_ips[vm_ip]['type']
         else:
-            proxy_nodes = [proxy_node]
+            ip_type = 'fixed'
+            vm_ip = next(k for k, v in instance_ips.items()
+                         if v['type'] == 'fixed')
 
+        logger.debug('Try to connect to vm {name} '
+                     'with {ip} ({ip_type})'.format(name=vm.name,
+                                                    ip=vm_ip,
+                                                    ip_type=ip_type))
         proxy_commands = []
-        for node in proxy_nodes:
-            ip = env.find_node_by_fqdn(node).data['ip']
-            key_paths = env.admin_ssh_keys_paths
-            proxy_command = (
-                "ssh {keys} -o 'StrictHostKeyChecking no' "
-                "root@{node_ip} 'ip netns exec {ns} "
-                "nc {vm_ip} 22'".format(
-                    keys=' '.join('-i {}'.format(k) for k in key_paths),
-                    ns=dhcp_namespace,
-                    node_ip=ip,
-                    vm_ip=vm_ip))
-            proxy_commands.append(proxy_command)
+
+        # retrieve proxy nodes
+        if ip_type == 'fixed':
+            vm_mac = instance_ips[vm_ip]['mac']
+            net_id = self.neutron.list_ports(
+                mac_address=vm_mac)['ports'][0]['network_id']
+            dhcp_namespace = "qdhcp-{0}".format(net_id)
+            if proxy_node is None:
+                proxy_nodes = wait(
+                    lambda: self.get_node_with_dhcp_for_network(net_id),
+                    expected_exceptions=NeutronClientException,
+                    timeout_seconds=60 * 3,
+                    sleep_seconds=10,
+                    waiting_for="any alive DHCP agent for instance network")
+            else:
+                proxy_nodes = [proxy_node]
+
+            for node in proxy_nodes:
+                ip = env.find_node_by_fqdn(node).data['ip']
+                key_paths = env.admin_ssh_keys_paths
+                proxy_command = (
+                    "ssh {keys} -o 'StrictHostKeyChecking no' "
+                    "root@{node_ip} 'ip netns exec {ns} "
+                    "nc {vm_ip} 22'".format(
+                        keys=' '.join('-i {}'.format(k) for k in key_paths),
+                        ns=dhcp_namespace,
+                        node_ip=ip,
+                        vm_ip=vm_ip))
+                proxy_commands.append(proxy_command)
         instance_keys = []
         if vm_keypair is not None:
-            instance_keys.append(paramiko.RSAKey.from_private_key(
-                six.StringIO(vm_keypair.private_key)))
-        return SSHClient(vm_ip, port=22, username=username, password=password,
+            instance_keys.append(paramiko.RSAKey.from_private_key(six.StringIO(
+                vm_keypair.private_key)))
+        return SSHClient(vm_ip,
+                         port=22,
+                         username=username,
+                         password=password,
                          private_keys=instance_keys,
                          proxy_commands=proxy_commands)
 
