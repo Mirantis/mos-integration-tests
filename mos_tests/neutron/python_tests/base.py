@@ -18,7 +18,6 @@ import warnings
 from neutronclient.common.exceptions import OverQuotaClient
 from neutronclient.common.exceptions import ServiceUnavailable
 import paramiko
-from paramiko import ssh_exception
 import pytest
 import six
 

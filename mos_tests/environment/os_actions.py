@@ -865,7 +865,7 @@ class OpenStackActions(object):
                 for snapshot in snapshots:
                     self.cinder.volume_snapshots.delete(snapshot)
                 wait(lambda: len(self.cinder.volume_snapshots.findall(
-                        volume_id=volume.id)) == 0,
+                     volume_id=volume.id)) == 0,
                      timeout_seconds=60 * 5,
                      sleep_seconds=10,
                      waiting_for=('snapshot(s) from volume [{0.name}:{0.id}] '
