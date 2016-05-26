@@ -463,14 +463,14 @@ class TestRestarts(TestBase):
 
         # Get DHCP agents for the last created net
         net_id = self.networks[-1]
-        ports_ids_before = [
+        ports_ids_before = {
             port['id'] for port in self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')]
+                network_id=net_id, device_owner='network:dhcp')}
 
-        ports_binding_before = [
+        ports_binding_before = {
             port['binding:host_id'] for port in
             self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')]
+                network_id=net_id, device_owner='network:dhcp')}
 
         # virsh destroy of the controller with dhcp agent
         for controller in self.env.non_primary_controllers:
@@ -482,20 +482,23 @@ class TestRestarts(TestBase):
         self.env.warm_restart_nodes([controller_with_dhcp])
 
         # Check ports_binding after restart node
-        ports_ids_after = [
+        ports_ids_after = {
             port['id'] for port in self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')]
+                network_id=net_id, device_owner='network:dhcp')}
         err_msg = 'Ports ids are changed after restart'
+
         assert ports_ids_before == ports_ids_after, err_msg
 
-        ports_binding_after = [
+        ports_binding_after = {
             port['binding:host_id'] for port in
             self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')]
+                network_id=net_id, device_owner='network:dhcp')}
 
-        new_dhcp_host = set(ports_binding_before) & set(ports_binding_after)
+        removed_hosts = ports_binding_before - ports_binding_after
+        added_hosts = ports_binding_after - ports_binding_before
         err_msg = 'Dhcp agents recheduled incorrect after restart'
-        assert len(new_dhcp_host) == 1, err_msg
+        assert len(removed_hosts) == 1, err_msg
+        assert len(added_hosts) == 1, err_msg
 
     @pytest.mark.testrail_id('851690')
     def test_check_network_rescheduling_after_restart_node(self):
