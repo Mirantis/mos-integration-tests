@@ -198,3 +198,91 @@ class TestCpuPinningOldFlavor(TestBaseNFV):
                 self.check_cpu_for_vm(os_conn, vm, 1, cpus[host])
 
         network_checks.check_vm_connectivity(env, os_conn)
+
+
+@pytest.mark.check_env_('is_vlan')
+class TestCpuPinningResize(TestBaseNFV):
+
+    flavors_to_create = [
+        {'name': 'm1.small.perfomance-1',
+         'params': {'ram': 512, 'vcpus': 1, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 1}},
+        {'name': 'm1.small.old',
+         'params': {'ram': 512, 'vcpus': 1, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'false'}},
+        {'name': 'm1.small.perfomance-2',
+         'params': {'ram': 512, 'vcpus': 2, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 2}},
+        {'name': 'm1.small.perfomance-3',
+         'params': {'ram': 2000, 'vcpus': 3, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 2}},
+        {'name': 'm1.small.perfomance-4',
+         'params': {'ram': 512, 'vcpus': 2, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 1}}]
+
+    @pytest.mark.undestructive
+    @pytest.mark.testrail_id('838339')
+    def test_cpu_pinning_resize(
+            self, env, os_conn, networks, flavors, security_group,
+            aggregate, aggregate_n):
+        """This test checks that cpu pinning executed successfully for
+        instances created on computes with 1 NUMA
+        Steps:
+            1. Create net1 with subnet, net2 with subnet and router1 with
+            interfaces to both nets
+            2. Launch vm1 using m1.small.performance-1 flavor on compute-1 and
+            vm2 on compute-2 with m1.small.old flavor.
+            3. Resize vm1 to m1.small.performance-2
+            4. Ping vm1 from vm2
+            5. Resize vm1 to m1.small.performance-3
+            6. Ping vm1 from vm2
+            7. Resize vm1 to m1.small.performance-1
+            8. Ping vm1 from vm2
+            9. Resize vm1 to m1.small.old
+            10. Ping vm1 from vm2
+            11. Resize vm1 to m1.small.performance-4
+            12. Ping vm1 from vm2
+            13. Resize vm1 to m1.small.performance-1
+            14. Ping vm1 from vm2
+        """
+        hosts = aggregate.hosts
+        vms = []
+        cpus = get_cpu_distribition_per_numa_node(env)
+        flavors_for_resize = ['m1.small.perfomance-2',
+                              'm1.small.perfomance-3',
+                              'm1.small.perfomance-1',
+                              'm1.small.old', 'm1.small.perfomance-4',
+                              'm1.small.perfomance-1']
+
+        for i in range(2):
+            vms.append(os_conn.create_server(
+                name='vm{}'.format(i),
+                flavor=flavors[i].id,
+                nics=[{'net-id': networks[i]}],
+                availability_zone='nova:{}'.format(hosts[i]),
+                security_groups=[security_group.id]))
+
+        vm = vms[0]
+
+        for flavor in flavors_for_resize:
+            numas = 2
+            for object_flavor in flavors:
+                if object_flavor.name == flavor:
+                    self.resize(os_conn, vm, object_flavor.id)
+                    break
+            if flavor is not 'm1.small.old':
+                if flavor in ['m1.small.perfomance-4',
+                              'm1.small.perfomance-1']:
+                    numas = 1
+                host = getattr(vm, "OS-EXT-SRV-ATTR:host")
+                assert host in hosts
+                self.check_cpu_for_vm(os_conn, vm, numas, cpus[host])
+            network_checks.check_vm_connectivity(env, os_conn)
