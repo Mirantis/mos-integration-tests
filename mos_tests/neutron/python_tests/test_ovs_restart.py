@@ -527,17 +527,27 @@ class TestOVSRestartTwoVmsOnSingleCompute(OvsBase):
             availability_zone='{}:{}'.format(zone.zoneName, host),
             key_name=self.instance_keypair.name,
             nics=[{'net-id': net['network']['id']}],
-            max_count=2)
+            max_count=2,
+            wait_for_avaliable=False,
+            wait_for_active=False)
+
+        self.server1 = self.os_conn.nova.servers.find(name="server01-1")
+        server2 = self.os_conn.nova.servers.find(name="server01-2")
+        servers = [self.server1, server2]
+        self.os_conn.wait_servers_active(servers)
+        self.os_conn.wait_servers_ssh_ready(servers)
 
         # check pings
-        self.server1 = self.os_conn.nova.servers.find(name="server01-1")
-        self.server2_ip = self.os_conn.get_nova_instance_ips(
-            self.os_conn.nova.servers.find(name="server01-2")
-        ).values()[0]
+        self.server2_ip = self.os_conn.get_nova_instance_ips(server2)['fixed']
 
-        network_checks.check_ping_from_vm(
-            self.env, self.os_conn, self.server1, self.instance_keypair,
-            self.server2_ip, timeout=3 * 60)
+        network_checks.check_ping_from_vm(env=self.env,
+                                          os_conn=self.os_conn,
+                                          vm=self.server1,
+                                          vm_keypair=self.instance_keypair,
+                                          ip_to_ping=self.server2_ip,
+                                          timeout=3 * 60,
+                                          vm_login='cirros',
+                                          vm_password='cubswin:)')
 
         # make a list of all ovs agent ids
         self.ovs_agent_ids = [
