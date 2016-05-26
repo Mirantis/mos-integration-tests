@@ -116,7 +116,7 @@ class TestFloatingIP(TestBase):
                 self.server, self.floating_ip, use_neutron=True)
 
             with pytest.raises(Exception) as e:
-                wait(lambda: vm_remote.execute('uname'),
+                wait(lambda: vm_remote.execute('uname') is None,
                      timeout_seconds=60,
                      waiting_for='ssh connection be stopped')
             assert e.typename != 'TimeoutExpired'
