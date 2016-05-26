@@ -487,6 +487,11 @@ class OpenStackActions(object):
             **{'router:external': True, 'status': 'ACTIVE'})
         return ext_networks['networks'][0]
 
+    @property
+    def int_networks(self):
+        return self.neutron.list_networks(**{'router:external': False,
+                                             'status': 'ACTIVE'})['networks']
+
     def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
         for subnet in self.neutron.list_subnets()['subnets']:

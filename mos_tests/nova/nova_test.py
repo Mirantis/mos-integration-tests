@@ -24,6 +24,7 @@ import logging
 import paramiko
 import pytest
 import six
+from six.moves import configparser
 
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
@@ -906,3 +907,182 @@ class TestNovaDeferredDelete(TestBase):
         # Check that volume has correct server id
         volume = self.os_conn.cinder.volumes.get(volume.id)
         assert volume.attachments[0]['server_id'] == vm2.id
+
+
+@pytest.mark.undestructive
+class TestBugVerification(TestBase):
+
+    @pytest.yield_fixture
+    def ubuntu_image_id(self, os_conn):
+        logger.info('Creating ubuntu image')
+        image = os_conn.glance.images.create(name="image_ubuntu",
+                                             disk_format='qcow2',
+                                             container_format='bare')
+        with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
+            os_conn.glance.images.upload(image.id, f)
+        logger.info('Ubuntu image created')
+        yield image.id
+        os_conn.glance.images.delete(image.id)
+
+    @pytest.yield_fixture
+    def flavors(self, os_conn):
+        # create 2 flavors
+        flavors = []
+        flavor_little = self.os_conn.nova.flavors.create(
+            name='test-eph',
+            ram=1024, vcpus=1, disk=5, ephemeral=1)
+        flavor_large = self.os_conn.nova.flavors.create(
+            name='test-eph-large',
+            ram=2048, vcpus=1, disk=5, ephemeral=1)
+        flavors.extend((flavor_little, flavor_large))
+        yield flavors
+        for flavor in flavors:
+            os_conn.nova.flavors.delete(flavor)
+
+    @pytest.fixture
+    def instance(self, request, os_conn, keypair, ubuntu_image_id, flavors,
+                 security_group):
+        zone = os_conn.nova.availability_zones.find(zoneName="nova")
+        compute_fqdn = zone.hosts.keys()[0]
+        network = os_conn.int_networks[0]
+
+        boot_marker = "nova_856599_boot_done"
+
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -y qemu-utils',
+            'echo {marker}'
+        ]).format(marker=boot_marker)
+
+        # create instance
+        instance = os_conn.create_server(
+            name='server-test-ubuntu',
+            availability_zone='nova:{}'.format(compute_fqdn),
+            key_name=keypair.name,
+            image_id=ubuntu_image_id,
+            flavor=flavors[0].id,
+            userdata=userdata,
+            nics=[{'net-id': network['id']}],
+            security_groups=[security_group.id],
+            wait_for_active=False,
+            wait_for_avaliable=False)
+
+        request.addfinalizer(
+            lambda: common_functions.delete_instance(os_conn.nova,
+                                                     instance.id,
+                                                     True))
+
+        os_conn.wait_servers_active([instance])
+        os_conn.wait_marker_in_servers_log([instance], boot_marker)
+        instance.get()
+        return instance
+
+    @pytest.yield_fixture
+    def nova_upd_cfg_on_computes(self):
+        """Set 'use_cow_images'=False in nova cfg file.
+        Then restart nova service
+        """
+        def wait_nova_alive():
+            common_functions.wait(
+                self.os_conn.is_nova_ready,
+                timeout_seconds=60 * 3,
+                expected_exceptions=Exception,
+                waiting_for="Nova services to be alive")
+
+        # change nova config on all computes and restart nova service
+        nova_cfg_path = '/etc/nova/nova.conf'
+        restart_cmd = 'service nova-compute restart'
+
+        logger.debug("Set 'use_cow_images=False' in %s" % nova_cfg_path)
+        computes = self.os_conn.env.get_nodes_by_role('compute')
+        for node in computes:
+            with node.ssh() as remote:
+                remote.check_call('cp {0} {0}.bak'.format(nova_cfg_path))
+                parser = configparser.RawConfigParser()
+                with remote.open(nova_cfg_path) as f:
+                    parser.readfp(f)
+                parser.set('DEFAULT', 'use_cow_images', False)
+                with remote.open(nova_cfg_path, 'w') as f:
+                    parser.write(f)
+                remote.check_call(restart_cmd)
+        wait_nova_alive()
+        yield
+        # restore configs
+        logger.debug("Revert changes in %s" % nova_cfg_path)
+        for node in computes:
+            with node.ssh() as remote:
+                result = remote.execute('cp {0}.bak {0}'.format(nova_cfg_path))
+                if result.is_ok:
+                    remote.check_call(restart_cmd)
+        wait_nova_alive()
+
+    def get_block_device_by_mount(self, remote, path):
+        """Returns block device which is mounted at specified path
+
+        Returns looks like "/dev/sda1"
+        Raises an exception if there is no mounts on specified path
+        """
+        result = remote.check_call('cat /proc/mounts')
+        for row in result['stdout']:
+            cells = row.split()
+            dev, mount_point = cells[:2]
+            if mount_point == path and dev.startswith('/dev'):
+                return dev
+        else:
+            raise Exception("Can't find block device "
+                            "mounted at {}".format(path))
+
+    @pytest.mark.testrail_id('856599')
+    def test_image_access_host_device_when_resizing(
+            self, instance, keypair, flavors, nova_upd_cfg_on_computes):
+        """Test to cover bugs #1552683 and #1548450 (CVE-2016-2140)
+
+        1. Check use_cow_images=0 value in nova config on all computes
+        2. Start instance with ephemeral disk
+        3. umount /mnt in instance
+        4. On instance create qcow2 image with baking_file
+            linked to target host device in ephemeral block device
+            something like: qemu-img create -f qcow2
+            -o backing_file=/dev/sda3,backing_fmt=raw /dev/vdb 20G
+        5. Change flavor or migrate instance
+        6. Check that /vdb is not linked to host device
+
+        Duration: 2-5 minutes
+        """
+        compute_fqdn = getattr(instance, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_fqdn)
+        with compute.ssh() as remote:
+            root_dev = self.get_block_device_by_mount(remote, '/')
+
+        instance_ssh = self.os_conn.ssh_to_instance(self.env,
+                                                    instance,
+                                                    vm_keypair=keypair,
+                                                    username='ubuntu')
+
+        # validate + umount /mnt and create qcow image
+        with instance_ssh as remote:
+            eph_dev = self.get_block_device_by_mount(remote, '/mnt')
+            remote.check_call('sudo umount /mnt')
+            remote.check_call('sudo qemu-img create -f qcow2'
+                              ' -o backing_file={host_dev},backing_fmt=raw '
+                              '{eph_dev} 20G'.format(eph_dev=eph_dev,
+                                                     host_dev=root_dev))
+
+        # resize instance
+        instance.resize(flavors[1].id)
+        common_functions.wait(
+            lambda: self.os_conn.server_status_is(instance, 'VERIFY_RESIZE'),
+            timeout_seconds=2 * 60,
+            waiting_for='instance became to VERIFY_RESIZE status')
+        # confirm resize
+        instance.get()
+        instance.confirm_resize()
+        common_functions.wait(
+            lambda: self.os_conn.is_server_ssh_ready(instance),
+            timeout_seconds=2 * 60,
+            waiting_for="Instance to be accessed via ssh")
+
+        # validate /mnt is not contains files
+        with instance_ssh as remote:
+            cmd_result = remote.check_call('ls /mnt')
+            assert cmd_result.stdout_string == ''
