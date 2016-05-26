@@ -17,12 +17,20 @@ import logging
 import os
 import time
 
+import dpath.util
 import pytest
 
 from mos_tests.functions import common
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope='session')
+def block_migration(env, request):
+    data = env.get_settings_data()
+    if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value'):
+        pytest.skip('Block migration requires Nova Ceph RBD to be disabled')
 
 
 @pytest.mark.undestructive
@@ -265,6 +273,7 @@ class TestWindowCompatibility(object):
 
     @pytest.mark.testrail_id('634682')
     @pytest.mark.check_env_('has_2_or_more_computes')
+    @pytest.mark.usefixtures('block_migration')
     def test_live_migration_for_windows_instance(self, instance, floating_ip):
         """This test checks that instance with Windows Image could be
         migrated without any issues
@@ -312,7 +321,7 @@ class TestWindowCompatibility(object):
             debug_string += "."
             instance = self.os_conn.nova.servers.get(instance.id)
         logger.info(debug_string)
-        assert self.instance.status == 'ACTIVE'
+        assert instance.status == 'ACTIVE'
         # Ping the Virtual Machine
         ping_result = common.ping_command(floating_ip.ip)
         assert ping_result, "Instance is not reachable"
