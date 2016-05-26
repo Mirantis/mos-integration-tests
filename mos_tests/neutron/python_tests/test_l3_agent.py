@@ -433,8 +433,9 @@ class TestL3Agent(TestBase):
         for _ in range(2):
             self.ban_l3_agent(router_name="router01", _ip=ip)
 
-        for _ in range(40):
+        for i in range(40):
             # ban l3 agent
+            logger.info('Ban/clear L3 agent. Iteration #{} from 40'.format(i))
             last_banned_node = self.ban_l3_agent(router_name="router01",
                                                  _ip=ip,
                                                  wait_for_migrate=False,
@@ -446,7 +447,8 @@ class TestL3Agent(TestBase):
                                 wait_for_alive=True)
 
         # check pings
-        network_checks.check_vm_connectivity(self.env, self.os_conn)
+        network_checks.check_vm_connectivity(self.env, self.os_conn,
+                                             timeout=10 * 60)
 
     @pytest.mark.need_devops
     @pytest.mark.testrail_id('542609')

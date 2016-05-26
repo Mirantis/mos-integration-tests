@@ -180,7 +180,7 @@ class SSHClient(object):
                                  username=self.username, password=password,
                                  pkey=pkey, banner_timeout=30, sock=sock)
 
-    def check_connection(self, close=True):
+    def check_connection(self, close=True, try_all=False):
         """Check is ssh connection are available
 
         :rtype: bool | Exception
@@ -195,6 +195,7 @@ class SSHClient(object):
             params.append({'password': self.password})
 
         proxies = self.proxy_commands or [None]
+        auth_exception = False
         try:
             for proxy_command, param in itertools.product(proxies, params):
                 self.clear()
@@ -203,17 +204,19 @@ class SSHClient(object):
                     return True
                 except paramiko.AuthenticationException as e:
                     logger.debug('Authentication exception: {}'.format(e))
-                    return e
+                    auth_exception = e
+                    if not try_all:
+                        return auth_exception
                 except Exception as e:
                     logger.debug('Instance unavailable: {}'.format(e))
         finally:
             if close:
                 self.clear()
-        return False
+        return auth_exception
 
     @retry(count=3, delay=3)
     def reconnect(self):
-        check_result = self.check_connection(close=False)
+        check_result = self.check_connection(close=False, try_all=True)
         if check_result is True:
             return
         else:
