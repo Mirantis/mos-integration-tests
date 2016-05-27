@@ -275,6 +275,12 @@ class TestLiveMigrationBase(object):
             timeout_seconds=2 * 60,
             waiting_for='hypervisor info be updated')
 
+    def check_volumes_have_status(self, status):
+        assert all(
+            map(
+                lambda volume: (volume.get(), volume.status == status)[-1],
+                self.volumes))
+
 
 @pytest.mark.testrail_id('856599')
 def test_image_access_host_device_when_resizing(os_conn,
@@ -535,14 +541,16 @@ class TestLiveMigration(TestLiveMigrationBase):
                 to another compute node
             5. Check that all live-migrated instances are hosted on target host
                 and are in Active state:
-            6. Send pings between pairs of VMs to check that network
+            6. Check that all attached volumes are in 'In-Use' state
+            7. Send pings between pairs of VMs to check that network
                 connectivity between these hosts is still alive
-            7. Initiate concurrent block LM of previously created instances
+            8. Initiate concurrent block LM of previously created instances
                 to another compute node
-            8. Check that all live-migrated instances are hosted on target host
+            9. Check that all live-migrated instances are hosted on target host
                 and are in Active state
-            9. Send pings between pairs of VMs to check that network
+            10. Send pings between pairs of VMs to check that network
                 connectivity between these hosts is alive
+            11. Check that all attached volumes are in 'In-Use' state
         """
         zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         hypervisor1, hypervisor2 = big_hypervisors
@@ -573,11 +581,97 @@ class TestLiveMigration(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
+        self.check_volumes_have_status('in-use')
+
         self.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.check_volumes_have_status('in-use')
+
+        self.delete_instances()
+
+    @pytest.mark.testrail_id('838232')
+    @pytest.mark.usefixtures('unlimited_live_migrations', 'cleanup_instances',
+                             'cleanup_volumes')
+    def test_true_live_migration_with_volumes(self, big_hypervisors):
+        """true LM of instances with volumes attached
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Restart nova-api services on controllers and
+                nova-compute services on computes
+            3. Create as many bootable volumes as cinder quotas allow
+            4. Create maximum allowed number of volume backed instances with
+                volumes attached on a single compute node
+            5. Initiate serial block LM of previously created instances
+                to another compute node
+            6. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            7. Check that all attached volumes are in 'In-Use' state
+            8. Send pings between pairs of VMs to check that network
+               connectivity between these hosts is still alive
+            9. Initiate concurrent block LM of previously created instances
+                to another compute node
+            10. Check that all live-migrated instances are hosted on target
+                host and are in Active state
+            11. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+            12. Check that all attached volumes are in 'In-Use' state
+        """
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        hypervisor1, hypervisor2 = big_hypervisors
+        flavor = sorted(self.os_conn.nova.flavors.list(),
+                        key=lambda x: x.ram)[0]
+        project_id = self.os_conn.session.get_project_id()
+        max_volumes = self.os_conn.cinder.quotas.get(project_id).volumes / 2
+        instances_count = min(
+            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
+            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor),
+            max_volumes)
+
+        instance_zone = '{}:{}'.format(zone.zoneName,
+                                       hypervisor1.hypervisor_hostname)
+
+        image = self.os_conn._get_cirros_image()
+
+        create_args = []
+        for i in range(instances_count):
+            vol = common.create_volume(self.os_conn.cinder,
+                                       image['id'],
+                                       size=1,
+                                       timeout=5,
+                                       name='{}_vda_volume'.format(i))
+            self.volumes.append(vol)
+            create_args.append({'block_device_mapping': {'vda': vol.id}})
+
+        self.create_instances(instance_zone, flavor, instances_count,
+                              create_args=create_args)
+
+        for instance in self.instances:
+            vol = common.create_volume(self.os_conn.cinder,
+                                       image['id'],
+                                       size=1,
+                                       timeout=5,
+                                       name='{0.name}_volume'.format(instance))
+            self.volumes.append(vol)
+            self.os_conn.nova.volumes.create_server_volume(instance.id, vol.id)
+
+        self.successive_migration(False, hypervisor_from=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.check_volumes_have_status('in-use')
+
+        self.wait_hypervisor_be_free(hypervisor1)
+
+        self.concurrent_migration(False, hypervisor_to=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.check_volumes_have_status('in-use')
 
         self.delete_instances()
 
