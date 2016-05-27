@@ -849,15 +849,19 @@ class OpenStackActions(object):
         """Delete volume and check that it is absent in the list
         :param volume: volume object
         """
-        if volume in self.cinder.volumes.list():
-            volume.get()
+        def wait_available():
+            wait(lambda: (self.cinder.volumes.find(id=volume.id).status ==
+                          'available'),
+                 timeout_seconds=60,
+                 sleep_seconds=10,
+                 waiting_for=('volume [{0.name}:{0.id}] '
+                              'to became Available').format(volume))
+
+        for volume in self.cinder.volumes.findall(id=volume.id):
             # if volume attached to any instance
-            if len(volume.attachments) > 0:
-                attached_server_ids = [x['server_id']
-                                       for x in volume.attachments]
-                # detach volume from server(s)
-                for serv_id in attached_server_ids:
-                    self.nova.volumes.delete_server_volume(serv_id, volume.id)
+            for attach in volume.attachments:
+                serv_id = attach['server_id']
+                self.nova.volumes.delete_server_volume(serv_id, volume.id)
             # if volume have snapshots
             snapshots = self.cinder.volume_snapshots.findall(
                 volume_id=volume.id)
@@ -871,11 +875,9 @@ class OpenStackActions(object):
                      waiting_for=('snapshot(s) from volume [{0.name}:{0.id}] '
                                   'to be deleted').format(volume))
             # delete volume
-            self.cinder.volumes.delete(volume)
+            wait_available()
+            self.cinder.volumes.delete(volume.id)
             wait(lambda: len(self.cinder.volumes.findall(id=volume.id)) == 0,
                  timeout_seconds=60,
                  waiting_for='volume [{0.name}:{0.id}] to be deleted'.format(
                      volume))
-        else:
-            logger.info('Volume [{0.name}:{0.id}] not in '
-                        'cinder.volumes.list'.format(volume))
