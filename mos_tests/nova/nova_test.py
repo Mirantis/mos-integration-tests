@@ -13,7 +13,6 @@
 #    under the License.
 
 import logging
-import subprocess
 from time import sleep
 from time import time
 import xml.etree.ElementTree as ElementTree
@@ -441,32 +440,8 @@ class NovaIntegrationTests(OpenStackTestCase):
         inst.add_floating_ip(floating_ip.ip)
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance is not reachable")
-        hypervisors = {h.hypervisor_hostname: h for h
-                       in self.nova.hypervisors.list()}
-        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
-        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
-        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
-                                stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
-                                       disk_over_commit=False)
-        inst = self.nova.servers.get(inst.id)
-        timeout = 5
-        end_time = time() + 60 * timeout
-        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
-                new_hyper:
-            if time() > end_time:
-                msg = "Hypervisor is not changed after live migration"
-                raise AssertionError(msg)
-            sleep(1)
-            inst = self.nova.servers.get(inst.id)
-        self.assertEqual(inst.status, 'ACTIVE')
-        ping.wait()
-        output = ping.stdout.read().split('\n')[-3].split()
-        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
-        loss = packets['transmitted'] - packets['received']
-        if loss > 5:
-            msg = "Packets loss exceeds the limit, {} packets were lost"
-            raise AssertionError(msg.format(loss))
+
+        self.os_conn.live_migration(inst, floating_ip.ip)
 
     @pytest.mark.testrail_id('542824')
     def test_live_migration_of_v_ms_with_data_on_root_and_ephemeral_disk(self):
@@ -529,33 +504,8 @@ class NovaIntegrationTests(OpenStackTestCase):
         root_data = out[-2]['stdout'][0]
         ephem_data = out[-1]['stdout'][0]
 
-        # live migration
-        hypervisors = {h.hypervisor_hostname: h for h in
-                       self.nova.hypervisors.list()}
-        old_hyper = getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname")
-        new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
-        ping = subprocess.Popen(["/bin/ping", "-c100", "-i1", floating_ip.ip],
-                                stdout=subprocess.PIPE)
-        self.nova.servers.live_migrate(inst, new_hyper, block_migration=True,
-                                       disk_over_commit=False)
-        inst = self.nova.servers.get(inst.id)
-        timeout = 10
-        end_time = time() + 60 * timeout
-        while getattr(inst, "OS-EXT-SRV-ATTR:hypervisor_hostname") != \
-                new_hyper:
-            if time() > end_time:
-                msg = "Hypervisor is not changed after live migration"
-                raise AssertionError(msg)
-            sleep(1)
-            inst = self.nova.servers.get(inst.id)
-        self.assertEqual(inst.status, 'ACTIVE')
-        ping.wait()
-        output = ping.stdout.read().split('\n')[-3].split()
-        packets = {'transmitted': int(output[0]), 'received': int(output[3])}
-        loss = packets['transmitted'] - packets['received']
-        if loss > 5:
-            msg = "Packets loss exceeds the limit, {} packets were lost"
-            raise AssertionError(msg.format(loss))
+        self.os_conn.live_migration(inst, floating_ip.ip)
+
         out = []
         with SSHClient(host=floating_ip.ip, username="cirros", password=None,
                        private_keys=[private_key]) as vm_r:

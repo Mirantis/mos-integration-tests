@@ -14,6 +14,8 @@
 
 import logging
 import random
+import re
+from subprocess import Popen, PIPE
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
@@ -808,3 +810,45 @@ class OpenStackActions(object):
         # TODO(gdyuldin) remove this methods after moving to functions.os_cli
         with self._get_controller().ssh() as remote:
             return os_cli.OpenStack(remote).user_delete(name=name)
+
+    def live_migration(self, instance, ip_to_ping, new_hyper=None, timeout=20):
+        hypervisors = {h.hypervisor_hostname: h for h in
+                       self.nova.hypervisors.list()}
+        old_hyper = getattr(instance, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+        if not new_hyper:
+            new_hyper = [h for h in hypervisors.keys() if h != old_hyper][0]
+        # Start ping of the vm in background
+        ping = Popen(["/bin/ping", "-c20", "-i1", ip_to_ping], stdout=PIPE)
+        # Then run the migration
+        self.nova.servers.live_migrate(instance, new_hyper,
+                                       block_migration=True,
+                                       disk_over_commit=False)
+
+        # Check that migration is over, usually it takes about 10-15 seconds
+        def instance_hypervisor():
+            instance.get()
+            return getattr(instance, "OS-EXT-SRV-ATTR:hypervisor_hostname")
+
+        wait(lambda: instance_hypervisor() == new_hyper,
+             timeout_seconds=timeout * 60,
+             waiting_for='instance hypervisor to be changed')
+        assert instance.status == 'ACTIVE'
+
+        # Now wait till background ping is over
+        ping.wait()
+        # And check that vm was reachable during migration
+        output = re.search(r'(\d+)% packet loss', ping.stdout.read())
+        loss = int(output.group(1))
+        print "LOSSES ARE {}".format(loss)
+        if loss > 90:
+            msg = "Packets loss during migration {}% exceeds the 90% limit"
+            raise AssertionError(msg.format(loss))
+
+        # And now sure that vm is stable after the migration
+        ping = Popen(["/bin/ping", "-c300", "-i0.4", ip_to_ping], stdout=PIPE)
+        ping.wait()
+        output = re.search('([0-9]+)% packet loss', ping.stdout.read())
+        loss = int(output.group(1))
+        if loss > 10:
+            msg = "Packets loss during stability {}% exceeds the 10% limit"
+            raise AssertionError(msg.format(loss))
