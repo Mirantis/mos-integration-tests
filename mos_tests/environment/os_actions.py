@@ -464,9 +464,25 @@ class OpenStackActions(object):
         return secgroup
 
     def delete_security_group(self, name):
+        """Delete security group.
+        If security group used by instances -> delete it from instances first.
+        :param name: Name of a security group
+        """
+        logger.debug("Deleting security group '%s'" % name)
         sec_groups = self.nova.security_groups.findall(name=name)
         for sg in sec_groups:
+            # if sec group in use -> remove it from instance
+            sg_search = {'name': sg.name}
+            srvs_with_sg = [x for x in self.nova.servers.findall()
+                            if sg_search in getattr(x, 'security_groups', [])]
+            for srv in srvs_with_sg:
+                # remove sec group from instance
+                logger.debug(('Removing sec group "{0}" from instance '
+                              '[{1.name}:{1.id}]').format(name, srv))
+                self.nova.servers.remove_security_group(srv.id, sg.id)
+            # delete security group
             self.nova.security_groups.delete(sg)
+        logger.debug("Deleting security group '%s' ... done" % name)
 
     def create_key(self, key_name):
         return self.nova.keypairs.create(key_name)
