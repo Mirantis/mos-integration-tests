@@ -242,7 +242,7 @@ class TestOVSRestartTwoVms(OvsBase):
 
             network_checks.check_ping_from_vm(
                 self.env, self.os_conn, self.server1, self.instance_keypair,
-                self.server2_ip, timeout=3 * 60)
+                self.server2_ip, timeout=10 * 60)
 
             # check all agents are alive
             assert all([agt['alive'] for agt in

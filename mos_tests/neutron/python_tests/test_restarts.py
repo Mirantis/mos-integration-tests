@@ -431,8 +431,8 @@ class TestRestarts(TestBase):
 
         Steps:
             1. Update quotas for creation a lot of networks:
-                neutron quota-update --network 1000 --subnet 1000
-                                     --router 1000 --port 1000:
+                neutron quota-update --network 50 --subnet 50
+                                     --router 50 --port 250:
             2. Create max number of networks, subnets, launch and terminate
                 instance
             3. Check port ids on networkX:
@@ -461,16 +461,13 @@ class TestRestarts(TestBase):
         self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
         self.networks = self.create_max_networks_with_instances(self.router)
 
-        # Get DHCP agents for the last created net
-        net_id = self.networks[-1]
-        ports_ids_before = {
-            port['id'] for port in self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')}
+        # Get DHCP agents for the first created net
+        net_id = self.networks[0]
 
-        ports_binding_before = {
-            port['binding:host_id'] for port in
-            self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')}
+        ports_before = self.os_conn.list_ports_for_network(
+            network_id=net_id, device_owner='network:dhcp')
+        ports_ids_before = {x['id'] for x in ports_before}
+        ports_binding_before = {x['binding:host_id'] for x in ports_before}
 
         # virsh destroy of the controller with dhcp agent
         for controller in self.env.non_primary_controllers:
@@ -482,17 +479,16 @@ class TestRestarts(TestBase):
         self.env.warm_restart_nodes([controller_with_dhcp])
 
         # Check ports_binding after restart node
-        ports_ids_after = {
-            port['id'] for port in self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')}
+        ports_after = self.os_conn.list_ports_for_network(
+            network_id=net_id, device_owner='network:dhcp')
+
+        ports_ids_after = {x['id'] for x in ports_after}
+
         err_msg = 'Ports ids are changed after restart'
 
         assert ports_ids_before == ports_ids_after, err_msg
 
-        ports_binding_after = {
-            port['binding:host_id'] for port in
-            self.os_conn.list_ports_for_network(
-                network_id=net_id, device_owner='network:dhcp')}
+        ports_binding_after = {x['binding:host_id'] for x in ports_after}
 
         removed_hosts = ports_binding_before - ports_binding_after
         added_hosts = ports_binding_after - ports_binding_before

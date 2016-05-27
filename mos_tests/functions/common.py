@@ -616,9 +616,13 @@ def wait(*args, **kwargs):
 
     logger.info(msg)
 
+    start = time()
+
     try:
         result = base_wait(*args, **kwargs)
-        logger.info(msg + ' ... done')
+        logger.info('{msg} ... done. '
+                    'Took {time:.0f}s'.format(msg=msg,
+                                              time=time() - start))
         return result
     except TimeoutExpired as e:
         # prevent shows traceback from waiting package
