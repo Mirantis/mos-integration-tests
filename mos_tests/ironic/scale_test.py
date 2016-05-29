@@ -23,7 +23,6 @@ from mos_tests.ironic import testutils
 
 logger = logging.getLogger(__name__)
 
-
 ubuntu_image = pytest.yield_fixture(scope='class')(testutils.ubuntu_image)
 
 
@@ -60,14 +59,15 @@ def idfn(val):
 class TestScale(object):
     @pytest.fixture(scope='class',
                     params=[['ironic'], ['ironic', 'controller'],
-                            ['ironic', 'controller', 'ceph']],
+                            ['ironic', 'controller', 'ceph-osd']],
                     ids=idfn)
     def roles(self, request):
         return request.param
 
     @pytest.mark.testrail_id('631895', roles=['ironic'])
     @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
-    @pytest.mark.testrail_id('631899', roles=['ironic', 'controller', 'ceph'])
+    @pytest.mark.testrail_id('631899',
+                             roles=['ironic', 'controller', 'ceph-osd'])
     def test_add_node(self, env, env_name, suffix, os_conn, ubuntu_image,
                       flavors, keypair, ironic, ironic_nodes, roles):
         """Test ironic work after add new ironic-conductor node to cluster
@@ -81,7 +81,7 @@ class TestScale(object):
             6. Boot ironic instance
         BUG: https://bugs.launchpad.net/fuel/+bug/1578724
         """
-        if 'ceph' in roles and not conftest.is_ceph_enabled(env):
+        if 'ceph-osd' in roles and not conftest.is_ceph_enabled(env):
             pytest.skip('This test requires CEPH')
 
         devops_env = devops_client.DevopsClient.get_env(env_name)
@@ -123,7 +123,7 @@ class TestScale(object):
         task = env.deploy_changes()
 
         common.wait(lambda: common.is_task_ready(task),
-                    timeout_seconds=80 * 60,
+                    timeout_seconds=120 * 60,
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')
 
@@ -143,7 +143,7 @@ class TestScale(object):
 
         assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
 
-        if 'ceph' in roles:
+        if 'ceph-osd' in roles:
             with fuel_node.ssh() as remote:
                 result = remote.check_call('ceph -s')
             stdout = result.stdout_string
@@ -153,7 +153,8 @@ class TestScale(object):
 
     @pytest.mark.testrail_id('631896', roles=['ironic'])
     @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
-    @pytest.mark.testrail_id('631900', roles=['ironic', 'controller', 'ceph'])
+    @pytest.mark.testrail_id('631900',
+                             roles=['ironic', 'controller', 'ceph-osd'])
     def test_delete_node(self, env, roles, ironic, ubuntu_image, flavors,
                          keypair, os_conn, ironic_nodes):
         """Delete one of multiple ironic nodes.
@@ -169,7 +170,7 @@ class TestScale(object):
         task = env.deploy_changes()
 
         common.wait(lambda: common.is_task_ready(task),
-                    timeout_seconds=40 * 60,
+                    timeout_seconds=60 * 60,
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')
 
