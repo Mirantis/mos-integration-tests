@@ -658,14 +658,22 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838033', block_migration=True, cmd=cpu_cmd)
     @pytest.mark.testrail_id('838262', block_migration=False, cmd=cpu_cmd)
     @pytest.mark.testrail_id('838035', block_migration=True, cmd=hdd_cmd)
-    @pytest.mark.testrail_id('838264', block_migration=False, cmd=hdd_cmd)
-    @pytest.mark.parametrize('block_migration',
-                             [True, False],
-                             ids=['block LM', 'true LM'],
-                             indirect=True)
-    @pytest.mark.parametrize('cmd',
-                             [memory_cmd, cpu_cmd, hdd_cmd],
-                             ids=['memory', 'cpu', 'hdd'])
+    @pytest.mark.parametrize('block_migration, cmd',
+                             [
+                                 (True, memory_cmd),
+                                 (False, memory_cmd),
+                                 (True, cpu_cmd),
+                                 (False, cpu_cmd),
+                                 (True, hdd_cmd),
+                             ],
+                             ids=[
+                                 'block LM mem',
+                                 'true LM mem',
+                                 'block LM cpu',
+                                 'true LM cpu',
+                                 'block LM hdd',
+                             ],
+                             indirect=['block_migration'])
     @pytest.mark.usefixtures('router')
     def test_lm_with_workload(self, stress_instance, keypair, block_migration,
                               cmd):
@@ -746,16 +754,24 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                     timeout_seconds=2 * 60,
                     waiting_for='instance to be available via ssh')
 
-    @pytest.mark.testrail_id('838037', block_migration=True)
-    @pytest.mark.testrail_id('838265', block_migration=False)
+    @pytest.mark.testrail_id('838037', block_migration=True, cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838265', block_migration=False, cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838036', block_migration=True, cmd=memory_cmd)
+    @pytest.mark.testrail_id('838264', block_migration=False, cmd=memory_cmd)
     @pytest.mark.parametrize('block_migration',
                              [True, False],
-                             ids=['block LM', 'true LM'],
+                             ids=[
+                                 'block LM',
+                                 'true LM',
+                             ],
                              indirect=True)
+    @pytest.mark.parametrize('cmd', [cpu_cmd, memory_cmd],
+                             ids=['cpu', 'memory'])
     @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
-    def test_lm_under_cpu_work_multi_instances(
-            self, stress_instances, keypair, big_hypervisors, block_migration):
-        """LM of multiple instances under CPU workload
+    def test_lm_under_work_multi_instances(self, stress_instances, keypair,
+                                           big_hypervisors, block_migration,
+                                           cmd):
+        """LM of multiple instances under workload
 
         Scenario:
             1. Allow unlimited concurrent live migrations
@@ -782,7 +798,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                               instance,
                                               vm_keypair=keypair,
                                               username='ubuntu') as remote:
-                remote.check_call(self.cpu_cmd)
+                remote.check_call(cmd)
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
