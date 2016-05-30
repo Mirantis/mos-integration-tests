@@ -758,15 +758,23 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838265', block_migration=False, cmd=cpu_cmd)
     @pytest.mark.testrail_id('838036', block_migration=True, cmd=memory_cmd)
     @pytest.mark.testrail_id('838264', block_migration=False, cmd=memory_cmd)
-    @pytest.mark.parametrize('block_migration',
-                             [True, False],
-                             ids=[
-                                 'block LM',
-                                 'true LM',
+    @pytest.mark.testrail_id('838039', block_migration=True, cmd=hdd_cmd)
+    @pytest.mark.parametrize('block_migration, cmd',
+                             [
+                                 (True, cpu_cmd),
+                                 (False, cpu_cmd),
+                                 (True, memory_cmd),
+                                 (False, memory_cmd),
+                                 (True, hdd_cmd),
                              ],
-                             indirect=True)
-    @pytest.mark.parametrize('cmd', [cpu_cmd, memory_cmd],
-                             ids=['cpu', 'memory'])
+                             ids=[
+                                 'cpu-block LM',
+                                 'cpu-true LM',
+                                 'memory-block LM',
+                                 'memory-true LM',
+                                 'hdd-block LM',
+                             ],
+                             indirect=['block_migration'])
     @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
     def test_lm_under_work_multi_instances(self, stress_instances, keypair,
                                            big_hypervisors, block_migration,
