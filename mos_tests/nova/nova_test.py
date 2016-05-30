@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 from random import randint
 import re
@@ -20,7 +21,7 @@ import tarfile
 from time import sleep
 from time import time
 
-import logging
+from novaclient.exceptions import BadRequest
 import paramiko
 import pytest
 import six
@@ -522,9 +523,14 @@ class NovaIntegrationTests(OpenStackTestCase):
         ping = subprocess.Popen(["/bin/ping", "-c20", "-i1", ip_to_ping],
                                 stdout=subprocess.PIPE)
         # Then run the migration
-        self.nova.servers.live_migrate(instance, new_hyper,
-                                       block_migration=True,
-                                       disk_over_commit=False)
+        try:
+            instance.live_migrate(new_hyper,
+                                  block_migration=True,
+                                  disk_over_commit=False)
+        except BadRequest:
+            instance.live_migrate(new_hyper,
+                                  block_migration=False,
+                                  disk_over_commit=False)
 
         # Check that migration is over, usually it takes about 10-15 seconds
         def instance_hypervisor():
