@@ -34,7 +34,7 @@ class TestCpuPinningOneNuma(TestBaseNFV):
                   'hw:numa_nodes': 1}}]
 
     @pytest.mark.undestructive
-    @pytest.mark.testrail_id('838318')
+    @pytest.mark.testrail_id('838320')
     def test_cpu_pinning_one_numa_cell(
             self, env, os_conn, networks, flavors, security_group,
             aggregate):
