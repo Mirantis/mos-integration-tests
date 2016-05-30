@@ -9,6 +9,11 @@ parameters:
   network:
     type: string
 resources:
+  port:
+    type: OS::Neutron::Port
+    properties:
+      network: {get_param: network}
+
   Server:
     type: OS::Nova::Server
     properties:
@@ -17,7 +22,7 @@ resources:
       flavor: {get_param: InstanceType}
       flavor_update_policy: REPLACE
       networks:
-          - network: {Ref: network}
+          - port: {get_resource: port}
 outputs:
   servers:
     value:
