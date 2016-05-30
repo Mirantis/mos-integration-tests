@@ -158,11 +158,13 @@ class MuranoActions(object):
     def get_environment(self, environment):
         return self.murano.environments.get(environment.id)
 
-    def check_instances(self, gateways_count=0, nodes_count=0, docker_count=0):
+    def check_instances(self, gateways_count=0, nodes_count=0,
+                        masternodes_count=1, docker_count=0):
         instance_list = self.os_conn.nova.servers.list()
         names = []
         if gateways_count and nodes_count:
-            names.append("master-1")
+            for i in range(masternodes_count):
+                names.append("master-{}".format(i + 1))
             for i in range(gateways_count):
                 names.append("gateway-{}".format(i + 1))
             for i in range(nodes_count):
@@ -680,5 +682,83 @@ class MuranoActions(object):
                 "type": "io.murano.apps.ZabbixAgent",
                 "id": str(uuid.uuid4())
             }
+        }
+        return post_body
+
+    def cluster(self, keypair, sequence):
+        post_body = {
+            "gatewayCount": 1,
+            "gatewayNodes": [
+                {
+                    "instance": {
+                        "name": self.rand_name("gateway-{}".format(sequence)),
+                        "assignFloatingIp": True,
+                        "keyname": keypair.id,
+                        "flavor": flavor,
+                        "image": "ubuntu14.04-x64-kubernetes",
+                        "availabilityZone": availability_zone,
+                        "?": {
+                            "type": "io.murano.resources.LinuxMuranoInstance",
+                            "id": str(uuid.uuid4())
+                        }
+                    },
+                    "?": {
+                        "type": "io.murano.apps.docker.kubernetes."
+                                "KubernetesGatewayNode",
+                        "id": str(uuid.uuid4())
+                    }
+                }
+            ],
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Kubernetes Cluster"
+                },
+                "type": "io.murano.apps.docker.kubernetes.KubernetesCluster",
+                "id": str(uuid.uuid4())
+            },
+            "nodeCount": 1,
+            "dockerRegistry": "",
+            "masterNode": {
+                "instance": {
+                    "name": self.rand_name("master-{}".format(sequence)),
+                    "assignFloatingIp": True,
+                    "keyname": keypair.id,
+                    "flavor": flavor,
+                    "image": "ubuntu14.04-x64-kubernetes",
+                    "availabilityZone": availability_zone,
+                    "?": {
+                        "type": "io.murano.resources.LinuxMuranoInstance",
+                        "id": str(uuid.uuid4())
+                    }
+                },
+                "?": {
+                    "type": "io.murano.apps.docker.kubernetes."
+                            "KubernetesMasterNode",
+                    "id": str(uuid.uuid4())
+                }
+            },
+            "minionNodes": [
+                {
+                    "instance": {
+                        "name": self.rand_name("minion-{}".format(sequence)),
+                        "assignFloatingIp": True,
+                        "keyname": keypair.id,
+                        "flavor": flavor,
+                        "image": "ubuntu14.04-x64-kubernetes",
+                        "availabilityZone": availability_zone,
+                        "?": {
+                            "type": "io.murano.resources.LinuxMuranoInstance",
+                            "id": str(uuid.uuid4())
+                        }
+                    },
+                    "?": {
+                        "type": "io.murano.apps.docker.kubernetes."
+                                "KubernetesMinionNode",
+                        "id": str(uuid.uuid4())
+                    },
+                    "exposeCAdvisor": True
+                }
+            ],
+            "name": self.rand_name("KubeCluster")
         }
         return post_body
