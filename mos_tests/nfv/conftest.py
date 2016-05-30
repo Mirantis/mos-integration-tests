@@ -69,9 +69,9 @@ def medium_nfv_flavor(os_conn, cleanup, request):
 @pytest.yield_fixture()
 def flavors(os_conn, request, cleanup):
     flvs = getattr(request.cls, 'flavors_to_create')
-    params = {'ram': 1024, 'vcpu': 2, 'disk': 20}
     created_flavors = []
     for flv in flvs:
+        params = {'ram': 1024, 'vcpu': 2, 'disk': 20}
         params.update(flv.get('params', {}))
         flavor = os_conn.nova.flavors.create(flv['name'], params['ram'],
                                              params['vcpu'],
