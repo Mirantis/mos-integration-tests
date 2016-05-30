@@ -165,20 +165,20 @@ def servers(os_conn, os_clients, networks, sec_groups):
 
 def restart_ping(os_clients, env, servers, group_num=None):
     os_conn1, os_conn2 = os_clients
-    ping_cmd = 'ping {target_ip} < /dev/null > /dev/null 2>&1 &'
+    ping_cmd = 'ping {target_ip}'
     if group_num is None or group_num % 2 == 0:
         with os_conn1.ssh_to_instance(env, servers[0], username='cirros',
                                       password='cubswin:)') as remote:
             remote.execute('killall ping')
             target_ip = servers[1].networks.values()[0][0]
-            remote.check_call(ping_cmd.format(target_ip=target_ip))
+            remote.background_call(ping_cmd.format(target_ip=target_ip))
 
     if group_num is None or group_num % 2 == 1:
         with os_conn2.ssh_to_instance(env, servers[2], username='cirros',
                                       password='cubswin:)') as remote:
             remote.execute('killall ping')
             target_ip = servers[3].networks.values()[0][0]
-            remote.check_call(ping_cmd.format(target_ip=target_ip))
+            remote.background_call(ping_cmd.format(target_ip=target_ip))
 
 
 def is_ping_has_same_id(compute):
