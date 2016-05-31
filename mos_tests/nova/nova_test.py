@@ -89,7 +89,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         for key in self.keys:
             common_functions.delete_keys(self.nova, key.name)
         self.keys = []
-        self.nova.security_groups.delete(self.sec_group)
+        self.os_conn.delete_security_group(self.sec_group)
 
     @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
     @pytest.mark.testrail_id('543358')
