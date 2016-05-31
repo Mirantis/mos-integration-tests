@@ -92,7 +92,7 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
             instances.append(instance)
 
         os_conn.wait_servers_active(instances)
-        os_conn.wait_servers_ssh_ready(instances, timeout=5 * 60)
+        os_conn.wait_servers_ssh_ready(instances, timeout=10 * 60)
 
         for instance in instances:
             with os_conn.ssh_to_instance(env,
