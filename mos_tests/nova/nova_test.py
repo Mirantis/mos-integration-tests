@@ -91,6 +91,13 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
         self.os_conn.delete_security_group(self.sec_group)
 
+    def get_admin_int_net_id(self):
+        networks = self.neutron.list_networks()['networks']
+        net_id = [net['id'] for net in networks if
+                  not net['router:external'] and
+                  'admin' in net['name']][0]
+        return net_id
+
     @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
     @pytest.mark.testrail_id('543358')
     def test_nova_launch_v_m_from_image_with_all_flavours(self):
@@ -107,9 +114,7 @@ class NovaIntegrationTests(OpenStackTestCase):
             6. delete the instance
             7. Repeat all steps for all types of flavor
         """
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks
-               if not net['router:external']][0]
+        net = self.get_admin_int_net_id()
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
         flavor_list = self.nova.flavors.list()
@@ -151,8 +156,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         """
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks if not net['router:external']][0]
+        net = self.get_admin_int_net_id()
         flavor_list = self.nova.flavors.list()
         volume = common_functions.create_volume(self.cinder, image_id)
         self.volumes.append(volume)
@@ -196,8 +200,7 @@ class NovaIntegrationTests(OpenStackTestCase):
 
         # 2. Create instance from newly created volume, associate floating_ip
         name = 'TestVM_543355_instance_to_resize'
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks if not net['router:external']][0]
+        net = self.get_admin_int_net_id()
         flavor_list = {f.name: f.id for f in self.nova.flavors.list()}
         initial_flavor = flavor_list['m1.small']
         resize_flavor = flavor_list['m1.tiny']
@@ -282,9 +285,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         image_id = image_dict["TestVM"]
         flavor_dict = {f.name: f.id for f in self.nova.flavors.list()}
         flavor_id = flavor_dict["m1.micro"]
-        networks = self.neutron.list_networks()["networks"]
-        net_dict = {net["name"]: net["id"] for net in networks}
-        net_internal_id = net_dict["admin_internal_net"]
+        net_internal_id = self.get_admin_int_net_id()
 
         self.floating_ips = [self.nova.floating_ips.create()
                              for _ in range(count)]
@@ -345,9 +346,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         image_id = image_dict["TestVM"]
         flavor_dict = {f.name: f.id for f in self.nova.flavors.list()}
         flavor_id = flavor_dict["m1.tiny"]
-        networks = self.neutron.list_networks()["networks"]
-        net_dict = {net["name"]: net["id"] for net in networks}
-        net_internal_id = net_dict["admin_internal_net"]
+        net_internal_id = self.get_admin_int_net_id()
 
         initial_volumes = self.cinder.volumes.list()
         for i in range(count):
@@ -411,8 +410,7 @@ class NovaIntegrationTests(OpenStackTestCase):
              6. Check current hypervisor and status of instance
              7. Check that packets loss was minimal
         """
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks if not net['router:external']][0]
+        net = self.get_admin_int_net_id()
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
         flavor = [flavor for flavor in self.nova.flavors.list() if
@@ -454,8 +452,7 @@ class NovaIntegrationTests(OpenStackTestCase):
              10. Ssh to instance and check timestamp on root and ephemeral
                  disks
         """
-        networks = self.neutron.list_networks()['networks']
-        net = [net['id'] for net in networks if not net['router:external']][0]
+        net = self.get_admin_int_net_id()
         image_id = [image.id for image in self.nova.images.list() if
                     image.name == 'TestVM'][0]
         flavor = self.nova.flavors.create("m1.ephemeral", 64, 1, 1,
