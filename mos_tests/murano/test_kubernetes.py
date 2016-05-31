@@ -446,3 +446,39 @@ def test_k8s_deploy_multiple_clusters_in_one_environment(
                          [cluster_two['name'], "minion-2", 4194]
                          ],
                         kubernetes=True)
+
+
+@pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
+@pytest.mark.parametrize('package', [('DockerInfluxDB', 'DockerGrafana')],
+                         indirect=['package'])
+@pytest.mark.testrail_id('543021')
+def test_deploy_docker_influx_k8s_grafana(environment, murano, session,
+                                          docker, cluster, pod):
+    """Check connection between Docker container and Kubernetes cluster
+    Steps:
+        1. Create Murano environment
+        2. Add DockerStandaloneHost application to the environment
+        3. Add DockerInfluxDB application to the environment with
+        DockerStandaloneHost as host
+        4. Add Kubernetes Cluster application to the environment
+        5. Add Kubernetes Pod application to the environment
+        6. Add DockerGrafana application to the environment with
+        DockerInfluxDB as backend service and Kubernetes Pod as host
+        7. Deploy environment
+        8. Check deployment status and make sure that all nodes are active
+        9. Check that all applications are accessible
+        10. Delete environment
+    """
+    influx_service = murano.create_service(environment, session,
+                                           murano.influxdb(docker))
+    murano.create_service(environment, session,
+                          murano.grafana(pod, influx_service))
+    deployed_environment = murano.deploy_environment(environment, session)
+    murano.check_instances(gateways_count=1, nodes_count=1, docker_count=1)
+    murano.deployment_success_check(environment, ports=[22, 8083, 8086])
+    murano.status_check(deployed_environment,
+                        [[cluster['name'], "master-1", 8080],
+                         [cluster['name'], "gateway-1", 80],
+                         [cluster['name'], "minion-1", 4194]
+                         ],
+                        kubernetes=True)
