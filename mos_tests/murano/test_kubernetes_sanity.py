@@ -161,10 +161,10 @@ def test_deploy_k8s_postgresql(environment, murano, session, cluster, pod,
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
-                         [cluster['name'], "gateway-1", 5432],
                          [cluster['name'], "minion-1", 4194]
                          ],
                         kubernetes=True)
+    murano.check_postgresql(environment, "gateway-1", cluster['name'])
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")

@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import psycopg2
 import random
 import requests
 import socket
@@ -37,6 +38,7 @@ class MuranoActions(object):
                                    token=os_conn.session.get_token(),
                                    cacert=os_conn.path_to_cert)
         self.heat = os_conn.heat
+        self.postgres_passwd = self.rand_name("O5t@")
 
     def rand_name(self, name):
         return name + '_' + str(random.randint(1, 0x7fffffff))
@@ -232,6 +234,20 @@ class MuranoActions(object):
         else:
             self.heat.stacks.delete(stack.id)
 
+    def check_postgresql(self, environment, inst_name, service_name):
+        def is_postgres_accessible():
+            ip = self.get_k8s_ip_by_instance_name(environment, inst_name,
+                                                  service_name)
+            conn = psycopg2.connect(dbname='postgres', user='postgres',
+                                    password=self.postgres_passwd, host=ip,
+                                    port='5432')
+            conn.close()
+            return True
+
+        return wait(is_postgres_accessible, expected_exceptions=psycopg2.Error,
+                    timeout_seconds=300,
+                    waiting_for='postgresql to be available')
+
     def influxdb(self, host, name='Influx', db='db1;db2'):
         post_body = {
             "host": host,
@@ -383,7 +399,7 @@ class MuranoActions(object):
             "image": 'postgres',
             "name": "Postgres",
             "port": 5432,
-            "password": self.rand_name("O5t@"),
+            "password": self.postgres_passwd,
             "publish": True,
             "?": {
                 "_{id}".format(id=uuid.uuid4().hex): {
