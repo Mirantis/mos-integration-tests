@@ -512,10 +512,11 @@ class TestDVR(TestDVRBase):
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
                                           vm_keypair=self.instance_keypair)
 
-    @pytest.mark.testrail_id('638473', params={'node_to_clear_key': 'first'})
-    @pytest.mark.testrail_id('638471', params={'node_to_clear_key': 'last'})
-    @pytest.mark.parametrize('node_to_clear_key', ['first', 'last'])
-    def test_ban_and_clear_l3_agent_on_snat_node(self, node_to_clear_key):
+    @pytest.mark.testrail_id('638473', node_to_clear_idx=1)
+    @pytest.mark.testrail_id('638471', node_to_clear_idx=-1)
+    @pytest.mark.parametrize('node_to_clear_idx', [1, -1],
+                             ids=['second', 'last'])
+    def test_ban_and_clear_l3_agent_on_snat_node(self, node_to_clear_idx):
         """Check North-South connectivity without floating after ban all
             l3 agent on nodes with snat and then clear one
 
@@ -551,15 +552,17 @@ class TestDVR(TestDVRBase):
 
         controller_with_snat = self.find_snat_controller(self.router_id)
 
-        banned_nodes = {'first': controller_with_snat}
+        banned_nodes = []
 
         for i in range(3):
             logging.info('Banning step {i}: {node}'.format(
-                i=i, node=controller_with_snat))
+                i=i + 1, node=controller_with_snat))
             with controller_with_snat.ssh() as remote:
                 remote.check_call(
                     'pcs resource ban neutron-l3-agent {fqdn}'.format(
                         **controller_with_snat.data))
+
+            banned_nodes.append(controller_with_snat)
 
             if i < 2:
                 # Wait for SNAT reschedule
@@ -572,17 +575,18 @@ class TestDVR(TestDVRBase):
                     waiting_for="snat is rescheduled")
                 assert controller_with_snat != new_controller_with_snat
                 controller_with_snat = new_controller_with_snat
-            elif node_to_clear_key == 'last':
-                # Wait for SNAT on last controller will die
-                wait(lambda: self.find_snat_controller(
-                     self.router_id, alive_only=True) is None,
-                     timeout_seconds=60 * 3, sleep_seconds=10,
-                     waiting_for="snat on {} to die".format(
-                         controller_with_snat))
 
-        banned_nodes['last'] = controller_with_snat
+        time.sleep(1)
 
-        node_to_clear = banned_nodes[node_to_clear_key]
+        if node_to_clear_idx == -1:
+            # Wait for SNAT on last controller will die
+            wait(lambda: self.find_snat_controller(
+                 self.router_id, alive_only=True) is None,
+                 timeout_seconds=60 * 3, sleep_seconds=10,
+                 waiting_for="snat on {fqdn} to die".format(
+                     **controller_with_snat.data))
+
+        node_to_clear = banned_nodes[node_to_clear_idx]
 
         with node_to_clear.ssh() as remote:
             remote.check_call(
@@ -593,7 +597,7 @@ class TestDVR(TestDVRBase):
         wait(lambda: self.find_snat_controller(
             self.router_id, alive_only=True) == node_to_clear,
             timeout_seconds=60 * 3, sleep_seconds=20,
-            waiting_for="snat go back to {}".format(node_to_clear))
+            waiting_for="snat go back to {fqdn}".format(**node_to_clear.data))
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
                                           vm_keypair=self.instance_keypair,
