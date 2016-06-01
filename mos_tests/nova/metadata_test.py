@@ -40,15 +40,18 @@ def ubuntu_image_id(os_conn):
 
 @pytest.yield_fixture
 def instances_cleanup(os_conn, security_group):
-    old_instances = os_conn.nova.servers.list()
+    old_instances = set(os_conn.nova.servers.list())
     yield
-    for instance in os_conn.nova.servers.list():
-        if instance not in old_instances:
-            instance.delete()
+    to_delete = set(os_conn.nova.servers.list()) - old_instances
+    for instance in to_delete:
+        instance.delete()
 
-    common.wait(lambda: len(os_conn.nova.servers.list()) == len(old_instances),
-                timeout_seconds=2 * 60,
-                waiting_for='instances to be deleted')
+    os_conn.wait_servers_deleted(to_delete)
+
+
+@pytest.fixture
+def network(os_conn):
+    return os_conn.int_networks[0]
 
 
 @pytest.mark.testrail_id('843871')
@@ -56,7 +59,7 @@ def instances_cleanup(os_conn, security_group):
 def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
                                       keypair, security_group,
                                       instances_cleanup):
-    """[Bug #1545043] Check that metadata reach all booted VMs
+    """Check that metadata reach all booted VMs
 
     Scenario:
         1. Create a Glance image based on Ubuntu image
@@ -66,16 +69,25 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
         5. Repeat pp 2-4 100 times
     """
     flavor = os_conn.nova.flavors.find(name='m1.small')
-    instances_count = 0
-    # Determine available m1.small instances count
-    for hypervisor in os_conn.nova.hypervisors.list():
-        instances_count += os_conn.get_hypervisor_capacity(hypervisor, flavor)
-    iterations_count = 100 / instances_count
-    for i in range(100 / instances_count):
-        logger.info('Check metadata iteration {i} from {iterations_count}. '
-                    'Boot {instances_count} instances'.format(
+    remain = 100
+    i = 0
+    while remain > 0:
+        i += 1
+        instances_count = 0
+        # Determine available m1.small instances count
+        for hypervisor in os_conn.nova.hypervisors.list():
+            instances_count += os_conn.get_hypervisor_capacity(hypervisor,
+                                                               flavor)
+        if instances_count == 0:
+            raise Exception('No free hypervisors available')
+
+        remain -= instances_count
+
+        logger.info('Check metadata iteration {i}. '
+                    'Boot {instances_count} instances. '
+                    'Remain {remain} instances'.format(
                         i=i,
-                        iterations_count=iterations_count,
+                        remain=remain,
                         instances_count=instances_count))
         instances = []
         for j in range(instances_count):
@@ -85,14 +97,14 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
                 key_name=keypair.name,
                 image_id=ubuntu_image_id,
                 flavor=flavor,
-                nics=[{'net-id': network['network']['id']}],
+                nics=[{'net-id': network['id']}],
                 security_groups=[security_group.id],
                 wait_for_active=False,
                 wait_for_avaliable=False)
             instances.append(instance)
 
-        os_conn.wait_servers_active(instances)
-        os_conn.wait_servers_ssh_ready(instances, timeout=10 * 60)
+        os_conn.wait_servers_active(instances, timeout=10 * 60)
+        os_conn.wait_servers_ssh_ready(instances, timeout=20 * 60)
 
         for instance in instances:
             with os_conn.ssh_to_instance(env,
@@ -104,7 +116,4 @@ def test_metadata_reach_all_booted_vm(os_conn, env, network, ubuntu_image_id,
         for instance in instances:
             instance.delete()
 
-        common.wait(
-            lambda: all(os_conn.is_server_deleted(x.id) for x in instances),
-            timeout_seconds=2 * 60,
-            waiting_for='instance to be deleted')
+        os_conn.wait_servers_deleted(instances, timeout=5 * 60)
