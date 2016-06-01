@@ -407,6 +407,8 @@ def test_load_messages_and_shutdown_eth_on_all(env):
         # wait when rabbit will be ok after snapshot revert
         wait_for_rabbit_running_nodes(remote, len(controllers))
         install_oslomessagingchecktool(remote, **kwargs)
+        logger.debug('Oslo_messaging tool, client port: %s' %
+                     kwargs['tool_rpc_port'])
         configure_oslomessagingchecktool(
             remote, ctrl_ips, kwargs['rabbit_userid'],
             kwargs['rabbit_password'], kwargs['tool_rpc_port'],
