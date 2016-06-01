@@ -67,10 +67,11 @@ def test_k8s_deploy_mariadb_postgresql_mongodb(environment, murano, session,
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
-                         [cluster['name'], "gateway-1", 3306, 5432, 27017],
+                         [cluster['name'], "gateway-1", 3306, 27017],
                          [cluster['name'], "minion-1", 4194]
                          ],
                         kubernetes=True)
+    murano.check_postgresql(environment, "gateway-1", cluster['name'])
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
@@ -209,10 +210,10 @@ def test_k8s_deploy_postgresql_wait_deploy_influxdb(environment, murano, pod,
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
-                         [cluster['name'], "gateway-1", 5432],
                          [cluster['name'], "minion-1", 4194]
                          ],
                         kubernetes=True)
+    murano.check_postgresql(environment, "gateway-1", cluster['name'])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.influxdb(pod))
@@ -220,10 +221,11 @@ def test_k8s_deploy_postgresql_wait_deploy_influxdb(environment, murano, pod,
     murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
-                         [cluster['name'], "gateway-1", 5432, 8083, 8086],
+                         [cluster['name'], "gateway-1", 8083, 8086],
                          [cluster['name'], "minion-1", 4194]
                          ],
                         kubernetes=True)
+    murano.check_postgresql(environment, "gateway-1", cluster['name'])
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
