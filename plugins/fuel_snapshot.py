@@ -21,7 +21,6 @@ from fuelclient.client import APIClient
 import pytest
 import requests
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +28,7 @@ def pytest_addoption(parser):
     parser.addoption("--make-snapshots",
                      '-D',
                      action="store_true",
-                     help="Store fuel diagnostic snapshot on failues")
+                     help="Generate fuel diagnostic snapshot on failues")
 
 
 @pytest.yield_fixture(autouse=True)
@@ -38,10 +37,8 @@ def make_snapshot(request, fuel, env):
     yield
 
     try:
-        if not request.config.getoption("--make-snapshots"):
-            return
-        # Force make snapshot on jenkins jobs
-        elif os.environ.get('JOB_NAME') is None:
+        skip_snapshot = not request.config.getoption("--make-snapshots")
+        if skip_snapshot and os.environ.get('JOB_NAME') is None:
             return
 
         steps_rep = [getattr(request.node, 'rep_{}'.format(name), None)
@@ -50,6 +47,7 @@ def make_snapshot(request, fuel, env):
             return
 
         test_name = request.node.nodeid
+        logger.info('Making snapshot to test {}'.format(test_name))
         filename = unicode(re.sub('[^\w\s-]', '_', test_name).strip().lower())
         filename += '.tar.xz'
         path = os.path.join('snapshots', filename)
