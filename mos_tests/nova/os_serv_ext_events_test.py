@@ -21,7 +21,8 @@ from mos_tests.neutron.python_tests.base import TestBase
 
 def create_instance(os_conn, compute_host, keypair, network, security_group):
     return os_conn.create_server(name='server_00',
-                                 availability_zone='nova:{}'.format(compute_host),
+                                 availability_zone='nova:{}'.format(
+                                     compute_host),
                                  key_name=keypair.name,
                                  nics=[{'net-id': network['network']['id']}],
                                  security_groups=[security_group.id],

@@ -463,26 +463,29 @@ class OpenStackActions(object):
                 secgroup.id, **ruleset)
         return secgroup
 
-    def delete_security_group(self, name):
+    def delete_security_group(self, sg):
         """Delete security group.
         If security group used by instances -> delete it from instances first.
-        :param name: Name of a security group
+        :param sg: security group to delete
+        :type sg: novaclient.v2.security_groups.SecurityGroup
         """
-        logger.debug("Deleting security group '%s'" % name)
-        sec_groups = self.nova.security_groups.findall(name=name)
-        for sg in sec_groups:
-            # if sec group in use -> remove it from instance
-            sg_search = {'name': sg.name}
-            srvs_with_sg = [x for x in self.nova.servers.findall()
-                            if sg_search in getattr(x, 'security_groups', [])]
-            for srv in srvs_with_sg:
-                # remove sec group from instance
-                logger.debug(('Removing sec group "{0}" from instance '
-                              '[{1.name}:{1.id}]').format(name, srv))
-                self.nova.servers.remove_security_group(srv.id, sg.id)
-            # delete security group
-            self.nova.security_groups.delete(sg)
-        logger.debug("Deleting security group '%s' ... done" % name)
+        logger.debug("Deleting security group '{sg.name}'".format(sg=sg))
+
+        # if sec group in use -> remove it from instance
+        sg_search = {'name': sg.name}
+        srvs_with_sg = [x
+                        for x in self.nova.servers.findall()
+                        if sg_search in getattr(x, 'security_groups', [])]
+        for srv in srvs_with_sg:
+            # remove sec group from instance
+            logger.debug(('Removing sec group "{sg.name}" from instance '
+                          '[{srv.name}:{srv.id}]').format(sg=sg,
+                                                          srv=srv))
+            self.nova.servers.remove_security_group(srv.id, sg.id)
+        # delete security group
+        self.nova.security_groups.delete(sg)
+        logger.debug("Deleting security group "
+                     "'{sg.name}' ... done".format(sg=sg))
 
     def create_key(self, key_name):
         return self.nova.keypairs.create(key_name)

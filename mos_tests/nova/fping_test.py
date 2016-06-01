@@ -115,7 +115,7 @@ def newten_key_secgroup(newten_os_conn):
     yield keypair, sec_group
     # cleanUp
     newten_os_conn.delete_key(key_name=keypair.name)
-    newten_os_conn.delete_security_group(name=sec_group.name)
+    newten_os_conn.delete_security_group(sec_group)
 
 
 @pytest.yield_fixture

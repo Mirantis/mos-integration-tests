@@ -13,11 +13,8 @@
 #    under the License.
 
 import logging
-import os
-from random import randint
 import re
 import subprocess
-import tarfile
 from time import sleep
 from time import time
 
