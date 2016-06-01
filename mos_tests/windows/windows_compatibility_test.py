@@ -100,7 +100,7 @@ class TestWindowCompatibility(object):
     def sec_group(self, os_conn):
         sec_group = os_conn.create_sec_group_for_ssh()
         yield sec_group
-        os_conn.delete_security_group(name=sec_group.name)
+        os_conn.delete_security_group(sec_group)
 
     @pytest.yield_fixture(scope='class')
     def floating_ip(self, os_conn):
