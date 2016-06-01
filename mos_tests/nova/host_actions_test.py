@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import dpath.util
 import pytest
 
 from mos_tests.functions import common
@@ -26,8 +27,16 @@ def nova_client(controller_remote):
     return os_cli.Nova(controller_remote)
 
 
-@pytest.mark.check_env_('has_2_or_more_computes')
+@pytest.fixture(scope='session')
+def block_migration(env):
+    data = env.get_settings_data()
+    if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value'):
+        pytest.skip('Block migration requires Nova Ceph RBD to be disabled')
+
+
 @pytest.mark.testrail_id('842499')
+@pytest.mark.check_env_('has_2_or_more_computes')
+@pytest.mark.usefixtures('block_migration')
 def test_live_evacuate_instances(instances, os_conn, env, keypair,
                                  nova_client):
     """Live evacuate all instances of the specified host to other available
