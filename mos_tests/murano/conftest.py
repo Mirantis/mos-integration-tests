@@ -43,7 +43,7 @@ def openstack_client(controller_remote):
 
 
 @pytest.yield_fixture
-def environment(murano, clear_old, package):
+def environment(murano, package):
     environment = murano.murano.environments.create(
         {'name': murano.rand_name('MuranoEnv')})
     yield environment
@@ -68,16 +68,6 @@ def keypair(os_conn):
 @pytest.fixture
 def murano_cli(controller_remote):
     return functools.partial(os_cli.Murano(controller_remote))
-
-
-@pytest.fixture
-def clear_old(os_conn):
-    instance_list = os_conn.nova.servers.list()
-    names = ["master", "minion", "gateway", "Docker"]
-    for instance in instance_list:
-            for name in names:
-                if instance.name.find(name) > -1:
-                    instance.delete()
 
 
 @pytest.fixture
