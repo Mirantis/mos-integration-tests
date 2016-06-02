@@ -19,7 +19,7 @@ import socket
 import telnetlib
 import uuid
 
-from mos_tests.functions.common import wait
+from mos_tests.functions.common import delete_stack, wait
 from muranoclient.v1.client import Client as MuranoClient
 
 flavor = 'm1.medium'
@@ -232,7 +232,7 @@ class MuranoActions(object):
         if not stack:
             return
         else:
-            self.heat.stacks.delete(stack.id)
+            delete_stack(self.heat, stack.id)
 
     def check_postgresql(self, environment, inst_name, service_name):
         def is_postgres_accessible():
