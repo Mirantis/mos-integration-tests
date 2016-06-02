@@ -325,19 +325,25 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 
     @pytest.yield_fixture
     def prepare_24(self, os_conn_for_unittests):
+        net_names = [x['name']
+                     for x in self.os_conn.neutron.list_networks()['networks']]
+
         self._prepare(cidr='192.168.1.0/24')
 
         yield
 
-        self.os_conn.cleanup_network()
+        self.os_conn.cleanup_network(networks_to_skip=net_names)
 
     @pytest.yield_fixture
     def prepare_30(self, os_conn_for_unittests):
+        net_names = [x['name']
+                     for x in self.os_conn.neutron.list_networks()['networks']]
+
         self._prepare(cidr='192.168.1.0/30')
 
         yield
 
-        self.os_conn.cleanup_network()
+        self.os_conn.cleanup_network(networks_to_skip=net_names)
 
     @classmethod
     @pytest.yield_fixture(scope='class')
