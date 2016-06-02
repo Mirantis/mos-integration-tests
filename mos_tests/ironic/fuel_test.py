@@ -40,8 +40,13 @@ def check_net_settings_equals(fuel_settings, cli_settings):
     __tracebackhide__ = True
 
     for key in set(fuel_settings.keys()) & set(cli_settings.keys()):
-        if str(fuel_settings[key]) != cli_settings[key]:
-            pytest.fail('Network settings are not equals')
+        api_val = '' if fuel_settings[key] is None else str(fuel_settings[key])
+        if api_val != cli_settings[key]:
+            pytest.fail('Network settings are not equals. '
+                        '`{key}` api:{api} cli:{cli}'.format(
+                            key=key,
+                            api=api_val,
+                            cli=cli_settings[key]))
 
 
 @pytest.mark.testrail_id('631890')
