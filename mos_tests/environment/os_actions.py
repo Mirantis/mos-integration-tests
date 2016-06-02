@@ -22,6 +22,7 @@ from heatclient.v1.client import Client as HeatClient
 from keystoneclient.auth.identity.v2 import Password as KeystonePassword
 from keystoneclient import session
 from keystoneclient.v2_0 import Client as KeystoneClient
+from neutronclient.common.exceptions import Conflict as NeutronConflict
 from neutronclient.common.exceptions import NeutronClientException
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
@@ -317,6 +318,73 @@ class OpenStackActions(object):
 
     def delete_subnet(self, id):
         return self.neutron.delete_subnet(id)
+
+    def delete_net_subnet_smart(self, net_id, subnet_id):
+        """Delete subnetwork and network.
+        If subnet has dependencies like instances or routers - remove interface
+        from instance or router.
+        :param net_id: ID of network
+        :param subnet_id: ID of subnetwork
+        """
+        def subnet_in_router_ports():
+            routers_ports = self.neutron.list_ports(
+                device_owner='network:router_interface')['ports']
+            return subnet_id in str(routers_ports)
+
+        net_name = self.neutron.show_network(net_id)['network']['name']
+        subnet_name = self.neutron.show_subnet(subnet_id)['subnet']['name']
+
+        del_msg = 'Deleting Network [{n}] and SubNetwork [{sn}] ... '
+        logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'start')
+        try:
+            self.neutron.delete_subnet(subnet_id)
+        except NeutronConflict:  # Inst/router has assigned IP/port from subnet
+            logger.debug("Seems that SubNetwork still in use. "
+                         "Deleting interfaces from dependencies.")
+
+            # -- Delete IPs from subnet from instances --
+            # get instances with IPs from net
+            insts_with_net = [x for x in self.nova.servers.findall()
+                              if net_name in getattr(x, 'networks', [])]
+            for inst in insts_with_net:
+                # get ports(ips) from instances
+                inst_ports = self.neutron.list_ports(
+                    device_id=inst.id)['ports']
+                inst_ports_ids = [x['id'] for x in inst_ports]
+                # detach interface/port/ip from instance
+                for port_id in inst_ports_ids:
+                    self.nova.servers.interface_detach(inst.id, port_id)
+                # wait till interface will be deleted from instance
+                wait(lambda: net_name not in str(
+                        self.nova.servers.find(id=inst.id).networks),
+                     timeout_seconds=60,
+                     waiting_for="interface deletion from instance")
+
+            # -- Delete Internal Interface from router --
+            routers_ports = self.neutron.list_ports(
+                device_owner='network:router_interface')['ports']
+            for router_ports in routers_ports:
+                # get router id that has attached port from subnet
+                routers_with_subnet_id = [router_ports['device_id']
+                                          for x in router_ports['fixed_ips']
+                                          if x['subnet_id'] == subnet_id]
+                # delete interface from router
+                for router_id in routers_with_subnet_id:
+                        self.router_interface_delete(
+                            router_id=router_id, subnet_id=subnet_id)
+            # wait till there will be no subnet_id in list of router's ports
+            wait(lambda: subnet_in_router_ports() is False,
+                 timeout_seconds=60,
+                 waiting_for="interface deletion from router")
+
+            # -- Finally delete subnet and net --
+            self.neutron.delete_subnet(subnet_id)
+            self.neutron.delete_network(net_id)
+        else:
+            # subnet was delete successfully, so now delete net
+            self.neutron.delete_network(net_id)
+
+        logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'done')
 
     def list_networks(self):
         return self.neutron.list_networks()
