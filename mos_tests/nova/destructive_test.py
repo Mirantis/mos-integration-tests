@@ -73,7 +73,7 @@ def test_evacuate(devops_env, env, os_conn, instances, keypair):
         return True
 
     common.wait(is_instances_migrate,
-                timeout_seconds=5 * 60,
+                timeout_seconds=10 * 60,
                 waiting_for='instances to migrate to another compute')
 
     for vm1, vm2 in zip(instances, instances[::-1]):
