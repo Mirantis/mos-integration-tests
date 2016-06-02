@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
-              vm_login="cirros", timeout=3 * 60, vm_password='cubswin:)'):
+              vm_login="cirros", timeout=3 * 60, vm_password='cubswin:)',
+              vm_ip=None):
     """Execute command on vm and return dict with results
 
     :param vm: server to execute command on
@@ -41,9 +42,9 @@ def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
     results = []
 
     def execute():
-        with os_conn.ssh_to_instance(env, vm, vm_keypair,
-                                     username=vm_login,
-                                     password=vm_password) as remote:
+        with os_conn.ssh_to_instance(env, vm, vm_keypair, username=vm_login,
+                                     password=vm_password,
+                                     vm_ip=vm_ip) as remote:
             result = remote.execute(command)
             results.append(result)
             return result
@@ -65,12 +66,12 @@ def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
 
 def check_ping_from_vm(env, os_conn, vm, vm_keypair=None, ip_to_ping=None,
                        timeout=3 * 60, vm_login='cirros',
-                       vm_password='cubswin:)'):
+                       vm_password='cubswin:)', vm_ip=None):
     logger.info('Expecting that ping from VM should pass')
     # Get ping results
     result = check_ping_from_vm_helper(
         env, os_conn, vm, vm_keypair, ip_to_ping, timeout, vm_login,
-        vm_password)
+        vm_password, vm_ip=vm_ip)
 
     error_msg = (
         'Instance has NO connection, but it should have.\n'
@@ -83,7 +84,7 @@ def check_ping_from_vm(env, os_conn, vm, vm_keypair=None, ip_to_ping=None,
 
 
 def check_ping_from_vm_helper(env, os_conn, vm, vm_keypair, ip_to_ping,
-                              timeout, vm_login, vm_password):
+                              timeout, vm_login, vm_password, vm_ip=None):
     """Returns dictionary with results of ping execution:
         exit_code, stdout, stderr
     """
@@ -91,11 +92,11 @@ def check_ping_from_vm_helper(env, os_conn, vm, vm_keypair, ip_to_ping,
         ip_to_ping = [settings.PUBLIC_TEST_IP]
     if isinstance(ip_to_ping, six.string_types):
         ip_to_ping = [ip_to_ping]
-    cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
+    cmd_list = ["ping -c5 -i1 {0}".format(x) for x in ip_to_ping]
     cmd = ' && '.join(cmd_list)
     res = run_on_vm(
         env, os_conn, vm, vm_keypair, cmd, timeout=timeout,
-        vm_login=vm_login, vm_password=vm_password)
+        vm_login=vm_login, vm_password=vm_password, vm_ip=vm_ip)
     return res
 
 

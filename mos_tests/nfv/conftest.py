@@ -14,10 +14,13 @@
 
 import csv
 import pytest
+import re
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
 from mos_tests.nfv.base import page_1gb
 from mos_tests.nfv.base import page_2mb
+from mos_tests.settings import UBUNTU_QCOW2_URL
 
 
 @pytest.yield_fixture
@@ -312,3 +315,30 @@ def get_hp_distribution_per_numa_node(env, numa_count=1):
     computes_def = {compute.data['fqdn']: huge_pages_per_compute(compute)
                     for compute in computes}
     return computes_def
+
+
+@pytest.fixture
+def ubuntu_image_id(os_conn, cleanup):
+    image = os_conn.glance.images.create(
+        name="image_ubuntu", url=UBUNTU_QCOW2_URL, disk_format='raw',
+        container_format='bare')
+    with file_cache.get_file(UBUNTU_QCOW2_URL) as f:
+        os_conn.glance.images.upload(image.id, f)
+    return image.id
+
+
+@pytest.fixture
+def sriov_hosts(os_conn):
+    computes_list = []
+    for compute in os_conn.env.get_nodes_by_role('compute'):
+        with compute.ssh() as remote:
+            result = remote.execute(
+                'lspci -vvv | grep -i "initial vf"')["stdout"]
+        text = ''.join(result)
+        vfs_number = re.findall('Number of VFs: (\d+)', text)
+        if sum(map(int, vfs_number)) > 0:
+            computes_list.append(compute)
+    if len(computes_list) < 2:
+        pytest.skip("Insufficient count of compute with SR-IOV")
+    hosts = [compute.data['fqdn'] for compute in computes_list]
+    return hosts

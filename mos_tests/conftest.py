@@ -272,6 +272,11 @@ def is_ha(env):
     return env.is_ha and len(env.get_nodes_by_role('controller')) >= 3
 
 
+def has_2_or_more_controllers(env):
+    """Env deployed with 2 or more controllers"""
+    return len(env.get_nodes_by_role('controller')) >= 2
+
+
 def has_1_or_more_computes(env):
     """Env deployed with 1 or more computes"""
     return len(env.get_nodes_by_role('compute')) >= 1

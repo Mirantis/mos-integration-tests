@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ElementTree
 
 from mos_tests.environment.os_actions import InstanceError
 from mos_tests.functions import common
+from mos_tests.functions import network_checks
 
 page_1gb = 1048576
 page_2mb = 2048
@@ -153,7 +154,7 @@ class TestBaseNFV(object):
         os_conn.nova.servers.evacuate(vm, on_shared_storage=on_shared_storage)
         try:
             common.wait(
-                lambda: os_conn.is_server_active(vm), timeout_seconds=5 * 60,
+                lambda: os_conn.is_server_active(vm), timeout_seconds=10 * 60,
                 waiting_for='instance {} changes status to ACTIVE after '
                             'evacuation'.format(vm.name))
             return os_conn.nova.servers.get(vm)
@@ -184,3 +185,36 @@ class TestBaseNFV(object):
             lambda: len(os_conn.nova.servers.list()) == 0,
             timeout_seconds=3 * 60,
             waiting_for='instances are deleted')
+
+    def get_instance_ips(self, os_conn, vm):
+        ip_addrs = []
+        vm.get()
+        for x in vm.addresses.values():
+            for l in x:
+                ip_addrs.append(l['addr'])
+        return ip_addrs
+
+    def get_port_ips(self, os_conn, port_id):
+        port_ips = []
+        port_info = os_conn.neutron.show_port(port_id)
+        for ip in port_info['port']['fixed_ips']:
+            port_ips.append(ip['ip_address'])
+        return port_ips
+
+    def check_vm_connectivity_ubuntu(
+            self, env, os_conn, keypair, vms, inactive_ips=()):
+        vm_ips = {}
+        for vm in vms:
+            ips = [ip for ip in self.get_instance_ips(os_conn, vm) if
+                   ip not in inactive_ips]
+            vm_ips[vm] = ips
+        for vm in vms:
+            ips = ['8.8.8.8']
+            for vm_1 in vms:
+                if vm != vm_1:
+                    ips.extend(vm_ips[vm_1])
+
+            network_checks.check_ping_from_vm(
+                env, os_conn, vm, vm_keypair=keypair, timeout=20,
+                ip_to_ping=ips, vm_login='ubuntu', vm_password='ubuntu',
+                vm_ip=vm_ips[vm][0])
