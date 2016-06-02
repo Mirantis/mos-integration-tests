@@ -1,0 +1,8 @@
+heat_template_version: 2015-04-30
+description: Sample  template
+parameters:
+  param:
+    type: string
+    description: Param
+    default: 1
+    immutable: true
