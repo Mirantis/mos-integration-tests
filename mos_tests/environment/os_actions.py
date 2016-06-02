@@ -14,6 +14,7 @@
 
 import logging
 import random
+import time
 
 from cinderclient import client as cinderclient
 from glanceclient.v2.client import Client as GlanceClient
@@ -873,15 +874,12 @@ class OpenStackActions(object):
         """Delete volume and check that it is absent in the list
         :param volume: volume object
         """
-        def wait_available():
-            wait(lambda: (self.cinder.volumes.find(id=volume.id).status ==
-                          'available'),
-                 timeout_seconds=60,
-                 sleep_seconds=10,
-                 waiting_for=('volume [{0.name}:{0.id}] '
-                              'to became Available').format(volume))
+        self.delete_volumes([volume])
 
-        for volume in self.cinder.volumes.findall(id=volume.id):
+    def delete_volumes(self, volumes):
+        names = ', '.join([x.name for x in volumes])
+        for volume in volumes:
+            volume.get()
             # if volume attached to any instance
             for attach in volume.attachments:
                 serv_id = attach['server_id']
@@ -889,19 +887,33 @@ class OpenStackActions(object):
             # if volume have snapshots
             snapshots = self.cinder.volume_snapshots.findall(
                 volume_id=volume.id)
-            if len(snapshots) > 0:
-                for snapshot in snapshots:
-                    self.cinder.volume_snapshots.delete(snapshot)
-                wait(lambda: len(self.cinder.volume_snapshots.findall(
-                     volume_id=volume.id)) == 0,
-                     timeout_seconds=60 * 5,
-                     sleep_seconds=10,
-                     waiting_for=('snapshot(s) from volume [{0.name}:{0.id}] '
-                                  'to be deleted').format(volume))
-            # delete volume
-            wait_available()
+            for snapshot in snapshots:
+                self.cinder.volume_snapshots.delete(snapshot)
+
+        wait(lambda: not any([self.cinder.volume_snapshots.findall(
+                              volume_id=x.id) for x in volumes]),
+             timeout_seconds=60 * 5,
+             sleep_seconds=10,
+             waiting_for=('snapshots from volumes [{names}] '
+                          'to be deleted').format(names=names))
+        wait(lambda: all([self.cinder.volumes.get(x.id).status == 'available'
+                          for x in volumes]),
+             timeout_seconds=60 * 5,
+             sleep_seconds=10,
+             waiting_for=('volumes [{names}] '
+                          'to became available').format(names=names))
+        for volume in volumes:
             self.cinder.volumes.delete(volume.id)
-            wait(lambda: len(self.cinder.volumes.findall(id=volume.id)) == 0,
-                 timeout_seconds=60,
-                 waiting_for='volume [{0.name}:{0.id}] to be deleted'.format(
-                     volume))
+            # Too fast deletion requests make deletion too long
+            time.sleep(2)
+
+        self.wait_volumes_deleted(volumes)
+
+    def wait_volumes_deleted(self, volumes):
+        names = ', '.join([x.name for x in volumes])
+        wait(
+            lambda: not any([self.cinder.volumes.findall(id=x.id)
+                             for x in volumes]),
+            timeout_seconds=60 * 2,
+            sleep_seconds=10,
+            waiting_for='volumes [{names}] to be deleted'.format(names=names))
