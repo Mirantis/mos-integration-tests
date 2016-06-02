@@ -132,6 +132,34 @@ class HeatIntegrationTests(OpenStackTestCase):
             else:
                 time.sleep(1)
 
+    @pytest.mark.testrail_id('844925')
+    def test_heat_immutabel_parameter(self):
+        """This test case checks stack-update action.
+        Steps:
+        1. Create stack using template file heat_immutable.yaml
+        2. Try to update stack parameter
+        """
+        # Create new stack with immutabel parameter. Can't update this param.
+        stack_name = 'heat-stack-' + str(randint(1, 0x7fffffff))
+        template_content = common_functions.read_template(
+            self.templates_dir, 'heat_immutable.yaml')
+        stack_id = common_functions.create_stack(self.heat,
+                                                 stack_name,
+                                                 template_content,
+                                                 {'param': 'string'})
+        self.uid_list.append(stack_id)
+
+        stack_updated = {'stack_name': stack_name,
+                         'template': template_content,
+                         'parameters': {'param': 'string2'}}
+        with pytest.raises(Exception) as exc:
+            self.heat.stacks.update(stack_id, **stack_updated)
+
+        expected_err_msg = ('ERROR: The following parameters are '
+                            'immutable and may not be updated: param')
+        err_msg = str(exc.value)
+        self.assertEqual(expected_err_msg, err_msg)
+
     @pytest.mark.testrail_id('631861')
     def test_heat_resource_type_show(self):
         """This test case checks representation of all Heat resources.
