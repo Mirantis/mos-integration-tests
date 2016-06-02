@@ -16,7 +16,6 @@ import logging
 
 import pytest
 
-from mos_tests.functions import common
 from mos_tests.functions import file_cache
 from mos_tests import settings
 

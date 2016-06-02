@@ -19,8 +19,10 @@ import socket
 import telnetlib
 import uuid
 
-from mos_tests.functions.common import delete_stack, wait
 from muranoclient.v1.client import Client as MuranoClient
+
+from mos_tests.functions.common import delete_stack
+from mos_tests.functions.common import wait
 
 flavor = 'm1.medium'
 linux = 'debian-8-m-agent.qcow2'

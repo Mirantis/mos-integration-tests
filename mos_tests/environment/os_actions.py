@@ -355,10 +355,11 @@ class OpenStackActions(object):
                 for port_id in inst_ports_ids:
                     self.nova.servers.interface_detach(inst.id, port_id)
                 # wait till interface will be deleted from instance
-                wait(lambda: net_name not in str(
+                wait(
+                    lambda: net_name not in str(
                         self.nova.servers.find(id=inst.id).networks),
-                     timeout_seconds=60,
-                     waiting_for="interface deletion from instance")
+                    timeout_seconds=60,
+                    waiting_for="interface deletion from instance")
 
             # -- Delete Internal Interface from router --
             routers_ports = self.neutron.list_ports(
