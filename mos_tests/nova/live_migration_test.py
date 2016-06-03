@@ -199,23 +199,18 @@ class TestLiveMigrationBase(object):
                 wait_for_avaliable=False,
                 **kwargs)
             self.instances.append(instance)
-        self.os_conn.wait_servers_active(self.instances, timeout=5 * 60)
+        self.os_conn.wait_servers_active(self.instances)
 
         if userdata is None:
-            self.os_conn.wait_servers_ssh_ready(self.instances, timeout=5 * 60)
+            self.os_conn.wait_servers_ssh_ready(self.instances)
         else:
             self.os_conn.wait_marker_in_servers_log(self.instances,
-                                                    marker=boot_marker,
-                                                    timeout=5 * 60)
+                                                    marker=boot_marker)
 
-    def delete_instances(self, force=False):
+    def delete_instances(self):
         for instance in self.instances:
-            if force:
-                delete = instance.force_delete
-            else:
-                delete = instance.delete
             try:
-                delete()
+                instance.delete()
             except nova_exceptions.NotFound:
                 pass
         common.wait(
@@ -228,7 +223,7 @@ class TestLiveMigrationBase(object):
     @pytest.yield_fixture
     def cleanup_instances(self):
         yield
-        self.delete_instances(force=True)
+        self.delete_instances()
 
     @pytest.yield_fixture
     def cleanup_volumes(self, os_conn):
@@ -243,7 +238,7 @@ class TestLiveMigrationBase(object):
         common.wait(
             lambda: is_migrated(self.os_conn, self.instances,
                                 source=hypervisor_from.hypervisor_hostname),
-            timeout_seconds=5 * 60,
+            timeout_seconds=20 * 60,
             waiting_for='instances to migrate from '
                         '{0.hypervisor_hostname}'.format(hypervisor_from))
 
@@ -262,7 +257,7 @@ class TestLiveMigrationBase(object):
         common.wait(
             lambda: is_migrated(self.os_conn, self.instances,
                                 target=hypervisor_to.hypervisor_hostname),
-            timeout_seconds=5 * 60,
+            timeout_seconds=20 * 60,
             waiting_for='instances to migrate to '
                         '{0.hypervisor_hostname}'.format(hypervisor_to))
 
@@ -424,7 +419,7 @@ class TestLiveMigrationWithVolumes(TestLiveMigrationBase):
                               instances_count,
                               create_args=create_args)
 
-        request.addfinalizer(lambda: self.delete_instances(force=True))
+        request.addfinalizer(lambda: self.delete_instances())
 
         return self.instances
 
@@ -513,9 +508,10 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
         killall stress
         stress --hdd $i <&- >/dev/null 2>&1 &
         sleep 5
-        util=$(iostat -d -x -y 5 1| grep '[hsv]d[abc]' | awk '{print $14}')
+        util=$(iostat -d -x -y 5 1 | grep -m1 '[hsv]d[abc]' | \
+               awk '{print $14}')
         echo "util is $util"
-        if [ "$(echo $util'>95' | bc -l)" -eq "1" ]; then break; fi
+        if [[ $(echo $util'>95' | bc) -eq 1 ]]; then break; fi
     done"""
 
     def make_stress_instances(self,
@@ -541,7 +537,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                    zone='nova')
         instance = self.instances[0]
         yield instance
-        self.delete_instances(force=True)
+        self.delete_instances()
 
     @pytest.yield_fixture
     def stress_instances(self, ubuntu_image_id, block_migration,
@@ -557,7 +553,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                    zone=instances_zone,
                                    flavor=flavor)
         yield self.instances
-        self.delete_instances(force=True)
+        self.delete_instances()
 
     @pytest.yield_fixture
     def iperf_instances(self, os_conn, keypair, security_group, network,
@@ -574,7 +570,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                               image_id=ubuntu_image_id,
                               userdata=userdata)
         yield self.instances
-        self.delete_instances(force=True)
+        self.delete_instances()
 
     @pytest.mark.testrail_id('838032', block_migration=True, cmd=memory_cmd)
     @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
