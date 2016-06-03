@@ -607,3 +607,45 @@ class TestSRIOV(TestBaseNFV):
                 remote.check_call(cmd)
 
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
+
+    @pytest.mark.testrail_id('857356')
+    def test_connectivity_on_port_with_macvtap_after_migration(
+            self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
+        """This test checks migration for VM launched on port with vnic-type
+        macvtap
+            Steps:
+            1. Create net1 with subnet, net2 with subnet and router1 with
+            interfaces to both nets
+            2. Create ports with vnic-type macvtap on net1 and net2
+            3. Launch instance vm1 on compute-1 with the port in net1, m1.small
+            flavor and ubuntu image
+            4. Launch instance vm2 on compute-1 with the port in net2, m1.small
+            flavor and ubuntu image
+            5. Check vm connectivity
+            6. Migrate vm1 from compute-1
+            7. Check vm connectivity
+        """
+        networks = ports.keys()
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+        vms = []
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['macvtap'][0]),
+            (sriov_hosts[0], ports[networks[1]]['vf_ports']['macvtap'][0])]
+        for i, (host, port) in enumerate(vm_distribution, 1):
+            vm = os_conn.create_server(
+                name='vm{}'.format(i), image_id=ubuntu_image_id,
+                key_name=keypair.name, flavor=flavor.id,
+                availability_zone='nova:{}'.format(host),
+                nics=[{'port-id': port}], wait_for_avaliable=False)
+            vms.append(vm)
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
+        old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
+                          hpr.hypervisor_hostname == sriov_hosts[0]][0]
+        assert old_hypervisor.vcpus_used == 2 * flavor.vcpus
+        assert old_hypervisor.local_gb_used == 2 * flavor.disk
+        vm_new = self.migrate(os_conn, vms[0])
+        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
+        old_hypervisor.get()
+        assert old_hypervisor.vcpus_used == flavor.vcpus
+        assert old_hypervisor.local_gb_used == flavor.disk
