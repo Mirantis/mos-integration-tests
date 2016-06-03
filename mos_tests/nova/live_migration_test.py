@@ -514,76 +514,156 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
         if [[ $(echo $util'>95' | bc) -eq 1 ]]; then break; fi
     done"""
 
+    @pytest.fixture(scope='session')
+    def block_migration(self, env, request, nova_ceph):
+        value = request.param
+        if nova_ceph and value:
+            pytest.skip('Block migration requires Nova CephRBD to be disabled')
+        return value
+
+    @pytest.fixture(scope='session')
+    def nova_ceph(self, env, request):
+        data = env.get_settings_data()
+        return dpath.util.get(data, '*/storage/**/ephemeral_ceph/value')
+
+    def create_volume(self, ubuntu_image_id):
+        volume = common.create_volume(self.os_conn.cinder, ubuntu_image_id,
+                                      size=5)
+        self.volumes.append(volume)
+        return volume.id
+
     def make_stress_instances(self,
                               ubuntu_image_id,
                               instances_count,
                               zone,
+                              create_args=None,
                               flavor=None):
         userdata = '\n'.join([
             '#!/bin/bash -v',
             'apt-get install -yq stress cpulimit sysstat iperf',
         ])
+
         flavor = flavor or self.os_conn.nova.flavors.find(name='m1.small')
         self.create_instances(zone=zone,
                               flavor=flavor,
                               instances_count=instances_count,
                               image_id=ubuntu_image_id,
-                              userdata=userdata)
+                              userdata=userdata,
+                              create_args=create_args)
 
-    @pytest.yield_fixture
-    def stress_instance(self, ubuntu_image_id, block_migration):
+    def check_lm_restrictions(self, nova_ceph, is_volume_backed, bm):
+        if not nova_ceph and is_volume_backed == bm:
+            pytest.skip("Block migration is not allowed with volume backed "
+                        "instances")
+
+    @pytest.fixture
+    def stress_instance(self, request, os_conn, ubuntu_image_id, nova_ceph,
+                        block_migration):
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+        create_args = None
+        if params['volume_backed']:
+            vol = self.create_volume(ubuntu_image_id)
+            create_args = [dict(block_device_mapping={'vda': vol})]
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
         self.make_stress_instances(ubuntu_image_id,
                                    instances_count=1,
-                                   zone='nova')
+                                   zone='nova',
+                                   create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
         instance = self.instances[0]
-        yield instance
-        self.delete_instances()
+        return instance
 
-    @pytest.yield_fixture
-    def stress_instances(self, ubuntu_image_id, block_migration,
-                         big_hypervisors):
+    @pytest.fixture
+    def stress_instances(self, request, ubuntu_image_id, os_conn, nova_ceph,
+                         block_migration, big_hypervisors):
+        project_id = os_conn.session.get_project_id()
+        max_volumes = os_conn.cinder.quotas.get(project_id).volumes
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+
         hypervisor1, hypervisor2 = big_hypervisors
         flavor = self.os_conn.nova.flavors.find(name='m1.small')
         instances_count = min(
             self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
             self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
         instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
+        create_args = None
+        if params['volume_backed']:
+            instances_count = min(instances_count, max_volumes)
+            create_args = []
+            for i in range(instances_count):
+                vol = self.create_volume(ubuntu_image_id)
+                create_args.append(dict(block_device_mapping={'vda': vol}))
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
         self.make_stress_instances(ubuntu_image_id,
                                    instances_count=instances_count,
-                                   zone=instances_zone,
-                                   flavor=flavor)
-        yield self.instances
-        self.delete_instances()
+                                   zone=instances_zone, flavor=flavor,
+                                   create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances
 
-    @pytest.yield_fixture
-    def iperf_instances(self, os_conn, keypair, security_group, network,
-                        ubuntu_image_id, block_migration):
+    @pytest.fixture
+    def iperf_instances(self, request, os_conn, keypair, security_group,
+                        network, ubuntu_image_id, block_migration, nova_ceph):
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
         userdata = '\n'.join([
             '#!/bin/bash -v',
             'apt-get install -yq iperf',
             'iperf -u -s -p 5002 <&- >/dev/null 2>&1 &',
         ])
         flavor = os_conn.nova.flavors.find(name='m1.small')
+        create_args = None
+        if params['volume_backed']:
+            create_args = []
+            for i in range(2):
+                vol = self.create_volume(ubuntu_image_id)
+                create_args.append(dict(block_device_mapping={'vda': vol}))
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
         self.create_instances(zone='nova',
                               flavor=flavor,
                               instances_count=2,
                               image_id=ubuntu_image_id,
-                              userdata=userdata)
-        yield self.instances
-        self.delete_instances()
+                              userdata=userdata,
+                              create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances
 
-    @pytest.mark.testrail_id('838032', block_migration=True, cmd=memory_cmd)
-    @pytest.mark.testrail_id('838261', block_migration=False, cmd=memory_cmd)
-    @pytest.mark.testrail_id('838033', block_migration=True, cmd=cpu_cmd)
-    @pytest.mark.testrail_id('838262', block_migration=False, cmd=cpu_cmd)
-    @pytest.mark.testrail_id('838035', block_migration=True, cmd=hdd_cmd)
-    @pytest.mark.parametrize('block_migration, cmd',
+    @pytest.mark.testrail_id('838032', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838261', block_migration=False,
+                             stress_instance={'volume_backed': False},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838033', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838262', block_migration=False,
+                             stress_instance={'volume_backed': False},
+                             cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838035', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=hdd_cmd)
+    @pytest.mark.testrail_id('838235', block_migration=False,
+                             stress_instance={'volume_backed': True},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838236', block_migration=False,
+                             stress_instance={'volume_backed': True},
+                             cmd=cpu_cmd)
+    @pytest.mark.parametrize('block_migration, stress_instance, cmd',
+
                              [
-                                 (True, memory_cmd),
-                                 (False, memory_cmd),
-                                 (True, cpu_cmd),
-                                 (False, cpu_cmd),
-                                 (True, hdd_cmd),
+                                 (True, {'volume_backed': False}, memory_cmd),
+                                 (False, {'volume_backed': False}, memory_cmd),
+                                 (True, {'volume_backed': False}, cpu_cmd),
+                                 (False, {'volume_backed': False}, cpu_cmd),
+                                 (True, {'volume_backed': False}, hdd_cmd),
+                                 (False, {'volume_backed': True}, memory_cmd),
+                                 (False, {'volume_backed': True}, cpu_cmd),
                              ],
                              ids=[
                                  'block LM mem',
@@ -591,8 +671,10 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                  'block LM cpu',
                                  'true LM cpu',
                                  'block LM hdd',
+                                 'true volume-backed LM cpu',
+                                 'true volume-backed LM hdd',
                              ],
-                             indirect=['block_migration'])
+                             indirect=['block_migration', 'stress_instance'])
     @pytest.mark.usefixtures('router')
     def test_lm_with_workload(self, stress_instance, keypair, block_migration,
                               cmd):
@@ -626,12 +708,20 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                     timeout_seconds=2 * 60,
                     waiting_for='instance to be available via ssh')
 
-    @pytest.mark.testrail_id('838034', block_migration=True)
-    @pytest.mark.testrail_id('838263', block_migration=False)
-    @pytest.mark.parametrize('block_migration',
-                             [True, False],
-                             ids=['block LM', 'true LM'],
-                             indirect=True)
+    @pytest.mark.testrail_id('838034', block_migration=True,
+                             iperf_instances={'volume_backed': False})
+    @pytest.mark.testrail_id('838263', block_migration=False,
+                             iperf_instances={'volume_backed': False})
+    @pytest.mark.testrail_id('838237', block_migration=False,
+                             iperf_instances={'volume_backed': True})
+    @pytest.mark.parametrize('block_migration, iperf_instances',
+                             [
+                                 (True, {'volume_backed': False}),
+                                 (False, {'volume_backed': False}),
+                                 (False, {'volume_backed': True})
+                             ],
+                             ids=['block LM', 'true LM', 'true LM for volume'],
+                             indirect=['block_migration', 'iperf_instances'])
     @pytest.mark.usefixtures('router')
     def test_lm_with_network_workload(self, iperf_instances, keypair,
                                       block_migration):
@@ -673,27 +763,47 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                     timeout_seconds=2 * 60,
                     waiting_for='instance to be available via ssh')
 
-    @pytest.mark.testrail_id('838037', block_migration=True, cmd=cpu_cmd)
-    @pytest.mark.testrail_id('838265', block_migration=False, cmd=cpu_cmd)
-    @pytest.mark.testrail_id('838036', block_migration=True, cmd=memory_cmd)
-    @pytest.mark.testrail_id('838264', block_migration=False, cmd=memory_cmd)
-    @pytest.mark.testrail_id('838039', block_migration=True, cmd=hdd_cmd)
-    @pytest.mark.parametrize('block_migration, cmd',
+    @pytest.mark.testrail_id('838037', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838265', block_migration=False,
+                             stress_instance={'volume_backed': False},
+                             cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838036', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838264', block_migration=False,
+                             stress_instance={'volume_backed': False},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838239', block_migration=False,
+                             stress_instance={'volume_backed': True},
+                             cmd=cpu_cmd)
+    @pytest.mark.testrail_id('838238', block_migration=False,
+                             stress_instance={'volume_backed': True},
+                             cmd=memory_cmd)
+    @pytest.mark.testrail_id('838039', block_migration=True,
+                             stress_instance={'volume_backed': False},
+                             cmd=hdd_cmd)
+    @pytest.mark.parametrize('block_migration, stress_instances, cmd',
                              [
-                                 (True, cpu_cmd),
-                                 (False, cpu_cmd),
-                                 (True, memory_cmd),
-                                 (False, memory_cmd),
-                                 (True, hdd_cmd),
+                                 (True, {'volume_backed': False}, cpu_cmd),
+                                 (False, {'volume_backed': False}, cpu_cmd),
+                                 (True, {'volume_backed': False}, memory_cmd),
+                                 (False, {'volume_backed': False}, memory_cmd),
+                                 (False, {'volume_backed': True}, cpu_cmd),
+                                 (False, {'volume_backed': True}, memory_cmd),
+                                 (True, {'volume_backed': False}, hdd_cmd),
                              ],
                              ids=[
                                  'cpu-block LM',
                                  'cpu-true LM',
                                  'memory-block LM',
                                  'memory-true LM',
+                                 'cpu-true LM volume-backed',
+                                 'memory-true LM volume-backed',
                                  'hdd-block LM',
                              ],
-                             indirect=['block_migration'])
+                             indirect=['block_migration', 'stress_instances'])
     @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
     def test_lm_under_work_multi_instances(self, stress_instances, keypair,
                                            big_hypervisors, block_migration,
@@ -737,12 +847,25 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
-    @pytest.mark.testrail_id('838038', block_migration=True)
-    @pytest.mark.testrail_id('838266', block_migration=False)
-    @pytest.mark.parametrize('block_migration',
-                             [True, False],
-                             ids=['block LM', 'true LM'],
-                             indirect=True)
+    @pytest.mark.testrail_id('838038', block_migration=True,
+                             stress_instance={'volume_backed': False})
+    @pytest.mark.testrail_id('838266', block_migration=False,
+                             stress_instance={'volume_backed': False})
+    @pytest.mark.testrail_id('838240', block_migration=False,
+                             stress_instance={'volume_backed': True})
+    @pytest.mark.parametrize('block_migration, stress_instances',
+                             [
+                                 (True, {'volume_backed': False}),
+                                 (False, {'volume_backed': False}),
+                                 (False, {'volume_backed': True}),
+
+                             ],
+                             ids=[
+                                 'block LM',
+                                 'true LM',
+                                 'true LM volume-backed'
+                             ],
+                             indirect=['block_migration', 'stress_instances'])
     @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
     def test_lm_under_network_work_multi_instances(
             self, stress_instances, keypair, big_hypervisors, block_migration):
