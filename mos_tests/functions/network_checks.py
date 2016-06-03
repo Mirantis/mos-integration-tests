@@ -92,7 +92,7 @@ def check_ping_from_vm_helper(env, os_conn, vm, vm_keypair, ip_to_ping,
         ip_to_ping = [settings.PUBLIC_TEST_IP]
     if isinstance(ip_to_ping, six.string_types):
         ip_to_ping = [ip_to_ping]
-    cmd_list = ["ping -c5 -i1 {0}".format(x) for x in ip_to_ping]
+    cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
     cmd = ' && '.join(cmd_list)
     res = run_on_vm(
         env, os_conn, vm, vm_keypair, cmd, timeout=timeout,
