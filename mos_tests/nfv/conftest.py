@@ -30,9 +30,11 @@ def aggregate(os_conn):
         with compute.ssh() as remote:
             res = remote.check_call("lscpu -p=cpu,node | "
                                     "grep -v '#'")["stdout"]
+            cmdline = remote.check_call("cat /proc/cmdline")["stdout"][0]
+            cpu_pinning = True if 'isolcpus' in cmdline else False
         reader = csv.reader(res)
         numas = {int(numa[1]) for numa in reader}
-        if len(numas) > 1:
+        if len(numas) > 1 and cpu_pinning:
             numa_computes.append(compute)
     if len(numa_computes) < 2:
         pytest.skip("Insufficient count of compute with Numa Nodes")
@@ -277,6 +279,8 @@ def get_cpu_distribition_per_numa_node(env):
         with host.ssh() as remote:
             nodes = {}
             cpus = remote.execute('cat /proc/cmdline')['stdout'][0]
+            if 'isolcpus' not in cpus:
+                continue
             isolcpus = set(convert_vcpu({x[0]: x[2] for x in [y.partition('=')
                            for y in cpus.split()]}['isolcpus']))
             res = remote.execute("lscpu | grep 'NUMA node(s)'")['stdout']
