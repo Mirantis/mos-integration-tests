@@ -29,6 +29,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+ovs_agent_name = 'neutron-openvswitch-agent'
+ovs_agent_service = 'neutron-openvswitch-agent'
+
 
 def is_stack_exists(stack_name, heat):
     """Check the presence of stack_name in stacks list
@@ -667,3 +670,53 @@ def has_connect(ip, port=22, timeout=1):
         return False
     finally:
         s.close()
+
+
+def disable_ovs_agents_on_controller(env):
+    """Disable openvswitch-agents on a controller."""
+    controller = env.get_nodes_by_role('controller')[0]
+
+    with controller.ssh() as remote:
+        remote.check_call(
+            'pcs resource disable {}'.format(ovs_agent_name))
+
+
+def restart_ovs_agents_on_computes(env):
+    """Restart openvswitch-agents on all computes."""
+    computes = env.get_nodes_by_role('compute')
+
+    for node in computes:
+        with node.ssh() as remote:
+            remote.check_call(
+                'service {} restart'.format(ovs_agent_service))
+
+
+def enable_ovs_agents_on_controllers(env):
+    """Enable openvswitch-agents on a controller."""
+    controller = env.get_nodes_by_role('controller')[0]
+
+    with controller.ssh() as remote:
+        remote.check_call(
+            'pcs resource enable {}'.format(ovs_agent_name))
+
+
+def ban_ovs_agents_controllers(env):
+    """Ban openvswitch-agents on all controllers."""
+    controllers = env.get_nodes_by_role('controller')
+
+    with controllers[0].ssh() as remote:
+        for node in controllers:
+            remote.check_call(
+                'pcs resource ban {resource_name} {fqdn}'.format(
+                    resource_name=ovs_agent_name, **node.data))
+
+
+def clear_ovs_agents_controllers(env):
+    """Clear openvswitch-agents on all controllers."""
+    controllers = env.get_nodes_by_role('controller')
+
+    with controllers[0].ssh() as remote:
+        for node in controllers:
+            remote.check_call(
+                'pcs resource clear {resource_name} {fqdn}'.format(
+                    resource_name=ovs_agent_name, **node.data))
