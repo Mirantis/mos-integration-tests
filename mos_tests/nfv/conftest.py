@@ -105,11 +105,14 @@ def networks(os_conn):
                                network_id=ext_net['id'])
     net01 = os_conn.add_net(router['id'])
     net02 = os_conn.add_net(router['id'])
+    initial_floating_ips = os_conn.nova.floating_ips.list()
     yield [net01, net02]
-
     os_conn.delete_router(router['id'])
     os_conn.delete_network(net01)
     os_conn.delete_network(net02)
+    for floating_ip in [x for x in os_conn.nova.floating_ips.list()
+                        if x not in initial_floating_ips]:
+        os_conn.delete_floating_ip(floating_ip)
 
 
 @pytest.yield_fixture(scope="class")

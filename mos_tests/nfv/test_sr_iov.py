@@ -28,30 +28,61 @@ class TestSRIOV(TestBaseNFV):
 
     @pytest.yield_fixture()
     def ports(self, os_conn, security_group, networks):
+        """Create ports
+        :return: like following:
+        : {
+        : u'33741159-7e75-4084-b530-3027757d9115':
+        :     {'ovs_ports': [u'940340a4-0734-430f-b6b1-72c2167fd600',
+        :                    u'31272cc4-39f1-48c9-bcb7-ff2a0b7c7679'],
+        :      'vf_ports': {'direct':
+        :                      [u'3f5aa3ef-88d3-4d4d-9653-4e2bcbf7c5bd',
+        :                       u'4dcf9ec5-02e1-4db0-a26d-79bd050e5aee'],
+        :                   'macvtap':
+        :                      [u'07b993ac-21fe-4869-bf6a-0c9e977f3aa3',
+        :                       u'11244e96-2e5a-4b06-8b83-0e0a572b0cc8']}},
+        : u'd2565b31-2e73-4cc7-8fba-d0b8ca5818a7':
+        :     {'ovs_ports': [u'61f748df-c9ea-431b-bd8c-fdfe74962351',
+        :                  u'b101f700-cc57-42c6-99f4-b449450a8b8c'],
+        :      'vf_ports': {'direct':
+        :                      [u'dd15ca36-32b2-45dd-9879-455c12ae3138',
+        :                       u'635ab81a-a6c3-441d-89ad-ca99e5bfbd7f'],
+        :                   'macvtap':
+        :                      [u'e5bbf7ab-5a31-4160-aae9-ee533fc9862d',
+        :                       u'259042c1-c407-45b7-91fa-9f05fcf73e23']}}
+        : }
+        """
         nets = {}
+        vnic_types = ['direct', 'macvtap']
         for net in networks:
             ovs_ports = []
-            vf_ports = []
+            vf_ports = {}
             for i in range(2):
                 ovs_port = os_conn.neutron.create_port(
                     {'port': {'network_id': net,
                               'name': 'ovs-port{}'.format(i),
                               'security_groups': [security_group.id]}})
-
-                vf_port = os_conn.neutron.create_port(
-                    {'port': {'network_id': net,
-                              'name': 'sriov-port{}'.format(i),
-                              'binding:vnic_type': 'direct',
-                              'device_owner': 'nova-compute',
-                              'security_groups': [security_group.id]}})
                 ovs_ports.append(ovs_port['port']['id'])
-                vf_ports.append(vf_port['port']['id'])
+
+                for vnic_type in vnic_types:
+                    vf_port = os_conn.neutron.create_port(
+                        {'port': {'network_id': net,
+                                  'name': 'sriov-port-{}-{}'.format(vnic_type,
+                                                                    i),
+                                  'binding:vnic_type': vnic_type,
+                                  'device_owner': 'nova-compute',
+                                  'security_groups': [security_group.id]}})
+                    if vnic_type not in vf_ports.keys():
+                        vf_ports[vnic_type] = []
+                    vf_ports[vnic_type].append(vf_port['port']['id'])
+
             nets[net] = {'ovs_ports': ovs_ports, 'vf_ports': vf_ports}
         yield nets
         for ports in nets.values():
             for i in range(2):
                 os_conn.neutron.delete_port(ports['ovs_ports'][i])
-                os_conn.neutron.delete_port(ports['vf_ports'][i])
+                for vnic_type in vnic_types:
+                    os_conn.neutron.delete_port(
+                        ports['vf_ports'][vnic_type][i])
 
     @pytest.yield_fixture()
     def vf_port(self, os_conn, security_group):
@@ -89,10 +120,11 @@ class TestSRIOV(TestBaseNFV):
         networks = ports.keys()
         flavor = os_conn.nova.flavors.find(name='m1.small')
         vms = []
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][0]),
-                           (sriov_hosts[0], ports[networks[0]]['vf_ports'][1]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][0]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][1])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0]),
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][1]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][1])]
         for i, (host, vf_port) in enumerate(vm_distribution, 1):
 
             vm = os_conn.create_server(
@@ -127,14 +159,15 @@ class TestSRIOV(TestBaseNFV):
         flavor = os_conn.nova.flavors.find(name='m1.small')
         ips = []
         vms = []
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][0],
-                            ports[networks[0]]['ovs_ports'][0]),
-                           (sriov_hosts[0], ports[networks[0]]['vf_ports'][1],
-                            ports[networks[0]]['ovs_ports'][1]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][0],
-                            ports[networks[1]]['ovs_ports'][0]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][1],
-                            ports[networks[1]]['ovs_ports'][1])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0],
+                ports[networks[0]]['ovs_ports'][0]),
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][1],
+                ports[networks[0]]['ovs_ports'][1]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][0],
+                ports[networks[1]]['ovs_ports'][0]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][1],
+                ports[networks[1]]['ovs_ports'][1])]
         for i, (host, vf_port, ovs_port) in enumerate(vm_distribution, 1):
 
             vm = os_conn.create_server(
@@ -178,9 +211,10 @@ class TestSRIOV(TestBaseNFV):
         networks = ports.keys()
         flavor = os_conn.nova.flavors.find(name='m1.small')
         vms = []
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][0]),
-                           (hosts[0], ports[networks[0]]['ovs_ports'][0]),
-                           (hosts[1], ports[networks[1]]['ovs_ports'][0])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0]),
+            (hosts[0], ports[networks[0]]['ovs_ports'][0]),
+            (hosts[1], ports[networks[1]]['ovs_ports'][0])]
         for i, (host, port) in enumerate(vm_distribution, 1):
             vm = os_conn.create_server(
                 name='vm{}'.format(i), image_id=ubuntu_image_id,
@@ -219,13 +253,14 @@ class TestSRIOV(TestBaseNFV):
             name='vm1', image_id=ubuntu_image_id, key_name=keypair.name,
             flavor=flavor.id,
             availability_zone='nova:{}'.format(sriov_hosts[0]),
-            nics=[{'port-id': ports[networks[0]]['vf_ports'][0]},
+            nics=[{'port-id': ports[networks[0]]['vf_ports']['direct'][0]},
                   {'port-id': ports[networks[0]]['ovs_ports'][0]}],
             wait_for_avaliable=False)
         vms = [vm_1]
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][1]),
-                           (sriov_hosts[0], ports[networks[1]]['vf_ports'][0]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][1])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][1]),
+            (sriov_hosts[0], ports[networks[1]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][1])]
         for i, (host, vf_port) in enumerate(vm_distribution, 2):
             vm = os_conn.create_server(
                 name='vm{}'.format(i), image_id=ubuntu_image_id,
@@ -234,7 +269,7 @@ class TestSRIOV(TestBaseNFV):
                 nics=[{'port-id': vf_port}], wait_for_avaliable=False)
             vms.append(vm)
         ip_vf_1 = self.get_port_ips(
-            os_conn, ports[networks[0]]['vf_ports'][0])[0]
+            os_conn, ports[networks[0]]['vf_ports']['direct'][0])[0]
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms,
                                           inactive_ips=[ip_vf_1])
 
@@ -258,8 +293,9 @@ class TestSRIOV(TestBaseNFV):
         networks = ports.keys()
         flavor = os_conn.nova.flavors.find(name='m1.small')
         vms = []
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][0]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][0])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][0])]
         for i, (host, vf_port) in enumerate(vm_distribution, 1):
             vm = os_conn.create_server(
                 name='vm{}'.format(i), image_id=ubuntu_image_id,
@@ -318,8 +354,9 @@ class TestSRIOV(TestBaseNFV):
         networks = ports.keys()
         flavor = os_conn.nova.flavors.find(name='m1.small')
         vms = []
-        vm_distribution = [(sriov_hosts[0], ports[networks[0]]['vf_ports'][0]),
-                           (sriov_hosts[1], ports[networks[1]]['vf_ports'][0])]
+        vm_distribution = [
+            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][0])]
         for i, (host, vf_port) in enumerate(vm_distribution, 1):
             vm = os_conn.create_server(
                 name='vm{}'.format(i), image_id=ubuntu_image_id,
@@ -437,3 +474,136 @@ class TestSRIOV(TestBaseNFV):
         old_hypervisor.get()
         assert old_hypervisor.vcpus_used == 0
         assert old_hypervisor.local_gb_used == 0
+
+    @pytest.mark.testrail_id('857354')
+    def test_connectivity_on_ports_with_vnic_macvtap(
+            self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
+        """Check connectivity between VMs launched on ports
+        with vnic-type macvtap.
+        Steps:
+        1. Create net1 with subnet, net2 with subnet and router1 with
+        interfaces to both nets;
+        2. Create vf ports=macvtap on net1 and net2;
+        3. Launch instances vm1 and vm2 on compute-1 with vf ports=macvtap
+        in net1, m1.small flavor and ubuntu image;
+        4. Launch instance vm3 and vm4 on compute-2 with vf ports=macvtap
+        in net2, m1.small flavor and ubuntu image;
+        5. Add a floating ip to the vm1;
+        6. Check vms connectivity;
+        7. Create vf ports=direct on net2;
+        8. Launch instance vm5 on compute-1 with vf ports=direct
+        in net2, m1.small flavor and ubuntu image;
+        9. Launch instance vm7 on compute-2 with vf ports=direct
+        in net2, m1.small flavor and ubuntu image;
+        10. Check vms connectivity;
+        """
+        nets_id = ports.keys()
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+
+        # create 4 VMs on 2 diff computes and 2 diff networks with
+        # port 'binding:vnic_type' = 'macvtap'
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][0]),
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][1]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][1])]
+        vms_macvtap = []
+        for i, (host, vf_port) in enumerate(vm_distribution, 1):
+            vm = os_conn.create_server(
+                name='vm_macvtap_{}'.format(i),
+                image_id=ubuntu_image_id,
+                key_name=keypair.id,
+                flavor=flavor.id,
+                availability_zone='nova:{}'.format(host),
+                nics=[{'port-id': vf_port}],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+            vms_macvtap.append(vm)
+        os_conn.wait_servers_active(vms_macvtap)
+
+        floating_ip = os_conn.nova.floating_ips.create()
+        vms_macvtap[0].add_floating_ip(floating_ip.ip)
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms_macvtap)
+
+        # create 2 VMs on 2 diff computes and 2 diff networks with
+        # port 'binding:vnic_type' = 'direct'
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[1]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][1])]
+        vms_direct = []
+        for i, (host, vf_port) in enumerate(vm_distribution, 1):
+            vm = os_conn.create_server(
+                name='vm_direct_{}'.format(i),
+                image_id=ubuntu_image_id,
+                key_name=keypair.id,
+                flavor=flavor.id,
+                availability_zone='nova:{}'.format(host),
+                nics=[{'port-id': vf_port}],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+            vms_direct.append(vm)
+        os_conn.wait_servers_active(vms_direct)
+
+        vms_to_ping = [vms_macvtap[0]] + vms_direct
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms_to_ping)
+
+    @pytest.mark.testrail_id('857355')
+    def test_connectivity_on_ports_with_vnic_macvtap_and_ovs(
+            self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
+        """Check connectivity between VMs launched on ports
+        with vnic-type macvtap and ovs.
+        Steps:
+        1. Create net1 with subnet, net2 with subnet and router1 with
+        interfaces to both nets;
+        2. Create vf ports=macvtap and ovs on net1 and net2;
+        3. Launch instances vm1 and vm2 on compute-1 with vf ports=macvtap
+        and ovs in net1, m1.small flavor and ubuntu image;
+        4. Launch instance vm3 and vm4 on compute-2 with vf ports=macvtap
+        and ovs in net2, m1.small flavor and ubuntu image;
+        5. Add a floating ip to vms;
+        6. Check vms connectivity;
+        """
+        nets_id = ports.keys()
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+
+        # create 4 VMs on 2 diff computes and 2 diff networks with
+        # port 'binding:vnic_type' = 'macvtap' and ovs_ports ports
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][0],
+                ports[nets_id[0]]['ovs_ports'][0]),
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][1],
+                ports[nets_id[0]]['ovs_ports'][1]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][0],
+                ports[nets_id[1]]['ovs_ports'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][1],
+                ports[nets_id[1]]['ovs_ports'][1])]
+
+        vms = []
+        for i, (host, vf_port, ovs_port) in enumerate(vm_distribution, 1):
+            vm = os_conn.create_server(
+                name='vm_macvtap_ovs{}'.format(i),
+                image_id=ubuntu_image_id,
+                key_name=keypair.id,
+                flavor=flavor.id,
+                availability_zone='nova:{}'.format(host),
+                nics=[{'port-id': vf_port}, {'port-id': ovs_port}],
+                wait_for_active=True,
+                wait_for_avaliable=False)
+            vms.append(vm)
+        os_conn.wait_servers_active(vms)
+
+        # add and activate eth1 interface
+        cmd = (r'echo -e "auto eth1\niface eth1 inet dhcp" | '
+               r'sudo dd of={file} && '
+               r'sudo ifup eth1 ;').format(
+                   file='/etc/network/interfaces.d/eth1.cfg')
+        for vm in vms:
+            vm.get()
+            floating_ip = os_conn.nova.floating_ips.create()
+            vm.add_floating_ip(floating_ip)
+            with os_conn.ssh_to_instance(
+                    env, vm, vm_keypair=keypair, username='ubuntu',
+                    password='ubuntu', vm_ip=floating_ip.ip) as remote:
+                remote.check_call(cmd)
+
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
