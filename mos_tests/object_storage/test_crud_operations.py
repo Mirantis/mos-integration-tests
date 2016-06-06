@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_ceph_enabled')
 @pytest.mark.check_env_('is_radosgw_enabled')
 class TestObjectStorageS3CMD(TestBase):
     """Object Storage - CRUD Operations Tests
@@ -165,8 +164,6 @@ class TestObjectStorageS3CMD(TestBase):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_ceph_enabled')
-@pytest.mark.check_env_('is_radosgw_enabled')
 class TestObjectStorageSWIFT(TestBase):
     """Object Storage - CRUD Operations Tests
     """
