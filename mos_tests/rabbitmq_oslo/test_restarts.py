@@ -266,6 +266,44 @@ def wait_rabbit_ok_on_all_ctrllrs(env, timeout_min=7):
             wait_for_rabbit_running_nodes(
                 remote, len(controllers), timeout_min=timeout_min)
 
+
+def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
+    """Restart RabbitMQ by pacemaker on one or all controllers.
+    After each restart, check that rabbit is up and running.
+    :param env: Environment
+    :param remote: SSH connection point to controller.
+    :param one_by_one: Restart rabbitmq on controllers one by one or together.
+    :param wait_time: Delay for restart (ban/clean pcs) rabbitmq.
+    """
+    # In some cases pcs can return non-zero exit code - it's normal.
+    # 'echo' commands are here to fix it.
+    restart_commands = {
+        'start': 'pcs resource clear p_rabbitmq-server --wait=%d || '
+                 'echo "Started p_rabbitmq-server"' % wait_time,
+        'stop': 'pcs resource ban p_rabbitmq-server --wait=%d || '
+                'echo "Stopped p_rabbitmq-server"' % wait_time
+    }
+
+    controllers = env.get_nodes_by_role('controller')
+    if not remote:
+        # restart on all controllers
+        # Before and after restart check that rabbit is ok.
+        # Useful if we as restarting.
+        if not one_by_one:
+            logger.debug('Restart RabbitMQ server on current controller')
+            wait_for_rabbit_running_nodes(remote, len(controllers))
+            remote.check_call(restart_commands['stop'])
+            remote.check_call(restart_commands['start'])
+        else:
+            logger.debug('Restart RabbitMQ server on ALL controllers '
+                         'one-by-one')
+            for controller in controllers:
+                with controller.ssh() as remote:
+                    wait_for_rabbit_running_nodes(remote, len(controllers))
+                    remote.check_call(restart_commands['stop'])
+                    remote.check_call(restart_commands['start'])
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
 # ----------------------------------------------------------------------------
 
 
@@ -351,7 +389,7 @@ def test_check_send_and_receive_messages_from_the_same_nodes(
 @pytest.mark.parametrize('node_type', ['compute', 'controller'])
 def test_check_send_and_receive_messages_from_diff_type_nodes(
         node_type, env):
-    """ [Undestructive] [Undestructive] Send/receive messages to rabbitmq
+    """[Undestructive] Send/receive messages to rabbitmq
     cluster for different types of fuel nodes.
     :param env: Enviroment
     :param node_type: Select type of nodes for send/recv messages.
@@ -389,3 +427,48 @@ def test_check_send_and_receive_messages_from_diff_type_nodes(
 
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         'Generated and consumed number of messages is different'
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857394', params={'restart_type': 'single'})
+@pytest.mark.testrail_id('857395', params={'restart_type': 'one_by_one'})
+@pytest.mark.parametrize('restart_type', ['single', 'one_by_one'])
+def test_upload_10000_events_to_cluster_and_restart_controllers(restart_type,
+                                                                env):
+    """Load 10000 events to RabbitMQ cluster and restart controllers single
+    or one-by-one.
+    :param env: Enviroment
+    :param restart_type: This parameter specifies the node restart strategy.
+
+    Actions:
+    1. Install "oslo.messaging-check-tool" on compute;
+    2. Prepare config files for current fuel node types;
+    3. Generate 10000 events to RabbitMQ cluster.
+    4. Restart one random rabbitmq node or all(one-by-one).
+    5. Consume 10000 events from RabbitMQ cluster.
+    6. Check that number of generated and consumed messages is equal.
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(remote)
+
+        # Generate messages and consume
+        num_of_msg_to_gen = 10000
+        generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
+        if restart_type == 'single':
+            restart_rabbitmq_serv(env, remote)
+        elif restart_type == 'one_by_one':
+            restart_rabbitmq_serv(env, remote, True)
+    num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+    assert num_of_msg_to_gen == num_of_msg_consumed, \
+        ('Generated and consumed number of messages is different '
+         'after RabbitMQ cluster restarting.')
