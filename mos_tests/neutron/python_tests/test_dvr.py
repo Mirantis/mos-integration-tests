@@ -1238,6 +1238,40 @@ class TestDVRRegression(TestDVRBase):
                                              self.logs_path))['exit_code']
                 assert res == 0
 
+    @pytest.yield_fixture
+    def set_debug_logging_for_neutron_l3_agent(self, os_conn):
+        """Set debug logging for neutron l3 agent"""
+        def enable_debug_logging(node):
+            with node.ssh() as remote:
+                remote.check_call('mv /etc/neutron/l3_agent.ini '
+                                  '/etc/neutron/l3_agent.ini.orig')
+                remote.check_call("cat /etc/neutron/l3_agent.ini.orig | sed "
+                                  "'s/debug = False/debug = True/g' > "
+                                  "/etc/neutron/l3_agent.ini")
+                remote.check_call('service neutron-l3-agent restart')
+
+        def disable_debug_logging(node):
+            with node.ssh() as remote:
+                remote.execute('mv /etc/neutron/l3_agent.ini.orig '
+                               '/etc/neutron/l3_agent.ini')
+                remote.execute('service neutron-l3-agent restart')
+
+        l3_agent_ids = [agt['id'] for agt in os_conn.neutron.list_agents(
+                        binary='neutron-l3-agent')['agents']]
+
+        settings = self.env.get_settings_data()
+        if settings['editable']['common']['debug']['value'] is False:
+            nodes = self.env.get_all_nodes()
+            for node in nodes:
+                enable_debug_logging(node)
+            os_conn.wait_agents_alive(l3_agent_ids)
+            yield
+            for node in nodes:
+                disable_debug_logging(node)
+            os_conn.wait_agents_alive(l3_agent_ids)
+        else:
+            yield
+
     @pytest.mark.testrail_id('843828')
     @pytest.mark.usefixtures('prepare_neutron_logs')
     def test_add_router_interface_with_port_id(self):
@@ -1324,3 +1358,64 @@ class TestDVRRegression(TestDVRBase):
             wait(lambda: not remote.execute(cmd).is_ok,
                  timeout_seconds=60,
                  waiting_for='router namespace to be deleted on compute node')
+
+    @pytest.mark.testrail_id('851673')
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    @pytest.mark.usefixtures('set_debug_logging_for_neutron_l3_agent')
+    def test_check_router_update_notification_for_l3_agents(self):
+        """Check that router update notification is sent only in log of l3
+        agent on appropriate compute node when boot a vm and assign/delete
+        floating ip to/from this vm
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01 with router type Distributed
+            3. Add interfaces to the router01
+            4. Set router gateway to external net
+            5. Clear l3 agent's log on all nodes
+            6. Boot VM in created net01
+            7. Assign floating IP to that VM
+            8. Delete floating IP from that VM
+            9. Check l3 agent's log to make sure that notification 'Got routers
+            updated notification' was sent to only one l3 agent on compute node
+            where instance is hosted - in total 3 notifications for steps 6-8
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        l3_agent_log = '/var/log/neutron/neutron-l3-agent.log'
+        nodes = self.env.get_all_nodes()
+        for node in nodes:
+            with node.ssh() as remote:
+                remote.execute('truncate -s 0 {0}'.format(l3_agent_log))
+
+        server = self.os_conn.create_server(
+            name='server01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        floating_ip = self.os_conn.assign_floating_ip(server, use_neutron=True)
+        self.os_conn.delete_floating_ip(floating_ip, use_neutron=True)
+
+        logger.debug('Verify the specified l3 agent received 3 notifications')
+        log_msg = 'Got routers updated notification'
+        cmd = 'grep -c "{0}" {1}'.format(log_msg, l3_agent_log)
+        compute_hostname = getattr(server, 'OS-EXT-SRV-ATTR:host')
+        compute_node = self.env.find_node_by_fqdn(compute_hostname)
+        with compute_node.ssh() as remote:
+            assert remote.check_call(cmd).stdout_string == '3'
+
+        logger.debug('Verify the other l3 agents did not receive notification')
+        err_msg = 'l3 agent has received unneeded notification'
+        nodes.remove(compute_node)
+        for node in nodes:
+            with node.ssh() as remote:
+                assert not remote.execute(cmd).is_ok, err_msg
