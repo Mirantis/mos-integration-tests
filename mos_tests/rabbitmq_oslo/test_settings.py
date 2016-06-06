@@ -84,3 +84,28 @@ def test_disable_ha_for_rpc_queues_by_default(env):
     assert (filter(lambda x: 'enable_rpc_ha=false' in x, resp_pcs) != [] and
             filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != []), (
         'Enabled HA RPC (should be disabled)')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857403')
+def test_check_rabbitmq_policy(env):
+    """Check that rabbitmq policy have rules.
+
+    :param env: Environment
+
+    Actions:
+    1. Execute `rabbitmqctl list_policies` command on one of controllers and
+    verify that contain more than one non-empty strings.
+    """
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    with controller.ssh() as remote:
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        result = remote.check_call('rabbitmqctl list_policies')['stdout']
+    count_non_empty_lines = 0
+    for line in result:
+        if len(line):
+            count_non_empty_lines += 1
+    assert 1 < count_non_empty_lines, 'RabbitMQ was lost any policy'
