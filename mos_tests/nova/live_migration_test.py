@@ -226,6 +226,124 @@ class TestLiveMigrationBase(object):
             if hypervisor.hypervisor_hostname in hypervisors:
                 self.wait_hypervisor_be_free(hypervisor)
 
+    @pytest.fixture(scope='session')
+    def nova_ceph(self, env, request):
+        data = env.get_settings_data()
+        return dpath.util.get(data, '*/storage/**/ephemeral_ceph/value')
+
+    def check_lm_restrictions(self, nova_ceph, volume_backed, block_migration):
+        if not nova_ceph and volume_backed == block_migration:
+            pytest.skip("Block migration is not allowed with volume backed "
+                        "instances")
+        # This should be removed in 10.0
+        if not nova_ceph and volume_backed:
+            pytest.skip("Volume-backed instances can't true live migrate "
+                        "on 9.0 without Nova Ceph RBD. BUG "
+                        "https://bugs.launchpad.net/mos/+bug/1589460/")
+
+    def make_stress_instances(self,
+                              ubuntu_image_id,
+                              instances_count,
+                              zone,
+                              create_args=None,
+                              flavor=None):
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq stress cpulimit sysstat iperf',
+        ])
+
+        flavor = flavor or self.os_conn.nova.flavors.find(name='m1.small')
+        self.create_instances(zone=zone,
+                              flavor=flavor,
+                              instances_count=instances_count,
+                              image_id=ubuntu_image_id,
+                              userdata=userdata,
+                              create_args=create_args)
+
+    @pytest.fixture
+    def stress_instances(self, request, ubuntu_image_id, os_conn, nova_ceph,
+                         block_migration, big_hypervisors):
+        project_id = os_conn.session.get_project_id()
+        max_volumes = os_conn.cinder.quotas.get(project_id).volumes
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+
+        hypervisor1, hypervisor2 = big_hypervisors
+        flavor = self.os_conn.nova.flavors.find(name='m1.small')
+        instances_count = min(
+            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
+            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
+        instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
+        create_args = None
+        if params['volume_backed']:
+            instances_count = min(instances_count, max_volumes)
+            create_args = []
+            for i in range(instances_count):
+                vol = common.create_volume(os_conn.cinder,
+                                           image_id=ubuntu_image_id,
+                                           size=5)
+                self.volumes.append(vol)
+                create_args.append(dict(block_device_mapping={'vda': vol.id}))
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
+        self.make_stress_instances(ubuntu_image_id,
+                                   instances_count=instances_count,
+                                   zone=instances_zone, flavor=flavor,
+                                   create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances
+
+    @pytest.fixture
+    def stress_instance(self, request, os_conn, ubuntu_image_id, nova_ceph,
+                        block_migration):
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+        create_args = None
+        if params['volume_backed']:
+            vol = common.create_volume(os_conn.cinder,
+                                       image_id=ubuntu_image_id, size=5)
+            self.volumes.append(vol)
+            create_args = [dict(block_device_mapping={'vda': vol.id})]
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
+        self.make_stress_instances(ubuntu_image_id,
+                                   instances_count=1,
+                                   zone='nova',
+                                   create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        instance = self.instances[0]
+        return instance
+
+    @pytest.fixture
+    def iperf_instances(self, request, os_conn, keypair, security_group,
+                        network, ubuntu_image_id, block_migration, nova_ceph):
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+        userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq iperf',
+            'iperf -u -s -p 5002 <&- >/dev/null 2>&1 &',
+        ])
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+        create_args = None
+        if params['volume_backed']:
+            create_args = []
+            for i in range(2):
+                vol = common.create_volume(os_conn.cinder, size=5,
+                                           image_id=ubuntu_image_id)
+                self.volumes.append(vol)
+                create_args.append(dict(block_device_mapping={'vda': vol.id}))
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
+        self.create_instances(zone='nova',
+                              flavor=flavor,
+                              instances_count=2,
+                              image_id=ubuntu_image_id,
+                              userdata=userdata,
+                              create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances
+
     @pytest.yield_fixture
     def cleanup_instances(self):
         yield
@@ -527,123 +645,6 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
             pytest.skip('Block migration requires Nova CephRBD to be disabled')
         return value
 
-    @pytest.fixture(scope='session')
-    def nova_ceph(self, env, request):
-        data = env.get_settings_data()
-        return dpath.util.get(data, '*/storage/**/ephemeral_ceph/value')
-
-    def create_volume(self, ubuntu_image_id):
-        volume = common.create_volume(self.os_conn.cinder, ubuntu_image_id,
-                                      size=5)
-        self.volumes.append(volume)
-        return volume.id
-
-    def make_stress_instances(self,
-                              ubuntu_image_id,
-                              instances_count,
-                              zone,
-                              create_args=None,
-                              flavor=None):
-        userdata = '\n'.join([
-            '#!/bin/bash -v',
-            'apt-get install -yq stress cpulimit sysstat iperf',
-        ])
-
-        flavor = flavor or self.os_conn.nova.flavors.find(name='m1.small')
-        self.create_instances(zone=zone,
-                              flavor=flavor,
-                              instances_count=instances_count,
-                              image_id=ubuntu_image_id,
-                              userdata=userdata,
-                              create_args=create_args)
-
-    def check_lm_restrictions(self, nova_ceph, volume_backed, block_migration):
-        if not nova_ceph and volume_backed == block_migration:
-            pytest.skip("Block migration is not allowed with volume backed "
-                        "instances")
-        # This should be removed in 10.0
-        if not nova_ceph and volume_backed:
-            pytest.skip("Volume-backed instances can't true live migrate "
-                        "on 9.0 without Nova Ceph RBD. BUG "
-                        "https://bugs.launchpad.net/mos/+bug/1589460/")
-
-    @pytest.fixture
-    def stress_instance(self, request, os_conn, ubuntu_image_id, nova_ceph,
-                        block_migration):
-        params = getattr(request, 'param', {'volume_backed': False})
-        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
-                                   block_migration)
-        create_args = None
-        if params['volume_backed']:
-            vol = self.create_volume(ubuntu_image_id)
-            create_args = [dict(block_device_mapping={'vda': vol})]
-            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
-        self.make_stress_instances(ubuntu_image_id,
-                                   instances_count=1,
-                                   zone='nova',
-                                   create_args=create_args)
-        request.addfinalizer(lambda: self.delete_instances())
-        instance = self.instances[0]
-        return instance
-
-    @pytest.fixture
-    def stress_instances(self, request, ubuntu_image_id, os_conn, nova_ceph,
-                         block_migration, big_hypervisors):
-        project_id = os_conn.session.get_project_id()
-        max_volumes = os_conn.cinder.quotas.get(project_id).volumes
-        params = getattr(request, 'param', {'volume_backed': False})
-        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
-                                   block_migration)
-
-        hypervisor1, hypervisor2 = big_hypervisors
-        flavor = self.os_conn.nova.flavors.find(name='m1.small')
-        instances_count = min(
-            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
-            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
-        instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
-        create_args = None
-        if params['volume_backed']:
-            instances_count = min(instances_count, max_volumes)
-            create_args = []
-            for i in range(instances_count):
-                vol = self.create_volume(ubuntu_image_id)
-                create_args.append(dict(block_device_mapping={'vda': vol}))
-            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
-        self.make_stress_instances(ubuntu_image_id,
-                                   instances_count=instances_count,
-                                   zone=instances_zone, flavor=flavor,
-                                   create_args=create_args)
-        request.addfinalizer(lambda: self.delete_instances())
-        return self.instances
-
-    @pytest.fixture
-    def iperf_instances(self, request, os_conn, keypair, security_group,
-                        network, ubuntu_image_id, block_migration, nova_ceph):
-        params = getattr(request, 'param', {'volume_backed': False})
-        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
-                                   block_migration)
-        userdata = '\n'.join([
-            '#!/bin/bash -v',
-            'apt-get install -yq iperf',
-            'iperf -u -s -p 5002 <&- >/dev/null 2>&1 &',
-        ])
-        flavor = os_conn.nova.flavors.find(name='m1.small')
-        create_args = None
-        if params['volume_backed']:
-            create_args = []
-            for i in range(2):
-                vol = self.create_volume(ubuntu_image_id)
-                create_args.append(dict(block_device_mapping={'vda': vol}))
-            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
-        self.create_instances(zone='nova',
-                              flavor=flavor,
-                              instances_count=2,
-                              image_id=ubuntu_image_id,
-                              userdata=userdata,
-                              create_args=create_args)
-        request.addfinalizer(lambda: self.delete_instances())
-        return self.instances
-
     @pytest.mark.testrail_id('838032', block_migration=True,
                              stress_instance={'volume_backed': False},
                              cmd=memory_cmd)
@@ -929,6 +930,260 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                 remote.check_call(
                     'iperf -u -c {ip} -p 5002 -t 240 --len 64 --bandwidth 5M '
                     '<&- >/dev/null 2>&1 &'.format(ip=server_ip))
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.wait_hypervisor_be_free(hypervisor1)
+
+        self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+
+class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
+
+    @pytest.fixture(scope='session')
+    def block_migration(self, request, nova_ceph):
+        value = request.param
+        if nova_ceph and value:
+            pytest.skip('Block migration requires Nova CephRBD to be disabled')
+        return value
+
+    @pytest.yield_fixture(scope='class')
+    def unlim_lm_with_feature(self, env, request):
+        feature = request.param
+        nova_config = '/etc/nova/nova.conf'
+
+        nodes = (env.get_nodes_by_role('controller') +
+                 env.get_nodes_by_role('compute'))
+        for node in nodes:
+            if 'controller' in node.data['roles']:
+                restart_cmd = 'service nova-api restart'
+            else:
+                restart_cmd = 'service nova-compute restart'
+            with node.ssh() as remote:
+                remote.check_call('cp {0} {0}.bak'.format(nova_config))
+                parser = configparser.RawConfigParser()
+                with remote.open(nova_config) as f:
+                    parser.readfp(f)
+                parser.set('DEFAULT', 'max_concurrent_live_migrations', 0)
+                if 'compute' in node.data['roles']:
+                    old_value = parser.get('libvirt', 'live_migration_flag')
+                    new_value = "{0},{1}".format(old_value, feature)
+                    parser.set('libvirt', 'live_migration_flag', new_value)
+                    if feature == 'VIR_MIGRATE_TUNNELLED':
+                        parser.set('libvirt', 'live_migration_uri',
+                                   "qemu+tcp://%s/system")
+                with remote.open(nova_config, 'w') as f:
+                    parser.write(f)
+                remote.check_call(restart_cmd)
+
+        common.wait(env.os_conn.is_nova_ready,
+                    timeout_seconds=60 * 5,
+                    expected_exceptions=Exception,
+                    waiting_for="Nova services to be alive")
+
+        yield
+        for node in nodes:
+            if 'controller' in node.data['roles']:
+                restart_cmd = 'service nova-api restart'
+            else:
+                restart_cmd = 'service nova-compute restart'
+            with node.ssh() as remote:
+                result = remote.execute('mv {0}.bak {0}'.format(nova_config))
+                if result.is_ok:
+                    remote.check_call(restart_cmd)
+
+        common.wait(env.os_conn.is_nova_ready,
+                    timeout_seconds=60 * 5,
+                    expected_exceptions=Exception,
+                    waiting_for="Nova services to be alive")
+
+    @pytest.fixture
+    def instances(self, request, ubuntu_image_id, os_conn, nova_ceph,
+                  block_migration, big_hypervisors):
+        project_id = os_conn.session.get_project_id()
+        max_volumes = os_conn.cinder.quotas.get(project_id).volumes
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+
+        hypervisor1, hypervisor2 = big_hypervisors
+        flavor = self.os_conn.nova.flavors.find(name='m1.small')
+        instances_count = min(
+            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
+            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
+        instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
+        create_args = None
+        if params['volume_backed']:
+            instances_count = min(instances_count, max_volumes)
+            create_args = []
+            for i in range(instances_count):
+                vol = common.create_volume(self.os_conn.cinder,
+                                           ubuntu_image_id, size=5)
+                create_args.append(dict(block_device_mapping={'vda': vol.id}))
+                self.volumes.append(vol)
+            request.addfinalizer(lambda: os_conn.delete_volumes(self.volumes))
+        self.create_instances(zone=instances_zone, flavor=flavor,
+                              instances_count=instances_count,
+                              image_id=ubuntu_image_id,
+                              create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances
+
+    @pytest.mark.testrail_id('838040', block_migration=True,
+                             instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+    @pytest.mark.testrail_id('838267', block_migration=False,
+                             instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+    @pytest.mark.testrail_id('838241', block_migration=False,
+                             instances={'volume_backed': True},
+                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+    @pytest.mark.testrail_id('838041', block_migration=True,
+                             instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+    @pytest.mark.testrail_id('838268', block_migration=False,
+                             instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+    @pytest.mark.testrail_id('838242', block_migration=False,
+                             instances={'volume_backed': True},
+                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+    @pytest.mark.parametrize(
+        'block_migration, instances, unlim_lm_with_feature',
+        [
+            (True, {'volume_backed': False}, 'VIR_MIGRATE_AUTO_CONVERGE'),
+            (False, {'volume_backed': False}, 'VIR_MIGRATE_AUTO_CONVERGE'),
+            (False, {'volume_backed': True}, 'VIR_MIGRATE_AUTO_CONVERGE'),
+            (True, {'volume_backed': False}, 'VIR_MIGRATE_TUNNELLED'),
+            (False, {'volume_backed': False}, 'VIR_MIGRATE_TUNNELLED'),
+            (False, {'volume_backed': True}, 'VIR_MIGRATE_TUNNELLED')
+        ],
+        ids=[
+            'block LM ephemeral with VIR_MIGRATE_AUTO_CONVERGE',
+            'true LM ephemeral with VIR_MIGRATE_AUTO_CONVERGE',
+            'true LM volume with VIR_MIGRATE_AUTO_CONVERGE',
+            'block LM ephemeral with VIR_MIGRATE_TUNNELLED',
+            'true LM ephemeral with VIR_MIGRATE_TUNNELLED',
+            'true LM volume with VIR_MIGRATE_TUNNELLED'
+        ],
+        indirect=['block_migration', 'instances', 'unlim_lm_with_feature'])
+    @pytest.mark.usefixtures('unlim_lm_with_feature', 'router')
+    def test_live_migration_with_feature(self, instances, block_migration,
+                                         big_hypervisors):
+        """LM of multiple instances with auto-converge or tunnelling features
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Enable required feature
+            3. Restart nova-api services on controllers and
+                nova-compute services on computes
+            4. Create maximum allowed number of instances on a single compute
+                node and install stress utilities on it
+            5. Initiate serial block LM of previously created instances
+                to another compute node
+            6. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            7. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            8. Initiate concurrent block LM of previously created instances
+                to another compute node
+            9. Check that all live-migrated instances are hosted on target host
+                and are in Active state
+            10. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+
+        hypervisor1, _ = big_hypervisors
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.wait_hypervisor_be_free(hypervisor1)
+
+        self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+    @pytest.mark.testrail_id('838042', block_migration=True,
+                             stress_instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
+    @pytest.mark.testrail_id('838269', block_migration=False,
+                             stress_instances={'volume_backed': False},
+                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
+    @pytest.mark.testrail_id('838243', block_migration=False,
+                             stress_instances={'volume_backed': True},
+                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
+    @pytest.mark.parametrize(
+        'block_migration, stress_instances, unlim_lm_with_feature',
+        [
+            (True, {'volume_backed': False}, 'VIR_MIGRATE_COMPRESSED'),
+            (False, {'volume_backed': False}, 'VIR_MIGRATE_COMPRESSED'),
+            (False, {'volume_backed': True}, 'VIR_MIGRATE_COMPRESSED'),
+        ],
+        ids=[
+            'block LM ephemeral with VIR_MIGRATE_COMPRESSED',
+            'true LM ephemeral with VIR_MIGRATE_COMPRESSED',
+            'true LM volume with VIR_MIGRATE_COMPRESSED',
+        ],
+        indirect=[
+            'block_migration', 'stress_instances', 'unlim_lm_with_feature'])
+    @pytest.mark.usefixtures('unlim_lm_with_feature', 'router')
+    def test_lm_of_multiple_instances_xbzrle_compression(
+            self, stress_instances, keypair, big_hypervisors, block_migration):
+        """LM of multiple instances under CPU workload
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Allow VIR_MIGRATE_COMPRESSED
+            3. Restart nova-api services on controllers and
+                nova-compute services on computes
+            4. Create maximum allowed number of instances on a single compute
+                node and install iperf utility on it
+            5. Group instances to pairs and run iperf server on firsh instances
+                on each pair:
+                iperf -u -s -p 5002
+            6. Launch iperf client on seconf instances in pairs:
+                iperf --port 5002 -u --client <vm1_fixed_ip> --len 64 \
+                --bandwidth 5M --time 60 -i 10
+            7. Initiate serial block LM of previously created instances
+                to another compute node
+            8. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            9. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            10. Initiate concurrent block LM of previously created instances
+                to another compute node
+            11. Check that all live-migrated instances are hosted on target
+                host and are in Active state
+            12. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+        hypervisor1, _ = big_hypervisors
+        clients = self.instances[::2]
+        servers = self.instances[1::2]
+        for server in servers:
+            with self.os_conn.ssh_to_instance(self.env,
+                                              server,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.background_call('iperf -u -s -p 5002')
+
+        if len(servers) < len(clients):
+            servers.append(servers[-1])
+        for client, server in zip(clients, servers):
+
+            server_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
+            with self.os_conn.ssh_to_instance(self.env,
+                                              client,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.background_call(
+                    'iperf -u -c {ip} -p 5002 -t 240 --len 64 --bandwidth 5M'
+                    .format(ip=server_ip))
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
 
