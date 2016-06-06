@@ -320,7 +320,7 @@ def get_hp_distribution_per_numa_node(env, numa_count=1):
 @pytest.fixture
 def ubuntu_image_id(os_conn, cleanup):
     image = os_conn.glance.images.create(
-        name="image_ubuntu", url=UBUNTU_QCOW2_URL, disk_format='raw',
+        name="image_ubuntu", url=UBUNTU_QCOW2_URL, disk_format='qcow2',
         container_format='bare')
     with file_cache.get_file(UBUNTU_QCOW2_URL) as f:
         os_conn.glance.images.upload(image.id, f)

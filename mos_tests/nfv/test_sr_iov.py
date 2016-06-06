@@ -190,11 +190,11 @@ class TestSRIOV(TestBaseNFV):
             vms.append(vm)
 
         floating_ip = os_conn.nova.floating_ips.create()
-        vm[0].add_floating_ip(floating_ip)
+        vms[0].add_floating_ip(floating_ip)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.testrail_id('838344')
-    def test_connectivity_on_vf_and_ovs_ports_k(
+    def test_connectivity_on_vf_and_ovs_ports(
             self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
         """This test checks vms connectivity for vm launched on vf and ovs
         ports and vms launched on vf ports
