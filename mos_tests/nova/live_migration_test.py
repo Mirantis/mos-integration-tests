@@ -208,7 +208,10 @@ class TestLiveMigrationBase(object):
                                                     marker=boot_marker)
 
     def delete_instances(self):
+        hypervisors = set()
         for instance in self.instances:
+            hypervisors.add(getattr(instance,
+                                    'OS-EXT-SRV-ATTR:hypervisor_hostname'))
             try:
                 instance.delete()
             except nova_exceptions.NotFound:
@@ -219,6 +222,9 @@ class TestLiveMigrationBase(object):
             timeout_seconds=2 * 60,
             waiting_for='instances to be deleted')
         self.instances = []
+        for hypervisor in self.os_conn.nova.hypervisors.list():
+            if hypervisor.hypervisor_hostname in hypervisors:
+                self.wait_hypervisor_be_free(hypervisor)
 
     @pytest.yield_fixture
     def cleanup_instances(self):
