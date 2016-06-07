@@ -486,11 +486,11 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(env,
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
         if restart_type == 'single':
             logger.debug("Restarting RabbitMQ on one random node")
-            restart_rabbitmq_serv(env)
+            restart_rabbitmq_serv(env, remote)
         elif restart_type == 'one_by_one':
             logger.debug("Restarting RabbitMQ on all nodes "
                          "(with one-by-one strategy)")
-            restart_rabbitmq_serv(env, remote)
+            restart_rabbitmq_serv(env)
         num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
