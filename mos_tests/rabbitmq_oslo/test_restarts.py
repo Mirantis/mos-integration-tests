@@ -217,7 +217,7 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
     wait(lambda: num_of_rabbit_primary_running_nodes(remote) == 1,
          timeout_seconds=60 * timeout_min,
          sleep_seconds=30,
-         waiting_for='number of running primary nodes will be %s.' % exp_nodes)
+         waiting_for='number of running primary nodes will be 1.')
 
 
 def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
@@ -287,12 +287,12 @@ def wait_rabbit_ok_on_all_ctrllrs(env, timeout_min=7):
                 remote, len(controllers), timeout_min=timeout_min)
 
 
-def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
+def restart_rabbitmq_serv(env, remote=None, wait_time=120):
     """Restart RabbitMQ by pacemaker on one or all controllers.
     After each restart, check that rabbit is up and running.
     :param env: Environment
-    :param remote: SSH connection point to controller.
-    :param one_by_one: Restart rabbitmq on controllers one by one or together.
+    :param remote: SSH connection point to controller, if None - restart
+    rabbitmq on controllers one by one or together.
     :param wait_time: Delay for restart (ban/clean pcs) rabbitmq.
     """
     # In some cases pcs can return non-zero exit code - it's normal.
@@ -305,26 +305,25 @@ def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
     }
 
     controllers = env.get_nodes_by_role('controller')
-    if not remote:
+    if remote:
         # restart on all controllers
         # Before and after restart check that rabbit is ok.
         # Useful if we as restarting.
-        if not one_by_one:
-            logger.debug('Restart RabbitMQ server on current controller')
-            wait_for_rabbit_running_nodes(remote, len(controllers))
-            remote.check_call(restart_commands['stop'])
-            wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
-            remote.check_call(restart_commands['start'])
-        else:
-            logger.debug('Restart RabbitMQ server on ALL controllers '
-                         'one-by-one')
-            for controller in controllers:
-                with controller.ssh() as remote:
-                    wait_for_rabbit_running_nodes(remote, len(controllers))
-                    remote.check_call(restart_commands['stop'])
-                    wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
-                    remote.check_call(restart_commands['start'])
+        logger.debug('Restart RabbitMQ server on current controller')
         wait_for_rabbit_running_nodes(remote, len(controllers))
+        remote.check_call(restart_commands['stop'])
+        wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
+        remote.check_call(restart_commands['start'])
+    else:
+        logger.debug('Restart RabbitMQ server on ALL controllers '
+                     'one-by-one')
+        for controller in controllers:
+            with controller.ssh() as remote:
+                wait_for_rabbit_running_nodes(remote, len(controllers))
+                remote.check_call(restart_commands['stop'])
+                wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
+                remote.check_call(restart_commands['start'])
+    wait_for_rabbit_running_nodes(remote, len(controllers))
 
 # ----------------------------------------------------------------------------
 
@@ -335,7 +334,7 @@ def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
 @pytest.mark.testrail_id('857391', params={'consume_message_from': 'other'})
 @pytest.mark.parametrize('consume_message_from', ['same', 'other'])
 def test_check_send_and_receive_messages_from_the_same_nodes(
-        consume_message_from, env):
+        env, consume_message_from):
     """[Undestructive] Send/receive messages to all rabbitmq nodes.
     :param env: Enviroment
     :param consume_message_from: Consume message the same or other node
@@ -409,8 +408,7 @@ def test_check_send_and_receive_messages_from_the_same_nodes(
 @pytest.mark.testrail_id('857392', params={'node_type': 'compute'})
 @pytest.mark.testrail_id('857393', params={'node_type': 'controller'})
 @pytest.mark.parametrize('node_type', ['compute', 'controller'])
-def test_check_send_and_receive_messages_from_diff_type_nodes(
-        node_type, env):
+def test_check_send_and_receive_messages_from_diff_type_nodes(env, node_type):
     """[Undestructive] Send/receive messages to rabbitmq
     cluster for different types of fuel nodes.
     :param env: Enviroment
@@ -455,8 +453,8 @@ def test_check_send_and_receive_messages_from_diff_type_nodes(
 @pytest.mark.testrail_id('857394', params={'restart_type': 'single'})
 @pytest.mark.testrail_id('857395', params={'restart_type': 'one_by_one'})
 @pytest.mark.parametrize('restart_type', ['single', 'one_by_one'])
-def test_upload_10000_events_to_cluster_and_restart_controllers(restart_type,
-                                                                env):
+def test_upload_10000_events_to_cluster_and_restart_controllers(env,
+                                                                restart_type):
     """Load 10000 events to RabbitMQ cluster and restart controllers single
     or one-by-one.
     :param env: Enviroment
@@ -487,9 +485,12 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(restart_type,
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
         if restart_type == 'single':
-            restart_rabbitmq_serv(env, remote)
+            logger.debug("Restarting RabbitMQ on one random node")
+            restart_rabbitmq_serv(env)
         elif restart_type == 'one_by_one':
-            restart_rabbitmq_serv(env, remote, True)
+            logger.debug("Restarting RabbitMQ on all nodes "
+                         "(with one-by-one strategy)")
+            restart_rabbitmq_serv(env, remote)
         num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
