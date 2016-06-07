@@ -557,10 +557,15 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                               userdata=userdata,
                               create_args=create_args)
 
-    def check_lm_restrictions(self, nova_ceph, is_volume_backed, bm):
-        if not nova_ceph and is_volume_backed == bm:
+    def check_lm_restrictions(self, nova_ceph, volume_backed, block_migration):
+        if not nova_ceph and volume_backed == block_migration:
             pytest.skip("Block migration is not allowed with volume backed "
                         "instances")
+        # This should be removed in 10.0
+        if not nova_ceph and volume_backed:
+            pytest.skip("Volume-backed instances can't true live migrate "
+                        "on 9.0 without Nova Ceph RBD. BUG "
+                        "https://bugs.launchpad.net/mos/+bug/1589460/")
 
     @pytest.fixture
     def stress_instance(self, request, os_conn, ubuntu_image_id, nova_ceph,
@@ -770,25 +775,25 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                     waiting_for='instance to be available via ssh')
 
     @pytest.mark.testrail_id('838037', block_migration=True,
-                             stress_instance={'volume_backed': False},
+                             stress_instances={'volume_backed': False},
                              cmd=cpu_cmd)
     @pytest.mark.testrail_id('838265', block_migration=False,
-                             stress_instance={'volume_backed': False},
+                             stress_instances={'volume_backed': False},
                              cmd=cpu_cmd)
     @pytest.mark.testrail_id('838036', block_migration=True,
-                             stress_instance={'volume_backed': False},
+                             stress_instances={'volume_backed': False},
                              cmd=memory_cmd)
     @pytest.mark.testrail_id('838264', block_migration=False,
-                             stress_instance={'volume_backed': False},
+                             stress_instances={'volume_backed': False},
                              cmd=memory_cmd)
     @pytest.mark.testrail_id('838239', block_migration=False,
-                             stress_instance={'volume_backed': True},
+                             stress_instances={'volume_backed': True},
                              cmd=cpu_cmd)
     @pytest.mark.testrail_id('838238', block_migration=False,
-                             stress_instance={'volume_backed': True},
+                             stress_instances={'volume_backed': True},
                              cmd=memory_cmd)
     @pytest.mark.testrail_id('838039', block_migration=True,
-                             stress_instance={'volume_backed': False},
+                             stress_instances={'volume_backed': False},
                              cmd=hdd_cmd)
     @pytest.mark.parametrize('block_migration, stress_instances, cmd',
                              [
@@ -854,11 +859,11 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
     @pytest.mark.testrail_id('838038', block_migration=True,
-                             stress_instance={'volume_backed': False})
+                             stress_instances={'volume_backed': False})
     @pytest.mark.testrail_id('838266', block_migration=False,
-                             stress_instance={'volume_backed': False})
+                             stress_instances={'volume_backed': False})
     @pytest.mark.testrail_id('838240', block_migration=False,
-                             stress_instance={'volume_backed': True})
+                             stress_instances={'volume_backed': True})
     @pytest.mark.parametrize('block_migration, stress_instances',
                              [
                                  (True, {'volume_backed': False}),
