@@ -353,3 +353,87 @@ class TestSRIOV(TestBaseNFV):
         assert old_host != os_conn.neutron.list_l3_agent_hosting_routers(
             router_id)['agents'][0]['host']
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
+
+    @pytest.mark.check_env_('is_ceph_enabled')
+    @pytest.mark.testrail_id('838350')
+    def test_connectivity_on_vf_port_after_evacuation(
+            self, os_conn, env, devops_env, ubuntu_image_id, keypair, vf_port,
+            sriov_hosts):
+        """This test checks vm connectivity for vm launched on vf port after
+        evacuation
+            Steps:
+            1. Enable ceph on all computes
+            2. Create network net1 with subnet,
+            3. Create router, set gateway and add interface for the network
+            4. Create vf port on net1
+            5. Launch instance vm1 on compute-1 with vf port in net1, m1.small
+            flavor and ubuntu image
+            6. Check vm connectivity
+            7. Kill compute-1
+            8. Evacuate vm1 from compute-1
+            9. Check vm connectivity
+        """
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+
+        vm = os_conn.create_server(
+            name='vm1', image_id=ubuntu_image_id,
+            key_name=keypair.name, flavor=flavor.id,
+            availability_zone='nova:{}'.format(sriov_hosts[0]),
+            nics=[{'port-id': vf_port}], wait_for_avaliable=False)
+
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm])
+        old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
+                          hpr.hypervisor_hostname == sriov_hosts[0]][0]
+        assert old_hypervisor.vcpus_used == flavor.vcpus
+        assert old_hypervisor.local_gb_used == flavor.disk
+        self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
+                                  state='down')
+        try:
+            vm_new = self.evacuate(os_conn, devops_env, vm,
+                                   on_shared_storage=True)
+            assert sriov_hosts[1] == getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+            self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
+        except Exception as exc:
+            raise exc
+        finally:
+            self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
+                                      state='up')
+        old_hypervisor.get()
+        assert old_hypervisor.vcpus_used == 0
+        assert old_hypervisor.local_gb_used == 0
+
+    @pytest.mark.testrail_id('842972')
+    def test_connectivity_on_vf_port_after_migration(
+            self, os_conn, env, ubuntu_image_id, keypair, vf_port,
+            sriov_hosts):
+        """This test checks vm connectivity for vm launched on vf port after
+        migration
+        Bug https://bugs.launchpad.net/fuel/+bug/1564352 will be fixed in 10.0
+            Steps:
+            1. Create network net1 with subnet,
+            2. Create router, set gateway and add interface for the network
+            3. Create vf port on net1
+            4. Launch instance vm1 on compute-1 with vf port in net1, m1.small
+            flavor and ubuntu image
+            5. Check vm connectivity
+            6. Migrate vm1 from compute-1
+            7. Check vm connectivity
+        """
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+        vm = os_conn.create_server(
+            name='vm1', image_id=ubuntu_image_id,
+            key_name=keypair.name, flavor=flavor.id,
+            availability_zone='nova:{}'.format(sriov_hosts[0]),
+            nics=[{'port-id': vf_port}], wait_for_avaliable=False)
+
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm])
+        old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
+                          hpr.hypervisor_hostname == sriov_hosts[0]][0]
+        assert old_hypervisor.vcpus_used == flavor.vcpus
+        assert old_hypervisor.local_gb_used == flavor.disk
+        vm_new = self.migrate(os_conn, vm)
+        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
+        old_hypervisor.get()
+        assert old_hypervisor.vcpus_used == 0
+        assert old_hypervisor.local_gb_used == 0
