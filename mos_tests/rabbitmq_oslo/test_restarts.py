@@ -468,7 +468,7 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(restart_type,
             restart_rabbitmq_serv(env, remote)
         elif restart_type == 'one_by_one':
             restart_rabbitmq_serv(env, remote, True)
-    num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+        num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
          'after RabbitMQ cluster restarting.')
