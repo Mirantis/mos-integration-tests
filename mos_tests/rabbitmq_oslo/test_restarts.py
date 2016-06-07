@@ -187,6 +187,21 @@ def num_of_rabbit_running_nodes(remote):
         return 0
 
 
+def num_of_rabbit_primary_running_nodes(remote):
+    """Get count of primary RabbitMQ nodes from pacemaker.
+    :param remote: SSH connection point to controller.
+    """
+    result = remote.execute('pcs status --full | '
+                            'grep p_rabbitmq-server | '
+                            'grep ocf | '
+                            'grep -c -E "Master"', verbose=False)
+    count = result['stdout'][0].strip()
+    if count.isdigit():
+        return int(count)
+    else:
+        return 0
+
+
 def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
     """Waits until number of 'Started/Master' hosts from pacemaker
     will be as expected number of controllers.
@@ -198,6 +213,11 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
          timeout_seconds=60 * timeout_min,
          sleep_seconds=30,
          waiting_for='number of running nodes will be %s.' % exp_nodes)
+
+    wait(lambda: num_of_rabbit_primary_running_nodes(remote) == 1,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=30,
+         waiting_for='number of running primary nodes will be %s.' % exp_nodes)
 
 
 def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
@@ -293,6 +313,7 @@ def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
             logger.debug('Restart RabbitMQ server on current controller')
             wait_for_rabbit_running_nodes(remote, len(controllers))
             remote.check_call(restart_commands['stop'])
+            wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
             remote.check_call(restart_commands['start'])
         else:
             logger.debug('Restart RabbitMQ server on ALL controllers '
@@ -301,6 +322,7 @@ def restart_rabbitmq_serv(env, remote, one_by_one=False, wait_time=120):
                 with controller.ssh() as remote:
                     wait_for_rabbit_running_nodes(remote, len(controllers))
                     remote.check_call(restart_commands['stop'])
+                    wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
                     remote.check_call(restart_commands['start'])
         wait_for_rabbit_running_nodes(remote, len(controllers))
 
