@@ -172,6 +172,14 @@ def get_mngmnt_ip_of_computes(env):
     return ctrl_ips
 
 
+def get_mngmnt_ip_of_node(host):
+    """Get host IP of management network from current host"""
+    ip = [x['ip'] for x in host.data['network_data']
+          if x['name'] == 'management'][0]
+    ip = ip.split("/")[0]
+    return ip
+
+
 def num_of_rabbit_running_nodes(remote):
     """Get number of 'Started/Master' hosts from pacemaker.
     :param remote: SSH connection point to controller.
@@ -314,6 +322,7 @@ def restart_rabbitmq_serv(env, remote=None, wait_time=120):
         remote.check_call(restart_commands['stop'])
         wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
         remote.check_call(restart_commands['start'])
+        wait_for_rabbit_running_nodes(remote, len(controllers))
     else:
         logger.debug('Restart RabbitMQ server on ALL controllers '
                      'one-by-one')
@@ -323,7 +332,8 @@ def restart_rabbitmq_serv(env, remote=None, wait_time=120):
                 remote.check_call(restart_commands['stop'])
                 wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
                 remote.check_call(restart_commands['start'])
-    wait_for_rabbit_running_nodes(remote, len(controllers))
+                wait_for_rabbit_running_nodes(remote, len(controllers))
+
 
 # ----------------------------------------------------------------------------
 
@@ -492,6 +502,59 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(env,
                          "(with one-by-one strategy)")
             restart_rabbitmq_serv(env)
         num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+    assert num_of_msg_to_gen == num_of_msg_consumed, \
+        ('Generated and consumed number of messages is different '
+         'after RabbitMQ cluster restarting.')
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857396')
+def test_upload_messages_on_one_restart_and_receive_on_other(env):
+    """"[Destructive] Send messages to one rabbitmq node, restart other and
+    receive messages on them.
+
+    :param env: Enviroment.
+
+   Actions:
+    1. Install "oslo.messaging-check-tool" on compute;
+    2. Prepare config files;
+    3. Generate 10000 messages to current RabbitMQ node.
+    4. Restart all other rabbitmq nodes.
+    5. Consume 10000 messages from one of other RabbitMQ node.
+    6. Check that number of generated and consumed messages is equal.
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    controller_ip = get_mngmnt_ip_of_node(controller)
+    other_controllers = controllers - controller
+
+    # Get management IPs of all controllers
+    ctrl_ips_exclude_current = get_mngmnt_ip_of_ctrllrs(env)
+    ctrl_ips_exclude_current.remove(controller_ip)
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(remote, False,
+                                         rabbit_custom_hosts=[controller_ip])
+
+        # Generate messages and consume
+        num_of_msg_to_gen = 10000
+        generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
+        for current in other_controllers:
+            restart_rabbitmq_serv(env, current.ssh())
+
+        configure_oslomessagingchecktool(
+            remote, False,
+            rabbit_custom_hosts=[random.choice(ctrl_ips_exclude_current)])
+
+        num_of_msg_consumed = consume_msg(remote, kwargs['cfg_file_path'])
+
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
          'after RabbitMQ cluster restarting.')
