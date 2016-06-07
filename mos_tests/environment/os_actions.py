@@ -17,6 +17,7 @@ import random
 import time
 
 from cinderclient import client as cinderclient
+from dateutil.parser import parse as dateparse
 from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as HeatClient
 from keystoneclient.auth.identity.v2 import Password as KeystonePassword
@@ -104,9 +105,21 @@ class OpenStackActions(object):
 
     def is_nova_ready(self):
         """Checks that all nova computes are available"""
-        hosts = self.nova.availability_zones.find(zoneName="nova").hosts
-        return all(x['available'] for y in hosts.values()
-                   for x in y.values() if x['active'])
+
+        def get_hosts():
+            zone = self.nova.availability_zones.find(zoneName="nova")
+            hosts = [x for y in zone.hosts.values() for x in y.values()]
+            for host in hosts:
+                host['updated_at'] = dateparse(host['updated_at'])
+            return hosts
+
+        last_updated = max([x['updated_at'] for x in get_hosts()])
+        wait(lambda: all([x['updated_at'] > last_updated
+                          for x in get_hosts()]),
+             timeout_seconds=2 * 60,
+             sleep_seconds=10,
+             waiting_for='nova host data to be updated')
+        return all(x['available'] for x in get_hosts() if x['active'])
 
     def get_instance_detail(self, server):
         details = self.nova.servers.get(server)

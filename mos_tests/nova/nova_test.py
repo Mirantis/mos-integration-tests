@@ -950,8 +950,9 @@ class TestBugVerification(TestBase):
                             "mounted at {}".format(path))
 
     @pytest.mark.testrail_id('856599')
-    def test_image_access_host_device_when_resizing(
-            self, instance, keypair, flavors, nova_upd_cfg_on_computes):
+    @pytest.mark.usefixtures('nova_upd_cfg_on_computes')
+    def test_image_access_host_device_when_resizing(self, instance, keypair,
+                                                    flavors):
         """Test to cover bugs #1552683 and #1548450 (CVE-2016-2140)
 
         1. Check use_cow_images=0 value in nova config on all computes
@@ -994,10 +995,9 @@ class TestBugVerification(TestBase):
         # confirm resize
         instance.get()
         instance.confirm_resize()
-        common_functions.wait(
-            lambda: self.os_conn.is_server_ssh_ready(instance),
-            timeout_seconds=2 * 60,
-            waiting_for="Instance to be accessed via ssh")
+        common_functions.wait(lambda: self.os_conn.is_server_ssh_ready(instance),
+                              timeout_seconds=2 * 60,
+                              waiting_for="Instance to be accessed via ssh")
 
         # validate /mnt is not contains files
         with instance_ssh as remote:
