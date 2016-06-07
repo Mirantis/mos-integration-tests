@@ -160,6 +160,33 @@ class HeatIntegrationTests(OpenStackTestCase):
         err_msg = str(exc.value)
         self.assertEqual(expected_err_msg, err_msg)
 
+    @pytest.mark.testrail_id('844930')
+    def test_heat_region_parameter(self):
+        """This test case checks stack-create action.
+
+        Steps:
+        1. Create stack using template file heat_region.yaml
+        2. Find stack parameter on keystone region list
+        """
+        timeout = 20
+        pool_name = 'SubPool'
+        stack_name = 'heat-stack-' + str(randint(1, 0x7fffffff))
+        template_content = common_functions.read_template(
+            self.templates_dir, 'heat_subnetpool.yaml')
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template_content)
+
+        self.uid_list.append(uid)
+        stacks_id = [s.id for s in self.heat.stacks.list()]
+        self.assertIn(uid, stacks_id)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        subnet_pools = self.neutron.list_subnetpools()
+        subnet_pools_names = [x['name'] for x in subnet_pools['subnetpools']]
+        self.assertIn(pool_name, subnet_pools_names)
+
     @pytest.mark.testrail_id('631861')
     def test_heat_resource_type_show(self):
         """This test case checks representation of all Heat resources.

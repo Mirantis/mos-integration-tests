@@ -1,0 +1,9 @@
+heat_template_version: 2015-04-30
+
+resources:
+
+  the_resource:
+    type: OS::Neutron::SubnetPool
+    properties:
+      name: SubPool
+      prefixes: [10.11.12.0/30]
