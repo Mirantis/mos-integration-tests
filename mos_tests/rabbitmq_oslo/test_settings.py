@@ -109,3 +109,27 @@ def test_check_rabbitmq_policy(env):
         if len(line):
             count_non_empty_lines += 1
     assert 1 < count_non_empty_lines, 'RabbitMQ was lost any policy'
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('851872')
+def test_check_hipe_compilation(env):
+    """Check that rabbitmq was runned with HiPE compilation files.
+
+    :param env: Environment
+
+    Actions:
+    1. Get rabbitmq run command, parce HiPE native code location.
+    2. Check that count of files in this location <> 0.
+    """
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    with controller.ssh() as remote:
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        cmd = 'ls -la $(for i in $(ps aux | grep rabbitmq ); ' \
+              'do echo $i | grep "native"; done) | grep -c ".beam"'
+        result = remote.check_call(cmd)['stdout']
+    assert 0 < int(result), "RabbitMQ don't use HiPE or invalid location to " \
+                            "precompiled files or files wasn't found."
