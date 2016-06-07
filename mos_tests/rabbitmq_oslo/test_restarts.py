@@ -15,7 +15,6 @@
 import logging
 import random
 import re
-import requests
 import sys
 import uuid
 
@@ -119,7 +118,7 @@ def configure_oslomessagingchecktool(remote,
     if rabbit_message_is_event:
         rabbit_topic = "event.%s" % rabbit_topic
     if custom_tool_rpc_port:
-        rabbit_rpc_port = custom_tool_rpc_port
+        rabbit_rpc_port = str(custom_tool_rpc_port)
     else:
         rabbit_rpc_port = default_vars['rpc_port']
     tool_config = default_vars['repo_path']
@@ -210,11 +209,13 @@ def num_of_rabbit_primary_running_nodes(remote):
         return 0
 
 
-def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
+def wait_for_rabbit_running_nodes(remote, exp_nodes, primary_nodes=1,
+                                  timeout_min=5):
     """Waits until number of 'Started/Master' hosts from pacemaker
     will be as expected number of controllers.
     :param remote: SSH connection point to controller.
     :param exp_nodes: Expected number of rabbit nodes.
+    :param primary_nodes: Count of rabbitmq primary nodes, by default = 1.
     :param timeout_min: Timeout in minutes to wait.
     """
     wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
@@ -222,10 +223,11 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
          sleep_seconds=30,
          waiting_for='number of running nodes will be %s.' % exp_nodes)
 
-    wait(lambda: num_of_rabbit_primary_running_nodes(remote) == 1,
+    wait(lambda: num_of_rabbit_primary_running_nodes(remote) == primary_nodes,
          timeout_seconds=60 * timeout_min,
          sleep_seconds=30,
-         waiting_for='number of running primary nodes will be 1.')
+         waiting_for='number of running primary nodes will be %s.'
+                     % primary_nodes)
 
 
 def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
@@ -276,14 +278,15 @@ def rabbit_rpc_client_start(remote, cfg_file_path):
     return remote.host
 
 
-def get_http_code(host_ip, port=settings.RABBITOSLO_TOOL_PORT):
+def get_http_code(remote, host="127.0.0.1", port=80):
+    cmd = 'curl --write-out "%{http_code}" --silent --output /dev/null '
+    cmd = '%s "http://%s:%d"' % (cmd, host, port)
     # curl to client
-    url = 'http://{host}:{port}'.format(host=host_ip, port=port)
-    try:  # server may not be ready yet
-        status_code = requests.get(url).status_code
-        return status_code
-    except Exception:
-        return False
+    result = remote.execute(cmd)['stdout'][0].strip()
+    if result.isdigit():
+        return int(result)
+    else:
+        return 0
 
 
 def wait_rabbit_ok_on_all_ctrllrs(env, timeout_min=7):
@@ -333,6 +336,55 @@ def restart_rabbitmq_serv(env, remote=None, wait_time=120):
                 wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
                 remote.check_call(restart_commands['start'])
                 wait_for_rabbit_running_nodes(remote, len(controllers))
+
+
+def restart_rabbitmq_cluster(env, wait_time=120):
+    """Restart RabbitMQ cluster by pacemaker.
+    After each restart, check that rabbit is up and running.
+    :param env: Environment
+    :param wait_time: Delay for restart (disable/enable pcs) rabbitmq.
+    """
+
+    restart_commands = {
+        'enable': 'pcs resource enable p_rabbitmq-server --wait=%d || '
+                  'echo "Started p_rabbitmq-server"' % wait_time,
+        'disable': 'pcs resource disable p_rabbitmq-server --wait=%d || '
+                   'echo "Stopped p_rabbitmq-server"' % wait_time
+    }
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        logger.debug('Restart RabbitMQ cluster with enable/disable commands')
+        remote.check_call(restart_commands['disable'])
+        wait_for_rabbit_running_nodes(remote, 0, 0)
+        remote.check_call(restart_commands['enable'])
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+
+def migrate_rabbitmq_primary_node(env, wait_time=120):
+    """Migrate primary node in RabbitMQ cluster
+
+    :param env: Environment
+    :param wait_time: Delay for ban command rabbitmq.
+
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        current_primary = remote.check_call(
+            "pcs status --full | grep p_rabbitmq-server | grep ocf | "
+            "grep Master | grep -o 'node-.*'")['stdout'][0].strip()
+        remote.execute("pcs resource ban p_rabbitmq-server --wait=%d %s" %
+                       (wait_time, current_primary))
+        wait_for_rabbit_running_nodes(remote, len(controllers) - 1)
+        remote.execute("pcs resource clear p_rabbitmq-server --wait=%d %s" %
+                       (wait_time, current_primary))
+        wait_for_rabbit_running_nodes(remote, len(controllers))
 
 
 # ----------------------------------------------------------------------------
@@ -527,7 +579,8 @@ def test_upload_messages_on_one_restart_and_receive_on_other(env):
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
     controller_ip = get_mngmnt_ip_of_node(controller)
-    other_controllers = controllers - controller
+    other_controllers = controllers[:]
+    other_controllers.remove(controller)
 
     # Get management IPs of all controllers
     ctrl_ips_exclude_current = get_mngmnt_ip_of_ctrllrs(env)
@@ -546,9 +599,13 @@ def test_upload_messages_on_one_restart_and_receive_on_other(env):
         # Generate messages and consume
         num_of_msg_to_gen = 10000
         generate_msg(remote, kwargs['cfg_file_path'], num_of_msg_to_gen)
-        for current in other_controllers:
-            restart_rabbitmq_serv(env, current.ssh())
 
+    for current in other_controllers:
+        with current.ssh() as current_remote:
+            restart_rabbitmq_serv(env, current_remote)
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
         configure_oslomessagingchecktool(
             remote, False,
             rabbit_custom_hosts=[random.choice(ctrl_ips_exclude_current)])
@@ -558,3 +615,53 @@ def test_upload_messages_on_one_restart_and_receive_on_other(env):
     assert num_of_msg_to_gen == num_of_msg_consumed, \
         ('Generated and consumed number of messages is different '
          'after RabbitMQ cluster restarting.')
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857397', params={'action': 'restart_all'})
+@pytest.mark.testrail_id('857398', params={'action': 'migrate_primary'})
+@pytest.mark.parametrize('action', ['restart_all', 'migrate_primary'])
+def test_verify_cnnct_after_full_restart_rabbitmq_or_migrate_primary_node(
+        env, action):
+    """"[Destructive] Verify connectivity after full-restart RabbitMQ cluster
+    or ban primary node.
+
+    :param env: Enviroment.
+    :param action: Test action restart rabbitmq cluster on migrate primary node
+
+   Actions:
+    1. Install "oslo.messaging-check-tool" on controller;
+    2. Prepare config file;
+    3. Restart Rabbitmq cluster or migrate primary node.
+    4. Check rabbitmq connectivity by OSLO RPC Client/Server app.
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    rpc_tool_port = 12400
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(remote,
+                                         custom_tool_rpc_port=rpc_tool_port)
+        if action == 'restart_all':
+            restart_rabbitmq_cluster(env)
+        elif action == 'migrate_primary':
+            migrate_rabbitmq_primary_node(env)
+
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+        rabbit_rpc_client_start(remote, kwargs['cfg_file_path'])
+        wait(lambda: get_http_code(remote, port=rpc_tool_port) != 000,
+             timeout_seconds=60 * 3,
+             sleep_seconds=30,
+             waiting_for='wait for starting oslo.messaging-check-tool '
+                         'RPC server/client app')
+
+        response_status_code = get_http_code(remote, port=rpc_tool_port)
+
+    assert 200 == response_status_code, 'Verify rabbitmq connection was failed'
