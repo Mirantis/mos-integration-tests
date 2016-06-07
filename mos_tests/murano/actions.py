@@ -19,10 +19,12 @@ import socket
 import telnetlib
 import uuid
 
+from muranoclient.glance import client as glare_client
 from muranoclient.v1.client import Client as MuranoClient
 
 from mos_tests.functions.common import delete_stack
 from mos_tests.functions.common import wait
+
 
 flavor = 'm1.medium'
 linux = 'debian-8-m-agent.qcow2'
@@ -36,9 +38,19 @@ class MuranoActions(object):
         self.os_conn = os_conn
         self.murano_endpoint = os_conn.session.get_endpoint(
             service_type='application-catalog', endpoint_type='publicURL')
+        self.glare_endpoint = os_conn.session.get_endpoint(
+            service_type='artifact', endpoint_type='publicURL')
+        self.glare = glare_client.Client(endpoint=self.glare_endpoint,
+                                         token=os_conn.session.
+                                         get_auth_headers['X-Auth-Token'],
+                                         cacert=os_conn.path_to_cert,
+                                         type_name='murano',
+                                         type_version=1)
         self.murano = MuranoClient(endpoint=self.murano_endpoint,
-                                   token=os_conn.session.get_token(),
-                                   cacert=os_conn.path_to_cert)
+                                   token=os_conn.session.
+                                   get_auth_headers['X-Auth-Token'],
+                                   cacert=os_conn.path_to_cert,
+                                   artifacts_client=self.glare)
         self.heat = os_conn.heat
         self.postgres_passwd = self.rand_name("O5t@")
 
