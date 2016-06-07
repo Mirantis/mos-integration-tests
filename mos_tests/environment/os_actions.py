@@ -25,6 +25,7 @@ from neutronclient.common.exceptions import NeutronClientException
 import neutronclient.v2_0.client as neutronclient
 from novaclient import client as novaclient
 from novaclient.exceptions import ClientException as NovaClientException
+from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
 
@@ -129,6 +130,16 @@ class OpenStackActions(object):
     def is_server_active(self, server):
         return self.server_status_is(server, 'ACTIVE')
 
+    def wait_servers_active(self, servers, timeout=10 * 60):
+        wait(lambda: all(self.is_server_active(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to become at ACTIVE status')
+
+    def wait_servers_deleted(self, servers, timeout=3 * 60):
+        wait(lambda: all(self.is_server_deleted(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to be deleted')
+
     def create_server(self, name, image_id=None, flavor=1, scenario='',
                       files=None, key_name=None, timeout=300,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
@@ -177,6 +188,29 @@ class OpenStackActions(object):
         except paramiko.SSHException as e:
             logger.debug('Instance unavailable yet: {}'.format(e))
             return False
+
+    def is_server_deleted(self, server_id):
+        try:
+            instance = self.nova.servers.get(server_id)
+            if instance.status == 'ERROR':
+                raise InstanceError(instance)
+            return False
+        except nova_exceptions.NotFound:
+            return True
+
+    def get_hypervisor_capacity(self, hypervisor, flavor):
+        """Return max available count of instances, which can be booted on
+            hypervisor with choosed flavor
+
+        :returns: possible instances count
+        """
+        if hypervisor.vcpus < flavor.vcpus:
+            return 0
+        if flavor.disk > 0:
+            return min(hypervisor.disk_available_least // flavor.disk,
+                       hypervisor.free_ram_mb // flavor.ram)
+        else:
+            return hypervisor.free_ram_mb // flavor.ram
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
