@@ -586,6 +586,6 @@ class TestL3Agent(TestBase):
         self.ban_l3_agent(router_name="router01", _ip=ip,
                           wait_for_migrate=False)
 
-        err_trace = "ERROR"
+        err_trace = "ERROR neutron.db.l3_agentschedulers_db"
         func.check_neutron_logs(controllers, logs_path, logs_start_marker,
                                 err_trace)
