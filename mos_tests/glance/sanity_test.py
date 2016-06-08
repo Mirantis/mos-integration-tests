@@ -343,7 +343,7 @@ def images(os_conn):
         os_conn.glance.images.delete(image_id)
 
 
-@pytest.mark.testrail_id('6078969')
+@pytest.mark.testrail_id('851874')
 @pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
 def test_filtering(glance_remote, os_conn, images):
     """Check filtering of glance
