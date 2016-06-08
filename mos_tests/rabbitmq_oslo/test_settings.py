@@ -130,6 +130,6 @@ def test_check_hipe_compilation(env):
         wait_for_rabbit_running_nodes(remote, len(controllers))
         cmd = 'ls -la $(for i in $(ps aux | grep rabbitmq ); ' \
               'do echo $i | grep "native"; done) | grep -c ".beam"'
-        result = remote.check_call(cmd)['stdout']
+        result = remote.check_call(cmd)['stdout'][0]
     assert 0 < int(result), "RabbitMQ don't use HiPE or invalid location to " \
                             "precompiled files or files wasn't found."
