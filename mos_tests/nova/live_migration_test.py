@@ -1186,3 +1186,202 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
+
+
+class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
+
+    userdata = '\n'.join(["#!/bin/bash -v", "echo 'Hello world!'"])
+
+    @pytest.fixture(scope='session')
+    def block_migration(self, env, request, nova_ceph):
+        value = request.param
+        if nova_ceph and value:
+            pytest.skip('Block migration requires Nova CephRBD to be disabled')
+        return value
+
+    @pytest.fixture
+    def instance(self, request, ubuntu_image_id, nova_ceph, block_migration):
+        params = getattr(request, 'param', {'volume_backed': False})
+        self.check_lm_restrictions(nova_ceph, params['volume_backed'],
+                                   block_migration)
+
+        flavor = self.os_conn.nova.flavors.find(name='m1.small')
+        create_args = [dict(meta={'role': 'webservers', 'essential': 'false'})]
+        if params['volume_backed']:
+            vol = common.create_volume(self.os_conn.cinder, ubuntu_image_id,
+                                       size=5)
+            create_args[0].update(dict(block_device_mapping={'vda': vol.id}))
+            self.volumes.append(vol)
+            request.addfinalizer(
+                lambda: self.os_conn.delete_volumes(self.volumes))
+        self.create_instances('nova', flavor, 1, image_id=ubuntu_image_id,
+                              userdata=self.userdata, create_args=create_args)
+        request.addfinalizer(lambda: self.delete_instances())
+        return self.instances[0]
+
+    @pytest.yield_fixture(scope='class')
+    def config_drive_format(self, request):
+        required_format = request.param
+        nova_conf = '/etc/nova/nova.conf'
+        restart_required = False
+        remove_package = False
+
+        computes = self.env.get_nodes_by_role('compute')
+        controllers = self.env.get_nodes_by_role('controller')
+
+        for node in (computes + controllers):
+            with node.ssh() as remote:
+                remote.check_call('cp {0} {0}.bak'.format(nova_conf))
+                parser = configparser.RawConfigParser()
+                with remote.open(nova_conf) as f:
+                    parser.readfp(f)
+                if 'compute' in node.data['roles']:
+                    old_format = parser.get('DEFAULT', 'config_drive_format')
+                    if old_format != required_format:
+                        restart_required = True
+                        parser.set(
+                            'DEFAULT', 'config_drive_format', required_format)
+                with remote.open(nova_conf, 'w') as f:
+                    parser.write(f)
+
+        if required_format == 'iso9660':
+            for node in computes:
+                with node.ssh() as remote:
+                    remote.check_call("apt-get install -y genisoimage")
+            remove_package = True
+
+        if restart_required:
+            for node in (computes + controllers):
+                with node.ssh() as remote:
+                    if 'controller' in node.data['roles']:
+                        restart_cmd = 'service nova-api restart'
+                    else:
+                        restart_cmd = 'service nova-compute restart'
+                    remote.check_call(restart_cmd)
+            common.wait(self.env.os_conn.is_nova_ready,
+                        timeout_seconds=60 * 5,
+                        expected_exceptions=Exception,
+                        waiting_for="Nova services to be alive")
+
+        yield required_format
+        if remove_package:
+            for node in computes:
+                with node.ssh() as remote:
+                    remote.check_call("apt-get remove -y genisoimage")
+
+        if restart_required:
+            for node in (computes + controllers):
+                if 'controller' in node.data['roles']:
+                    restart_cmd = 'service nova-api restart'
+                else:
+                    restart_cmd = 'service nova-compute restart'
+                with node.ssh() as remote:
+                    result = remote.execute('mv {0}.bak {0}'.format(nova_conf))
+                    if result.is_ok:
+                        remote.check_call(restart_cmd)
+            common.wait(self.env.os_conn.is_nova_ready,
+                        timeout_seconds=60 * 5,
+                        expected_exceptions=Exception,
+                        waiting_for="Nova services to be alive")
+
+    def get_instance_data(self, vm, vm_keypair, config_format,
+                          username='ubuntu', mount_required=True):
+        if config_format == 'vfat':
+            device = "/dev/vdb"
+        else:
+            device = "/dev/$(lsblk | grep rom | awk '{print $1}')"
+        mnt_dir = "/mnt/config"
+
+        with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair=vm_keypair,
+                                          username=username) as remote:
+            if mount_required:
+                remote.check_call("sudo mkdir -p {0}".format(mnt_dir))
+                remote.check_call("sudo mount {0} {1}".format(device, mnt_dir))
+            res = remote.check_call("sudo ls {0}/openstack/latest/"
+                                    .format(mnt_dir))
+            files = set([r.strip() for r in res['stdout']])
+            try:
+                data_path = '{0}/openstack/latest/user_data'.format(mnt_dir)
+                with remote.open(data_path) as f:
+                    userdata_content = f.read()
+            except IOError:
+                raise AssertionError("Unable to find userdata")
+            return files, userdata_content
+
+    @pytest.mark.testrail_id('842896', block_migration=True,
+                             instance={'volume_backed': False},
+                             config_drive_format='vfat')
+    @pytest.mark.testrail_id('842491', block_migration=False,
+                             instance={'volume_backed': False},
+                             config_drive_format='vfat')
+    @pytest.mark.testrail_id('842519', block_migration=False,
+                             instance={'volume_backed': False},
+                             config_drive_format='iso9660')
+    @pytest.mark.testrail_id('842492', block_migration=False,
+                             instance={'volume_backed': True},
+                             config_drive_format='vfat')
+    @pytest.mark.testrail_id('842520', block_migration=False,
+                             instance={'volume_backed': True},
+                             config_drive_format='iso9660')
+    @pytest.mark.parametrize(
+        'block_migration, instance, config_drive_format',
+        [
+            (True, {'volume_backed': False}, 'vfat'),
+            (False, {'volume_backed': False}, 'vfat'),
+            (False, {'volume_backed': False}, 'iso9660'),
+            (False, {'volume_backed': True}, 'vfat'),
+            (False, {'volume_backed': True}, 'iso9660'),
+        ],
+        ids=[
+            'block LM ephemeral with vfat',
+            'true LM ephemeral with vfat',
+            'true LM ephemeral with iso9660',
+            'true LM volume with vfat',
+            'true LM volume with iso9660',
+        ],
+        indirect=['block_migration', 'instance', 'config_drive_format'])
+    @pytest.mark.usefixtures('router')
+    def test_lm_with_user_content_and_config_drive(self, config_drive_format,
+                                                   instance, keypair,
+                                                   block_migration):
+        """LM of instance with user content and configuration drive
+
+        Scenario:
+            1. Set required configuration drive on computes
+            2. Install 'genisoimage' in case of config_drive_format=iso9660
+            3. Restart nova-api services on controllers and
+                nova-compute services on computes if any change in nova.conf
+            4. Boot an instance with config drive and user script
+            5. Login to instance and mount specific device.
+            6. Check that config drive contains all data carried to it during
+                instance creation
+            7. Initiate LM of the instance to another compute node
+            8. Check that live-migrated instance is hosted on target host
+            9. Login to instance again and re-check config drive
+        """
+        old_files, old_userdata = self.get_instance_data(instance, keypair,
+                                                         config_drive_format)
+        assert self.userdata in old_userdata, (
+            "Unexpected content of userdata before migrate: "
+            "should be the same as for instance boot")
+
+        old_host = getattr(instance, 'OS-EXT-SRV-ATTR:host')
+        instance.live_migrate(block_migration=block_migration)
+
+        common.wait(
+            lambda: is_migrated(self.os_conn, [instance], source=old_host),
+            timeout_seconds=5 * 60,
+            waiting_for='instance to migrate from {0}'.format(old_host))
+        common.wait(lambda: self.os_conn.is_server_ssh_ready(instance),
+                    timeout_seconds=2 * 60,
+                    waiting_for='instance to be available via ssh')
+
+        new_files, new_userdata = self.get_instance_data(instance, keypair,
+                                                         config_drive_format,
+                                                         mount_required=False)
+        assert self.userdata in new_userdata, (
+            "Unexpected content of userdata after migrate: "
+            "should be the same as for instance boot")
+        assert old_files == new_files, (
+            "List of files after live migration is not equal to initial one. "
+            "Files to check: {0}\n".format(list(new_files ^ old_files)))
