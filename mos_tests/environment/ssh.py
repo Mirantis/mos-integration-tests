@@ -122,6 +122,7 @@ class SSHClient(object):
         self._ssh = None
         self._sftp_client = None
         self._proxy = None
+        self.closed = True
 
     def clear(self):
         if self._sftp_client is not None:
@@ -149,14 +150,20 @@ class SSHClient(object):
         self.clear()
 
     def __enter__(self):
+        if not self.closed:
+            return self
         try:
             self.reconnect()
         except Exception:
             self.clear()
             raise
+        self.closed = False
         return self
 
     def __exit__(self, *err):
+        if self.closed:
+            return
+        self.closed = True
         self.clear()
 
     def connect(self, pkey=None, password=None, proxy_command=None):
@@ -294,8 +301,8 @@ class SSHClient(object):
         stderr.close()
         chan.close()
         if verbose:
-            logger.debug("'{0}' exit_code is {1}".format(
-                command, result['exit_code']))
+            logger.debug("'{0}' exit_code is {1}".format(command, result[
+                'exit_code']))
             if len(result['stdout']) > 0:
                 logger.debug(u'Stdout:\n{0}'.format(result.stdout_string))
             if len(result['stderr']) > 0:
@@ -360,10 +367,8 @@ class SSHClient(object):
                 self._sftp.put(local_path, remote_path)
 
     def download(self, destination, target):
-        logger.debug(
-            "Copying '%s' -> '%s' from remote to local host",
-            destination, target
-        )
+        logger.debug("Copying '%s' -> '%s' from remote to local host",
+                     destination, target)
 
         if os.path.isdir(target):
             target = posixpath.join(target, os.path.basename(destination))
@@ -372,13 +377,11 @@ class SSHClient(object):
             if self.exists(destination):
                 self._sftp.get(destination, target)
             else:
-                logger.debug(
-                    "Can't download %s because it doesn't exist", destination
-                )
+                logger.debug("Can't download %s because "
+                             "it doesn't exist", destination)
         else:
-            logger.debug(
-                "Can't download %s because it is a directory", destination
-            )
+            logger.debug("Can't download %s because it is a directory",
+                         destination)
         return os.path.exists(target)
 
     def exists(self, path):

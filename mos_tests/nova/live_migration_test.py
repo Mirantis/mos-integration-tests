@@ -22,6 +22,7 @@ from six.moves import configparser
 
 from mos_tests.functions import common
 from mos_tests.functions import file_cache
+from mos_tests.functions import service
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
@@ -42,48 +43,20 @@ def is_migrated(os_conn, instances, target=None, source=None):
     return True
 
 
+@pytest.yield_fixture(scope='module', autouse=True)
+def disable_nova_config_drive(env):
+    # WA for bug https://bugs.launchpad.net/mos/+bug/1589460/
+    # This should be removed in MOS 10.0
+    config = [('DEFAULT', 'force_config_drive', False)]
+    for step in service.nova_patch(env, config):
+        yield step
+
+
 @pytest.yield_fixture(scope='module')
 def unlimited_live_migrations(env):
-    nova_config_path = '/etc/nova/nova.conf'
-
-    nodes = (
-        env.get_nodes_by_role('controller') + env.get_nodes_by_role('compute'))
-    for node in nodes:
-        if 'controller' in node.data['roles']:
-            restart_cmd = 'service nova-api restart'
-        else:
-            restart_cmd = 'service nova-compute restart'
-        with node.ssh() as remote:
-            remote.check_call('cp {0} {0}.bak'.format(nova_config_path))
-
-            parser = configparser.RawConfigParser()
-            with remote.open(nova_config_path) as f:
-                parser.readfp(f)
-            parser.set('DEFAULT', 'max_concurrent_live_migrations', 0)
-            with remote.open(nova_config_path, 'w') as f:
-                parser.write(f)
-            remote.check_call(restart_cmd)
-
-    common.wait(env.os_conn.is_nova_ready,
-                timeout_seconds=60 * 5,
-                expected_exceptions=Exception,
-                waiting_for="Nova services to be alive")
-
-    yield
-    for node in nodes:
-        if 'controller' in node.data['roles']:
-            restart_cmd = 'service nova-api restart'
-        else:
-            restart_cmd = 'service nova-compute restart'
-        with node.ssh() as remote:
-            result = remote.execute('mv {0}.bak {0}'.format(nova_config_path))
-            if result.is_ok:
-                remote.check_call(restart_cmd)
-
-    common.wait(env.os_conn.is_nova_ready,
-                timeout_seconds=60 * 5,
-                expected_exceptions=Exception,
-                waiting_for="Nova services to be alive")
+    config = [('DEFAULT', 'max_concurrent_live_migrations', 0)]
+    for step in service.nova_patch(env, config):
+        yield step
 
 
 @pytest.fixture
@@ -235,11 +208,6 @@ class TestLiveMigrationBase(object):
         if not nova_ceph and volume_backed == block_migration:
             pytest.skip("Block migration is not allowed with volume backed "
                         "instances")
-        # This should be removed in 10.0
-        if not nova_ceph and volume_backed:
-            pytest.skip("Volume-backed instances can't true live migrate "
-                        "on 9.0 without Nova Ceph RBD. BUG "
-                        "https://bugs.launchpad.net/mos/+bug/1589460/")
 
     def make_stress_instances(self,
                               ubuntu_image_id,
