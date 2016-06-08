@@ -104,10 +104,17 @@ class TestDVRBase(base.TestBase):
         :param excluded: excluded nodes fqdns
         :returns: controller node with SNAT
         """
-        agents_with_snat = self.os_conn.neutron.list_l3_agent_hosting_routers(
-            router_id)['agents']
-        assert len(agents_with_snat) == 1
-        agent_with_snat = agents_with_snat[0]
+
+        def get_agent_with_snat():
+            agents = self.os_conn.neutron.list_l3_agent_hosting_routers(
+                router_id)['agents']
+            if len(agents) == 1:
+                return agents[0]
+
+        agent_with_snat = wait(get_agent_with_snat,
+                               timeout_seconds=60,
+                               expected_exceptions=NeutronClientException,
+                               waiting_for='receive single agent with snat')
         if alive_only and not agent_with_snat['alive']:
             return
         if agent_with_snat['host'] in excluded:
