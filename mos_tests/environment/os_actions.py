@@ -788,7 +788,8 @@ class OpenStackActions(object):
                     expected_exceptions=NeutronClientException,
                     timeout_seconds=60 * 3,
                     sleep_seconds=10,
-                    waiting_for="any alive DHCP agent for instance network")
+                    waiting_for="any alive DHCP agent for instance network",
+                    log=False)
             else:
                 proxy_nodes = [proxy_node]
 

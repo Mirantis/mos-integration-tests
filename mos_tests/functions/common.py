@@ -607,25 +607,27 @@ def delete_keys(nova_client, key_name):
         sleep(1)
 
 
-def wait(*args, **kwargs):
+def wait(predicate, log=True, **kwargs):
     __tracebackhide__ = True
 
     frame = inspect.stack()[1]
     called_from = '{0.f_globals[__name__]}:{2}'.format(*frame)
-    event = kwargs.get('waiting_for', repr(args[0]))
+    event = kwargs.get('waiting_for', repr(predicate))
     msg = '{called_from}: waiting for {event}'.format(event=event,
                                                       called_from=called_from)
     logger = logging.getLogger('waiting')
 
-    logger.info(msg)
+    if log:
+        logger.info(msg)
 
     start = time()
 
     try:
-        result = base_wait(*args, **kwargs)
-        logger.info('{msg} ... done. '
-                    'Took {time:.0f}s'.format(msg=msg,
-                                              time=time() - start))
+        result = base_wait(predicate, **kwargs)
+        if log:
+            logger.info('{msg} ... done. '
+                        'Took {time:.0f}s'.format(msg=msg,
+                                                  time=time() - start))
         return result
     except TimeoutExpired as e:
         # prevent shows traceback from waiting package
