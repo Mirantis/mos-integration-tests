@@ -217,6 +217,12 @@ class OpenStackActions(object):
         else:
             return hypervisor.free_ram_mb // flavor.ram
 
+    def wait_hypervisor_be_free(self, hypervisor):
+        hyp_id = hypervisor.id
+        wait(lambda: (self.nova.hypervisors.get(hyp_id).running_vms == 0),
+             timeout_seconds=2 * 60,
+             waiting_for='hypervisor to be free')
+
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict
 
