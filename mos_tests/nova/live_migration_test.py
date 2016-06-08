@@ -224,7 +224,7 @@ class TestLiveMigrationBase(object):
         self.instances = []
         for hypervisor in self.os_conn.nova.hypervisors.list():
             if hypervisor.hypervisor_hostname in hypervisors:
-                self.wait_hypervisor_be_free(hypervisor)
+                self.os_conn.wait_hypervisor_be_free(hypervisor)
 
     @pytest.fixture(scope='session')
     def nova_ceph(self, env, request):
@@ -385,14 +385,6 @@ class TestLiveMigrationBase(object):
             waiting_for='instances to migrate to '
                         '{0.hypervisor_hostname}'.format(hypervisor_to))
 
-    def wait_hypervisor_be_free(self, hypervisor):
-        hyp_id = hypervisor.id
-        common.wait(
-            lambda: (
-                self.os_conn.nova.hypervisors.get(hyp_id).running_vms == 0),
-            timeout_seconds=2 * 60,
-            waiting_for='hypervisor info be updated')
-
     def check_volumes_have_status(self, status):
         assert all(
             map(
@@ -485,14 +477,14 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
 
             self.os_conn.wait_servers_ssh_ready(self.instances)
 
-            self.wait_hypervisor_be_free(hypervisor1)
+            self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
             self.concurrent_migration(block_migration,
                                       hypervisor_to=hypervisor1)
 
             self.os_conn.wait_servers_ssh_ready(self.instances)
 
-            self.wait_hypervisor_be_free(hypervisor2)
+            self.os_conn.wait_hypervisor_be_free(hypervisor2)
 
             self.delete_instances()
 
@@ -615,7 +607,7 @@ class TestLiveMigrationWithVolumes(TestLiveMigrationBase):
 
         self.check_volumes_have_status('in-use')
 
-        self.wait_hypervisor_be_free(hypervisor1)
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
@@ -853,7 +845,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
-        self.wait_hypervisor_be_free(hypervisor1)
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
@@ -935,7 +927,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
-        self.wait_hypervisor_be_free(hypervisor1)
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
@@ -1102,7 +1094,7 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
-        self.wait_hypervisor_be_free(hypervisor1)
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
@@ -1189,7 +1181,7 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
-        self.wait_hypervisor_be_free(hypervisor1)
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 

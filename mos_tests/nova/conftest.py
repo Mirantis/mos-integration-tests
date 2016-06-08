@@ -127,7 +127,7 @@ def instances(request, os_conn, security_group, keypair, network):
                 instance.force_delete()  # force - if soft deletion enabled
             except Exception as e:
                 assert e.code == 404     # Instance not found
-        common.wait(
-            lambda: all(os_conn.is_server_deleted(x.id) for x in instances),
-            timeout_seconds=60,
-            waiting_for='instances to be deleted')
+        os_conn.wait_servers_deleted(instances)
+        hypervisor = os_conn.nova.hypervisors.find(
+            hypervisor_hostname=compute_host)
+        os_conn.wait_hypervisor_be_free(hypervisor)
