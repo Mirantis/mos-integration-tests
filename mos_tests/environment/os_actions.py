@@ -400,6 +400,9 @@ class OpenStackActions(object):
 
         logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'done')
 
+    def list_subnets(self):
+        return self.neutron.list_subnets()
+
     def list_networks(self):
         return self.neutron.list_networks()
 
