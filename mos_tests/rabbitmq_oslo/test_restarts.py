@@ -223,11 +223,12 @@ def wait_for_rabbit_running_nodes(remote, exp_nodes, primary_nodes=1,
          sleep_seconds=30,
          waiting_for='number of running nodes will be %s.' % exp_nodes)
 
-    wait(lambda: num_of_rabbit_primary_running_nodes(remote) == primary_nodes,
-         timeout_seconds=60 * timeout_min,
-         sleep_seconds=30,
-         waiting_for='number of running primary nodes will be %s.'
-                     % primary_nodes)
+    if primary_nodes >= 0:
+        wait(lambda:
+             num_of_rabbit_primary_running_nodes(remote) == primary_nodes,
+             timeout_seconds=60 * timeout_min, sleep_seconds=30,
+             waiting_for='number of running primary nodes will be %s.'
+                         % primary_nodes)
 
 
 def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
@@ -385,6 +386,24 @@ def migrate_rabbitmq_primary_node(env, wait_time=120):
         remote.execute("pcs resource clear p_rabbitmq-server --wait=%d %s" %
                        (wait_time, current_primary))
         wait_for_rabbit_running_nodes(remote, len(controllers))
+
+
+def kill_rabbitmq_on_node(remote, timeout_min=7):
+    """Waiting for rabbit startup and got pid, then kill-9 it"""
+
+    def get_pid():
+        cmd = "rabbitmqctl status | grep '{pid' | tr -dc '0-9'"
+        try:
+            return remote.check_call(cmd)['stdout'][0].strip()
+        except Exception:
+            return None
+
+    wait(get_pid,
+         timeout_seconds=60 * timeout_min,
+         sleep_seconds=30,
+         waiting_for='Rabbit get its pid on %s.' % remote.host)
+    cmd = "kill -9 %s" % get_pid()
+    remote.check_call(cmd)
 
 
 # ----------------------------------------------------------------------------
@@ -665,3 +684,59 @@ def test_verify_cnnct_after_full_restart_rabbitmq_or_migrate_primary_node(
         response_status_code = get_http_code(remote, port=rpc_tool_port)
 
     assert 200 == response_status_code, 'Verify rabbitmq connection was failed'
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857422')
+def test_kill_all_rabbit_nodes_and_check_connectivity_many_times(env):
+    """"[Destructive] Kill all rabbitmq nodes and check connectivity (x10).
+
+    :param env: Enviroment.
+
+   Actions:
+    1. Install "oslo.messaging-check-tool" on controller;
+    2. Prepare config file;
+    3. Kill (with `kill -9`) all rabbitmq nodes and wait when rabbit will
+    be up and running;
+    4. Check rabbitmq connectivity by OSLO RPC Client/Server app.
+    5. Retry step 3-4 (x10)
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    rpc_tool_port = 12400
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(remote,
+                                         custom_tool_rpc_port=rpc_tool_port)
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+        rabbit_rpc_client_start(remote, kwargs['cfg_file_path'])
+        wait(lambda: get_http_code(remote, port=rpc_tool_port) != 000,
+             timeout_seconds=60 * 3,
+             sleep_seconds=30,
+             waiting_for='wait for starting oslo.messaging-check-tool '
+                         'RPC server/client app')
+        max_retry = 10
+        for current_retry in range(1, max_retry):
+            for current_controller in controllers:
+                with current_controller.ssh() as current_remote:
+                    kill_rabbitmq_on_node(current_remote)
+            wait_for_rabbit_running_nodes(remote, len(controllers),
+                                          timeout_min=15)
+
+            wait(lambda: get_http_code(remote, port=rpc_tool_port) != 000,
+                 timeout_seconds=60 * 3,
+                 sleep_seconds=30,
+                 waiting_for='wait for starting oslo.messaging-check-tool '
+                             'RPC server/client app')
+
+            response_status_code = get_http_code(remote, port=rpc_tool_port)
+            assert 200 == response_status_code, \
+                ('Retry [%d/%d] - Verify rabbitmq connection was failed' %
+                 (current_retry, max_retry))
