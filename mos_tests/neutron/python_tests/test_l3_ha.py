@@ -55,17 +55,26 @@ def ping_groups(stdout):
     prev_seq = -1
     group_start = 0
     received = 0
+    start_seq = 0
     for line in stdout:
         logger.debug('Ping result: {}'.format(line.strip()))
         seq = get_ping_seq(line)
         if seq is None:
             continue
+        # if first ping 'seq' was more then 0. For e.g.: 223
+        if seq != start_seq and start_seq == 0 and prev_seq == -1:
+            start_seq = seq
         received += 1
         if seq != prev_seq + 1:
             logger.debug('ping interrupted')
             group_start = seq
-        pi = PingInfo(sent=seq, received=received,
+        sent = seq - start_seq
+        pi = PingInfo(sent=sent, received=received,
                       group_len=seq - group_start)
+        logger.debug(
+            'start_seq={0}, prev_seq={1}, received={2}, sent={3}, '
+            'group_len={4}'.format(
+                start_seq, prev_seq, received, sent, seq - group_start))
         yield pi
         prev_seq = seq
 
