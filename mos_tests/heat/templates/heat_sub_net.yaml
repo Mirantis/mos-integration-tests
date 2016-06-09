@@ -1,0 +1,19 @@
+heat_template_version: 2015-04-30
+
+resources:
+    the_network:
+        type: OS::Neutron::Net
+        properties:
+          admin_state_up: True
+          name: heat_net
+          port_security_enabled: False
+          shared: True
+          tenant_id: Admin
+    the_resource:
+        type: OS::Neutron::Subnet
+        properties:
+          cidr: 198.51.100.15/24
+          enable_dhcp: True
+          ip_version: 4
+          name: someSub
+          network: {get_resource: the_network}
