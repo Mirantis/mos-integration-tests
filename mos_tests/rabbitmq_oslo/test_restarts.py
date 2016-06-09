@@ -309,9 +309,9 @@ def restart_rabbitmq_serv(env, remote=None, wait_time=120):
     # In some cases pcs can return non-zero exit code - it's normal.
     # 'echo' commands are here to fix it.
     restart_commands = {
-        'start': 'pcs resource clear p_rabbitmq-server --wait=%d || '
-                 'echo "Started p_rabbitmq-server"' % wait_time,
-        'stop': 'pcs resource ban p_rabbitmq-server --wait=%d || '
+        'start': 'pcs resource clear p_rabbitmq-server --wait=%d $(hostname)'
+                 '|| echo "Started p_rabbitmq-server"' % wait_time,
+        'stop': 'pcs resource ban p_rabbitmq-server --wait=%d $(hostname) || '
                 'echo "Stopped p_rabbitmq-server"' % wait_time
     }
 
@@ -346,10 +346,10 @@ def restart_rabbitmq_cluster(env, wait_time=120):
     """
 
     restart_commands = {
-        'enable': 'pcs resource enable p_rabbitmq-server --wait=%d || '
-                  'echo "Started p_rabbitmq-server"' % wait_time,
-        'disable': 'pcs resource disable p_rabbitmq-server --wait=%d || '
-                   'echo "Stopped p_rabbitmq-server"' % wait_time
+        'enable': 'pcs resource enable p_rabbitmq-server --wait=%d $(hostname)'
+                  ' || echo "Started p_rabbitmq-server"' % wait_time,
+        'disable': 'pcs resource disable p_rabbitmq-server --wait=%d '
+                   '$(hostname)|| echo "Stopped p_rabbitmq-server"' % wait_time
     }
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
