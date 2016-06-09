@@ -17,8 +17,6 @@ import logging
 import pytest
 from six.moves import configparser
 
-from mos_tests.functions import common
-
 
 logger = logging.getLogger(__name__)
 

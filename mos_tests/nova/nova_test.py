@@ -995,9 +995,10 @@ class TestBugVerification(TestBase):
         # confirm resize
         instance.get()
         instance.confirm_resize()
-        common_functions.wait(lambda: self.os_conn.is_server_ssh_ready(instance),
-                              timeout_seconds=2 * 60,
-                              waiting_for="Instance to be accessed via ssh")
+        common_functions.wait(
+            lambda: self.os_conn.is_server_ssh_ready(instance),
+            timeout_seconds=2 * 60,
+            waiting_for="Instance to be accessed via ssh")
 
         # validate /mnt is not contains files
         with instance_ssh as remote:
