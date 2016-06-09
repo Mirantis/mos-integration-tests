@@ -221,7 +221,9 @@ class OpenStackActions(object):
         hyp_id = hypervisor.id
         wait(lambda: (self.nova.hypervisors.get(hyp_id).running_vms == 0),
              timeout_seconds=2 * 60,
-             waiting_for='hypervisor to be free')
+             sleep_seconds=5,
+             waiting_for='hypervisor {0} to be free'.format(
+                 hypervisor.hypervisor_hostname))
 
     def get_nova_instance_ips(self, srv):
         """Return all nova instance ip addresses as dict

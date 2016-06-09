@@ -392,7 +392,7 @@ class TestLiveMigrationBase(object):
                 self.volumes))
 
 
-class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
+class TestLiveMigrationSomeFlavors(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838028', block_migration=True)
     @pytest.mark.testrail_id('838257',
                              block_migration=False,
@@ -405,9 +405,9 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
         indirect=['block_migration'])
     @pytest.mark.usefixtures('unlimited_live_migrations', 'cleanup_instances',
                              'cleanup_volumes')
-    def test_live_migration_max_instances_with_all_flavors(
-            self, big_hypervisors, block_migration, big_port_quota,
-            with_volume):
+    def test_live_migration_max_of_instances(self, big_hypervisors,
+                                             block_migration, big_port_quota,
+                                             with_volume):
         """LM of maximum allowed amount of instances created with all available
             flavors
 
@@ -416,7 +416,7 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
             2. Restart nova-api services on controllers and
                 nova-compute services on computes
             3. Create maximum allowed number of instances on a single
-                compute node
+                compute node with biggest flavor
             4. Initiate serial block LM of previously created instances
                 to another compute node and estimate total time elapsed
             5. Check that all live-migrated instances are hosted on target host
@@ -429,7 +429,7 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
                 and are in Active state
             9. Send pings between pairs of VMs to check that network
                 connectivity between these hosts is alive
-            10. Repeat pp.3-9 for every available flavor
+            10. Repeat pp.3-9 for smallest available flavor
         """
         project_id = self.os_conn.session.get_project_id()
         image = self.os_conn._get_cirros_image()
@@ -444,17 +444,16 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
                                            timeout=5,
                                            name='volume_i'.format(i))
                 self.volumes.append(vol)
-                instances_create_args.append(
-                    dict(block_device_mapping={'vda': vol.id}))
+                instances_create_args.append(dict(
+                    block_device_mapping={'vda': vol.id}))
 
         zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
         hypervisor1, hypervisor2 = big_hypervisors
         flavors = sorted(self.os_conn.nova.flavors.list(),
                          key=lambda x: -x.ram)
-        for flavor in flavors:
-            # Skip small flavors
-            if flavor.ram < 512:
-                continue
+        # Skip small flavors
+        flavors = [x for x in flavors if x.ram >= 512]
+        for flavor in flavors[0], flavors[-1]:
 
             instances_count = min(
                 self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
@@ -492,7 +491,11 @@ class TestLiveMigrationAllFlavors(TestLiveMigrationBase):
 class TestLiveMigrationWithVolumes(TestLiveMigrationBase):
 
     @pytest.fixture
-    def instances(self, request, os_conn, block_migration, big_hypervisors):
+    def instances(self, request, os_conn, block_migration, big_hypervisors,
+                  nova_ceph):
+        if not nova_ceph and block_migration:
+            pytest.skip('Block migration with attached volumes '
+                        'are not allowed in 9.0')
         param = {'boot_from_vol': False}
         param.update(getattr(request, 'param', {}))
 
