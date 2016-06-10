@@ -133,3 +133,44 @@ def test_check_hipe_compilation(env):
         result = remote.check_call(cmd)['stdout'][0]
     assert 0 < int(result), "RabbitMQ don't use HiPE or invalid location to " \
                             "precompiled files or files wasn't found."
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('844794')
+def test_check_appropriate_async_thread_pool_size(env):
+    """Check appropriate async thread pool size.
+
+    :param env: Environment
+
+    Actions:
+    1. Make ssh to one of controllers.
+    2. Get cpu count and get get result `ps ax | perl -nE
+    '/beam.*-sname rabbit/ && /^\s*(\d+).*?-A (\d+)/ && say "$2"'` command.
+    3. Compare this results, number value should be between (64, 1024),
+    closest to 16*(cpu count).
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    with controller.ssh() as remote:
+        # wait when rabbit will be ok after snapshot revert
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+        cpu_count = int(remote.check_call("grep -c ^processor /proc/cpuinfo")
+                        ['stdout'][0].strip())
+        thread_pool_size = int(remote.check_call(
+            "ps ax | perl -nE '/beam.*-sname rabbit/ && /^\s*(\d+).*?-A "
+            "(\d+)/ && say $2'")['stdout'][0].strip())
+
+    calculated_pool_size = cpu_count * 16
+    if calculated_pool_size < 64:
+        calculated_pool_size = 64
+
+    assert 64 <= thread_pool_size, "Rabbit appropriate async thread pool " \
+                                   "size smaller then 64."
+
+    assert 1024 >= thread_pool_size, "Rabbit appropriate async thread pool " \
+                                     "size bigger then 1024."
+
+    assert calculated_pool_size == thread_pool_size, \
+        "Real rabbit thread_pool_size != calculated."
