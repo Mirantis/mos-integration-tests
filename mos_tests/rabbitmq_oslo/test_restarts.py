@@ -21,7 +21,9 @@ import uuid
 import pytest
 from six.moves import configparser
 
+from mos_tests.environment import ssh
 from mos_tests.functions.common import wait
+
 from mos_tests import settings
 
 
@@ -806,10 +808,10 @@ def test_check_logs_for_epmd_successfully_restarted(env):
     restart_rabbitmq_cluster(env)
     for controller in controllers:
         with controller.ssh() as remote:
-            result = remote.check_call(
-                "grep 'already running' /var/log/rabbitmq/*")['stdout']
-            assert 0 == len(result), ('Find error in logs on %s host.' %
-                                      get_mngmnt_ip_of_node(remote))
+            result = remote.execute(
+                "grep 'already running' /var/log/rabbitmq/*")['exit_code']
+            assert 0 != result, ('Find error in logs on %s host.' %
+                                 get_mngmnt_ip_of_node(remote))
 
 
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
@@ -826,6 +828,21 @@ def test_check_rabbitmqctl_on_segfaults(env):
     don't contain 'segfault' word. (x30)
     """
 
+    def check_rabbitmqctl_segfault():
+        max_retry = 30
+        result = 0
+        for step in range(1, max_retry):
+            logger.debug("Retry[%s/%s]: Call rabbitmqctl status." %
+                         (step, max_retry))
+            try:
+                result = remote.execute('rabbitmqctl status 2>&1 | '
+                                        'grep "segfault"')['exit_code']
+            except ssh.CalledProcessError:
+                logger.info("Ignore none-zero exit code for "
+                            "`rabbitmqctl status` command")
+
+            assert 0 != result, 'Found segfault message'
+
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
 
@@ -834,25 +851,25 @@ def test_check_rabbitmqctl_on_segfaults(env):
         wait_for_rabbit_running_nodes(remote, len(controllers))
 
     with controller.ssh() as remote:
-        remote.check_call('pcs resource ban p_rabbitmq-server '
-                          '--wait=120 $(hostname)')
+        check_rabbitmqctl_segfault()
+        remote.execute('pcs resource ban p_rabbitmq-server --wait=120 '
+                       '$(hostname)')
 
-        for step in range(1, 30):
-            result = remote.execute('rabbitmqctl status')
-            for line in result['stdout']:
-                assert True == ('segfault' in line), 'Found segfault message'
-            for line in result['stderr']:
-                assert True == ('segfault' in line), 'Found segfault message'
+        check_rabbitmqctl_segfault()
 
-        exp_nodes = len(controller) - 1
+        exp_nodes = len(controllers) - 1
         wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
              timeout_seconds=120,
              sleep_seconds=30,
              waiting_for='number of running nodes will be %s.' % exp_nodes)
 
-        for step in range(1, 30):
-            result = remote.execute('rabbitmqctl status')
-            for line in result['stdout']:
-                assert True == ('segfault' in line), 'Found segfault message'
-            for line in result['stderr']:
-                assert True == ('segfault' in line), 'Found segfault message'
+        remote.execute('pcs resource clear p_rabbitmq-server --wait=120 '
+                       '$(hostname)')
+
+        exp_nodes = len(controllers)
+        wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
+             timeout_seconds=120,
+             sleep_seconds=30,
+             waiting_for='number of running nodes will be %s.' % exp_nodes)
+
+        check_rabbitmqctl_segfault()
