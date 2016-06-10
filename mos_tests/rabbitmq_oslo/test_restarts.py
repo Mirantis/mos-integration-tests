@@ -787,3 +787,26 @@ def test_check_primary_node_migration_many_times(env):
                  sleep_seconds=30,
                  waiting_for='wait for starting oslo.messaging-check-tool '
                              'RPC server/client app')
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('844792')
+def test_check_logs_for_epmd_successfully_restarted(env):
+    """"[Destructive] Restart rabbitmq by pcs and check logs in all nodes.
+
+    :param env: Enviroment.
+
+   Actions:
+    1. Make SSH to one of controller;
+    2. Restart rabbitmq cluster by pcs;
+    3. Check logs for "already running" error messages in all controllers.
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    restart_rabbitmq_cluster(env)
+    for controller in controllers:
+        with controller.ssh() as remote:
+            result = remote.check_call(
+                "grep 'already running' /var/log/rabbitmq/*")['stdout']
+            assert 0 == len(result), ('Find error in logs on %s host.' %
+                                      get_mngmnt_ip_of_node(remote))
