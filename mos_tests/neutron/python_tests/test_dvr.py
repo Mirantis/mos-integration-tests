@@ -1419,3 +1419,52 @@ class TestDVRRegression(TestDVRBase):
         for node in nodes:
             with node.ssh() as remote:
                 assert not remote.execute(cmd).is_ok, err_msg
+
+    @pytest.mark.testrail_id('857407')
+    @pytest.mark.usefixtures('variables')
+    def test_instance_connectivity_after_l3_agent_restart(self):
+        """Check instances don't lose connectivity after restart l3 agent
+
+        Steps:
+            1. Update quotas for creation enough networks.
+            2. Create 10 nets, 10 routers, create 10 vms on 1 compute.
+            3. Choose 1 vm and ping 8.8.8.8 from it.
+            4. Restart l3 agent on compute with vms 60 times.
+            5. Ping 8.8.8.8 is available.
+        """
+        self.set_neutron_quota(network=50, router=50, subnet=50, port=150)
+        compute_node = self.env.get_nodes_by_role('compute')[0]
+        flavor = self.os_conn.nova.flavors.find(name='m1.micro')
+        servers = []
+        for x in range(10):
+            router = self.os_conn.create_router(name='router{}'.format(x),
+                                                distributed=True)
+            self.os_conn.router_gateway_add(
+                router_id=router['router']['id'],
+                network_id=self.os_conn.ext_network['id'])
+
+            net_id = self.os_conn.add_net(router['router']['id'])
+
+            srv = self.os_conn.create_server(
+                name='instanceNo{}'.format(x),
+                flavor=flavor,
+                key_name=self.instance_keypair.name,
+                security_groups=[self.security_group.id],
+                availability_zone='{}:{}'.format(self.zone.zoneName,
+                                                 compute_node.data['fqdn']),
+                nics=[{'net-id': net_id}],
+                wait_for_active=False,
+                wait_for_avaliable=False)
+
+            servers.append(srv)
+
+        self.os_conn.wait_servers_active(servers)
+        self.os_conn.wait_servers_ssh_ready(servers)
+
+        srv = servers[0]
+        self.check_ping_from_vm(srv, ip_to_ping="8.8.8.8")
+
+        with compute_node.ssh() as remote:
+            for _ in range(60):
+                remote.check_call("service neutron-l3-agent restart")
+                self.check_ping_from_vm(srv, ip_to_ping="8.8.8.8")

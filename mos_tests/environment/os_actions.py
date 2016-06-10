@@ -135,6 +135,11 @@ class OpenStackActions(object):
              timeout_seconds=timeout,
              waiting_for='instances to become at ACTIVE status')
 
+    def wait_servers_ssh_ready(self, servers, timeout=10 * 60):
+        wait(lambda: all(self.is_server_ssh_ready(x) for x in servers),
+             timeout_seconds=timeout,
+             waiting_for='instances to be ssh ready')
+
     def wait_servers_deleted(self, servers, timeout=3 * 60):
         wait(lambda: all(self.is_server_deleted(x) for x in servers),
              timeout_seconds=timeout,
