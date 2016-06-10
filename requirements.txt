@@ -18,3 +18,5 @@ tox
 waiting
 dpath
 tempest
+
+contextlib2
