@@ -206,6 +206,16 @@ def fuel(fuel_master_ip):
     return get_fuel_client(fuel_master_ip)
 
 
+def restart_ceph(env):
+    ceph_nodes = env.get_nodes_by_role('ceph-osd')
+    if len(ceph_nodes) == 0:
+        return
+    controllers = env.get_nodes_by_role('controller')
+    for node in set(ceph_nodes) | set(controllers):
+        with node.ssh() as remote:
+            remote.execute('restart ceph-all')
+
+
 @pytest.fixture(scope='session')
 def env(request, fuel):
     """Environment instance"""
@@ -220,6 +230,7 @@ def env(request, fuel):
         env = envs[0]
     assert env.is_operational
     if getattr(request.session, 'reverted', True):
+        restart_ceph(env)
         env.wait_for_ostf_pass()
         wait(env.os_conn.is_nova_ready,
              timeout_seconds=60 * 5,
