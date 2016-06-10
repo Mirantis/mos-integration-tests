@@ -164,7 +164,7 @@ class OpenStackActions(object):
              waiting_for='marker appears in all servers log')
 
     def create_server(self, name, image_id=None, flavor=1, userdata=None,
-                      files=None, key_name=None, timeout=300,
+                      files=None, key_name=None, timeout=600,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
 
         if image_id is None:
