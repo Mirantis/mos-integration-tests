@@ -417,6 +417,9 @@ class OpenStackActions(object):
     def list_subnetpools(self):
         return self.neutron.list_subnepools()
 
+    def list_address_scopes(self):
+        return self.neutron.list_address_scopes()
+
     def assign_floating_ip(self, srv, use_neutron=False):
         if use_neutron:
             #   Find external net id for tenant
