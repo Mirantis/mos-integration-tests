@@ -106,6 +106,7 @@ def image_file_remote(request, controller_remote, suffix):
         f.seek(size * (1024 ** 2))
         f.write(' ')
         f.flush()
+    controller_remote.execute('ls -alph {}'.format(filename))
     yield filename
     controller_remote.execute('rm -f {}'.format(filename))
 
