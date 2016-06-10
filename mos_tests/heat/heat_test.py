@@ -1339,3 +1339,73 @@ class HeatIntegrationTests(OpenStackTestCase):
         self.glance.images.delete(image.id)
         # Delete keypair:
         keypair.delete()
+
+    @pytest.mark.testrail_id('844927')
+    def test_check_search_for_resources_based_name(self):
+        """This test case checks resource-list searched for resources based
+        name
+        Steps:
+        1. Create new stack by sample template
+        2. Launch heat resource-list and specify stack name
+        """
+        stack_name = 'stack_search_by_name'
+        resource_name = 'new_resource'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'sample_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, {'param': 'just text'})
+        self.uid_list.append(stack_id)
+        resources = self.heat.resources.list(stack_name, name=resource_name)
+        assert len(resources) == 1
+        resource = resources[0]
+        assert resource.stack_name == stack_name
+        assert resource.resource_status == 'CREATE_COMPLETE'
+        assert resource.resource_name == resource_name
+
+    @pytest.mark.testrail_id('844929')
+    def test_check_search_for_resources_based_id(self):
+        """This test case checks resource-list searched for resources based id
+        Steps:
+        1. Create new stack by sample template
+        2. Launch heat resource-list and specify stack id
+        """
+        stack_name = 'stack_search_by_id'
+        resource_name = 'new_resource'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'sample_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, {'param': 'just text'})
+        self.uid_list.append(stack_id)
+        physical_resource_id = self.heat.resources.get(
+            stack_id, resource_name).physical_resource_id
+
+        resources = self.heat.resources.list(
+            stack_name, physical_resource_id=physical_resource_id)
+        assert len(resources) == 1
+        resource = resources[0]
+        assert resource.stack_name == stack_name
+        assert resource.resource_status == 'CREATE_COMPLETE'
+        assert resource.resource_name == resource_name
+
+    @pytest.mark.testrail_id('844928')
+    def test_check_search_for_resources_based_status(self):
+        """This test case checks resource-list searched for resources based
+        status
+        Steps:
+        1. Create new stack by sample template
+        2. Launch heat resource-list and specify stack name and status
+        """
+        stack_name = 'stack_search_by_status'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'sample_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, {'param': 'just text'})
+        self.uid_list.append(stack_id)
+
+        resources = self.heat.resources.list(stack_name,
+                                             status='CREATE_COMPLETE')
+        assert len(resources) == 1
+        resource = resources[0]
+        assert resource.stack_name == stack_name
+        assert resource.resource_status == 'CREATE_COMPLETE'
+        assert resource.resource_name == 'new_resource'
