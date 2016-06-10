@@ -61,6 +61,8 @@ def test_basic_operation_with_fixed_ips(env, os_conn, instances, keypair,
 
 @pytest.mark.testrail_id('842547')
 @pytest.mark.parametrize('instances', [{'count': 1}], indirect=True)
+@pytest.mark.skip(reason='Skip the test until we have some resolution '
+                         'on https://bugs.launchpad.net/nova/+bug/1534186')
 def test_remove_incorrect_fixed_ip_from_instance(os_conn, instances, network):
     """Remove incorrect fixed IP from an instance
     Scenario:
