@@ -107,7 +107,7 @@ class TestDpdk(TestBaseNFV):
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 1)]
         for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * flavors[0].ram * 1024 / page_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -183,7 +183,7 @@ class TestDpdk(TestBaseNFV):
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 1), (hosts[1], 2)]
         for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * flavors[0].ram * 1024 / page_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -232,7 +232,7 @@ class TestDpdk(TestBaseNFV):
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 0)]
         for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * flavors[0].ram * 1024 / page_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
