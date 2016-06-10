@@ -214,6 +214,40 @@ class HeatIntegrationTests(OpenStackTestCase):
         sub_net_names = [x['name'] for x in sub_net['subnets']]
         self.assertIn(pool_name, sub_net_names)
 
+    @pytest.mark.testrail_id('844932')
+    def test_heat_address_scope(self):
+        """This test case checks stack-create action.
+
+        Steps:
+        1. Create stack using template file heat_addres_scope.yaml
+        2. Find address scope in some subnet pool
+        """
+        timeout = 20
+        scope_name = 'someScope'
+        stack_name = 'heat-stack-' + str(randint(1, 0x7fffffff))
+        template_content = common_functions.read_template(
+            self.templates_dir, 'heat_addres_scope.yaml')
+        uid = common_functions.create_stack(self.heat, stack_name,
+                                            template_content)
+
+        self.uid_list.append(uid)
+        stacks_id = [s.id for s in self.heat.stacks.list()]
+        self.assertIn(uid, stacks_id)
+        self.assertTrue(common_functions.check_stack_status(stack_name,
+                                                            self.heat,
+                                                            'CREATE_COMPLETE',
+                                                            timeout))
+        # Find scope in scope list
+        list_scope = self.neutron.list_address_scopes()
+        scopes_names = [x['name'] for x in list_scope['address_scopes']]
+        scopes_id = [x['id'] for x in list_scope['address_scopes']]
+        self.assertIn(scope_name, scopes_names)
+        # Find scope in sub-pool list
+        subnet_pools = self.neutron.list_subnetpools()
+        id_in_subnet_pool = [x['address_scope_id']
+                             for x in subnet_pools['subnetpools']]
+        self.assertEqual(scopes_id, id_in_subnet_pool)
+
     @pytest.mark.testrail_id('631861')
     def test_heat_resource_type_show(self):
         """This test case checks representation of all Heat resources.

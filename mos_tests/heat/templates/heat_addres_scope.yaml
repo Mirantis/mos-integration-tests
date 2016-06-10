@@ -1,0 +1,17 @@
+heat_template_version: 2015-04-30
+
+resources:
+  the_scope:
+    type: OS::Neutron::AddressScope
+    properties:
+      ip_version: 4
+      name: someScope
+      shared: False
+      tenant_id: admin
+
+  the_resource:
+    type: OS::Neutron::SubnetPool
+    properties:
+      address_scope: {get_resource: the_scope}
+      name: Sub_Pool
+      prefixes: [10.12.12.0/30]
