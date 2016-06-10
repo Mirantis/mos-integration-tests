@@ -740,3 +740,50 @@ def test_kill_all_rabbit_nodes_and_check_connectivity_many_times(env):
             assert 200 == response_status_code, \
                 ('Retry [%d/%d] - Verify rabbitmq connection was failed' %
                  (current_retry, max_retry))
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('857428')
+def test_check_primary_node_migration_many_times(env):
+    """"[Destructive] Stop rabbitmq primary node, wait migration
+    finished, start same slave node (x10).
+
+    :param env: Enviroment.
+
+   Actions:
+    1. Install "oslo.messaging-check-tool" on controller;
+    2. Prepare config file;
+    3. Check rabbitmq connectivity by OSLO RPC Client/Server app.
+    4. Ban primary rabbitmq node and wait while migration was finished.
+    5. Check rabbitmq connectivity by OSLO RPC Client/Server app.
+    6. Retry step 4-5 (x10)
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+    rpc_tool_port = 12400
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        kwargs = vars_config(remote)
+        install_oslomessagingchecktool(remote, **kwargs)
+        configure_oslomessagingchecktool(remote,
+                                         custom_tool_rpc_port=rpc_tool_port)
+        rabbit_rpc_server_start(remote, kwargs['cfg_file_path'])
+        rabbit_rpc_client_start(remote, kwargs['cfg_file_path'])
+        wait(lambda: get_http_code(remote, port=rpc_tool_port) != 000,
+             timeout_seconds=60 * 3,
+             sleep_seconds=30,
+             waiting_for='wait for starting oslo.messaging-check-tool '
+                         'RPC server/client app')
+        max_retry = 10
+        for current_retry in range(1, max_retry):
+            migrate_rabbitmq_primary_node(env)
+            wait(lambda: get_http_code(remote, port=rpc_tool_port) != 000,
+                 timeout_seconds=60 * 3,
+                 sleep_seconds=30,
+                 waiting_for='wait for starting oslo.messaging-check-tool '
+                             'RPC server/client app')
