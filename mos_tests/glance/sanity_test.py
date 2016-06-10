@@ -198,6 +198,39 @@ def test_image_create_delete_from_url(glance, suffix, option):
     check_image_not_in_list(glance, image)
 
 
+@pytest.mark.testrail_id('836612')
+@pytest.mark.usefixtures('enable_multiple_locations_glance')
+@pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+def test_image_create_delete_from_url_v2(glance_remote, os_conn, suffix):
+    """Check image creation and deletion from URL
+
+    Scenario:
+        1. Create image
+        2. Add location for image
+        3. Wait until image has active `status`
+        3. Delete image
+        4. Check that image deleted
+    """
+    image = os_conn.glance.images.create(name='Test_{}'.format(suffix),
+                                         container_format="bare",
+                                         disk_format="qcow2")
+    check_image_in_list(glance_remote, image)
+
+    image_url = settings.GLANCE_IMAGE_URL
+    cmd = 'location-add --url {url} {img_id}'.format(
+        url=image_url,
+        img_id=image.id)
+    glance_remote(cmd)
+
+    image = os_conn.glance.images.get(image.id)
+    check_image_active(glance_remote, image)
+    assert image_url == image.locations[0]["url"], (
+        "Expected and actual locations are different")
+
+    os_conn.glance.images.delete(image.id)
+    check_image_not_in_list(glance_remote, image)
+
+
 @pytest.mark.testrail_id('542890', params={'glance': 1})
 @pytest.mark.testrail_id('542911', params={'glance': 2})
 @pytest.mark.parametrize('glance', [1, 2], indirect=['glance'])
