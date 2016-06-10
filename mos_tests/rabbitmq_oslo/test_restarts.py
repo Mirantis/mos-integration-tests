@@ -532,6 +532,7 @@ def test_check_send_and_receive_messages_from_diff_type_nodes(env, node_type):
         'Generated and consumed number of messages is different'
 
 
+@pytest.mark.skip(reason="expect fix for oslo.messaging-check-tool")
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('857394', params={'restart_type': 'single'})
 @pytest.mark.testrail_id('857395', params={'restart_type': 'one_by_one'})
