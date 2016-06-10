@@ -810,3 +810,49 @@ def test_check_logs_for_epmd_successfully_restarted(env):
                 "grep 'already running' /var/log/rabbitmq/*")['stdout']
             assert 0 == len(result), ('Find error in logs on %s host.' %
                                       get_mngmnt_ip_of_node(remote))
+
+
+@pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
+@pytest.mark.testrail_id('844791')
+def test_check_rabbitmqctl_on_segfaults(env):
+    """"[Destructive] Check rabbitmqctl segfaults on controller.
+
+    :param env: Enviroment.
+
+   Actions:
+    1. Make SSH to one of controller;
+    2. Ban rabbitmq node by pcs on current controller;
+    3. Call 'rabbitmqctl status' command and verify that stdout+stderr
+    don't contain 'segfault' word. (x30)
+    """
+
+    controllers = env.get_nodes_by_role('controller')
+    controller = random.choice(controllers)
+
+    # Wait when rabbit will be ok after snapshot revert
+    with controller.ssh() as remote:
+        wait_for_rabbit_running_nodes(remote, len(controllers))
+
+    with controller.ssh() as remote:
+        remote.check_call('pcs resource ban p_rabbitmq-server '
+                          '--wait=120 $(hostname)')
+
+        for step in range(1, 30):
+            result = remote.execute('rabbitmqctl status')
+            for line in result['stdout']:
+                assert True == ('segfault' in line), 'Found segfault message'
+            for line in result['stderr']:
+                assert True == ('segfault' in line), 'Found segfault message'
+
+        exp_nodes = len(controller) - 1
+        wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
+             timeout_seconds=120,
+             sleep_seconds=30,
+             waiting_for='number of running nodes will be %s.' % exp_nodes)
+
+        for step in range(1, 30):
+            result = remote.execute('rabbitmqctl status')
+            for line in result['stdout']:
+                assert True == ('segfault' in line), 'Found segfault message'
+            for line in result['stderr']:
+                assert True == ('segfault' in line), 'Found segfault message'
