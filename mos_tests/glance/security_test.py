@@ -383,9 +383,9 @@ class TestGlanceSecurity(TestBase):
                 wait(lambda: len(remote.check_call(
                     'ls /var/lib/glance/images')['stdout']) == img_from_dir[
                     controller.data['fqdn']],
-                     timeout_seconds=60 * 25,
-                     sleep_seconds=30,
-                     waiting_for='used space to be cleared')
+                    timeout_seconds=60 * 25,
+                    sleep_seconds=30,
+                    waiting_for='used space to be cleared')
 
         images_values = self.get_images_values_from_mysql_db(images_id)
         for image_id in images_values:
@@ -468,8 +468,8 @@ class TestGlanceSecurity(TestBase):
                 wait(lambda: len(remote.check_call(
                     'ls /var/lib/glance/images')['stdout']) == img_from_dir[
                     controller.data['fqdn']],
-                     timeout_seconds=60,
-                     waiting_for='used space to be cleared')
+                    timeout_seconds=60,
+                    waiting_for='used space to be cleared')
 
         images_values = self.get_images_values_from_mysql_db(images_id)
         for image_id in images_values:
