@@ -1,4 +1,5 @@
 git+git://github.com/openstack/fuel-devops.git@2.9.19
+git+git://github.com/openstack/python-fuelclient@stable/mitaka
 paramiko>=1.16.0
 pytest
 pytest-xdist
@@ -9,7 +10,6 @@ python-cinderclient>=1.0.5
 python-neutronclient>=4.0.0
 python-heatclient>=1.0.0
 python-muranoclient>=0.8.3
-python-fuelclient==8.0
 requests>=2.2.0
 ndg-httpsclient>=0.4.0
 six
