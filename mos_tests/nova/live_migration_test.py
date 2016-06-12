@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import defaultdict
 import logging
 from multiprocessing.dummy import Pool
 
@@ -50,6 +51,27 @@ def disable_nova_config_drive(env):
     config = [('DEFAULT', 'force_config_drive', False)]
     for step in service.nova_patch(env, config):
         yield step
+
+
+@pytest.yield_fixture
+def cleanup_virsh_domains(env, os_conn):
+    # WA for bug https://bugs.launchpad.net/mos/+bug/1591676/
+    # destroy all created during test virsh domains
+    exists = defaultdict(set)
+    for instance in os_conn.nova.servers.list():
+        host = getattr(instance, 'OS-EXT-SRV-ATTR:hypervisor_hostname')
+        exists[host].add(getattr(instance, 'OS-EXT-SRV-ATTR:instance_name'))
+    yield
+    for node in env.get_nodes_by_role('compute'):
+        with node.ssh() as remote:
+            result = remote.execute("virsh list | grep running | "
+                                    "awk '{ print $2 }'")
+            if not result.is_ok:
+                continue
+            vms = set(result.stdout_string.split())
+            new_vms = vms - exists.get(node.data['fqdn'], set())
+            for vm in new_vms:
+                remote.execute('virsh destroy {0}'.format(vm))
 
 
 @pytest.yield_fixture(scope='module')
@@ -128,6 +150,7 @@ def router(os_conn, network):
     os_conn.delete_router(router['router']['id'])
 
 
+@pytest.mark.usefixtures('cleanup_virsh_domains')
 class TestLiveMigrationBase(object):
     @pytest.fixture(autouse=True)
     def init(self, env, os_conn, keypair, security_group, network):
