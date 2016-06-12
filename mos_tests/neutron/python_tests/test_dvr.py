@@ -1496,6 +1496,7 @@ class TestDVRRegression(TestDVRBase):
         """
         self.set_neutron_quota(network=50, router=50, subnet=50, port=150)
         compute_node = self.env.get_nodes_by_role('compute')[0]
+        flavor = self.os_conn.nova.flavors.find(name='m1.micro')
         servers = []
         for x in range(10):
             router = self.os_conn.create_router(name='router{}'.format(x),
@@ -1508,6 +1509,7 @@ class TestDVRRegression(TestDVRBase):
 
             srv = self.os_conn.create_server(
                 name='instanceNo{}'.format(x),
+                flavor=flavor,
                 key_name=self.instance_keypair.name,
                 security_groups=[self.security_group.id],
                 availability_zone='{}:{}'.format(self.zone.zoneName,
