@@ -114,7 +114,8 @@ class TestDVRBase(base.TestBase):
         agent_with_snat = wait(get_agent_with_snat,
                                timeout_seconds=60,
                                expected_exceptions=NeutronClientException,
-                               waiting_for='receive single agent with snat')
+                               waiting_for='receive single agent with snat',
+                               log=False)
         if alive_only and not agent_with_snat['alive']:
             return
         if agent_with_snat['host'] in excluded:
@@ -517,7 +518,8 @@ class TestDVR(TestDVRBase):
             controller_with_snat = new_controller_with_snat
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair)
+                                          vm_keypair=self.instance_keypair,
+                                          timeout=60 * 5)
 
     @pytest.mark.testrail_id('638473', node_to_clear_idx=1)
     @pytest.mark.testrail_id('638471', node_to_clear_idx=-1)
@@ -1102,19 +1104,6 @@ class TestDVRTypeChange(TestDVRBase):
         # to change the router type from distributed to centralized
 
         self.check_exception_on_router_update_to_centralize(router['id'])
-
-    def get_snat_controller(self, host_name, router_id):
-        snat_controller = None
-        controllers = self.env.get_nodes_by_role('controller')
-        for node in controllers:
-            if node.data['fqdn'] == host_name:
-                with self.env.get_ssh_to_node(node.data['ip']) as remote:
-                    cmd = 'ip netns | grep [s]nat-{}'.format(router_id)
-                    result = remote.execute(cmd)
-                    if result['exit_code'] == 0:
-                        snat_controller = node
-                        break
-        return snat_controller
 
     @pytest.mark.testrail_id('542780')
     @pytest.mark.check_env_('is_ha')
