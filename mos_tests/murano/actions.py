@@ -188,7 +188,7 @@ class MuranoActions(object):
         deployments = self.murano.deployments.list(environment.id)
         logs = []
         for deployment in deployments:
-            if deployment.updated == environment.updated:
+            if deployment.state == 'success':
                 reports = self.murano.deployments.reports(
                     environment.id, deployment.id)
                 for r in reports:
