@@ -930,62 +930,33 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
 
 class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
 
-    @pytest.fixture(scope='session')
+    @pytest.fixture(scope='class')
     def block_migration(self, request, nova_ceph):
         value = request.param
         if nova_ceph and value:
             pytest.skip('Block migration requires Nova CephRBD to be disabled')
         return value
 
-    @pytest.yield_fixture(scope='class')
-    def unlim_lm_with_feature(self, env, request):
+    @pytest.yield_fixture
+    def feature(self, env, request):
         feature = request.param
         nova_config = '/etc/nova/nova.conf'
+        computes = env.get_nodes_by_role('compute')
 
-        nodes = (env.get_nodes_by_role('controller') +
-                 env.get_nodes_by_role('compute'))
-        for node in nodes:
-            if 'controller' in node.data['roles']:
-                restart_cmd = 'service nova-api restart'
-            else:
-                restart_cmd = 'service nova-compute restart'
-            with node.ssh() as remote:
-                remote.check_call('cp {0} {0}.bak'.format(nova_config))
-                parser = configparser.RawConfigParser()
-                with remote.open(nova_config) as f:
-                    parser.readfp(f)
-                parser.set('DEFAULT', 'max_concurrent_live_migrations', 0)
-                if 'compute' in node.data['roles']:
-                    old_value = parser.get('libvirt', 'live_migration_flag')
-                    new_value = "{0},{1}".format(old_value, feature)
-                    parser.set('libvirt', 'live_migration_flag', new_value)
-                    if feature == 'VIR_MIGRATE_TUNNELLED':
-                        parser.set('libvirt', 'live_migration_uri',
-                                   "qemu+tcp://%s/system")
-                with remote.open(nova_config, 'w') as f:
-                    parser.write(f)
-                remote.check_call(restart_cmd)
+        # Get old value of live_migration_flag
+        with computes[0].ssh() as remote:
+            parser = configparser.RawConfigParser()
+            with remote.open(nova_config) as f:
+                parser.readfp(f)
+            old = parser.get('libvirt', 'live_migration_flag')
 
-        common.wait(env.os_conn.is_nova_ready,
-                    timeout_seconds=60 * 5,
-                    expected_exceptions=Exception,
-                    waiting_for="Nova services to be alive")
-
-        yield
-        for node in nodes:
-            if 'controller' in node.data['roles']:
-                restart_cmd = 'service nova-api restart'
-            else:
-                restart_cmd = 'service nova-compute restart'
-            with node.ssh() as remote:
-                result = remote.execute('mv {0}.bak {0}'.format(nova_config))
-                if result.is_ok:
-                    remote.check_call(restart_cmd)
-
-        common.wait(env.os_conn.is_nova_ready,
-                    timeout_seconds=60 * 5,
-                    expected_exceptions=Exception,
-                    waiting_for="Nova services to be alive")
+        config = [
+            ('libvirt', 'live_migration_flag', "{0},{1}".format(old, feature))]
+        if feature == 'VIR_MIGRATE_TUNNELLED':
+            config.append(
+                ('libvirt', 'live_migration_uri', "qemu+tcp://%s/system"))
+        for step in service.nova_patch(env, config, computes):
+            yield step
 
     @pytest.fixture
     def instances(self, request, ubuntu_image_id, os_conn, nova_ceph,
@@ -1021,24 +992,24 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
 
     @pytest.mark.testrail_id('838040', block_migration=True,
                              instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+                             feature='VIR_MIGRATE_AUTO_CONVERGE')
     @pytest.mark.testrail_id('838267', block_migration=False,
                              instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+                             feature='VIR_MIGRATE_AUTO_CONVERGE')
     @pytest.mark.testrail_id('838241', block_migration=False,
                              instances={'volume_backed': True},
-                             unlim_lm_with_feature='VIR_MIGRATE_AUTO_CONVERGE')
+                             feature='VIR_MIGRATE_AUTO_CONVERGE')
     @pytest.mark.testrail_id('838041', block_migration=True,
                              instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+                             feature='VIR_MIGRATE_TUNNELLED')
     @pytest.mark.testrail_id('838268', block_migration=False,
                              instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+                             feature='VIR_MIGRATE_TUNNELLED')
     @pytest.mark.testrail_id('838242', block_migration=False,
                              instances={'volume_backed': True},
-                             unlim_lm_with_feature='VIR_MIGRATE_TUNNELLED')
+                             feature='VIR_MIGRATE_TUNNELLED')
     @pytest.mark.parametrize(
-        'block_migration, instances, unlim_lm_with_feature',
+        'block_migration, instances, feature',
         [
             (True, {'volume_backed': False}, 'VIR_MIGRATE_AUTO_CONVERGE'),
             (False, {'volume_backed': False}, 'VIR_MIGRATE_AUTO_CONVERGE'),
@@ -1055,8 +1026,8 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
             'true LM ephemeral with VIR_MIGRATE_TUNNELLED',
             'true LM volume with VIR_MIGRATE_TUNNELLED'
         ],
-        indirect=['block_migration', 'instances', 'unlim_lm_with_feature'])
-    @pytest.mark.usefixtures('unlim_lm_with_feature', 'router')
+        indirect=['block_migration', 'instances', 'feature'])
+    @pytest.mark.usefixtures('unlimited_live_migrations', 'feature', 'router')
     def test_live_migration_with_feature(self, instances, block_migration,
                                          big_hypervisors):
         """LM of multiple instances with auto-converge or tunnelling features
@@ -1081,7 +1052,6 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
             10. Send pings between pairs of VMs to check that network
                 connectivity between these hosts is alive
         """
-
         hypervisor1, _ = big_hypervisors
 
         self.successive_migration(block_migration, hypervisor_from=hypervisor1)
@@ -1095,29 +1065,22 @@ class TestLiveMigrationWithFeatures(TestLiveMigrationBase):
         self.os_conn.wait_servers_ssh_ready(self.instances)
 
     @pytest.mark.testrail_id('838042', block_migration=True,
-                             stress_instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
+                             stress_instances={'volume_backed': False})
     @pytest.mark.testrail_id('838269', block_migration=False,
-                             stress_instances={'volume_backed': False},
-                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
+                             stress_instances={'volume_backed': False})
     @pytest.mark.testrail_id('838243', block_migration=False,
-                             stress_instances={'volume_backed': True},
-                             unlim_lm_with_feature='VIR_MIGRATE_COMPRESSED')
-    @pytest.mark.parametrize(
-        'block_migration, stress_instances, unlim_lm_with_feature',
-        [
-            (True, {'volume_backed': False}, 'VIR_MIGRATE_COMPRESSED'),
-            (False, {'volume_backed': False}, 'VIR_MIGRATE_COMPRESSED'),
-            (False, {'volume_backed': True}, 'VIR_MIGRATE_COMPRESSED'),
-        ],
-        ids=[
-            'block LM ephemeral with VIR_MIGRATE_COMPRESSED',
-            'true LM ephemeral with VIR_MIGRATE_COMPRESSED',
-            'true LM volume with VIR_MIGRATE_COMPRESSED',
-        ],
-        indirect=[
-            'block_migration', 'stress_instances', 'unlim_lm_with_feature'])
-    @pytest.mark.usefixtures('unlim_lm_with_feature', 'router')
+                             stress_instances={'volume_backed': True})
+    @pytest.mark.parametrize('feature', ['VIR_MIGRATE_COMPRESSED'],
+                             indirect=['feature'])
+    @pytest.mark.parametrize('block_migration, stress_instances',
+                             [(True, {'volume_backed': False}),
+                              (False, {'volume_backed': False}),
+                              (False, {'volume_backed': True})],
+                             ids=['block LM ephemeral',
+                                  'true LM ephemeral',
+                                  'true LM volume'],
+                             indirect=['block_migration', 'stress_instances'])
+    @pytest.mark.usefixtures('unlimited_live_migrations', 'feature', 'router')
     def test_lm_of_multiple_instances_xbzrle_compression(
             self, stress_instances, keypair, big_hypervisors, block_migration):
         """LM of multiple instances under CPU workload
@@ -1186,7 +1149,7 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
 
     userdata = '\n'.join(["#!/bin/bash -v", "echo 'Hello world!'"])
 
-    @pytest.fixture(scope='session')
+    @pytest.fixture(scope='class')
     def block_migration(self, env, request, nova_ceph):
         value = request.param
         if nova_ceph and value:
@@ -1196,11 +1159,21 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
     @pytest.fixture
     def instance(self, request, ubuntu_image_id, nova_ceph, block_migration):
         params = getattr(request, 'param', {'volume_backed': False})
+
+        # To be removed in MOS 10.0
+        if not nova_ceph and params['volume_backed']:
+            pytest.skip("Volume-backed instances with config-drive=true fail "
+                        "to live-migrate without nova ceph. Launchpad bug: "
+                        "https://bugs.launchpad.net/mos/+bug/1589460/")
         self.check_lm_restrictions(nova_ceph, params['volume_backed'],
                                    block_migration)
-
         flavor = self.os_conn.nova.flavors.find(name='m1.small')
-        create_args = [dict(meta={'role': 'webservers', 'essential': 'false'})]
+
+        # config_drive=True to be removed in MOS 10.0 after WA removal
+        # https://bugs.launchpad.net/mos/+bug/1589460/
+        create_args = [dict(meta={'role': 'webservers', 'essential': 'false'},
+                            config_drive=True)]
+
         if params['volume_backed']:
             vol = common.create_volume(self.os_conn.cinder, ubuntu_image_id,
                                        size=5)
@@ -1213,84 +1186,43 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
         request.addfinalizer(lambda: self.delete_instances())
         return self.instances[0]
 
-    @pytest.yield_fixture(scope='class')
-    def config_drive_format(self, request):
-        required_format = request.param
-        nova_conf = '/etc/nova/nova.conf'
-        restart_required = False
-        remove_package = False
+    @pytest.fixture
+    def drive_format(self, request):
+        return request.param
 
+    @pytest.yield_fixture
+    def config_drive_format(self, drive_format):
         computes = self.env.get_nodes_by_role('compute')
-        controllers = self.env.get_nodes_by_role('controller')
+        config = [('DEFAULT', 'config_drive_format', drive_format)]
+        for step in service.nova_patch(self.env, config, computes):
+            yield step
 
-        for node in (computes + controllers):
+    @pytest.yield_fixture
+    def genisoimage(self):
+        computes = self.env.get_nodes_by_role('compute')
+        for node in computes:
             with node.ssh() as remote:
-                remote.check_call('cp {0} {0}.bak'.format(nova_conf))
-                parser = configparser.RawConfigParser()
-                with remote.open(nova_conf) as f:
-                    parser.readfp(f)
-                if 'compute' in node.data['roles']:
-                    old_format = parser.get('DEFAULT', 'config_drive_format')
-                    if old_format != required_format:
-                        restart_required = True
-                        parser.set(
-                            'DEFAULT', 'config_drive_format', required_format)
-                with remote.open(nova_conf, 'w') as f:
-                    parser.write(f)
+                remote.check_call("apt-get install -y genisoimage")
 
-        if required_format == 'iso9660':
-            for node in computes:
-                with node.ssh() as remote:
-                    remote.check_call("apt-get install -y genisoimage")
-            remove_package = True
-
-        if restart_required:
-            for node in (computes + controllers):
-                with node.ssh() as remote:
-                    if 'controller' in node.data['roles']:
-                        restart_cmd = 'service nova-api restart'
-                    else:
-                        restart_cmd = 'service nova-compute restart'
-                    remote.check_call(restart_cmd)
-            common.wait(self.env.os_conn.is_nova_ready,
-                        timeout_seconds=60 * 5,
-                        expected_exceptions=Exception,
-                        waiting_for="Nova services to be alive")
-
-        yield required_format
-        if remove_package:
-            for node in computes:
-                with node.ssh() as remote:
-                    remote.check_call("apt-get remove -y genisoimage")
-
-        if restart_required:
-            for node in (computes + controllers):
-                if 'controller' in node.data['roles']:
-                    restart_cmd = 'service nova-api restart'
-                else:
-                    restart_cmd = 'service nova-compute restart'
-                with node.ssh() as remote:
-                    result = remote.execute('mv {0}.bak {0}'.format(nova_conf))
-                    if result.is_ok:
-                        remote.check_call(restart_cmd)
-            common.wait(self.env.os_conn.is_nova_ready,
-                        timeout_seconds=60 * 5,
-                        expected_exceptions=Exception,
-                        waiting_for="Nova services to be alive")
+        yield
+        for node in computes:
+            with node.ssh() as remote:
+                remote.check_call("apt-get remove -y genisoimage")
 
     def get_instance_data(self, vm, vm_keypair, config_format,
                           username='ubuntu', mount_required=True):
-        if config_format == 'vfat':
-            device = "/dev/vdb"
-        else:
-            device = "/dev/$(lsblk | grep rom | awk '{print $1}')"
-        mnt_dir = "/mnt/config"
 
         with self.os_conn.ssh_to_instance(self.env, vm, vm_keypair=vm_keypair,
                                           username=username) as remote:
+            devices = remote.check_call("cat /proc/partitions")['stdout']
+            device = "/dev/{0}".format(devices[-1].split()[-1])
+            mnt_dir = "/mnt/config"
+
             if mount_required:
+                logger.info("Mount {0} to {1}".format(device, mnt_dir))
                 remote.check_call("sudo mkdir -p {0}".format(mnt_dir))
                 remote.check_call("sudo mount {0} {1}".format(device, mnt_dir))
+
             res = remote.check_call("sudo ls {0}/openstack/latest/"
                                     .format(mnt_dir))
             files = set([r.strip() for r in res['stdout']])
@@ -1304,40 +1236,42 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
 
     @pytest.mark.testrail_id('842896', block_migration=True,
                              instance={'volume_backed': False},
-                             config_drive_format='vfat')
+                             drive_format='vfat')
     @pytest.mark.testrail_id('842491', block_migration=False,
                              instance={'volume_backed': False},
-                             config_drive_format='vfat')
-    @pytest.mark.testrail_id('842519', block_migration=False,
-                             instance={'volume_backed': False},
-                             config_drive_format='iso9660')
+                             drive_format='vfat')
     @pytest.mark.testrail_id('842492', block_migration=False,
                              instance={'volume_backed': True},
-                             config_drive_format='vfat')
+                             drive_format='vfat')
+    @pytest.mark.testrail_id('842519', block_migration=False,
+                             instance={'volume_backed': False},
+                             drive_format='iso9660')
     @pytest.mark.testrail_id('842520', block_migration=False,
                              instance={'volume_backed': True},
-                             config_drive_format='iso9660')
+                             drive_format='iso9660')
     @pytest.mark.parametrize(
-        'block_migration, instance, config_drive_format',
+        'block_migration, instance, drive_format',
         [
             (True, {'volume_backed': False}, 'vfat'),
             (False, {'volume_backed': False}, 'vfat'),
-            (False, {'volume_backed': False}, 'iso9660'),
             (False, {'volume_backed': True}, 'vfat'),
+            (False, {'volume_backed': False}, 'iso9660'),
             (False, {'volume_backed': True}, 'iso9660'),
         ],
         ids=[
             'block LM ephemeral with vfat',
             'true LM ephemeral with vfat',
-            'true LM ephemeral with iso9660',
             'true LM volume with vfat',
+            'true LM ephemeral with iso9660',
             'true LM volume with iso9660',
         ],
-        indirect=['block_migration', 'instance', 'config_drive_format'])
-    @pytest.mark.usefixtures('router')
-    def test_lm_with_user_content_and_config_drive(self, config_drive_format,
+        indirect=['block_migration', 'instance', 'drive_format'])
+    @pytest.mark.usefixtures('unlimited_live_migrations', 'genisoimage',
+                             'config_drive_format', 'router')
+    def test_lm_with_user_content_and_config_drive(self, drive_format,
                                                    instance, keypair,
                                                    block_migration):
+
         """LM of instance with user content and configuration drive
 
         Scenario:
@@ -1354,7 +1288,7 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
             9. Login to instance again and re-check config drive
         """
         old_files, old_userdata = self.get_instance_data(instance, keypair,
-                                                         config_drive_format)
+                                                         drive_format)
         assert self.userdata in old_userdata, (
             "Unexpected content of userdata before migrate: "
             "should be the same as for instance boot")
@@ -1371,7 +1305,7 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
                     waiting_for='instance to be available via ssh')
 
         new_files, new_userdata = self.get_instance_data(instance, keypair,
-                                                         config_drive_format,
+                                                         drive_format,
                                                          mount_required=False)
         assert self.userdata in new_userdata, (
             "Unexpected content of userdata after migrate: "
