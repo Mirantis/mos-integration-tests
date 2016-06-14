@@ -410,3 +410,31 @@ def test_filtering(glance_remote, os_conn, images):
             'image-list {0}'.format(fltr)).listing()
         filtered_image_ids = {x['ID'] for x in image_list}
         assert filtered_image_ids & set(images.values()) == expected_ids
+
+
+@pytest.mark.testrail_id('836626')
+@pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+@pytest.mark.parametrize('image_file_remote', [25 * 1024],
+                         indirect=['image_file_remote'])
+def test_big_image_create_delete_from_file(glance_remote, image_file_remote,
+                                           suffix):
+    """Checks big image creation and deletion from file.
+
+    Scenario:
+        1. Create big 25GB image from file;
+        2. Check that image exists and has `active` status;
+        3. Delete image;
+        4. Check that image deleted.
+    Duration: ~ 25 minutes
+    """
+    name = 'Test_big_{}'.format(suffix)
+    timeout_for_cli_cmd = int(1 * 60 * 60)  # 1 hour
+    cmd = ('--timeout {sec} image-create --name {name} '
+           '--container-format bare '
+           '--disk-format qcow2 --file {source} --progress'.format(
+               sec=timeout_for_cli_cmd, name=name, source=image_file_remote))
+
+    image = parser.details(glance_remote(cmd))
+    check_image_active(glance_remote, image)
+    glance_remote('image-delete {id}'.format(**image))
+    check_image_not_in_list(glance_remote, image)
