@@ -394,11 +394,14 @@ def kill_rabbitmq_on_node(remote, timeout_min=7):
     """Waiting for rabbit startup and got pid, then kill-9 it"""
 
     def get_pid():
-        cmd = "rabbitmqctl status | grep '{pid' | tr -dc '0-9'"
-        try:
-            return remote.check_call(cmd)['stdout'][0].strip()
-        except Exception:
-            return None
+        pid = None
+        while not pid:
+            cmd = "rabbitmqctl status | grep '{pid' | tr -dc '0-9'"
+            try:
+                pid = remote.check_call(cmd)['stdout'][0].strip()
+            except Exception:
+                pid = None
+        return pid
 
     wait(get_pid,
          timeout_seconds=60 * timeout_min,
