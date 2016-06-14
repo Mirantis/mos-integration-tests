@@ -1,0 +1,19 @@
+heat_template_version: 2015-04-30
+description: Sample template
+parameters:
+  param:
+    type: string
+    description: Param
+    default: 0
+  Net:
+    type: string
+    default: admin_internal_net
+resources:
+  new_resource:
+    type: OS::Nova::Server
+    properties:
+      flavor: m1.tiny
+      image: TestVM
+      networks:
+      - network: {get_param: Net}
+      user_data_update_policy: IGNORE
