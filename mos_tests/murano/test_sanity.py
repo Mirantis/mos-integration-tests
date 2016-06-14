@@ -35,6 +35,7 @@ from xvfbwrapper import Xvfb
 from mos_tests.functions import common
 from mos_tests import settings
 
+
 logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.undestructive
@@ -48,6 +49,13 @@ def screen():
     vdisplay.start()
     yield
     vdisplay.stop()
+
+
+@pytest.fixture
+def clean_packages(murano):
+    for pkg in murano.murano.packages.list():
+        if pkg.name != 'Core library':
+            murano.murano.packages.delete(pkg.id)
 
 
 @pytest.yield_fixture
@@ -143,22 +151,15 @@ def murano_test_patch(cls):
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
 @pytest.mark.undestructive
-@pytest.mark.usefixtures('screen')
+@pytest.mark.usefixtures('screen', 'clean_packages')
 @murano_test_patch
 class TestImportPackageWithDepencies(base.PackageTestCase):
-
-    def tearDown(self):
-        for pkg in self.murano_client.packages.list():
-            if pkg.name in settings.MURANO_PACKAGE_DEPS_NAMES:
-                self.murano_client.packages.delete(pkg.id)
-        super(TestImportPackageWithDepencies, self).tearDown()
 
     @pytest.mark.testrail_id('836647')
     def test_import_package_by_url(self):
         """Test package importing via url."""
-
         self.navigate_to('Manage')
-        self.go_to_submenu('Package Definitions')
+        self.go_to_submenu('Package')
         self.driver.find_element_by_id(c.UploadPackage).click()
         sel = self.driver.find_element_by_css_selector(
             "select[name='upload-import_type']")
@@ -170,10 +171,6 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
         el.send_keys(settings.MURANO_PACKAGE_WITH_DEPS_URL)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
-        for el in self.driver.find_elements_by_class_name('alert'):
-            el.find_element_by_class_name('close').click()
-
-        # No application data modification is needed
         self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
@@ -188,7 +185,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
         """Test package importing via fqn from repo with dependent apps."""
 
         self.navigate_to('Manage')
-        self.go_to_submenu('Package Definitions')
+        self.go_to_submenu('Package')
         self.driver.find_element_by_id(c.UploadPackage).click()
         sel = self.driver.find_element_by_css_selector(
             "select[name='upload-import_type']")
@@ -199,9 +196,6 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
             "input[name='upload-repo_name']")
         el.send_keys(settings.MURANO_PACKAGE_WITH_DEPS_FQN)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
-
-        for el in self.driver.find_elements_by_class_name('alert'):
-            el.find_element_by_class_name('close').click()
 
         self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
@@ -215,7 +209,7 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
-@pytest.mark.usefixtures('screen')
+@pytest.mark.usefixtures('screen', 'clean_packages')
 @murano_test_patch
 class TestPackageSizeLimit(base.PackageTestCase):
     """Test package size limit."""
@@ -225,17 +219,15 @@ class TestPackageSizeLimit(base.PackageTestCase):
         self.zips = prepare_zips()
 
     def tearDown(self):
-        for pkg in self.murano_client.packages.list():
-            if pkg.name in apps_names:
-                self.murano_client.packages.delete(pkg.id)
         shutil.rmtree((os.path.split(self.zips[0])[0]), ignore_errors=True)
         super(TestPackageSizeLimit, self).tearDown()
 
+    @pytest.mark.skip(reason="Disabled for Murano+Glare configuration")
     @pytest.mark.testrail_id('836646')
     @pytest.mark.usefixtures('package_size_limit')
     def test_package_size_limit(self):
         self.navigate_to('Manage')
-        self.go_to_submenu('Package Definitions')
+        self.go_to_submenu('Package')
 
         # Upload package with allowed size
         self.driver.find_element_by_id(c.UploadPackage).click()
@@ -243,8 +235,6 @@ class TestPackageSizeLimit(base.PackageTestCase):
             "input[name='upload-package']")
         el.send_keys(self.zips[0])
         self.driver.find_element_by_xpath(c.InputSubmit).click()
-        for el in self.driver.find_elements_by_class_name('alert'):
-            el.find_element_by_class_name('close').click()
         self.wait_element_is_clickable(by.By.XPATH, c.InputSubmit)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
@@ -261,8 +251,6 @@ class TestPackageSizeLimit(base.PackageTestCase):
         error_message = ("Error: 400 Bad Request: Uploading file is too "
                          "large. The limit is 2 Mb")
         self.check_alert_message(error_message)
-        for el in self.driver.find_elements_by_class_name('alert'):
-            el.find_element_by_class_name('close').click()
         self.check_element_not_on_page(by.By.XPATH,
                                        c.AppPackages.format(apps_names[1]))
 
@@ -364,7 +352,7 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         cls.glance.images.delete(image.id)
 
     @pytest.yield_fixture
-    def apache_package(self, apache_image):
+    def apache_package(self, apache_image, murano):
         app_name = 'ApacheHTTPServer'
         data = {"categories": ["Web"], "tags": ["tag"]}
         tmp_dir = tempfile.mkdtemp()
@@ -383,12 +371,12 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
                     )
 
         files = {app_name: open(archive_path, 'rb')}
-        package = self.murano_client.packages.create(data, files)
+        package = murano.murano.packages.create(data, files)
         self.apache_id = package.id
 
         yield
 
-        self.murano_client.packages.delete(package.id)
+        murano.murano.packages.delete(package.id)
 
     @pytest.fixture
     def init(self):
@@ -448,9 +436,10 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         self.wait_for_alert_message()
 
     def add_component_with_changed_net(self, env_id, net_id):
-        self.go_to_submenu('Applications')
+        self.navigate_to('Catalog')
+        self.go_to_submenu('Browse')
         self.driver.find_element_by_xpath(
-            ".//a[contains(@href, 'murano/catalog/add/"
+            ".//a[contains(@href, '/murano/catalog/add/"
             "{app_id}/{env_id}')]".format(app_id=self.apache_id, env_id=env_id)
         ).click()
         self.driver.find_element_by_xpath(c.ButtonSubmit).click()
@@ -495,11 +484,11 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         self.add_component(app_id=self.apache_id, env_id=env_id)
         self.deploy_env(env_id)
 
-        self.assertEqual(self.murano_client.environments.get(env_id).status,
-                         'ready')
-
-        instance = [x for x in self.os_conn.nova.servers.findall()
-                    if self.env_name in x.name][0]
+        self.assertEqual(self.murano_client.environments.get(
+            env_id).status, 'ready')
+        open_stack_id = self.murano_client.environments.get(
+            env_id).services[0]['instance']['openstackId']
+        instance = self.os_conn.nova.servers.get(open_stack_id)
         self.assertIn(self.net_name, instance.addresses.keys())
 
     @pytest.mark.testrail_id('836682')
@@ -522,7 +511,8 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         self.assertEqual(status_el.text, 'Deploy FAILURE')
 
     @pytest.mark.testrail_id('836681')
-    @pytest.mark.usefixtures('init', 'apache_package', 'prepare_24')
+    @pytest.mark.usefixtures('init', 'clean_packages', 'apache_package',
+                             'prepare_24')
     def test_change_network_for_app_from_app_page(self):
         """Change network for Murano application"""
         # create net, subnet and router
@@ -542,19 +532,19 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 
         # create new env
         env_id = self.create_env(env_name=self.env_name,
-                                 net_name=self.net_name,
-                                 submenu='Applications')
+                                 net_name=self.net_name)
 
         # add application to env
         self.add_component_with_changed_net(env_id, net['network']['id'])
 
         # deploy env
         self.deploy_env(env_id)
-        self.assertEqual(self.murano_client.environments.get(env_id).status,
-                         'ready')
+        self.assertEqual(self.murano_client.environments.get(
+            env_id).status, 'ready')
 
         # check that application was deployed in the second network
-        instance = [x for x in self.os_conn.nova.servers.findall()
-                    if self.env_name in x.name][0]
+        open_stack_id = self.murano_client.environments.get(
+            env_id).services[0]['instance']['openstackId']
+        instance = self.os_conn.nova.servers.get(open_stack_id)
         self.assertIn(net_name, instance.addresses.keys())
         self.assertNotIn(self.net_name, instance.addresses.keys())
