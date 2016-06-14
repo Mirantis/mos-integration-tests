@@ -1409,3 +1409,57 @@ class HeatIntegrationTests(OpenStackTestCase):
         assert resource.stack_name == stack_name
         assert resource.resource_status == 'CREATE_COMPLETE'
         assert resource.resource_name == 'new_resource'
+
+    @pytest.mark.testrail_id('844923')
+    def test_check_show_particular_stack_output(self):
+        """This test case checks show only one particular stack output
+        Steps:
+        1. Create new stack by 'check_output_tmpl' template
+        2. Launch heat output-show
+        """
+        stack_name = 'stack_show_particular_output'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'check_output_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content)
+        self.uid_list.append(stack_id)
+
+        for i in ('a', 'b'):
+            resource = self.heat.stacks.output_show(
+                stack_id, 'resource_id_{}'.format(i))
+            err_msg = 'Output info is incorrect'
+            assert resource['output']['output_value'] == i, err_msg
+            description = 'ID of resource {}'.format(i)
+            assert resource['output']['description'] == description, err_msg
+        try:
+            self.heat.stacks.output_show(stack_id, 'resource_id_c')
+        except Exception as err:
+            err_msg = 'Error message is incorrect'
+            self.assertIn('Not found', err.message, err_msg)
+
+    @pytest.mark.testrail_id('844943')
+    def test_check_output_show_during_stack_creation(self):
+        """This test case checks support output resolution during stack
+        creation
+        Steps:
+        1. Create new stack by 'check_output_tmpl' template
+        2. Launch heat output-show while stack is in 'CREATE_IN_PROGRESS' state
+        """
+        stack_name = 'stack_show_output'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'check_output_tmpl.yaml')
+        stack = self.heat.stacks.create(stack_name=stack_name,
+                                        template=template_content,
+                                        timeout_mins=20)
+        stack_id = stack['stack']['id']
+        self.uid_list.append(stack_id)
+
+        resource = self.heat.stacks.output_show(stack_id, 'resource_id_a')
+        assert self.heat.stacks.get(stack_id).stack_status == 'CREATE_IN_' \
+                                                              'PROGRESS'
+        err_msg = 'Output info is incorrect'
+        assert resource['output']['output_value'] == 'a', err_msg
+        assert resource['output']['description'] == 'ID of resource a', err_msg
+
+        self.assertTrue(common_functions.check_stack_status(
+            stack_name, self.heat, 'CREATE_COMPLETE', 300))
