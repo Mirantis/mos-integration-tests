@@ -267,3 +267,24 @@ def test_put_metadata(instances, os_conn, env, keypair, nova_client, network,
     for instance in instances[:2]:
         instance.get()
         assert instance.metadata == {}
+
+
+@pytest.mark.testrail_id('851870')
+@pytest.mark.parametrize('instances', [{'count': 1}], indirect=True)
+def test_api_microversions(nova_client, instances):
+    """Make sure that it is possible to use Nova API microversions with Nova
+        CLI client
+
+    Scenario:
+        1. Run `nova version-list`
+        2. Run `nova --os-compute-api-version 2 list`
+        3. Run `nova --os-compute-api-version 2.1 list`
+        4. Run `nova --os-compute-api-version 2.25 list`
+    """
+    versions = nova_client('version-list').listing()
+    assert len(versions) > 0
+
+    for microversion in (2, 2.1, 2.25):
+        flags = '--os-compute-api-version {}'.format(microversion)
+        instances = nova_client('list', flags=flags).listing()
+        assert len(instances) == 1
