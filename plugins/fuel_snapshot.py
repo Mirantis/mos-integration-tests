@@ -37,7 +37,8 @@ def make_snapshot(request, fuel, env):
     yield
 
     try:
-        if not request.config.getoption("--make-snapshots"):
+        skip_snapshot = not request.config.getoption("--make-snapshots")
+        if skip_snapshot and os.environ.get('JOB_NAME') is None:
             return
 
         steps_rep = [getattr(request.node, 'rep_{}'.format(name), None)
