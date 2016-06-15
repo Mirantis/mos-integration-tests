@@ -79,6 +79,13 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.keys = []
         self.nova.security_groups.delete(self.sec_group)
 
+    def get_admin_int_net_id(self):
+        networks = self.neutron.list_networks()['networks']
+        net_id = [net['id'] for net in networks if
+                  not net['router:external'] and
+                  'admin' in net['name']][0]
+        return net_id
+
     @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
     @pytest.mark.testrail_id('543358')
     def test_nova_launch_v_m_from_image_with_all_flavours(self):
@@ -604,3 +611,43 @@ class NovaIntegrationTests(OpenStackTestCase):
         # Check that instance is reachable
         ping = common_functions.ping_command(floating_ip.ip)
         self.assertTrue(ping, "Instance after creation is not reachable")
+
+    @pytest.mark.testrail_id('857431')
+    def test_delete_instance_in_resize_state(self):
+        """Delete an instance while it is in resize state
+
+        Steps:
+            1. Create a new instance
+            2. Resize instance from m1.small to m1.tiny
+            3. Delete the instance immediately after vm_state is 'RESIZE'
+            4. Check that the instance was successfully deleted
+            5. Repeat steps 1-4 some times
+        """
+        name = 'TestVM_857431_instance_to_resize'
+        admin_net = self.get_admin_int_net_id()
+        initial_flavor = self.nova.flavors.find(name='m1.small')
+        resize_flavor = self.nova.flavors.find(name='m1.tiny')
+        image_id = self.nova.images.find(name='TestVM')
+
+        for _ in range(10):
+            instance = common_functions.create_instance(
+                self.nova,
+                name,
+                initial_flavor,
+                admin_net,
+                [self.sec_group.id],
+                image_id=image_id,
+                inst_list=self.instances)
+
+            # resize instance
+            instance.resize(resize_flavor)
+            common_functions.wait(
+                lambda: (self.os_conn.server_status_is(instance, 'RESIZE') or
+                         self.os_conn.server_status_is(instance,
+                                                       'VERIFY_RESIZE')),
+                timeout_seconds=2 * 60,
+                waiting_for='instance state is RESIZE or VERIFY_RESIZE')
+
+            # check that instance can be deleted
+            common_functions.delete_instance(self.nova, instance.id)
+            assert instance not in self.nova.servers.list()
