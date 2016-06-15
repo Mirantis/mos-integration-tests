@@ -29,11 +29,20 @@ from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 from mos_tests.functions import file_cache
 from mos_tests.functions import network_checks
+from mos_tests.functions import service
 from mos_tests.neutron.python_tests.base import TestBase
 from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.yield_fixture
+def set_recl_inst_interv(env, request):
+    interv_sec = request.param  # reclaim_instance_interval
+    config = [('DEFAULT', 'reclaim_instance_interval', interv_sec)]
+    for step in service.nova_patch(env, config):
+        yield step
 
 
 @pytest.mark.undestructive

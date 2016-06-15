@@ -16,86 +16,29 @@ from novaclient import exceptions as nova_exceptions
 import pytest
 
 from mos_tests.functions import common
-from mos_tests.neutron.python_tests.base import TestBase
-
-
-def create_instance(os_conn, compute_host, keypair, network, security_group):
-    return os_conn.create_server(name='server_00',
-                                 availability_zone='nova:{}'.format(
-                                     compute_host),
-                                 key_name=keypair.name,
-                                 nics=[{'net-id': network['network']['id']}],
-                                 security_groups=[security_group.id],
-                                 wait_for_active=False,
-                                 wait_for_avaliable=False)
-
-
-def delete_instance(os_conn, instance):
-    try:
-        instance.force_delete()
-    except Exception as e:
-        assert e.code == 404
-    os_conn.wait_servers_deleted([instance])
-
-
-@pytest.fixture
-def instance(request, os_conn, security_group, keypair, network):
-    zone = os_conn.nova.availability_zones.find(zoneName="nova")
-    compute_host = zone.hosts.keys()[0]
-
-    instance = create_instance(os_conn=os_conn,
-                               compute_host=compute_host,
-                               keypair=keypair,
-                               network=network,
-                               security_group=security_group)
-
-    request.addfinalizer(lambda: delete_instance(os_conn, instance))
-
-    os_conn.wait_servers_active([instance])
-    os_conn.wait_servers_ssh_ready([instance])
-
-    return instance
-
-
-@pytest.fixture
-def error_instance(request, os_conn, security_group, keypair, network):
-    compute_host = 'node-999.test.domain.local'  # fake node
-
-    instance = create_instance(os_conn=os_conn,
-                               compute_host=compute_host,
-                               keypair=keypair,
-                               network=network,
-                               security_group=security_group)
-
-    request.addfinalizer(lambda: delete_instance(os_conn, instance))
-
-    common.wait(
-        lambda: os_conn.nova.servers.get(instance).status == 'ERROR',
-        timeout_seconds=2 * 60,
-        waiting_for='instances to became to ERROR status')
-
-    return instance
 
 
 @pytest.mark.undestructive
-class TestNovaOSServerExternalEvents(TestBase):
+class TestNovaOSServerExternalEvents(object):
     """Tests OS-server-external-events"""
 
     nova_log = '/var/log/nova/nova-api.log'
 
     @pytest.mark.testrail_id('842538')
-    def test_dispatch_external_event(self, instance):
+    @pytest.mark.parametrize('instances', [{'count': 1}], indirect=True)
+    def test_dispatch_external_event(self, instances, env):
         """Dispatch an external event
         Actions:
         1. Create instance with new net and subnet, boot it.
         2. Check in nova-api log that the external event "network-vif-plugged"
         have been created for this instance and got "status": "completed".
         """
+        instance = instances[0]
         cmd = ('grep "server_external_events'
                '.*status.*completed'
                '.*name.*network-vif-plugged'
                '.*server_uuid.*{0}" {1}').format(instance.id, self.nova_log)
-        controllers = self.env.get_nodes_by_role('controller')
+        controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
             with controller.ssh() as remote:
                 out = remote.execute(cmd, verbose=False)
@@ -107,7 +50,9 @@ class TestNovaOSServerExternalEvents(TestBase):
                         'in nova-api.log')
 
     @pytest.mark.testrail_id('842539')
-    def test_dispatch_external_event_inst_not_found(self, instance):
+    @pytest.mark.parametrize('instances', [{'count': 1}], indirect=True)
+    def test_dispatch_external_event_inst_not_found(self, instances, os_conn,
+                                                    env):
         """Dispatch an external event
         Actions:
         1. Create instance with new net and subnet, boot it.
@@ -118,7 +63,8 @@ class TestNovaOSServerExternalEvents(TestBase):
         previously-deleted instance.
         """
         # Delete instance
-        common.delete_instance(self.os_conn.nova, instance.id)
+        instance = instances[0]
+        common.delete_instance(os_conn.nova, instance.id)
 
         grep_del = ('grep "server_external_events'
                     '.*name.*network-vif-deleted'
@@ -130,7 +76,7 @@ class TestNovaOSServerExternalEvents(TestBase):
         # run grep on all controllers
         del_founded = False
         drop_founded = False
-        controllers = self.env.get_nodes_by_role('controller')
+        controllers = env.get_nodes_by_role('controller')
         for controller in controllers:
             with controller.ssh() as remote:
                 out_del = remote.execute(grep_del, verbose=False)
@@ -148,7 +94,7 @@ class TestNovaOSServerExternalEvents(TestBase):
 
     @pytest.mark.testrail_id('842540')
     def test_dispatch_external_event_inst_not_assigned_to_host(
-            self, error_instance, network):
+            self, error_instance, network, os_conn):
         """Dispatch an external event for an instance not assigned to a host
         Actions:
         1. Create instance with new net and subnet on not existing compute.
@@ -163,6 +109,6 @@ class TestNovaOSServerExternalEvents(TestBase):
         """
         # try to assign IP to VM in Error state
         with pytest.raises(Exception) as e:
-            self.os_conn.nova.servers.add_fixed_ip(error_instance.id,
-                                                   network['network']['id'])
+            os_conn.nova.servers.add_fixed_ip(error_instance.id,
+                                              network['network']['id'])
         assert e.type == nova_exceptions.ResourceInErrorState
