@@ -20,36 +20,35 @@ import time
 import pytest
 
 from mos_tests.environment.os_actions import OpenStackActions
-from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture
-def projects(openstack_client):
+def projects(os_conn):
     names = ['A', 'B']
     projects = []
     for name in names:
-        project = openstack_client.project_create(name)
+        project = os_conn.keystone.tenants.create(name)
         projects.append(project)
-        openstack_client('role add',
-                         params='--user admin --project {0} '
-                                'admin -f json'.format(name))
+        user = os_conn.session.get_user_id()
+        admin_role = os_conn.keystone.roles.find(name='admin')
+        project.add_user(user=user, role=admin_role)
     yield projects
-    for name in names:
-        openstack_client.project_delete(name)
+    for project in projects:
+        os_conn.keystone.tenants.delete(project)
 
 
 @pytest.yield_fixture
 def networks(projects, os_conn):
     networks = []
     for project in projects:
-        network = os_conn.create_network('{name}_net'.format(**project),
-                                         tenant_id=project['id'])['network']
+        network = os_conn.create_network('{0.name}_net'.format(project),
+                                         tenant_id=project.id)['network']
         networks.append(network)
-        os_conn.create_subnet(network['id'], '{name}_subnet'.format(**project),
-                              '10.0.0.0/24', tenant_id=project['id'])
+        os_conn.create_subnet(network['id'], '{0.name}_subnet'.format(project),
+                              '10.0.0.0/24', tenant_id=project.id)
     yield networks
     for network in networks:
         for subnet in network['subnets']:
@@ -62,8 +61,8 @@ def sec_groups(projects, os_conn):
     groups = []
     for i, project in enumerate(projects):
         group_data = {
-            'name': '{name}_sec_group'.format(**project),
-            'tenant_id': project['id']
+            'name': '{0.name}_sec_group'.format(project),
+            'tenant_id': project.id
         }
         group = os_conn.neutron.create_security_group({
             'security_group': group_data})['security_group']
@@ -102,15 +101,15 @@ def os_clients(env, projects):
     for project in projects:
         os_conn = OpenStackActions(
             controller_ip=env.get_primary_controller_ip(),
-            cert=env.certificate, env=env, tenant=project['name'])
+            cert=env.certificate, env=env, tenant=project.name)
         os_clients.append(os_conn)
     return os_clients
 
 
 @pytest.yield_fixture
-def servers(os_conn, os_clients, networks, sec_groups):
+def servers(os_clients, networks, sec_groups):
     # boot instances
-    zone = os_conn.nova.availability_zones.find(zoneName="nova")
+    zone = os_clients[0].nova.availability_zones.find(zoneName="nova")
     hostname = zone.hosts.keys()[0]
 
     servers = []
@@ -120,80 +119,59 @@ def servers(os_conn, os_clients, networks, sec_groups):
         server1 = os_conn.create_server(
             name='server%02d' % (i * 2 + 1),
             availability_zone='{}:{}'.format(zone.zoneName, hostname),
-            nics=[{'net-id': network['id']}],
+            nics=[{'net-id': network['id'], 'v4-fixed-ip': '10.0.0.4'}],
             security_groups=[sec_group['id']],
-            fixed_ip='10.0.0.4',
             wait_for_active=False, wait_for_avaliable=False)
         server2 = os_conn.create_server(
             name='server%02d' % (i * 2 + 2),
             availability_zone='{}:{}'.format(zone.zoneName, hostname),
-            nics=[{'net-id': network['id']}],
+            nics=[{'net-id': network['id'], 'v4-fixed-ip': '10.0.0.5'}],
             security_groups=[sec_group['id']],
-            fixed_ip='10.0.0.5',
             wait_for_active=False, wait_for_avaliable=False)
-        servers.extend([server1, server2])
+        servers.append([server1, server2])
 
-    def is_all_instances_ready():
-        for os_conn in os_clients:
-            for server in os_conn.nova.servers.list():
-                if not os_conn.is_server_active(server):
-                    return False
-                if not os_conn.is_server_ssh_ready(server):
-                    return False
-        return True
+    for os_conn, servers_group in zip(os_clients, servers):
+        os_conn.wait_servers_active(servers_group)
 
-    wait(is_all_instances_ready, timeout_seconds=3 * 60,
-         waiting_for='all instances are ready')
-    # update states
-    for i, server in enumerate(servers):
-        servers[i] = server.manager.get(server)
+    for os_conn, servers_group in zip(os_clients, servers):
+        os_conn.wait_servers_ssh_ready(servers_group)
 
     yield servers
 
-    for server in servers:
-        server.delete()
+    for servers_group in servers:
+        for server in servers_group:
+            server.delete()
 
-    def is_instances_deleted():
-        for os_conn in os_clients:
-            if not all(os_conn.is_server_deleted(x.id) for x in servers):
-                return False
-        return True
-
-    wait(is_instances_deleted, timeout_seconds=60,
-         waiting_for='instances deleted')
+    for os_conn, servers_group in zip(os_clients, servers):
+        os_conn.wait_servers_deleted(servers_group)
 
 
-def restart_ping(os_clients, env, servers, group_num=None):
-    os_conn1, os_conn2 = os_clients
+def restart_ping(os_conn, env, servers):
     ping_cmd = 'ping {target_ip}'
-    if group_num is None or group_num % 2 == 0:
-        with os_conn1.ssh_to_instance(env, servers[0], username='cirros',
-                                      password='cubswin:)') as remote:
-            remote.execute('killall ping')
-            target_ip = servers[1].networks.values()[0][0]
-            remote.background_call(ping_cmd.format(target_ip=target_ip))
 
-    if group_num is None or group_num % 2 == 1:
-        with os_conn2.ssh_to_instance(env, servers[2], username='cirros',
-                                      password='cubswin:)') as remote:
-            remote.execute('killall ping')
-            target_ip = servers[3].networks.values()[0][0]
-            remote.background_call(ping_cmd.format(target_ip=target_ip))
+    with os_conn.ssh_to_instance(env, servers[0], username='cirros',
+                                 password='cubswin:)') as remote:
+        remote.execute('killall ping')
+        target_ip = servers[1].networks.values()[0][0]
+        remote.background_call(ping_cmd.format(target_ip=target_ip))
 
 
-def is_ping_has_same_id(compute):
+def cmp_pings_ids(compute):
+    """Compare pings isd and returns:
+        -1 if UNREPLIED has lower id
+        0 if ids is equal
+        1 if UNREPLIED has upper id
+    """
     id_expr = re.compile(r'id=(?P<id>\d+)')
     with compute.ssh() as remote:
         output = remote.execute('conntrack -L | grep 10.0.0.4 | grep icmp')
 
-    if 'UNREPLIED' not in output.stdout_string:
-        return False
-    ids_data = defaultdict(set)
+    result = dict.fromkeys([True, False])
     for line in output['stdout']:
         id_val = int(id_expr.search(line).group('id'))
-        ids_data[id_val].add('[UNREPLIED]' in line)
-    last_id = max(ids_data.keys())
-    return ids_data[last_id] == set([True, False])
+        key = '[UNREPLIED]' in line
+        result[key] = max(id_val, result[key])
+    return cmp(result[True], result[False])
 
 
 def check_zones_assigment_to_devices(compute):
@@ -274,15 +252,23 @@ class TestConntrackZones(TestBase):
                 qvb devices
         """
 
-        compute_fqdn = getattr(servers[0], 'OS-EXT-SRV-ATTR:host')
+        compute_fqdn = getattr(servers[0][0], 'OS-EXT-SRV-ATTR:host')
         compute = env.find_node_by_fqdn(compute_fqdn)
 
-        restart_ping(os_clients, env, servers)
-        for i in range(6):
-            if is_ping_has_same_id(compute):
+        for os_conn, servers_group in zip(os_clients, servers):
+            restart_ping(os_conn, env, servers_group)
+
+        for i in range(20):
+            result = cmp_pings_ids(compute)
+            if result == 0:
                 break
-            logger.info('Restart pings to make conntrack ids equal')
-            restart_ping(os_clients, env, servers, i)
+            elif result > 0:
+                logger.info('Restart pings without UNREPLIED')
+                group = 0
+            else:
+                logger.info('Restart pings with UNREPLIED')
+                group = 1
+            restart_ping(os_clients[group], env, servers[group])
             time.sleep(30)
         else:
             raise Exception("Can't set same ids for pings")
