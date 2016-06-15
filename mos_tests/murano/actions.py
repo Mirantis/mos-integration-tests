@@ -42,13 +42,13 @@ class MuranoActions(object):
             service_type='artifact', endpoint_type='publicURL')
         self.glare = glare_client.Client(endpoint=self.glare_endpoint,
                                          token=os_conn.session.
-                                         get_auth_headers['X-Auth-Token'],
+                                         get_auth_headers()['X-Auth-Token'],
                                          cacert=os_conn.path_to_cert,
                                          type_name='murano',
                                          type_version=1)
         self.murano = MuranoClient(endpoint=self.murano_endpoint,
                                    token=os_conn.session.
-                                   get_auth_headers['X-Auth-Token'],
+                                   get_auth_headers()['X-Auth-Token'],
                                    cacert=os_conn.path_to_cert,
                                    artifacts_client=self.glare)
         self.heat = os_conn.heat
