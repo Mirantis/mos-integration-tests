@@ -1,0 +1,22 @@
+heat_template_version: 2015-04-30
+description: Sample template with user data
+parameters:
+  user_data:
+    type: string
+    default: test
+  update_policy:
+    type: string
+    default: IGNORE
+  Net:
+    type: string
+    default: admin_internal_net
+resources:
+  new_resource:
+    type: OS::Nova::Server
+    properties:
+      flavor: m1.tiny
+      image: TestVM
+      networks:
+      - network: {get_param: Net}
+      user_data: {get_param: user_data}
+      user_data_update_policy: {get_param: update_policy}

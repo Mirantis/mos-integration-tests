@@ -1463,3 +1463,46 @@ class HeatIntegrationTests(OpenStackTestCase):
 
         self.assertTrue(common_functions.check_stack_status(
             stack_name, self.heat, 'CREATE_COMPLETE', 300))
+
+    @pytest.mark.testrail_id('844926')
+    def test_check_property_user_data_update_policy(self):
+        """This test case checks user_data_update_policy property applying
+        Steps:
+        1. Create new stack by 'userdata_tmpl.yaml' template with IGNORE policy
+        2. Update stack with new userdata
+        3. Check that vm's id isn't changed
+        4. Create new stack by 'userdata_tmpl.yaml' template with REPLACE
+        policy
+        5. Update stack with new userdata
+        6. Check that vm's id is changed
+        """
+        template_content = common_functions.read_template(
+            self.templates_dir, 'userdata_tmpl.yaml')
+        for policy in ('IGNORE', 'REPLACE'):
+            stack_name = 'stack_user_data_update_policy_{}'.format(policy)
+
+            stack_id = common_functions.create_stack(
+                self.heat, stack_name, template_content, {
+                    'user_data': 'data', 'update_policy': policy})
+            self.uid_list.append(stack_id)
+            vms = [vm for vm in self.nova.servers.list() if policy in vm.name]
+            assert len(vms) == 1
+            vm_id_before = vms[0].id
+
+            stack_updated = {'stack_name': stack_name,
+                             'template': template_content,
+                             'parameters': {'user_data': 'new_data',
+                                            'update_policy': policy}}
+            self.heat.stacks.update(stack_id, **stack_updated)
+            self.assertTrue(
+                common_functions.check_stack_status(stack_name, self.heat,
+                                                    'UPDATE_COMPLETE', 120))
+            vms = [vm for vm in self.nova.servers.list() if policy in vm.name]
+            vm_id_after = vms[0].id
+            assert len(vms) == 1
+            if policy == 'IGNORE':
+                err_mes = 'Error: Instance id is changed after stack update'
+                assert vm_id_after == vm_id_before, err_mes
+            else:
+                err_mes = "Error: Instance id isn't changed after stack update"
+                assert vm_id_after != vm_id_before, err_mes
