@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
 
 import pytest
@@ -38,6 +39,39 @@ def map_interfaces(devops_env, fuel_node):
     return pairs
 
 
+def remove_ceph_from_node(remote):
+    def is_pg_clean():
+        result = remote.check_call('ceph pg stat -f json-pretty',
+                                   verbose=False)
+        pg_stat = json.loads(result.stdout_string)
+        states = pg_stat['num_pg_by_state']
+        return len(states) == 1 and states[0]['name'] == 'active+clean'
+
+    hostname = remote.check_call('hostname -f', verbose=False).stdout_string
+    result = remote.check_call('ceph report', verbose=False)
+    ceph_data = json.loads(result.stdout_string)
+    osd_ids = [x['id'] for x in ceph_data['osd_metadata']
+               if x['hostname'] == hostname]
+    for osd_id in osd_ids:
+        remote.check_call('ceph osd out {0}'.format(osd_id), verbose=False)
+    common.wait(is_pg_clean,
+                timeout_seconds=5 * 60,
+                sleep_seconds=15,
+                waiting_for='Ceph data migration to be done')
+    for osd_id in osd_ids:
+        remote.check_call("stop ceph-osd id={}".format(osd_id),
+                          verbose=False)
+        remote.check_call("ceph osd crush remove osd.{}".format(osd_id),
+                          verbose=False)
+        remote.check_call("ceph auth del osd.{}".format(osd_id),
+                          verbose=False)
+        remote.check_call("ceph osd rm osd.{}".format(osd_id),
+                          verbose=False)
+
+    remote.check_call("ceph osd crush remove {}".format(hostname),
+                      verbose=False)
+
+
 @pytest.yield_fixture(scope='class')
 def cleanup_nodes(devops_env):
     nodes = devops_env.nodes().all
@@ -57,6 +91,9 @@ def idfn(val):
 @pytest.mark.incremental
 @pytest.mark.usefixtures('cleanup_nodes')
 class TestScale(object):
+
+    node_name = 'new_ironic'
+
     @pytest.fixture(scope='class',
                     params=[['ironic'], ['ironic', 'controller'],
                             ['ironic', 'controller', 'ceph-osd']],
@@ -97,7 +134,7 @@ class TestScale(object):
             waiting_for='node to be discovered')
 
         # Rename node
-        fuel_node.set({'name': 'new_ironic'})
+        fuel_node.set({'name': self.node_name})
 
         env.assign([fuel_node], roles)
 
@@ -149,8 +186,6 @@ class TestScale(object):
             stdout = result.stdout_string
             assert 'HEALTH_OK' in stdout or 'HEALTH_WARN' in stdout
 
-        self.__class__.fuel_node = fuel_node
-
     @pytest.mark.testrail_id('631896', roles=['ironic'])
     @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631900',
@@ -164,7 +199,13 @@ class TestScale(object):
             2. Boot new ironic instance
             3. Check ironic instance status is ACTIVE
         """
-        env.unassign([self.fuel_node.id])
+        fuel_node = [x for x in env.get_all_nodes()
+                     if x.data['name'] == self.node_name][0]
+        if 'ceph-osd' in roles:
+            with fuel_node.ssh() as remote:
+                remove_ceph_from_node(remote)
+
+        env.unassign([fuel_node.id])
 
         # Deploy changes
         task = env.deploy_changes()
