@@ -584,6 +584,7 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(env,
          'after RabbitMQ cluster restarting.')
 
 
+@pytest.mark.skip(reason="expect fix for oslo.messaging-check-tool")
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('857396')
 def test_upload_messages_on_one_restart_and_receive_on_other(env):
