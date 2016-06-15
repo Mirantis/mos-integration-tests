@@ -14,72 +14,24 @@
 
 import logging
 
+from contextlib2 import suppress
+from novaclient import exceptions as nova_exceptions
 import pytest
-from six.moves import configparser
 
+from mos_tests.functions import common
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.yield_fixture
-def set_recl_inst_interv(env, request):
-    """Set 'reclaim_instance_interval' to 'nova.conf' on all nodes"""
-
-    def nova_service_restart(nodes):
-        for node in nodes:
-            with node.ssh() as remote:
-                if 'controller' in node.data['roles']:
-                    remote.check_call(nova_restart_ctrllr)
-                elif 'compute' in node.data['roles']:
-                    remote.check_call(nova_restart_comput)
-
-    nova_cfg_f = '/etc/nova/nova.conf'
-    nova_restart_ctrllr = 'service nova-api restart && sleep 3'
-    nova_restart_comput = 'service nova-compute restart && sleep 3'
-    interv_sec = request.param  # reclaim_instance_interval
-
-    logger.debug('In {0} set "reclaim_instance_interval={1}"'.format(
-        nova_cfg_f, interv_sec))
-    # take backup
-    backup_f = nova_cfg_f + '_backup'
-    backup = 'cp {0} {1}'.format(nova_cfg_f, backup_f)
-    # modify nova config file
-    nodes = (env.get_nodes_by_role('controller') +
-             env.get_nodes_by_role('compute'))
-    for node in nodes:
-        with node.ssh() as remote:
-            remote.check_call(backup)
-            # set value
-            with remote.open(nova_cfg_f, 'r') as f:
-                parser = configparser.RawConfigParser()
-                parser.readfp(f)
-                parser.set('DEFAULT', 'reclaim_instance_interval', interv_sec)
-            # write file
-            with remote.open(nova_cfg_f, 'w') as new_f:
-                parser.write(new_f)
-    # restart services
-    nova_service_restart(nodes)
-    yield
-    # revert original file
-    logger.debug('Revert changes of nova.conf back')
-    for node in nodes:
-        with node.ssh() as remote:
-            cmd = 'mv {0} {1}'.format(backup_f, nova_cfg_f)
-            remote.check_call(cmd)
-    # restart services
-    nova_service_restart(nodes)
 
 
 @pytest.yield_fixture
 def network(os_conn, request):
     network = os_conn.create_network(name='net01')
     subnet = os_conn.create_subnet(network_id=network['network']['id'],
-                                   name='net01__subnet',
-                                   cidr='192.168.1.0/24')
+                                   name='net01__subnet', cidr='192.168.1.0/24')
     yield network
     if 'undestructive' in request.node.keywords:
-        os_conn.delete_net_subnet_smart(
-            network['network']['id'], subnet['subnet']['id'])
+        os_conn.delete_net_subnet_smart(network['network']['id'],
+                                        subnet['subnet']['id'])
 
 
 @pytest.yield_fixture
@@ -96,6 +48,13 @@ def security_group(os_conn, request):
     yield sec_group
     if 'undestructive' in request.node.keywords:
         os_conn.delete_security_group(sec_group)
+
+
+def delete_instances(os_conn, instances):
+    for instance in instances:
+        with suppress(nova_exceptions.NotFound):
+            instance.force_delete()
+    os_conn.wait_servers_deleted(instances)
 
 
 @pytest.yield_fixture
@@ -120,12 +79,28 @@ def instances(request, os_conn, security_group, keypair, network):
 
     yield instances
     if 'undestructive' in request.node.keywords:
-        for instance in instances:
-            try:                         # if instance was deleted in test
-                instance.force_delete()  # force - if soft deletion enabled
-            except Exception as e:
-                assert e.code == 404     # Instance not found
-        os_conn.wait_servers_deleted(instances)
+        delete_instances(os_conn, instances)
         hypervisor = os_conn.nova.hypervisors.find(
             hypervisor_hostname=compute_host)
         os_conn.wait_hypervisor_be_free(hypervisor)
+
+
+@pytest.fixture
+def error_instance(request, os_conn, security_group, keypair, network):
+    instance = os_conn.create_server(
+        name='err_server',
+        availability_zone='nova:node-999.test.domain.local',
+        key_name=keypair.name,
+        nics=[{'net-id': network['network']['id']}],
+        security_groups=[security_group.id],
+        wait_for_active=False,
+        wait_for_avaliable=False)
+
+    if 'undestructive' in request.node.keywords:
+        request.addfinalizer(lambda: delete_instances(os_conn, [instance]))
+
+    common.wait(lambda: os_conn.nova.servers.get(instance).status == 'ERROR',
+                timeout_seconds=2 * 60,
+                waiting_for='instances to became to ERROR status')
+
+    return instance
