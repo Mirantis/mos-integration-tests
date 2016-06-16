@@ -262,6 +262,27 @@ class MuranoActions(object):
                     timeout_seconds=300,
                     waiting_for='postgresql to be available')
 
+    def get_instance_id(self, name):
+        instance_list = self.os_conn.nova.servers.list()
+        for instance in instance_list:
+            if instance.name.find(name) > -1:
+                return instance.id
+
+    def get_volume_name(self, environment_id):
+        stack = self._get_stack(environment_id)
+        stack_data = self.heat.stacks.get(stack.id)
+        for output in stack_data.outputs:
+            if 'vol' in output['output_key']:
+                volume_name = output['output_key'][:-3]
+                return volume_name
+
+        raise Exception('Cinder volume does not exist')
+
+    def get_volume(self, environment_id):
+        stack = self._get_stack(environment_id)
+        volume = self.get_volume_name(environment_id)
+        return self.heat.resources.get(stack.id, volume)
+
     def influxdb(self, host, name='Influx', db='db1;db2'):
         post_body = {
             "host": host,
