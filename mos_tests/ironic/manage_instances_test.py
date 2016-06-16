@@ -349,10 +349,10 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
         network
     """
 
-    common.wait(ironic.get_provisioned_node,
+    common.wait(ironic.all_nodes_provisioned,
                 timeout_seconds=3 * 60,
                 sleep_seconds=15,
-                waiting_for='ironic node to be provisioned')
+                waiting_for='ironic nodes to be provisioned')
     instances, keypairs, ips = [], [], []
 
     for flavor, tenant_conn in zip(flavors, tenants_clients):
