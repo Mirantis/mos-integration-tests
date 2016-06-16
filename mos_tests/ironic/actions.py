@@ -29,8 +29,8 @@ class IronicActions(object):
     def _get_image(self, name):
         return self.os_conn.nova.images.find(name=name)
 
-    def get_provisioned_node(self):
-        """Return ironic node wich have non zero vcpu in hypervisor
+    def all_nodes_provisioned(self):
+        """Return True if all ironic node have non zero vcpu in hypervisor
 
         Raises exception, if not ironic node registered
 
@@ -45,9 +45,11 @@ class IronicActions(object):
                 hypervisor = self.os_conn.nova.hypervisors.find(
                     hypervisor_hostname=node.uuid)
             except Exception:
-                continue
-            if hypervisor.vcpus > 0:
-                return node
+                return False
+            if hypervisor.vcpus == 0:
+                return False
+
+        return True
 
     def boot_instance(self, image, flavor, keypair, **kwargs):
         """Boot and return ironic instance
@@ -63,10 +65,10 @@ class IronicActions(object):
         :return: created instance
         :rtype: novaclient.v2.servers.Server
         """
-        common.wait(self.get_provisioned_node,
+        common.wait(self.all_nodes_provisioned,
                     timeout_seconds=3 * 60,
                     sleep_seconds=15,
-                    waiting_for='ironic node to be provisioned')
+                    waiting_for='ironic nodes to be provisioned')
         baremetal_net = self.os_conn.nova.networks.find(label='baremetal')
         return self.os_conn.create_server('ironic-server',
                                           image_id=image.id,
