@@ -106,7 +106,8 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_commands=(), timeout=120):
+                 private_keys=None, proxy_commands=(), timeout=120,
+                 execution_timeout=60 * 60):
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -118,6 +119,7 @@ class SSHClient(object):
         self.sudo_mode = False
         self.sudo = self.get_sudo(self)
         self.timeout = timeout
+        self.execution_timeout = execution_timeout
         self.proxy_commands = proxy_commands
         self._ssh = None
         self._sftp_client = None
@@ -283,6 +285,7 @@ class SSHClient(object):
         stdout_buf = ''
         stderr_buf = ''
 
+        start = time.time()
         while not chan.closed or chan.recv_ready() or chan.recv_stderr_ready():
             select.select([chan], [], [chan], 60)
 
@@ -290,6 +293,13 @@ class SSHClient(object):
                 stdout_buf += chan.recv(1024)
             if chan.recv_stderr_ready():
                 stderr_buf += chan.recv_stderr(1024)
+
+            if time.time() > start + self.execution_timeout:
+                chan.close()
+                raise Exception('Executing `{cmd}` is too long '
+                                '(more than {timeout} seconds)'.format(
+                                    cmd=command,
+                                    timeout=self.execution_timeout))
 
         result = CommandResult({
             'stdout': stdout_buf.splitlines(True),
