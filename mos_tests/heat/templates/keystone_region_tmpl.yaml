@@ -1,0 +1,14 @@
+heat_template_version: 2015-04-30
+description: Sample template for keystone region
+parameters:
+  region_id:
+    type: string
+    description: region id
+    default: None
+resources:
+  the_resource:
+    type: OS::Keystone::Region
+    properties:
+      description: test for keystone region
+      enabled: true
+      id: {get_param: region_id}

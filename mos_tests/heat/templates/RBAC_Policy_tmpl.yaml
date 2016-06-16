@@ -1,0 +1,15 @@
+heat_template_version: 2015-04-30
+description: Sample template
+parameters:
+  net_id:
+    type: string
+    description: network id
+    default: None
+resources:
+  the_resource:
+    type: OS::Neutron::RBACPolicy
+    properties:
+      action: access_as_shared
+      object_type: network
+      target_tenant: admin
+      object_id: {get_param: net_id}

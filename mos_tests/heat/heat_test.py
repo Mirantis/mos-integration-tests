@@ -25,6 +25,8 @@ from mos_tests.functions import common as common_functions
 from mos_tests.functions import file_cache
 from mos_tests import settings
 
+from keystoneclient.v3 import Client as KeystoneClientV3
+
 logger = logging.getLogger(__name__)
 
 
@@ -1506,3 +1508,51 @@ class HeatIntegrationTests(OpenStackTestCase):
             else:
                 err_mes = "Error: Instance id isn't changed after stack update"
                 assert vm_id_after != vm_id_before, err_mes
+
+    @pytest.mark.testrail_id('844931')
+    def test_check_rbac_policy_resource(self):
+        """This test case checks OS::Neutron::RBACPolicy resource
+        Steps:
+        1. Create some net wit name: heat_net
+        2. Create new stack by 'RBAC_Policy_tmpl.yaml' template
+        3. Check that new RBAC policy is present in policies list with
+        correct data
+        """
+        stack_name = 'stack_rbac_policy'
+        net_id = self.create_network('heat_net')['network']['id']
+        rbac_before = self.neutron.list_rbac_policies()['rbac_policies']
+
+        template_content = common_functions.read_template(
+            self.templates_dir, 'RBAC_Policy_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, {'net_id': net_id})
+        self.uid_list.append(stack_id)
+
+        rbac_after = self.neutron.list_rbac_policies()['rbac_policies']
+        assert len(rbac_after) == len(rbac_before) + 1
+        stack_rbac = [r for r in rbac_after if r not in rbac_before][0]
+        assert stack_rbac['object_id'] == net_id
+        assert stack_rbac['action'] == 'access_as_shared'
+        self.delete_network(net_id)
+
+    @pytest.mark.testrail_id('844924')
+    def test_check_keystone_region_resource(self):
+        """This test case checks OS::Keystone::Region resource
+        Steps:
+        1. Create new stack by 'keystone_region_tmpl.yaml' template
+        2. Check that region is present in regions list with correct data
+        """
+        keystone_v3 = KeystoneClientV3(session=self.session)
+        regions_before = keystone_v3.regions.list()
+        stack_name = 'stack_keystone_region'
+        region_id = '123456'
+        template_content = common_functions.read_template(
+            self.templates_dir, 'keystone_region_tmpl.yaml')
+        stack_id = common_functions.create_stack(
+            self.heat, stack_name, template_content, {'region_id': region_id})
+        self.uid_list.append(stack_id)
+        regions_after = keystone_v3.regions.list()
+        assert len(regions_after) == len(regions_before) + 1
+        stack_region = [r for r in regions_after if r not in regions_before][0]
+        assert stack_region.id == region_id
+        assert stack_region.enabled
