@@ -207,8 +207,54 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
             self.check_element_on_page(
                 by.By.XPATH, c.AppPackages.format(pkg_name))
 
+    @pytest.mark.testrail_id('836649')
+    def test_import_bundle_by_url(self):
+        """Test bundle importing via url."""
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.ImportBundle).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_url")
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-url']")
+        el.send_keys(settings.MURANO_BUNDLE_URL)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+
+        for pkg_name in settings.MURANO_PACKAGE_BUNDLE_NAMES:
+            self.check_element_on_page(
+                by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    @pytest.mark.testrail_id('836650')
+    def test_import_bundle_from_repo(self):
+        """Test bundle importing via repository."""
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.ImportBundle).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_name")
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-name']")
+        el.send_keys(settings.MURANO_BUNDLE_NAME)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+
+        for pkg_name in settings.MURANO_PACKAGE_BUNDLE_NAMES:
+            self.check_element_on_page(
+                by.By.XPATH, c.AppPackages.format(pkg_name))
+
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
 @pytest.mark.usefixtures('screen', 'clean_packages')
 @murano_test_patch
 class TestPackageSizeLimit(base.PackageTestCase):
