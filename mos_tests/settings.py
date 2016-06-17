@@ -63,6 +63,14 @@ MURANO_PACKAGE_DEPS_NAMES = (
 )
 MURANO_IMAGE_URL = 'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'  # noqa
 MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
+MURANO_BUNDLE_URL = 'http://storage.apps.openstack.org/bundles/docker-n-kubernetes.bundle'  # noqa
+MURANO_PACKAGE_BUNDLE_NAMES = (
+    'Docker Interface Library',
+    'Docker Standalone Host',
+    'Kubernetes Cluster',
+    'Kubernetes Pod',
+)
+MURANO_BUNDLE_NAME = "docker-n-kubernetes"
 
 ###################
 # Ironic settings #
