@@ -21,22 +21,7 @@ linux = 'debian-8-m-agent.qcow2'
 availability_zone = 'nova'
 
 
-@pytest.mark.parametrize('package', [('ApacheHttpServer',)],
-                         indirect=['package'])
-@pytest.mark.testrail_id('844935')
-def test_deploy_app_with_volume_creation(environment, murano,
-                                         session, keypair):
-    """Check app deployment with volume creation
-    Steps:
-        1. Create Murano environment
-        2. Add ApacheHTTPServer application with ability to create and attach
-        Cinder volume with size 1 GiB to the instance
-        3. Deploy environment
-        4. Make sure that deployment finished successfully
-        5. Check that application is accessible
-        6. Check that volume is attached to the instance and has size 1GiB
-        7. Delete environment
-    """
+def deploy_and_check_apache(environment, murano, session, keypair, volumes):
     post_body = {
         "instance": {
             "flavor": flavor,
@@ -44,14 +29,7 @@ def test_deploy_app_with_volume_creation(environment, murano,
             "assignFloatingIp": True,
             "keyname": keypair.id,
             "availabilityZone": availability_zone,
-            "volumes": {
-                "/dev/vdb": {
-                    "?": {
-                        "type": "io.murano.resources.CinderVolume"
-                    },
-                    "size": 1
-                }
-            },
+            "volumes": volumes,
             "?": {
                 "type": "io.murano.resources.LinuxMuranoInstance",
                 "id": str(uuid.uuid4())
@@ -73,4 +51,99 @@ def test_deploy_app_with_volume_creation(environment, murano,
     vm = murano.get_instance_id('testMurano')
     volume_data = murano.get_volume(environment.id)
     assert volume_data.attributes['attachments'][0]['server_id'] == vm
+    return volume_data
+
+
+@pytest.mark.parametrize('package', [('ApacheHttpServer',)],
+                         indirect=['package'])
+@pytest.mark.testrail_id('844935')
+def test_deploy_app_with_volume_creation(environment, murano,
+                                         session, keypair):
+    """Check app deployment with volume creation
+    Steps:
+        1. Create Murano environment
+        2. Add ApacheHTTPServer application with ability to create and attach
+        Cinder volume with size 1 GiB to the instance
+        3. Deploy environment
+        4. Make sure that deployment finished successfully
+        5. Check that application is accessible
+        6. Check that volume is attached to the instance and has size 1GiB
+        7. Delete environment
+    """
+    volumes = {
+        "/dev/vdb": {
+            "?": {
+                "type": "io.murano.resources.CinderVolume"
+            },
+            "size": 1
+        }
+    }
+    volume_data = deploy_and_check_apache(environment, murano,
+                                          session, keypair, volumes)
     assert volume_data.attributes['size'] == 1
+
+
+@pytest.mark.testrail_id('844937')
+def test_deploy_app_with_volume_creation_from_image(environment, murano,
+                                                    session, keypair):
+    """Check app deployment with volume creation from image
+    Steps:
+        1. Create Murano environment
+        2. Add ApacheHTTPServer application with ability to create Cinder
+        volume with size 2 GiB from image TestVM and attach it to the instance
+        3. Deploy environment
+        4. Make sure that deployment finished successfully
+        5. Check that application is accessible
+        6. Check that volume is attached to the instance, has size 2GiB and
+        created from image
+        7. Delete environment
+    """
+    volumes = {
+        "/dev/vdb": {
+            "?": {
+                "type": "io.murano.resources.CinderVolume"
+            },
+            "size": 2,
+            "sourceImage": linux
+        }
+    }
+    volume_data = deploy_and_check_apache(environment, murano,
+                                          session, keypair, volumes)
+    assert volume_data.attributes['size'] == 2
+    image = volume_data.attributes['volume_image_metadata']['image_name']
+    assert image == linux
+
+
+@pytest.mark.testrail_id('844938')
+def test_deploy_app_with_volume_creation_from_volume(volume, environment,
+                                                     murano, session, keypair):
+    """Check app deployment with volume creation from image
+    Steps:
+        1. Create Murano environment
+        2. Add ApacheHTTPServer application with ability to create Cinder
+        volume with size 1 GiB from exist volume and attach it to the instance
+        3. Deploy environment
+        4. Make sure that deployment finished successfully
+        5. Check that application is accessible
+        6. Check that volume is attached to the instance, has size 1GiB and
+        created from exist volume
+        7. Delete environment
+    """
+    volumes = {
+        "/dev/vdb": {
+            "?": {
+                "type": "io.murano.resources.CinderVolume"
+            },
+            "size": 1,
+            "sourceVolume": {
+                "?": {
+                    "type": "io.murano.resources.ExistingCinderVolume"
+                },
+                "openstackId": volume.id
+            }
+        }
+    }
+    volume_data = deploy_and_check_apache(environment, murano,
+                                          session, keypair, volumes)
+    assert volume_data.attributes['size'] == 1
+    assert volume_data.attributes['source_volid'] == volume.id

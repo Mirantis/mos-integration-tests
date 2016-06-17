@@ -16,6 +16,7 @@ import functools
 import pytest
 import uuid
 
+from mos_tests.functions import common
 from mos_tests.functions import os_cli
 from mos_tests.murano import actions
 
@@ -333,3 +334,11 @@ def influx(murano, environment, session, pod):
         }
     }
     return murano.create_service(environment, session, post_body)
+
+
+@pytest.yield_fixture
+def volume(os_conn):
+    image = os_conn.nova.images.find(name='TestVM')
+    volume = common.create_volume(os_conn.cinder, image.id)
+    yield volume
+    os_conn.delete_volume(volume)
