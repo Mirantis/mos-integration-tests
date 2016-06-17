@@ -34,14 +34,7 @@ class TestBaseNFV(object):
             assert str(free_pages) in free[0], "Unexpected HugePages_Free"
 
     def check_instance_page_size(self, os_conn, vm, size):
-        name = getattr(os_conn.nova.servers.get(vm),
-                       "OS-EXT-SRV-ATTR:instance_name")
-        host = os_conn.env.find_node_by_fqdn(
-            getattr(os_conn.nova.servers.get(vm), "OS-EXT-SRV-ATTR:host"))
-        with host.ssh() as remote:
-            cmd = "virsh dumpxml {0}".format(name)
-            res = remote.execute(cmd)
-        root = ElementTree.fromstring(res.stdout_string)
+        root = self.get_vm_dump(os_conn, vm)
         if size is None:
             assert not root.find('memoryBacking'), "Huge pages are unexpected"
         else:
@@ -100,7 +93,8 @@ class TestBaseNFV(object):
                                 'resizing'.format(vm.name))
         return os_conn.nova.servers.get(vm)
 
-    def check_cpu_for_vm(self, os_conn, vm, numa_count, host_conf):
+    def check_cpu_for_vm(self, os_conn, vm, numa_count, host_conf,
+                         exp_vcpupin=None):
         """Checks vcpus allocation for vm. Vcpus should be on the same numa
         node if flavor metadata 'hw:numa_nodes':1. In case of
         'hw:numa_nodes':2 vcpus from the different numa nodes are used.
@@ -111,27 +105,32 @@ class TestBaseNFV(object):
         :param host_conf: (dictionary) host configuration, vcpu's distribution
         per numa node. It can be calculated by method
         get_cpu_distribition_per_numa_node(env) from conftest.py
+        :param exp_vcpupin: vcpu distribution per numa node. Example:
+        {'numa0': [1, 3, 4], 'numa1': [2]}
         :return:
         """
-        name = getattr(os_conn.nova.servers.get(vm),
-                       "OS-EXT-SRV-ATTR:instance_name")
-        host = os_conn.env.find_node_by_fqdn(
-            getattr(os_conn.nova.servers.get(vm), "OS-EXT-SRV-ATTR:host"))
-        with host.ssh() as remote:
-            cmd = "virsh dumpxml {0}".format(name)
-            dump = remote.execute(cmd)
-        root = ElementTree.fromstring(dump.stdout_string)
+        root = self.get_vm_dump(os_conn, vm)
         actual_numa = root.find('numatune').findall('memnode')
         assert len(actual_numa) == numa_count
-        vcpus = [int(v.get('cpuset'))
-                 for v in root.find('cputune').findall('vcpupin')]
+
+        vm_vcpupins = [
+            {'id': int(v.get('vcpu')), 'set_id': int(v.get('cpuset'))}
+            for v in root.find('cputune').findall('vcpupin')]
+        vm_vcpus_sets = [vcpupin['set_id'] for vcpupin in vm_vcpupins]
         cnt_of_used_numa = 0
         for host in host_conf.values():
-            if set(host) & set(vcpus):
+            if set(host) & set(vm_vcpus_sets):
                 cnt_of_used_numa += 1
         assert cnt_of_used_numa == numa_count, (
             "Unexpected count of numa nodes in use: {0} instead of {1}".
             format(cnt_of_used_numa, numa_count))
+
+        if exp_vcpupin is not None:
+            act_vcpupin = {}
+            for numa, ids in host_conf.items():
+                pins = [p['id'] for p in vm_vcpupins if p['set_id'] in ids]
+                act_vcpupin.update({numa: pins})
+            assert act_vcpupin == exp_vcpupin, "Unexpected cpu's allocation"
 
     def compute_change_state(self, os_conn, devops_env, host, state):
         def is_compute_state():
@@ -235,3 +234,29 @@ class TestBaseNFV(object):
         ovs_conroller_agents = [agt['id'] for agt in ovs_agts
                                 if agt['host'] in controllers]
         return [ovs_agent_ids, ovs_conroller_agents]
+
+    def get_memory_allocation_per_numa(self, os_conn, vm, numa_count):
+        """This method returns memory allocation per numa set for vm.
+
+        :param os_conn: os_conn
+        :param vm: vm to check
+        :param numa_count: count of numa nodes for vm (depends on flavor)
+        :param expected_allocation: dictionary like {'0': 512, '1': 1536} where
+        key is numa_cpu, value is allocated memory in Mb
+        :return: actual allocation {'0': 512, '1': 1536} where key is numa_cpu,
+         value is allocated memory in Mb
+        """
+        root = self.get_vm_dump(os_conn, vm)
+        numa_cells = root.find('cpu').find('numa').findall('cell')
+        assert len(numa_cells) == numa_count, "Unexpected count of numa nodes"
+        memory_allocation = {cell.get('id'): int(cell.get('memory')) / 1024
+                             for cell in numa_cells}
+        return memory_allocation
+
+    def get_vm_dump(self, os_conn, vm):
+        name = getattr(vm, "OS-EXT-SRV-ATTR:instance_name")
+        host = os_conn.env.find_node_by_fqdn(
+            getattr(vm, "OS-EXT-SRV-ATTR:host"))
+        with host.ssh() as remote:
+            dump = remote.execute("virsh dumpxml {0}".format(name))
+        return ElementTree.fromstring(dump.stdout_string)

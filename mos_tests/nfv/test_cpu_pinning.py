@@ -14,12 +14,17 @@
 
 import csv
 import logging
+import math
 
+from novaclient.exceptions import BadRequest
 import pytest
 
+from mos_tests.environment.os_actions import InstanceError
+from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
 from mos_tests.nfv.base import TestBaseNFV
 from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
+from mos_tests.nfv.conftest import get_memory_distribition_per_numa_node
 
 logger = logging.getLogger(__name__)
 
@@ -338,3 +343,172 @@ class TestCpuPinningMigration(TestBaseNFV):
                 self.check_cpu_for_vm(os_conn, vm, 2, cpus[host])
 
             network_checks.check_vm_connectivity(env, os_conn)
+
+
+@pytest.mark.check_env_('is_vlan')
+@pytest.mark.undestructive
+class TestResourceDistribution(TestBaseNFV):
+    mem_numa0, mem_numa1 = 512, 1536
+    cpu_numa0, cpu_numa1 = '0, 2, 3', '1'
+
+    flavors_to_create = [
+        {'name': 'm1.small.perfomance',
+         'params': {'ram': 2048, 'vcpu': 4, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated'}}]
+
+    @pytest.mark.testrail_id('857418')
+    def test_cpu_and_memory_distribution(self, env, os_conn, networks, flavors,
+                                         security_group, aggregate, keypair):
+        """This test checks distribution of cpu for vm with cpu pinning
+        Steps:
+            1. Create flavor with custom numa_cpu and numa_mem distribution
+            2. Create net1 with subnet, net2 with subnet and router1 with
+                interfaces to both nets
+            3. Launch vm using created flavor
+            4. Check memory allocation per numa node
+            5. Check CPU allocation
+            6. Ping 8.8.8.8 from vm1
+        """
+
+        host = aggregate.hosts[0]
+        numa_count = 2
+        cpus = get_cpu_distribition_per_numa_node(env)
+
+        flavors[0].set_keys({'hw:numa_nodes': numa_count,
+                             'hw:numa_cpus.0': self.cpu_numa0,
+                             'hw:numa_cpus.1': self.cpu_numa1,
+                             'hw:numa_mem.0': self.mem_numa0,
+                             'hw:numa_mem.1': self.mem_numa1})
+
+        exp_mem = {'0': self.mem_numa0, '1': self.mem_numa1}
+        exp_pin = {'numa0': [int(cpu) for cpu in self.cpu_numa0.split(',')],
+                   'numa1': [int(cpu) for cpu in self.cpu_numa1.split(',')]}
+        vm = os_conn.create_server(name='vm', flavor=flavors[0].id,
+                                   nics=[{'net-id': networks[0]}],
+                                   key_name=keypair.name,
+                                   security_groups=[security_group.id],
+                                   availability_zone='nova:{}'.format(host))
+
+        self.check_cpu_for_vm(os_conn, vm, numa_count, cpus[host], exp_pin)
+        act_mem = self.get_memory_allocation_per_numa(os_conn, vm, numa_count)
+        assert act_mem == exp_mem, "Actual memory allocation is not OK"
+        network_checks.check_ping_from_vm(env, os_conn, vm, vm_keypair=keypair)
+
+    @pytest.mark.testrail_id('857419')
+    def test_negative_distribution_one_numa(self, os_conn, networks,
+                                            flavors, security_group, keypair,
+                                            aggregate):
+        """This test checks distribution of cpu for vm with cpu pinning
+        Steps:
+            1. Create flavor with custom numa_cpu and numa_mem distribution,
+                set hw:numa_nodes to 1 in flavor metatada, but allocate memory
+                and cpu to two numa nodes
+            2. Create net1 with subnet, net2 with subnet and router1 with
+                interfaces to both nets
+            3. Launch vm using created flavor
+            4. Check that vm is not created
+        """
+        host = aggregate.hosts[0]
+        numa_count = 1
+        flavors[0].set_keys({'hw:numa_nodes': numa_count,
+                             'hw:numa_cpus.0': self.cpu_numa0,
+                             'hw:numa_cpus.1': self.cpu_numa1,
+                             'hw:numa_mem.0': self.mem_numa0,
+                             'hw:numa_mem.1': self.mem_numa1})
+
+        with pytest.raises(BadRequest) as e:
+            os_conn.create_server(name='vm', flavor=flavors[0].id,
+                                  key_name=keypair.name,
+                                  nics=[{'net-id': networks[0]}],
+                                  security_groups=[security_group.id],
+                                  availability_zone='nova:{}'.format(host))
+        logger.info("Unable to create vm due to bad request:\n"
+                    "{0}".format(str(e.value)))
+
+
+@pytest.mark.check_env_('is_vlan')
+@pytest.mark.undestructive
+class TestResourceDistributionWithLessResources(TestBaseNFV):
+
+    created_flvs = []
+
+    @pytest.yield_fixture
+    def cleanup(self, os_conn):
+        flavors = os_conn.nova.flavors.list()
+        self.created_flvs = []
+        yield
+        os_conn.delete_servers()
+        wait(lambda: len(os_conn.nova.servers.list()) == 0,
+             timeout_seconds=5 * 60, waiting_for='instances cleanup')
+        map(lambda flv: os_conn.nova.flavors.delete(flv.id), self.created_flvs)
+        wait(lambda: len(os_conn.nova.flavors.list()) == len(flavors),
+             timeout_seconds=5 * 60, waiting_for='flavors cleanup')
+
+    def get_flavor_cpus(self, cpus_list):
+        """Convert cpus list to string (format for flavor metadata)"""
+        flv_cpus = ','.join([str(i) for i in cpus_list])
+        return flv_cpus
+
+    @pytest.mark.testrail_id('857420', resource='ram')
+    @pytest.mark.testrail_id('857477', resource='cpu')
+    @pytest.mark.parametrize('resource', ['cpu', 'ram'])
+    def test_negative_distribution_less_resources(self, env, os_conn, networks,
+                                                  security_group, resource,
+                                                  aggregate, keypair, cleanup):
+        """This test checks that vm is in error state if at least one numa node
+        has insufficient resources
+        Steps:
+            1. Create flavor with numa_cpu and numa_mem distribution
+            2. Create net1 with subnet, net2 with subnet and router1 with
+                interfaces to both nets
+            3. Launch vm using created flavor
+            4. Check that vm in error state
+        """
+        host = aggregate.hosts[0]
+        host_cpus = get_cpu_distribition_per_numa_node(env)[host]
+        host_mem = get_memory_distribition_per_numa_node(env)[host]
+        total_cpu = len(host_cpus['numa0']) + len(host_cpus['numa1'])
+        host_mem0 = math.ceil(host_mem['numa0'] / 1024)
+        host_mem1 = math.ceil(host_mem['numa1'] / 1024)
+
+        # Calculate flavor metadata values that would lead to the error by
+        # allocating more resources than available for numa node
+        if resource == 'cpu':
+            cpu_numa0 = self.get_flavor_cpus((host_cpus['numa0'] +
+                                              host_cpus['numa1'][:1]))
+            cpu_numa1 = self.get_flavor_cpus(host_cpus['numa1'][1:])
+            mem_numa0 = int(host_mem0 / 2)
+            mem_numa1 = int(host_mem1 / 2)
+        else:
+            cpu_numa0 = self.get_flavor_cpus(host_cpus['numa0'])
+            cpu_numa1 = self.get_flavor_cpus(host_cpus['numa1'])
+            mem_numa0 = int(max(host_mem0, host_mem1) +
+                            min(host_mem0, host_mem1) / 2)
+            mem_numa1 = int(host_mem1 - mem_numa0)
+
+        # Create flavor with params and metadata depending on resources
+        flv = os_conn.nova.flavors.create(name='flv',
+                                          ram=mem_numa0 + mem_numa1,
+                                          vcpus=total_cpu, disk=1)
+        self.created_flvs.append(flv)
+        flv.set_keys({
+            'aggregate_instance_extra_specs:pinned': 'true',
+            'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2,
+            'hw:numa_cpus.0': cpu_numa0, 'hw:numa_cpus.1': cpu_numa1,
+            'hw:numa_mem.0': mem_numa0, 'hw:numa_mem.1': mem_numa1})
+
+        # Boot instance
+        with pytest.raises(InstanceError) as e:
+            os_conn.create_server(name='vm', flavor=flv.id,
+                                  nics=[{'net-id': networks[0]}],
+                                  key_name=keypair.name,
+                                  security_groups=[security_group.id],
+                                  availability_zone='nova:{}'.format(host),
+                                  wait_for_avaliable=False)
+        expected_message = ("Insufficient compute resources: "
+                            "Requested instance NUMA topology cannot fit the "
+                            "given host NUMA topology")
+        logger.info("Instance status is error:\n{0}".format(str(e.value)))
+        assert expected_message in str(e.value), (
+            "Unexpected reason of instance error")

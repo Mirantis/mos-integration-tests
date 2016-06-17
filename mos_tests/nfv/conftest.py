@@ -298,6 +298,25 @@ def get_cpu_distribition_per_numa_node(env):
     return host_def
 
 
+def get_memory_distribition_per_numa_node(env):
+    host_def = {}
+    computes = env.get_nodes_by_role('compute')
+    for host in computes:
+        with host.ssh() as remote:
+            res = remote.execute("lscpu -p=node | grep -v '#' | uniq")
+            reader = csv.reader(res['stdout'])
+            numas = [i[0] for i in reader]
+            numa_nodes = {}
+            for numa in numas:
+                cmd = ("cat /sys/devices/system/node/node{0}/meminfo |"
+                       "grep MemTotal")
+                res = remote.execute(cmd.format(numa))['stdout']
+                mem_kb = re.findall(r'MemTotal:.* (\d+)', res[0])
+                numa_nodes.update({'numa{0}'.format(numa): float(mem_kb[0])})
+        host_def.update({host.data['fqdn']: numa_nodes})
+    return host_def
+
+
 def get_hp_distribution_per_numa_node(env, numa_count=1):
     computes = env.get_nodes_by_role('compute')
 
