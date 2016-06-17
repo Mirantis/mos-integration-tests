@@ -132,6 +132,12 @@ class TestBaseNFV(object):
                 act_vcpupin.update({numa: pins})
             assert act_vcpupin == exp_vcpupin, "Unexpected cpu's allocation"
 
+    def get_nodesets_for_vm(self, os_conn, vm):
+        root = self.get_vm_dump(os_conn, vm)
+        nodesets = [numa.get('nodeset') for numa in
+                    root.find('numatune').findall('memnode')]
+        return nodesets
+
     def compute_change_state(self, os_conn, devops_env, host, state):
         def is_compute_state():
             hypervisor = [i for i in os_conn.nova.hypervisors.list()

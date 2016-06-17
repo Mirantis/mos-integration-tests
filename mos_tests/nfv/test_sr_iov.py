@@ -15,9 +15,13 @@
 import logging
 import pytest
 
+from mos_tests.environment.os_actions import InstanceError
 from mos_tests.functions import common
+from mos_tests.functions.common import wait
+from mos_tests.nfv.base import page_2mb
 from mos_tests.nfv.base import TestBaseNFV
-
+from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
+from mos_tests.nfv.conftest import get_hp_distribution_per_numa_node
 
 logger = logging.getLogger(__name__)
 
@@ -649,3 +653,121 @@ class TestSRIOV(TestBaseNFV):
         old_hypervisor.get()
         assert old_hypervisor.vcpus_used == flavor.vcpus
         assert old_hypervisor.local_gb_used == flavor.disk
+
+
+class TestNegativeSRIOV(TestBaseNFV):
+
+    created_flvs = []
+    flavors_to_create = [
+        {'name': 'm1.small.hpgs',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 5},
+         'keys': {'hw:mem_page_size': 2048}},
+
+        {'name': 'm1.small.performance',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 5},
+         'keys': {'hw:cpu_policy': 'dedicated',
+                  'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:numa_nodes': 1}}]
+
+    @pytest.yield_fixture()
+    def vf_ports(self, os_conn, networks, security_group):
+        ports = []
+        for i in range(2):
+            vf_port = os_conn.neutron.create_port(
+                {'port': {'network_id': networks[0],
+                          'name': 'sriov-port{0}'.format(i),
+                          'binding:vnic_type': 'macvtap',
+                          'device_owner': 'nova-compute',
+                          'security_groups': [security_group.id]}})
+            ports.append(vf_port['port']['id'])
+        yield ports
+        for port in ports:
+            os_conn.neutron.delete_port(port)
+
+    @pytest.fixture
+    def mixed_hosts(self, aggregate, sriov_hosts, computes_with_hp_2mb):
+        hosts = set(aggregate.hosts) & set(sriov_hosts) & set(
+            computes_with_hp_2mb)
+        if len(hosts) < 1:
+            pytest.skip("No hosts with all features")
+        return list(hosts)
+
+    @pytest.yield_fixture
+    def cleanup(self, os_conn):
+        flavors = os_conn.nova.flavors.list()
+        self.created_flvs = []
+        yield
+        os_conn.delete_servers()
+        wait(lambda: len(os_conn.nova.servers.list()) == 0,
+             timeout_seconds=5 * 60, waiting_for='instances cleanup')
+        map(lambda flv: os_conn.nova.flavors.delete(flv.id), self.created_flvs)
+        wait(lambda: len(os_conn.nova.flavors.list()) == len(flavors),
+             timeout_seconds=5 * 60, waiting_for='flavors cleanup')
+
+    @pytest.mark.testrail_id('857357')
+    def test_negative_lack_of_resources_on_pci_device(
+            self, os_conn, env, ubuntu_image_id, keypair, mixed_hosts,
+            vf_ports, flavors, networks, cleanup):
+        """This test checks error state for vm when resources are not enough
+            on pci device.
+
+            Steps:
+            1. Create network net1 with subnet
+            2. Create router, set gateway and add interface for the network
+            3. Create flavor for 2Mb huge pages
+            4. Create flavor for cpu pinning with hw:numa_nodes=1
+            5. Boot vm with the 1st flavor with vf_port on numa without pci
+            device (usually it's numa1)
+            6. Check that vms are in error state since no pci device found
+            7. Redo for the 2nd flavor
+        """
+        host = mixed_hosts[0]
+        cpus = get_cpu_distribition_per_numa_node(env)[host]
+        hps = get_hp_distribution_per_numa_node(env, numa_count=2)[host]
+
+        # Calculate number of vcpus/huge pages for each numa in order to occupy
+        #  all of them. Usually pci device is on numa1 => next step
+        # (i.e. remove vm from numa0) allows to get numa with huge pages and
+        # cpu pinning, but without sr-iov
+        vms = {}
+        for numa, cpu_list in cpus.items():
+            free_2mb = hps[numa][page_2mb]['free']
+            flv = os_conn.nova.flavors.create(name='flavor_{}'.format(numa),
+                                              ram=free_2mb * 2, disk=5,
+                                              vcpus=len(cpu_list))
+            self.created_flvs.append(flv)
+            flv.set_keys({'hw:cpu_policy': 'dedicated',
+                          'aggregate_instance_extra_specs:pinned': 'true',
+                          'hw:numa_nodes': 1,
+                          'hw:mem_page_size': page_2mb})
+
+            vm = os_conn.create_server(
+                name='vm_to_{0}'.format(numa), image_id=ubuntu_image_id,
+                key_name=keypair.name, nics=[{'net-id': networks[0]}],
+                availability_zone='nova:{}'.format(host), flavor=flv.id,
+                wait_for_avaliable=False)
+            nodeset = self.get_nodesets_for_vm(os_conn, vm)[0]
+            assert numa == "numa{0}".format(nodeset), (
+                "Nodeset used for {0} should be {1}, but it's {2}. "
+                "It's critical for this test since pci device is on numa1 only"
+                .format(vm, numa, "numa{0}".format(nodeset)))
+            vms[numa] = vm
+
+        # Remove vm from numa0
+        vms['numa0'].delete()
+        os_conn.wait_servers_deleted([vms['numa0']])
+
+        # Boot vms with pci device
+        for i, flavor in enumerate(flavors):
+            with pytest.raises(InstanceError) as e:
+                os_conn.create_server(
+                    name='vm', image_id=ubuntu_image_id,
+                    key_name=keypair.name, flavor=flavor.id,
+                    availability_zone='nova:{}'.format(host),
+                    nics=[{'port-id': vf_ports[i]}])
+            expected_message = ("Insufficient compute resources: "
+                                "Requested instance NUMA topology together "
+                                "with requested PCI devices cannot fit the "
+                                "given host NUMA topology")
+            logger.info("Instance status is error:\n{0}".format(str(e.value)))
+            assert expected_message in str(e.value), "Unexpected reason"
