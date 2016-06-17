@@ -133,7 +133,7 @@ def configure_oslomessagingchecktool(remote,
     with remote.open(default_vars['sample_cfg_file_path'], 'r') as f:
         parser = configparser.RawConfigParser()
         parser.readfp(f)
-        parser.set('DEFAULT', 'topic', rabbit_topic)
+        parser.set('DEFAULT', 'rpc_topic_name', rabbit_topic)
         parser.set('DEFAULT', 'listen_port', rabbit_rpc_port)
         parser.set('oslo_messaging_rabbit', 'rabbit_hosts', rabbit_hosts)
         parser.set('oslo_messaging_rabbit', 'rabbit_userid',
@@ -246,7 +246,7 @@ def generate_msg(remote, cfg_file_path, num_of_msg_to_gen=10000):
     remote.check_call(cmd)
     cmd = ('oslo_msg_load_generator '
            '--config-file {0} '
-           '--messages-to-send {1} '
+           '--messages_to_send {1} '
            '--nodebug'.format(cfg_file_path, num_of_msg_to_gen))
     remote.check_call(cmd)
 
@@ -534,7 +534,6 @@ def test_check_send_and_receive_messages_from_diff_type_nodes(env, node_type):
         'Generated and consumed number of messages is different'
 
 
-@pytest.mark.skip(reason="expect fix for oslo.messaging-check-tool")
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('857394', params={'restart_type': 'single'})
 @pytest.mark.testrail_id('857395', params={'restart_type': 'one_by_one'})
@@ -583,7 +582,6 @@ def test_upload_10000_events_to_cluster_and_restart_controllers(env,
          'after RabbitMQ cluster restarting.')
 
 
-@pytest.mark.skip(reason="expect fix for oslo.messaging-check-tool")
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('857396')
 def test_upload_messages_on_one_restart_and_receive_on_other(env):
