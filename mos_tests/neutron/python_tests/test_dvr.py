@@ -917,7 +917,7 @@ class TestDVRTypeChange(TestDVRBase):
             self.os_conn.neutron.update_router(
                 router_id, {'router': {'distributed': False}})
 
-        # allowed_msg is for doulbe check
+        # allowed_msg is for double check
         # There is no separate exception for each case
         # So just check that generated exception contains the expected message
         # Otherwise the test is failed
@@ -928,7 +928,7 @@ class TestDVRTypeChange(TestDVRBase):
 
     @pytest.mark.testrail_id('542770')
     def test_distributed_router_is_not_updated_to_centralized(self, init):
-        """Check that it is not poissible to update distributed
+        """Check that it is not possible to update distributed
         router to centralized.
 
         Scenario:
@@ -936,7 +936,7 @@ class TestDVRTypeChange(TestDVRBase):
             2. Check that distributed attribute is set to True
             3. Set admin_state_up of the router to False
             4. Try to change the distributed attribute to False
-                The value should not be changed and exception occured
+                The value should not be changed and exception occurred
         """
 
         # Create router with default value of distributed
@@ -993,11 +993,11 @@ class TestDVRTypeChange(TestDVRBase):
 
         Steps:
             1. Create network1 and connect it with router01
-            2. Boot vm1 in network1 and associate floatidvrng ip
+            2. Boot vm1 in network1 and associate floating ip
             3. Add rules for ping
             4. ping 8.8.8.8 from vm1
         """
-        # create one network and one instacne in it
+        # create one network and one instance in it
         net_id = self.os_conn.add_net(router_id)
         srv = self.os_conn.add_server(net_id,
                                       self.instance_keypair.name,
@@ -1139,7 +1139,7 @@ class TestDVRTypeChange(TestDVRBase):
         # Get router's l3 agents ids
         l3_agent_ids = [x['id'] for x in l3_agents]
 
-        # Search l3 agent on another controller, and hot hosted router
+        # Search l3 agent on another controller, and not hosted router
         for l3_agent in self.os_conn.list_l3_agents():
             if (l3_agent['host'] in other_controllers_fqdn and
                     l3_agent['id'] not in l3_agent_ids):
@@ -1147,7 +1147,7 @@ class TestDVRTypeChange(TestDVRBase):
         else:
             raise Exception("Can't find new l3 agent to reschedule router")
 
-        logger.info('Choosed new l3_agent {id}({host})'.format(**l3_agent))
+        logger.info('Chosen new l3_agent {id}({host})'.format(**l3_agent))
 
         # Reschedule the router to new l3 agent
         self.os_conn.force_l3_reschedule(
@@ -1304,7 +1304,7 @@ class TestDVRRegression(TestDVRBase):
 
     @pytest.mark.testrail_id('844801')
     def test_check_router_namespace_on_compute_node(self):
-        """Check router namespace on compute node with vm and after deleting vm
+        """Check router namespace on compute node with VM and after deleting VM
 
         Steps:
             1. Create net01, subnet net01__subnet for it
