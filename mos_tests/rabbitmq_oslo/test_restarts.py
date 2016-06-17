@@ -282,7 +282,8 @@ def rabbit_rpc_client_start(remote, cfg_file_path):
 
 
 def get_http_code(remote, host="127.0.0.1", port=80):
-    cmd = 'curl --write-out "%{http_code}" --silent --output /dev/null '
+    cmd = 'curl --max-time 15 --write-out "%{http_code}" --silent ' \
+          '--output /dev/null '
     cmd = '%s "http://%s:%d"' % (cmd, host, port)
     # curl to client
     result = remote.execute(cmd)['stdout'][0].strip()
@@ -395,13 +396,17 @@ def kill_rabbitmq_on_node(remote, timeout_min=7):
 
     def get_pid():
         cmd = "rabbitmqctl status | grep '{pid' | tr -dc '0-9'"
-        return remote.check_call(cmd)['stdout'][0].strip()
+        result = remote.check_call(cmd)['stdout']
+        if len(result) > 0:
+            pid = result[0].strip()
+            if pid.isdigit():
+                return pid
 
     wait(lambda: get_pid(),
          timeout_seconds=60 * timeout_min,
          sleep_seconds=30,
          waiting_for='Rabbit get its pid on %s.' % remote.host)
-    cmd = "kill -9 %s" % get_pid()
+    cmd = "pkill beam.smp"
     remote.check_call(cmd)
 
 
