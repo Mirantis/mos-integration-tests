@@ -16,6 +16,8 @@ import logging
 import pytest
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
+from mos_tests.settings import UBUNTU_URL
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +40,61 @@ def volume(os_conn):
     os_conn.delete_volume(volume)
 
 
-def is_snapshot_available(os_conn, snapshot):
+@pytest.fixture
+def ubuntu_image(os_conn, request):
+    disk_format = getattr(request, 'param', 'qcow2')
+    image = os_conn.glance.images.create(
+        name="image_ubuntu", url=UBUNTU_URL, disk_format=disk_format,
+        container_format='bare', visibility='public')
+    with file_cache.get_file(UBUNTU_URL) as f:
+        os_conn.glance.images.upload(image.id, f)
+    return disk_format, image.id
+
+
+@pytest.fixture
+def disk_format(request):
+    disk_format = getattr(request, 'param', 'qcow2')
+    return disk_format
+
+
+@pytest.yield_fixture
+def cleanup(os_conn):
+    vlms_before = os_conn.cinder.volumes.list()
+    images_before = os_conn.nova.images.list()
+    yield None
+    vlms_after = os_conn.cinder.volumes.list()
+    vlms_for_del = [vol for vol in vlms_after if vol not in vlms_before]
+    for vlm in vlms_for_del:
+        vlm.delete()
+    common.wait(lambda: len(os_conn.cinder.volumes.list()) == len(vlms_before),
+                timeout_seconds=10 * 60, waiting_for='volumes cleanup')
+
+    images_after = os_conn.nova.images.list()
+    img_for_del = [img for img in images_after if img not in images_before]
+    for image in img_for_del:
+        os_conn.glance.images.delete(image.id)
+    common.wait(lambda: len(os_conn.nova.images.list()) == len(images_before),
+                timeout_seconds=10 * 60, waiting_for='images cleanup')
+
+
+def check_snapshot_status(
+        os_conn, snapshot, status='available', positive=True):
     snp_status = os_conn.cinder.volume_snapshots.get(snapshot.id).status
-    assert snp_status != 'error'
-    return snp_status == 'available'
+    if positive:
+        assert snp_status != 'error'
+    return snp_status == status
+
+
+def check_all_snapshots_statuses(
+        os_conn, snapshots, status='available', positive=True):
+    for snapshot in snapshots:
+        if not check_snapshot_status(os_conn, snapshot, status, positive):
+            return False
+    return True
 
 
 def is_snapshot_deleted(os_conn, snapshot):
-    snp_ids = [s.id for s in os_conn.cinder.volume_snapshots.list()]
-    return snapshot.id not in snp_ids
+    return len(os_conn.cinder.volume_snapshots.findall(id=snapshot.id)) == 0
 
 
 def check_volume_status(os_conn, volume, status='available', positive=True):
@@ -54,6 +102,18 @@ def check_volume_status(os_conn, volume, status='available', positive=True):
     if positive:
         assert volume_status != 'error'
     return volume_status == status
+
+
+def check_all_volumes_statuses(
+        os_conn, volumes, status='available', positive=True):
+    for volume in volumes:
+        if not check_volume_status(os_conn, volume, status, positive):
+            return False
+    return True
+
+
+def is_volume_deleted(os_conn, volume):
+    return len(os_conn.cinder.volumes.findall(id=volume.id)) == 0
 
 
 def check_backup_status(os_conn, backup, status='available', positive=True):
@@ -79,15 +139,14 @@ def is_backup_deleted(os_conn, backup):
 @pytest.mark.testrail_id('543176')
 def test_creating_multiple_snapshots(os_conn, quota, volume):
     """This test case checks creation of several snapshot at the same time
-
-        Steps:
-            1. Create a volume
-            2. Create 70 snapshots for it. Wait for all snapshots to become in
-            available status
-            3. Delete all of them
-            4. Launch creation of 50 snapshot without waiting of deletion
-            5. Wait for all old snapshots to be deleted
-            6. Wait for all new snapshots to become in available status
+    Steps:
+    1. Create a volume
+    2. Create 70 snapshots for it. Wait for all snapshots to become in
+    available status
+    3. Delete all of them
+    4. Launch creation of 50 snapshot without waiting of deletion
+    5. Wait for all old snapshots to be deleted
+    6. Wait for all new snapshots to become in available status
     """
     #  Creation of 70 snapshots
     logger.info('Create 70 snapshots')
@@ -98,7 +157,7 @@ def test_creating_multiple_snapshots(os_conn, quota, volume):
             volume.id, name='1st_creation_{0}'.format(num))
         snp_list_1.append(snapshot)
     common.wait(
-        lambda: all([is_snapshot_available(os_conn, x) for x in snp_list_1]),
+        lambda: check_all_snapshots_statuses(os_conn, snp_list_1),
         timeout_seconds=800,
         waiting_for='all snapshots to become in available status')
 
@@ -123,7 +182,7 @@ def test_creating_multiple_snapshots(os_conn, quota, volume):
         timeout_seconds=1800,
         waiting_for='old snapshots to be deleted')
     common.wait(
-        lambda: all([is_snapshot_available(os_conn, x) for x in snp_list_2]),
+        lambda: check_all_snapshots_statuses(os_conn, snp_list_2),
         timeout_seconds=1800,
         waiting_for='new snapshots to become in available status')
 
@@ -143,7 +202,7 @@ def test_create_backup_snapshot(os_conn, volume):
     snapshot = os_conn.cinder.volume_snapshots.create(
         volume.id, name='volume_snapshot')
 
-    common.wait(lambda: is_snapshot_available(os_conn, snapshot),
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
                 timeout_seconds=300,
                 waiting_for='Snapshot to become in available status')
 
@@ -191,3 +250,132 @@ def test_delete_backups_in_parallel(os_conn, volume):
         lambda: all([is_backup_deleted(os_conn, x) for x in backups]),
         timeout_seconds=1200,
         waiting_for='all backups to be deleted')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ceph_enabled')
+@pytest.mark.testrail_id('857365')
+def test_create_delete_volumes_in_parallel(os_conn):
+    """This test case checks creation and deletion of 10 volumes in parallel
+    Steps:
+    1. Create 10 volumes in parallel
+    2. Check that all volumes are in available status
+    3. Delete 10 volumes in parallel
+    4. Check that all volumes are deleted from the volumes list
+    """
+    image = os_conn.nova.images.find(name='TestVM')
+    volumes = []
+
+    logger.info('Create 10 volumes in parallel:')
+    for i in range(1, 11):
+        logger.info('Create volume #{}'.format(i))
+        volume = os_conn.cinder.volumes.create(1, name='volume_{}'.format(i),
+                                               imageRef=image.id)
+        volumes.append(volume)
+
+    common.wait(
+        lambda: check_all_volumes_statuses(os_conn, volumes),
+        timeout_seconds=1200,
+        waiting_for='all volumes to become in available status')
+
+    logger.info('Delete 10 volumes in parallel')
+    for i, volume in enumerate(volumes, 1):
+        logger.info('Delete volume #{}'.format(i))
+        volume.delete()
+
+    common.wait(
+        lambda: all([is_volume_deleted(os_conn, x) for x in volumes]),
+        timeout_seconds=1200,
+        waiting_for='all volumes to be deleted')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ceph_enabled')
+@pytest.mark.testrail_id('857366')
+def test_create_delete_snapshots_in_parallel(os_conn, volume):
+    """This test case checks creation and deletion of 10 snapshots in parallel
+    Steps:
+    1. Create 10 snapshots in parallel
+    2. Check that all snapshots are in available status
+    3. Delete 10 snapshots in parallel
+    4. Check that all snapshots are deleted from the snapshots list
+    """
+    snapshots = []
+
+    logger.info('Create 10 snapshots in parallel:')
+    for i in range(1, 11):
+        logger.info('Create snapshot #{}'.format(i))
+        snapshot = os_conn.cinder.volume_snapshots.create(
+            volume.id, name='snapshot_{}'.format(i))
+        snapshots.append(snapshot)
+
+    common.wait(
+        lambda: check_all_snapshots_statuses(os_conn, snapshots),
+        timeout_seconds=800,
+        waiting_for='all snapshots to become in available status')
+
+    logger.info('Delete 10 snapshots in parallel')
+    for i, snapshot in enumerate(snapshots, 1):
+        logger.info('Delete snapshot #{}'.format(i))
+        os_conn.cinder.volume_snapshots.delete(snapshot)
+
+    common.wait(
+        lambda: all([is_snapshot_deleted(os_conn, x) for x in snapshots]),
+        timeout_seconds=1800,
+        waiting_for='all snapshots to be deleted')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ceph_enabled')
+@pytest.mark.testrail_id('857361', disk_format='qcow2')
+@pytest.mark.testrail_id('857362', disk_format='raw')
+@pytest.mark.parametrize('ubuntu_image', ['qcow2', 'raw'],
+                         indirect=['ubuntu_image'])
+def test_create_volume_from_image(os_conn, ubuntu_image, cleanup):
+    """This test case checks creation of volume with qcow2/raw image
+    Steps:
+    1. Create image with corresponding disk format(qcow2 or raw)
+    2. Create a volume
+    3. Check that volume is created without errors
+    """
+    disk_format, image_id = ubuntu_image
+    logger.info('Create volume from image with disk format {}'.format(
+        disk_format))
+    volume = common.create_volume(os_conn.cinder, image_id=image_id,
+                                  name='volume_{}'.format(disk_format))
+    assert volume.volume_image_metadata['disk_format'] == disk_format
+    assert volume.volume_image_metadata['image_id'] == image_id
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ceph_enabled')
+@pytest.mark.testrail_id('857363', disk_format='qcow2')
+@pytest.mark.testrail_id('857364', disk_format='raw')
+@pytest.mark.parametrize('disk_format', ['qcow2', 'raw'],
+                         indirect=['disk_format'])
+def test_create_image_from_volume(os_conn, disk_format, volume, cleanup):
+    """This test case checks creation of qcow2/raw image from volume
+    Steps:
+    1. Create a volume
+    2. Create image with corresponding disk format(qcow2 or raw)
+    3. Check that image is created without errors
+    """
+
+    logger.info('Create image with disk format {} from volume'.format(
+        disk_format))
+
+    image_id = os_conn.cinder.volumes.upload_to_image(
+        volume=volume, force=True, image_name='image_{}'.format(disk_format),
+        container_format='bare', disk_format=disk_format, visibility='public',
+        protected=False)[1]['os-volume_upload_image']['image_id']
+
+    def is_image_active():
+        image = [img for img in os_conn.nova.images.list() if
+                 img.id == image_id][0]
+        if image.status == 'ERROR':
+            raise ValueError("Image is in error state")
+        else:
+            return image.status == 'ACTIVE'
+
+    common.wait(is_image_active, timeout_seconds=60 * 5,
+                waiting_for='image became to active status')

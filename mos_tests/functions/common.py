@@ -442,8 +442,14 @@ def create_volume(cinder_client, image_id, size=1, timeout=5,
     volume = cinder_client.volumes.create(size, name=name, imageRef=image_id,
                                           volume_type=volume_type)
 
-    wait(lambda: cinder_client.volumes.get(volume.id).status == 'available',
-         timeout_seconds=60 * timeout,
+    def is_volume_available():
+        status = cinder_client.volumes.get(volume.id).status
+        if status == 'error':
+            raise ValueError("Volume is in error state")
+        else:
+            return status == 'available'
+
+    wait(is_volume_available, timeout_seconds=60 * timeout,
          waiting_for='volume became to available status')
     return cinder_client.volumes.get(volume.id)
 
