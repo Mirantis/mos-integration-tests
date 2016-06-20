@@ -14,6 +14,7 @@
 
 import logging
 
+from contextlib2 import suppress
 import six
 
 from mos_tests.functions.common import wait
@@ -41,13 +42,20 @@ def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
     """
     results = []
 
-    def execute():
-        with os_conn.ssh_to_instance(env, vm, vm_keypair, username=vm_login,
-                                     password=vm_password,
-                                     vm_ip=vm_ip) as remote:
-            result = remote.execute(command)
-            results.append(result)
-            return result
+    def execute(expected_exceptions=None):
+        if not os_conn.server_status_is(vm, 'ACTIVE'):
+            return False
+        expected_exceptions = expected_exceptions or ()
+        with suppress(*expected_exceptions):
+            with os_conn.ssh_to_instance(env,
+                                         vm,
+                                         vm_keypair,
+                                         username=vm_login,
+                                         password=vm_password,
+                                         vm_ip=vm_ip) as remote:
+                result = remote.execute(command)
+                results.append(result)
+                return result.is_ok
 
     logger.info('Executing `{cmd}` on {vm_name}'.format(
         cmd=command,
@@ -57,9 +65,8 @@ def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
         execute()
     else:
         err_msg = "SSH command: `{command}` completed with 0 exit code"
-        wait(lambda: execute()['exit_code'] == 0,
+        wait(lambda: execute(expected_exceptions=(Exception,)),
              sleep_seconds=(1, 20, 2), timeout_seconds=timeout,
-             expected_exceptions=(Exception,),
              waiting_for=err_msg.format(command=command))
     return results[-1]
 

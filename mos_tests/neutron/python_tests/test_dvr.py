@@ -172,6 +172,11 @@ class TestDVR(TestDVRBase):
             self.floating_ip = self.os_conn.assign_floating_ip(
                 self.server, use_neutron=True)
 
+            wait(lambda: 'floating' in self.os_conn.get_nova_instance_ips(
+                         self.server),
+                 timeout_seconds=60,
+                 waiting_for='floating ip assigned to instance')
+
     @pytest.mark.testrail_id(
         '542746', params={'floating_ip': True, 'dvr_router': True})
     @pytest.mark.testrail_id(
@@ -200,8 +205,14 @@ class TestDVR(TestDVRBase):
         self._prepare_openstack_env(distributed_router=dvr_router,
                                     assign_floating_ip=floating_ip)
 
+        if floating_ip:
+            vm_ip = self.floating_ip['floating_ip_address']
+        else:
+            vm_ip = None
+
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair)
+                                          vm_keypair=self.instance_keypair,
+                                          vm_ip=vm_ip)
 
     @pytest.mark.testrail_id('542764')
     def test_connectivity_after_reset_compute(self, devops_env):
@@ -219,10 +230,13 @@ class TestDVR(TestDVRBase):
             8. Go to the vm_1 with ssh and floating IP
             9. Ping 8.8.8.8
         """
-        self._prepare_openstack_env()
+        self._prepare_openstack_env(assign_floating_ip=True)
+
+        vm_ip = self.floating_ip['floating_ip_address']
 
         with self.os_conn.ssh_to_instance(self.env, self.server,
-                                          self.instance_keypair) as remote:
+                                          self.instance_keypair,
+                                          vm_ip=vm_ip) as remote:
             remote.check_call('uname -a')
 
         # reset compute
@@ -230,8 +244,7 @@ class TestDVR(TestDVRBase):
         self.reset_computes([compute_hostname], devops_env)
 
         network_checks.check_ping_from_vm(self.env, self.os_conn, self.server,
-                                          vm_keypair=self.instance_keypair,
-                                          timeout=5 * 60)
+                                          timeout=5 * 60, vm_ip=vm_ip)
 
     @pytest.mark.testrail_id('638477')
     def test_connectivity_after_reset_primary_controller_with_snat(self,
