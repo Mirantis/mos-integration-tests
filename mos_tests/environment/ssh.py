@@ -106,7 +106,7 @@ class SSHClient(object):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_commands=(), timeout=120,
+                 private_keys=None, proxy_commands=(), timeout=60,
                  execution_timeout=60 * 60):
         self.host = str(host)
         self.port = int(port)
