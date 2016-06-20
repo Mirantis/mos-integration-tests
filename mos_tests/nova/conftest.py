@@ -79,10 +79,13 @@ def instances(request, os_conn, security_group, keypair, network):
 
     yield instances
     if 'undestructive' in request.node.keywords:
+        hosts = {os_conn.get_srv_hypervisor_name(x) for x in instances}
+        hosts.add(compute_host)
         delete_instances(os_conn, instances)
-        hypervisor = os_conn.nova.hypervisors.find(
-            hypervisor_hostname=compute_host)
-        os_conn.wait_hypervisor_be_free(hypervisor)
+        for host in hosts:
+            hypervisor = os_conn.nova.hypervisors.find(
+                hypervisor_hostname=host)
+            os_conn.wait_hypervisor_be_free(hypervisor)
 
 
 @pytest.fixture
