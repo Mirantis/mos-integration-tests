@@ -133,7 +133,7 @@ def configure_oslomessagingchecktool(remote,
     with remote.open(default_vars['sample_cfg_file_path'], 'r') as f:
         parser = configparser.RawConfigParser()
         parser.readfp(f)
-        parser.set('DEFAULT', 'rpc_topic_name', rabbit_topic)
+        parser.set('DEFAULT', 'notif_topic_name', rabbit_topic)
         parser.set('DEFAULT', 'listen_port', rabbit_rpc_port)
         parser.set('oslo_messaging_rabbit', 'rabbit_hosts', rabbit_hosts)
         parser.set('oslo_messaging_rabbit', 'rabbit_userid',
