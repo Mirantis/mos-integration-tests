@@ -475,14 +475,15 @@ class TestResourceDistributionWithLessResources(TestBaseNFV):
         # Calculate flavor metadata values that would lead to the error by
         # allocating more resources than available for numa node
         if resource == 'cpu':
-            cpu_numa0 = self.get_flavor_cpus((host_cpus['numa0'] +
-                                              host_cpus['numa1'][:1]))
-            cpu_numa1 = self.get_flavor_cpus(host_cpus['numa1'][1:])
+            cnt_to_exceed = len(host_cpus['numa0']) + 1
+            cpu_numa0 = self.get_flavor_cpus(range(total_cpu)[:cnt_to_exceed])
+            cpu_numa1 = self.get_flavor_cpus(range(total_cpu)[cnt_to_exceed:])
             mem_numa0 = int(host_mem0 / 2)
             mem_numa1 = int(host_mem1 / 2)
         else:
-            cpu_numa0 = self.get_flavor_cpus(host_cpus['numa0'])
-            cpu_numa1 = self.get_flavor_cpus(host_cpus['numa1'])
+            correct_cnt = len(host_cpus['numa0'])
+            cpu_numa0 = self.get_flavor_cpus(range(total_cpu)[:correct_cnt])
+            cpu_numa1 = self.get_flavor_cpus(range(total_cpu)[correct_cnt:])
             mem_numa0 = int(max(host_mem0, host_mem1) +
                             min(host_mem0, host_mem1) / 2)
             mem_numa1 = int(host_mem1 - mem_numa0)
