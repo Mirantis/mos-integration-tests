@@ -255,6 +255,96 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
 @pytest.mark.undestructive
+@pytest.mark.usefixtures('screen')
+@murano_test_patch
+class TestSuitePackageCategory(base.PackageTestCase):
+    def _import_package_with_category(self, package_archive, category):
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-package']")
+        el.send_keys(package_archive)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        # choose the required category
+        self.driver.find_element_by_xpath(
+            c.PackageCategory.format(category)).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+
+        # To wait till the focus is swithced
+        # from modal dialog back to the window.
+        self.wait_for_sidebar_is_loaded()
+
+    def setUp(self):
+        super(TestSuitePackageCategory, self).setUp()
+
+        # add new category
+        self.category = str(uuid.uuid4())
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.driver.find_element_by_id(c.AddCategory).click()
+        self.fill_field(
+            by.By.XPATH, "//input[@id='id_name']", self.category)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+        self.check_element_on_page(
+            by.By.XPATH, c.CategoryPackageCount.format(self.category, 0))
+
+        # save category id
+        self.category_id = self.get_element_id(self.category)
+
+    def tearDown(self):
+        super(TestSuitePackageCategory, self).tearDown()
+
+        # delete created category
+        self.murano_client.categories.delete(self.category_id)
+
+    @pytest.mark.testrail_id('836683')
+    def test_list_of_existing_categories(self):
+        """Checks that list of categories is available
+        Scenario:
+            1. Navigate to 'Categories' page
+            2. Check that list of categories available and basic categories
+                ("Web", "Databases") are present in the list
+        """
+        self.go_to_submenu("Categories")
+        categories_table_locator = (by.By.CSS_SELECTOR, "table#categories")
+        self.check_element_on_page(*categories_table_locator)
+        for category in ("Databases", "Web"):
+            category_locator = (by.By.XPATH,
+                                "//tr[@data-display='{}']".format(category))
+        self.check_element_on_page(*category_locator)
+
+    @pytest.mark.testrail_id('836686', '836687')
+    def test_category_management(self):
+        """Test application category adds and deletes successfully
+        Scenario:
+            1. Navigate to 'Categories' page
+            2. Click on 'Add Category' button
+            3. Create new category and check it's browsed in the table
+            4. Delete new category and check it's not browsed anymore
+        """
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.driver.find_element_by_id(c.AddCategory).click()
+        self.fill_field(by.By.XPATH, "//input[@id='id_name']", 'TEST_CATEGORY')
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.wait_for_alert_message()
+        delete_new_category_btn = c.DeleteCategory.format('TEST_CATEGORY')
+        self.driver.find_element_by_xpath(delete_new_category_btn).click()
+        self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
+        self.wait_for_alert_message()
+        self.check_element_not_on_page(by.By.XPATH, delete_new_category_btn)
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
 @pytest.mark.usefixtures('screen', 'clean_packages')
 @murano_test_patch
 class TestPackageSizeLimit(base.PackageTestCase):
