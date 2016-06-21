@@ -67,6 +67,14 @@ class CalledProcessError(Exception):
 
 class CommandResult(dict):
 
+    def __init__(self, *args, **kwargs):
+        super(CommandResult, self).__init__(*args, **kwargs)
+        self.command = None
+
+    def __repr__(self):
+        base_repr = super(CommandResult, self).__repr__()
+        return u'`{0}` result {1}'.format(self.command, base_repr)
+
     @property
     def is_ok(self):
         return self['exit_code'] == 0
@@ -306,6 +314,7 @@ class SSHClient(object):
             'stderr': stderr_buf.splitlines(True),
             'exit_code': chan.recv_exit_status()
         })
+        result.command = command
         stdin.close()
         stdout.close()
         stderr.close()

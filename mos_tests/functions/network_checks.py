@@ -13,102 +13,124 @@
 #    under the License.
 
 import logging
+from multiprocessing.dummy import Pool
+import warnings
 
-from contextlib2 import suppress
 import six
+from waiting import TimeoutExpired
 
-from mos_tests.functions.common import wait
+from mos_tests.functions import common
 from mos_tests import settings
 
 
 logger = logging.getLogger(__name__)
 
 
-def run_on_vm(env, os_conn, vm, vm_keypair=None, command='uname',
-              vm_login="cirros", timeout=3 * 60, vm_password='cubswin:)',
+class MultipleAssertionErrors(AssertionError):
+    def __init__(self, exceptions):
+        self.exceptions = exceptions
+
+    def __str__(self):
+        msg = u'Multiple assertion errors raised:\n'
+        msg += '\n'.join([str(x) for x in self.exceptions])
+        return msg
+
+
+def run_on_vm(env,
+              os_conn,
+              vm,
+              vm_keypair=None,
+              command='uname',
+              vm_login="cirros",
+              timeout=3 * 60,
+              vm_password='cubswin:)',
               vm_ip=None):
-    """Execute command on vm and return dict with results
+    warnings.warn('This method is deprecated and will be removed in '
+                  'future. Use `os_conn.run_on_vm` instead.',
+                  DeprecationWarning)
+    return os_conn.run_on_vm(env=env,
+                             vm=vm,
+                             vm_keypair=vm_keypair,
+                             command=command,
+                             vm_login=vm_login,
+                             vm_password=vm_password,
+                             timeout=timeout,
+                             vm_ip=vm_ip)
 
-    :param vm: server to execute command on
-    :param vm_keypair: keypair used during vm creating
-    :param command: command to execute
-    :param vm_login: username to login to vm via ssh
-    :param vm_password: password to login to vm via ssh
-    :param timeout: type - int or None
-        - if None - execute command and return results
-        - if int - wait `timeout` seconds until command exit_code will be 0
-    :returns: Dictionary with `exit_code`, `stdout`, `stderr` keys.
-        `Stdout` and `stderr` are list of strings
-    """
+
+def _ping_ip_list(remote, ips):
     results = []
+    for ip in ips:
+        cmd = "ping -c1 {0}".format(ip)
+        result = remote.execute(cmd, verbose=False)
+        results.append(result)
+    return results
 
-    def execute(expected_exceptions=None):
-        if not os_conn.server_status_is(vm, 'ACTIVE'):
-            return False
-        expected_exceptions = expected_exceptions or ()
-        with suppress(*expected_exceptions):
-            with os_conn.ssh_to_instance(env,
-                                         vm,
-                                         vm_keypair,
-                                         username=vm_login,
-                                         password=vm_password,
-                                         vm_ip=vm_ip) as remote:
-                result = remote.execute(command)
-                results.append(result)
-                return result.is_ok
 
-    logger.info('Executing `{cmd}` on {vm_name}'.format(
-        cmd=command,
-        vm_name=vm.name))
+def _wait_success_ping(remote, ip_list, timeout=None):
+    results = []
+    timeout = timeout or 0
 
-    if timeout is None:
-        execute()
-    else:
-        err_msg = "SSH command: `{command}` completed with 0 exit code"
-        wait(lambda: execute(expected_exceptions=(Exception,)),
-             sleep_seconds=(1, 20, 2), timeout_seconds=timeout,
-             waiting_for=err_msg.format(command=command))
+    def predicate():
+        loop_result = _ping_ip_list(remote, ip_list)
+        results.append(loop_result)
+        return all([x.is_ok for x in loop_result])
+
+    try:
+        common.wait(predicate,
+                    timeout_seconds=timeout,
+                    waiting_for='pings to be successful')
+    except TimeoutExpired as e:
+        logger.error(e)
     return results[-1]
 
 
-def check_ping_from_vm(env, os_conn, vm, vm_keypair=None, ip_to_ping=None,
-                       timeout=3 * 60, vm_login='cirros',
-                       vm_password='cubswin:)', vm_ip=None):
+def check_ping_from_vm(env,
+                       os_conn,
+                       vm,
+                       vm_keypair=None,
+                       ip_to_ping=None,
+                       timeout=3 * 60,
+                       vm_login='cirros',
+                       vm_password='cubswin:)',
+                       vm_ip=None):
     logger.info('Expecting that ping from VM should pass')
     # Get ping results
-    result = check_ping_from_vm_helper(
-        env, os_conn, vm, vm_keypair, ip_to_ping, timeout, vm_login,
-        vm_password, vm_ip=vm_ip)
 
-    error_msg = (
-        'Instance has NO connection, but it should have.\n'
-        'EXIT CODE: "{exit_code}"\n'
-        'STDOUT: "{stdout}"\n'
-        'STDERR {stderr}').format(**result)
-
-    # As ping should pass we expect '0' in exit_code
-    assert 0 == result['exit_code'], error_msg
-
-
-def check_ping_from_vm_helper(env, os_conn, vm, vm_keypair, ip_to_ping,
-                              timeout, vm_login, vm_password, vm_ip=None):
-    """Returns dictionary with results of ping execution:
-        exit_code, stdout, stderr
-    """
     if ip_to_ping is None:
         ip_to_ping = [settings.PUBLIC_TEST_IP]
     if isinstance(ip_to_ping, six.string_types):
         ip_to_ping = [ip_to_ping]
-    cmd_list = ["ping -c1 {0}".format(x) for x in ip_to_ping]
-    cmd = ' && '.join(cmd_list)
-    res = run_on_vm(
-        env, os_conn, vm, vm_keypair, cmd, timeout=timeout,
-        vm_login=vm_login, vm_password=vm_password, vm_ip=vm_ip)
-    return res
+
+    with os_conn.ssh_to_instance(env,
+                                 vm,
+                                 vm_keypair=vm_keypair,
+                                 username=vm_login,
+                                 password=vm_password) as remote:
+        result = _wait_success_ping(remote, ip_to_ping, timeout=timeout)
+
+    error_msg = '\n'.join([repr(x) for x in result if not x.is_ok])
+
+    error_msg = ('Connectivity error from {name}:\n{msg}').format(
+        name=vm.name, msg=error_msg)
+
+    # As ping should pass we expect '0' in exit_code
+    assert all([x.is_ok for x in result]), error_msg
 
 
 def check_vm_connectivity(env, os_conn, vm_keypair=None, timeout=4 * 60):
     """Check that all vms can ping each other and public ip"""
+    ping_plan = {}
+    exc = []
+
+    def check(args):
+        server, ips_to_ping = args
+        try:
+            check_ping_from_vm(env, os_conn, server, vm_keypair, ips_to_ping,
+                               timeout=timeout)
+        except AssertionError as e:
+            return e
+
     servers = os_conn.get_servers()
     for server1 in servers:
         ips_to_ping = [settings.PUBLIC_TEST_IP]
@@ -117,5 +139,10 @@ def check_vm_connectivity(env, os_conn, vm_keypair=None, timeout=4 * 60):
                 continue
             ips_to_ping += os_conn.get_nova_instance_ips(
                 server2).values()
-        check_ping_from_vm(env, os_conn, server1, vm_keypair, ips_to_ping,
-                           timeout=timeout)
+        ping_plan[server1] = ips_to_ping
+    p = Pool(len(ping_plan))
+    for result in p.imap_unordered(check, ping_plan.items()):
+        if result is not None:
+            exc.append(result)
+    if len(exc) > 0:
+        raise MultipleAssertionErrors(exc)
