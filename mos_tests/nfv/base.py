@@ -260,3 +260,9 @@ class TestBaseNFV(object):
         with host.ssh() as remote:
             dump = remote.execute("virsh dumpxml {0}".format(name))
         return ElementTree.fromstring(dump.stdout_string)
+
+    def get_instances(self, os_conn, host):
+        host = os_conn.env.find_node_by_fqdn(host)
+        with host.ssh() as remote:
+            instances = remote.check_call('virsh list --name').stdout_string
+        return instances.splitlines()
