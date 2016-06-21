@@ -44,14 +44,9 @@ class InstanceError(Exception):
         self.instance = instance
 
     def __str__(self):
-        fault = getattr(self.instance, 'fault', None)
-        msg = 'Instance {0.name} ({0.id}) is in {0.status} status'.format(
-            self.instance)
-        if fault is not None:
-            msg += ('\n'
-                    '{0[message]}\n'
-                    '{0[details]}').format(fault)
-        return msg
+        return ('Instance {0.name} is in ERROR status\n'
+                '{0.fault[message]}\n'
+                '{0.fault[details]}'.format(self.instance))
 
 
 class OpenStackActions(object):
@@ -994,7 +989,15 @@ class OpenStackActions(object):
                 volume_id=volume.id)
             for snapshot in snapshots:
                 self.cinder.volume_snapshots.delete(snapshot)
-
+            # if volume have backups
+            backups = self.cinder.backups.findall(volume_id=volume.id)
+            for backup in backups:
+                self.cinder.backups.delete(backup)
+        wait(lambda: not any([self.cinder.backups.findall(
+            volume_id=x.id) for x in volumes]),
+            timeout_seconds=60 * 10,
+            waiting_for=('backups from volumes [{names}] '
+                         'to be deleted').format(names=names))
         wait(lambda: not any([self.cinder.volume_snapshots.findall(
                               volume_id=x.id) for x in volumes]),
              timeout_seconds=60 * 5,
