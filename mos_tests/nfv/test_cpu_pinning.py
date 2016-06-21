@@ -289,7 +289,9 @@ class TestCpuPinningResize(TestBaseNFV):
                     numas = 1
                 host = getattr(vm, "OS-EXT-SRV-ATTR:host")
                 assert host in hosts
-                self.check_cpu_for_vm(os_conn, vm, numas, cpus[host])
+                self.check_cpu_for_vm(os_conn,
+                                      os_conn.get_instance_detail(vm),
+                                      numas, cpus[host])
             network_checks.check_vm_connectivity(env, os_conn)
 
 
@@ -340,7 +342,9 @@ class TestCpuPinningMigration(TestBaseNFV):
 
             for vm in vms:
                 host = getattr(vm, "OS-EXT-SRV-ATTR:host")
-                self.check_cpu_for_vm(os_conn, vm, 2, cpus[host])
+                self.check_cpu_for_vm(os_conn,
+                                      os_conn.get_instance_detail(vm), 2,
+                                      cpus[host])
 
             network_checks.check_vm_connectivity(env, os_conn)
 
