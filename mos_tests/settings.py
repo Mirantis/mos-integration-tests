@@ -38,6 +38,7 @@ TEST_IMAGE_PATH = os.environ.get("TEST_IMAGE_PATH", os.path.expanduser('~/images
 UBUNTU_QCOW2_URL = 'https://cloud-images.ubuntu.com/trusty/current/trusty-server-cloudimg-amd64-disk1.img'  # noqa
 FEDORA_QCOW2_URL = 'https://download.fedoraproject.org/pub/fedora/linux/releases/23/Cloud/x86_64/Images/Fedora-Cloud-Base-23-20151030.x86_64.qcow2'  # noqa
 WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
+UBUNTU_URL = 'http://archive.ubuntu.com/ubuntu/dists/trusty/main/installer-amd64/current/images/netboot/mini.iso'  # noqa
 
 CONSOLE_LOG_LEVEL = os.environ.get('LOG_LEVEL', logging.DEBUG)
 
