@@ -79,7 +79,8 @@ def instances(request, os_conn, security_group, keypair, network):
 
     yield instances
     if 'undestructive' in request.node.keywords:
-        hosts = {os_conn.get_srv_hypervisor_name(x) for x in instances}
+        hosts = {os_conn.get_srv_hypervisor_name(x) for x in instances if
+                 x in os_conn.nova.servers.list()}
         hosts.add(compute_host)
         delete_instances(os_conn, instances)
         for host in hosts:
