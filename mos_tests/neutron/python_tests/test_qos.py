@@ -664,6 +664,68 @@ class TestTraficBetween3InstancesInOneNet(TestQoSBase):
                                    limit=3000 * 1024,
                                    udp=udp)
 
+    @pytest.mark.testrail_id('844685')
+    def test_traffic_for_one_vm_and_2_another_dissociate_policy(
+            self, instances, os_conn, clean_port_policy):
+        """Check traffic restriction creating vm with qos policy and
+        dissociate this policy.
+
+        Scenario:
+            1. Create net01, subnet;
+            2. Create router01, set gateway and add interface to net01;
+            3. Boot ubuntu vm1 in net01 on compute-1;
+            4. Boot ubuntu vm2 in net01 on compute-1;
+            5. Boot ubuntu vm3 in net01 on compute-2;
+            6. Start iperf between vm1 and vm2;
+            7. Look on the traffic with nload on vm port on compute-1;
+            8. Start iperf between vm1 and vm3;
+            9. Look on the traffic with nload on vm port on compute-1;
+            10. Create new policy: neutron qos-policy-create bw-limiter;
+            11. Create new rule:
+                neutron qos-bandwidth-limit-rule-create rule-id bw-limiter \
+                --max-kbps 3000;
+            12. Find neutron port for vm1: Neutron port-list | grep <vm1 ip>;
+            13. Update port with new policy:
+                neutron port-update your-port-id --qos-policy bw-limiter;
+            14. Check in nload that traffic changed properly;
+            15. Delete qos rule from port;
+            16. Check that there are no bandwidth limitation.
+        """
+        limit = 3000  # 3 Mbit/sec
+        instance1, instance2, instance3 = instances
+
+        # Check that there are no QoS limits and VMs accessible
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1, instance2,
+                                       limit=limit * 1024, time=20)
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1, instance3,
+                                       limit=limit * 1024, time=20)
+
+        # Create limit policy for VM's port
+        instance1_ip = os_conn.get_nova_instance_ips(instance1)['fixed']
+        port1 = os_conn.get_port_by_fixed_ip(instance1_ip)
+        port_policy = os_conn.create_qos_policy('policy_2')
+        os_conn.neutron.create_bandwidth_limit_rule(
+            port_policy['policy']['id'],
+            {'bandwidth_limit_rule': {'max_kbps': limit, }})
+        # Update VM's port with a new policy
+        os_conn.neutron.update_port(
+            port1['id'],
+            {'port': {'qos_policy_id': port_policy['policy']['id']}})
+
+        # Check bandwidth after set QoS limit
+        self.check_iperf_bandwidth(instance1, instance2,
+                                   limit=limit * 1024)
+        self.check_iperf_bandwidth(instance1, instance3,
+                                   limit=limit * 1024,)
+
+        # Delete QoS limit and check that bandwidth has no limits
+        delete_ports_policy(os_conn)
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(instance1, instance3,
+                                       limit=limit * 1024)
+
 
 @pytest.mark.check_env_('has_2_or_more_computes')
 class TwoNetAndComputesThreeInstances(object):
