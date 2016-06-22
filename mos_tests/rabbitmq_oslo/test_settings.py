@@ -19,48 +19,17 @@ from time import sleep
 import pytest
 
 from mos_tests.functions.common import wait
+from mos_tests.rabbitmq_oslo.utils import BashCommand as cmd
 
 
 logger = logging.getLogger(__name__)
 
 
-def num_of_rabbit_running_nodes(remote):
-    """Get number of 'Started/Master' hosts from pacemaker.
-    :param remote: SSH connection point to controller.
-    """
-    result = remote.execute('pcs status --full | '
-                            'grep p_rabbitmq-server | '
-                            'grep ocf | '
-                            'grep -c -E "Master|Started"', verbose=False)
-    count = result['stdout'][0].strip()
-    if count.isdigit():
-        return int(count)
-    else:
-        return 0
-
-
-def wait_for_rabbit_running_nodes(remote, exp_nodes, timeout_min=5):
-    """Waits until number of 'Started/Master' hosts from pacemaker
-    will be as expected number of controllers.
-    :param remote: SSH connection point to controller.
-    :param exp_nodes: Expected number of rabbit nodes.
-    :param timeout_min: Timeout in minutes to wait.
-    """
-    wait(lambda: num_of_rabbit_running_nodes(remote) == exp_nodes,
-         timeout_seconds=60 * timeout_min,
-         sleep_seconds=30,
-         waiting_for='number of running nodes will be %s.' % exp_nodes)
-
-# ----------------------------------------------------------------------------
-
-
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('844786')
-def test_disable_ha_for_rpc_queues_by_default(env):
+def test_disable_ha_for_rpc_queues_by_default(env, rabbitmq):
     """Check that HA RPC is disabled by default.
-
-    :param env: Environment
 
     Actions:
     1. Get launch parameters for p_rabbitmq-server from pacemaker;
@@ -69,12 +38,16 @@ def test_disable_ha_for_rpc_queues_by_default(env):
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
 
-    # Install tool on one controller and generate messages
     with controller.ssh() as remote:
         # wait when rabbit will be ok after snapshot revert
-        wait_for_rabbit_running_nodes(remote, len(controllers))
-        resp_pcs = remote.execute('pcs resource show '
-                                  'p_rabbitmq-server')['stdout']
+        rabbitmq.wait_for_rabbit_running_nodes(exp_nodes=len(controllers))
+        resp_pcs = remote.execute(
+            cmd.pacemaker.show.format(
+                service=cmd.pacemaker.rabbit_slave_name,
+                timeout=5,
+                fqdn='$(hostname)'))
+        resp_pcs = resp_pcs['stdout']
+
     assert (
         filter(
             lambda x: 'enable_notifications_ha=true' in x, resp_pcs) != [] and
@@ -82,18 +55,17 @@ def test_disable_ha_for_rpc_queues_by_default(env):
             lambda x: 'enable_notifications_ha=false' not in x, resp_pcs) != []
     ), 'Disabled HA notifications (should be enabled)'
 
-    assert (filter(lambda x: 'enable_rpc_ha=false' in x, resp_pcs) != [] and
-            filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != []), (
-        'Enabled HA RPC (should be disabled)')
+    assert (
+        filter(lambda x: 'enable_rpc_ha=false' in x, resp_pcs) != [] and
+        filter(lambda x: 'enable_rpc_ha=true' not in x, resp_pcs) != []
+    ), 'Enabled HA RPC (should be disabled)'
 
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('857403')
-def test_check_rabbitmq_policy(env):
+def test_check_rabbitmq_policy(env, rabbitmq):
     """Check that rabbitmq policy have rules.
-
-    :param env: Environment
 
     Actions:
     1. Execute `rabbitmqctl list_policies` command on one of controllers and
@@ -103,46 +75,44 @@ def test_check_rabbitmq_policy(env):
     controller = random.choice(controllers)
     with controller.ssh() as remote:
         # wait when rabbit will be ok after snapshot revert
-        wait_for_rabbit_running_nodes(remote, len(controllers))
-        result = remote.check_call('rabbitmqctl list_policies')['stdout']
+        rabbitmq.wait_for_rabbit_running_nodes(exp_nodes=len(controllers))
+        result = remote.check_call(
+            cmd.rabbitmqctl.list_policies)['stdout']
+
     count_non_empty_lines = 0
     for line in result:
         if len(line):
             count_non_empty_lines += 1
-    assert 1 < count_non_empty_lines, 'RabbitMQ was lost any policy'
+
+    assert 1 < count_non_empty_lines, 'RabbitMQ has lost some policies'
 
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('851872')
-def test_check_hipe_compilation(env):
-    """Check that rabbitmq was runned with HiPE compilation files.
-
-    :param env: Environment
+def test_check_hipe_compilation(env, rabbitmq):
+    """Check that rabbitmq is running with HiPE compilation files.
 
     Actions:
-    1. Get rabbitmq run command, parce HiPE native code location.
+    1. Get rabbitmq run command, parse HiPE native code location.
     2. Check that count of files in this location <> 0.
     """
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
     with controller.ssh() as remote:
         # wait when rabbit will be ok after snapshot revert
-        wait_for_rabbit_running_nodes(remote, len(controllers))
-        cmd = 'ls -la $(for i in $(ps aux | grep rabbitmq ); ' \
-              'do echo $i | grep "native"; done) | grep -c ".beam"'
-        result = remote.check_call(cmd)['stdout'][0]
-    assert 0 < int(result), "RabbitMQ don't use HiPE or invalid location to " \
-                            "precompiled files or files wasn't found."
+        rabbitmq.wait_for_rabbit_running_nodes(exp_nodes=len(controllers))
+        result = remote.check_call(cmd.system.hipe_files_count).stdout_string
+
+    assert 0 < int(result), ("RabbitMQ don't use HiPE or invalid location to "
+                             "precompiled files or files wasn't found.")
 
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ha', 'has_1_or_more_computes')
 @pytest.mark.testrail_id('844794')
-def test_check_appropriate_async_thread_pool_size(env):
+def test_check_appropriate_async_thread_pool_size(env, rabbitmq):
     """Check appropriate async thread pool size.
-
-    :param env: Environment
 
     Actions:
     1. Make ssh to one of controllers.
@@ -151,40 +121,32 @@ def test_check_appropriate_async_thread_pool_size(env):
     3. Compare this results, number value should be between (64, 1024),
     closest to 16*(cpu count).
     """
-
     controllers = env.get_nodes_by_role('controller')
     controller = random.choice(controllers)
     with controller.ssh() as remote:
         # wait when rabbit will be ok after snapshot revert
-        wait_for_rabbit_running_nodes(remote, len(controllers))
-        cpu_count = int(remote.check_call("grep -c ^processor /proc/cpuinfo")
-                        ['stdout'][0].strip())
-        thread_pool_size = int(remote.check_call(
-            "ps ax | perl -nE '/beam.*-sname rabbit/ && /^\s*(\d+).*?-A "
-            "(\d+)/ && say $2'")['stdout'][0].strip())
+        rabbitmq.wait_for_rabbit_running_nodes(exp_nodes=len(controllers))
+        cpu_count = int(
+            remote.check_call(cmd.system.cpu_count).stdout_string)
+        thread_pool_size = int(
+            remote.check_call(cmd.system.thread_pool_size).stdout_string)
 
     calculated_pool_size = cpu_count * 16
     if calculated_pool_size < 64:
         calculated_pool_size = 64
 
-    assert 64 <= thread_pool_size, "Rabbit appropriate async thread pool " \
-                                   "size smaller then 64."
+    assert 64 <= thread_pool_size, ("Rabbit appropriate async thread pool "
+                                    "size smaller then 64.")
 
-    assert 1024 >= thread_pool_size, "Rabbit appropriate async thread pool " \
-                                     "size bigger then 1024."
+    assert 1024 >= thread_pool_size, ("Rabbit appropriate async thread pool "
+                                      "size bigger then 1024.")
 
-    assert calculated_pool_size == thread_pool_size, \
-        "Real rabbit thread_pool_size != calculated."
+    assert calculated_pool_size == thread_pool_size, (
+        "Real rabbit thread_pool_size != calculated.")
 
 
 # Destructive
 class TestRabbitSegfaultsAndInteraction(object):
-
-    cmd_grep_diagnostics = 'rabbitmqctl status |& grep DIAGNOSTICS'
-    cmd_grep_active = (
-        'service rabbitmq-server status |& grep "Active: active (running)"')
-    cmd_grep_exited = (
-        'service rabbitmq-server status |& grep "Status: .Exited.."')
 
     def control_rabbit_service(self, admin_remote, action='start'):
         """Performs 'service rabbitmq-server {action}' on fuel admin node.
@@ -194,8 +156,13 @@ class TestRabbitSegfaultsAndInteraction(object):
         err_msg = ('Some of the err messages {0} are in service '
                    'rabbitmq-server {1} output.'.format(err_words, action))
 
-        out = admin_remote.check_call(
-            'service rabbitmq-server {0}'.format(action))
+        if action == 'start':
+            action_cmd = cmd.rabbit_srv_service.start
+        else:
+            action_cmd = cmd.rabbit_srv_service.stop
+
+        out = admin_remote.check_call(action_cmd)
+
         # Check that there are no error words in cmd output
         combined_out = out.stdout_string + out.stderr_string
         assert not any(
@@ -206,19 +173,23 @@ class TestRabbitSegfaultsAndInteraction(object):
         """Wait till Rabbit on fuel master node has
         [Active: active (running)] in it's status.
         """
-        wait(lambda: admin_remote.execute(self.cmd_grep_active).is_ok,
-             timeout_seconds=60 * timeout_min,
-             sleep_seconds=20,
-             waiting_for='service rabbitmq-server became active')
+        wait(
+            lambda: admin_remote.execute(
+                cmd.rabbit_srv_service.grep_active).is_ok,
+            timeout_seconds=60 * timeout_min,
+            sleep_seconds=20,
+            waiting_for='service rabbitmq-server became active')
 
     def wait_rabbit_became_exited(self, admin_remote, timeout_min=1):
         """Wait till Rabbit on fuel master node has
         [Status: "Exited."] in it's status.
         """
-        wait(lambda: admin_remote.execute(self.cmd_grep_exited).is_ok,
-             timeout_seconds=60 * timeout_min,
-             sleep_seconds=20,
-             waiting_for='service rabbitmq-server became exited')
+        wait(
+            lambda: admin_remote.execute(
+                cmd.rabbit_srv_service.grep_exited).is_ok,
+            timeout_seconds=60 * timeout_min,
+            sleep_seconds=20,
+            waiting_for='service rabbitmq-server became exited')
 
     @pytest.mark.testrail_id('844790')
     def test_no_segfaults_on_master(self, admin_remote):
@@ -237,10 +208,12 @@ class TestRabbitSegfaultsAndInteraction(object):
         self.control_rabbit_service(admin_remote, 'stop')
 
         # Wait till rabbitmq-server status has DIAGNOSTICS info
-        wait(lambda: admin_remote.execute(self.cmd_grep_diagnostics).is_ok,
-             timeout_seconds=60 * timeout,
-             sleep_seconds=20,
-             waiting_for='service rabbitmq-server has DIAGNOSTICS info')
+        wait(
+            lambda: admin_remote.execute(
+                cmd.rabbitmqctl.grep_diagnostics).is_ok,
+            timeout_seconds=60 * timeout,
+            sleep_seconds=20,
+            waiting_for='service rabbitmq-server has DIAGNOSTICS info')
 
         # Start rabbit and check that there are no errors in output
         self.control_rabbit_service(admin_remote, 'start')
