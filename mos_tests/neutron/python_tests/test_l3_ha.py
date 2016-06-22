@@ -55,14 +55,13 @@ def ping_groups(stdout):
     prev_seq = -1
     group_start = 0
     received = 0
-    start_seq = 0
+    start_seq = None
     for line in stdout:
         logger.debug('Ping result: {}'.format(line.strip()))
         seq = get_ping_seq(line)
         if seq is None:
             continue
-        # if first ping 'seq' was more then 0. For e.g.: 223
-        if seq != start_seq and start_seq == 0 and prev_seq == -1:
+        if start_seq is None:
             start_seq = seq
         received += 1
         if seq != prev_seq + 1:
@@ -71,17 +70,13 @@ def ping_groups(stdout):
         sent = seq - start_seq
         pi = PingInfo(sent=sent, received=received,
                       group_len=seq - group_start)
-        logger.debug(
-            'start_seq={0}, prev_seq={1}, received={2}, sent={3}, '
-            'group_len={4}'.format(
-                start_seq, prev_seq, received, sent, seq - group_start))
         yield pi
         prev_seq = seq
 
 
 class PingThread(threading.Thread):
     def __init__(self, remote, ip_to_ping,
-                 timeout=10 * 60, *args, **kwargs):
+                 timeout=20 * 60, *args, **kwargs):
         super(PingThread, self).__init__(*args, **kwargs)
         self.stdout_q = Queue()
         self._stop = threading.Event()
@@ -184,9 +179,9 @@ class TestL3HA(TestBase):
 
             groups = ping_groups(t.iter_output())
 
-            # Wait for 10 not interrupted packets
+            # Wait for 20 not interrupted packets
             for ping_info in groups:
-                if ping_info.group_len >= 10:
+                if ping_info.group_len >= 20:
                     break
 
             yield result
@@ -294,7 +289,7 @@ class TestL3HA(TestBase):
         server1 = self.os_conn.nova.servers.find(name="server01")
         server2 = self.os_conn.nova.servers.find(name="server02")
         server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
-        controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
+        controller = self.env.get_nodes_by_role('controller')[0]
 
         node_to_ban = agents['active'][0]['host']
 
@@ -304,7 +299,7 @@ class TestL3HA(TestBase):
             with self.background_ping(vm=server1,
                                       vm_keypair=self.instance_keypair,
                                       ip_to_ping=server2_ip) as ping_result:
-                with self.env.get_ssh_to_node(controller_ip) as remote:
+                with controller.ssh() as remote:
                     logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                     remote.check_call(
                         "pcs resource ban neutron-l3-agent {0}".format(
@@ -376,14 +371,14 @@ class TestL3HA(TestBase):
 
         agents = self.get_active_l3_agents_for_router(router['router']['id'])
         hostname = agents[0]['host']
-        node_ip = self.env.find_node_by_fqdn(hostname).data['ip']
+        node = self.env.find_node_by_fqdn(hostname)
 
         # Delete namespace
         with self.background_ping(vm=server1, vm_keypair=self.instance_keypair,
                                   ip_to_ping=server2_ip) as ping_result:
-            with self.env.get_ssh_to_node(node_ip) as remote:
+            with node.ssh() as remote:
                 logger.info(("Delete namespace for router `router01` "
-                             "on {0}").format(node_ip))
+                             "on {0}").format(node))
                 remote.check_call(
                     "ip netns delete qrouter-{0}".format(
                         router['router']['id']))
@@ -465,7 +460,7 @@ class TestL3HA(TestBase):
             6. Add rules for ping
             7. Start ping beetween vms
             8. Ban active agent for router between vms
-            9. Check lost pings not more 50 packets
+            9. Check lost pings not more than 60 packets
         """
         # Update quota
         tenant = self.os_conn.neutron.get_quotas_tenant()
@@ -519,12 +514,12 @@ class TestL3HA(TestBase):
                 remote.check_call(
                     "pcs resource ban neutron-l3-agent {0}".format(
                         node_to_ban))
-                new_agent = self.wait_router_rescheduled(
-                    router_id=router['router']['id'],
-                    from_node=node_to_ban)
-                node_to_ban = new_agent['host']
+            new_agent = self.wait_router_rescheduled(
+                router_id=router['router']['id'],
+                from_node=node_to_ban)
+            node_to_ban = new_agent['host']
 
-        assert ping_result['sent'] - ping_result['received'] < 50
+        assert ping_result['sent'] - ping_result['received'] <= 60
 
     @pytest.mark.testrail_id('542790')
     def test_ban_active_l3_agent_with_external_connectivity(self, router,
@@ -543,7 +538,7 @@ class TestL3HA(TestBase):
             8. Check that ping lost less than 40 packets
         """
         instance = self.os_conn.nova.servers.find(name="server02")
-        controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
+        controller = self.env.get_nodes_by_role('controller')[0]
 
         active_agents = self.get_active_l3_agents_for_router(
             router['router']['id'])
@@ -554,14 +549,14 @@ class TestL3HA(TestBase):
                 vm=instance,
                 vm_keypair=self.instance_keypair,
                 ip_to_ping=settings.PUBLIC_TEST_IP) as ping_result:
-            with self.env.get_ssh_to_node(controller_ip) as remote:
+            with controller.ssh() as remote:
                 logger.info("Ban L3 agent on node {0}".format(node_to_ban))
                 remote.check_call(
                     "pcs resource ban neutron-l3-agent {0}".format(
                         node_to_ban))
-                self.wait_router_rescheduled(
-                    router_id=router['router']['id'],
-                    from_node=node_to_ban)
+            self.wait_router_rescheduled(
+                router_id=router['router']['id'],
+                from_node=node_to_ban)
 
         assert (ping_result['sent'] - ping_result['received']) < 40
 
@@ -609,9 +604,9 @@ class TestL3HA(TestBase):
                     "ip netns exec qrouter-{router_id} "
                     "ip link set dev {iface_id} down".format(
                         router_id=router_id, iface_id=active_ha_iface_id))
-                self.wait_router_rescheduled(
-                    router_id=router['router']['id'],
-                    from_node=active_hostname)
+            self.wait_router_rescheduled(
+                router_id=router['router']['id'],
+                from_node=active_hostname)
 
         assert (ping_result['sent'] - ping_result['received']) < 50
 
