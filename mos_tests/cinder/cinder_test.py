@@ -35,13 +35,6 @@ def volume(os_conn):
     image = os_conn.nova.images.find(name='TestVM')
     volume = common.create_volume(os_conn.cinder, image.id)
     yield volume
-    snp_list = os_conn.cinder.volume_snapshots.findall(volume_id=volume.id)
-    for snp in snp_list:
-        os_conn.cinder.volume_snapshots.delete(snp)
-    common.wait(
-        lambda: all([is_snapshot_deleted(os_conn, x) for x in snp_list]),
-        timeout_seconds=1000,
-        waiting_for='snapshots to be deleted')
     os_conn.delete_volume(volume)
 
 
@@ -54,6 +47,32 @@ def is_snapshot_available(os_conn, snapshot):
 def is_snapshot_deleted(os_conn, snapshot):
     snp_ids = [s.id for s in os_conn.cinder.volume_snapshots.list()]
     return snapshot.id not in snp_ids
+
+
+def check_volume_status(os_conn, volume, status='available', positive=True):
+    volume_status = os_conn.cinder.volumes.get(volume.id).status
+    if positive:
+        assert volume_status != 'error'
+    return volume_status == status
+
+
+def check_backup_status(os_conn, backup, status='available', positive=True):
+    backup_status = os_conn.cinder.backups.get(backup.id).status
+    if positive:
+        assert backup_status != 'error'
+    return backup_status == status
+
+
+def check_all_backups_statuses(
+        os_conn, backups, status='available', positive=True):
+    for backup in backups:
+        if not check_backup_status(os_conn, backup, status, positive):
+            return False
+    return True
+
+
+def is_backup_deleted(os_conn, backup):
+    return len(os_conn.cinder.backups.findall(id=backup.id)) == 0
 
 
 @pytest.mark.undestructive
@@ -107,3 +126,68 @@ def test_creating_multiple_snapshots(os_conn, quota, volume):
         lambda: all([is_snapshot_available(os_conn, x) for x in snp_list_2]),
         timeout_seconds=1800,
         waiting_for='new snapshots to become in available status')
+
+
+# NOTE(rpromyshlennikov): this test is not marked as @pytest.mark.undestructive
+# because it creates object storage container to store backups
+@pytest.mark.testrail_id('857215')
+def test_create_backup_snapshot(os_conn, volume):
+    """This test case checks creation a backup of a snapshot
+
+        Steps:
+            1. Create a volume
+            2. Create a snapshot of the volume and check it availability
+            3. Create a backup of the snapshot and check it availability
+
+    """
+    snapshot = os_conn.cinder.volume_snapshots.create(
+        volume.id, name='volume_snapshot')
+
+    common.wait(lambda: is_snapshot_available(os_conn, snapshot),
+                timeout_seconds=300,
+                waiting_for='Snapshot to become in available status')
+
+    backup = os_conn.cinder.backups.create(
+        volume.id, name='volume_backup', snapshot_id=snapshot.id)
+
+    common.wait(lambda: check_backup_status(os_conn, backup),
+                timeout_seconds=300,
+                waiting_for='Backup to become in available status')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('is_ceph_enabled')
+@pytest.mark.testrail_id('857367')
+def test_delete_backups_in_parallel(os_conn, volume):
+    """This test case checks deletion of 10 backups in parallel
+    Steps:
+    1. Create 10 backups
+    2. Check that all backups are in available status
+    3. Delete 10 backups in parallel
+    4. Check that all backups are deleted from the backups list
+    """
+    logger.info('Create 10 backups:')
+    backups = []
+    for i in range(1, 11):
+        logger.info('Create backup #{}'.format(i))
+        backup = os_conn.cinder.backups.create(
+            volume.id, name='backup_{}'.format(i))
+        backups.append(backup)
+        common.wait(lambda: check_volume_status(os_conn, volume),
+                    timeout_seconds=300,
+                    waiting_for='volume to become in available status')
+
+    common.wait(
+        lambda: check_all_backups_statuses(os_conn, backups),
+        timeout_seconds=600,
+        waiting_for='all backups to become in available status')
+
+    logger.info('Delete 10 backups in parallel')
+    for i, backup in enumerate(backups, 1):
+        logger.info('Delete backup #{}'.format(i))
+        os_conn.cinder.backups.delete(backup)
+
+    common.wait(
+        lambda: all([is_backup_deleted(os_conn, x) for x in backups]),
+        timeout_seconds=1200,
+        waiting_for='all backups to be deleted')
