@@ -89,23 +89,22 @@ class TestBase(object):
             subnet_id=subnet['subnet']['id'])
         return router
 
-    def check_no_ping_from_vm(self, vm, vm_keypair=None, ip_to_ping=None,
-                              timeout=None, vm_login='cirros',
+    def check_no_ping_from_vm(self,
+                              vm,
+                              vm_keypair=None,
+                              ip_to_ping=None,
+                              timeout=None,
+                              vm_login='cirros',
                               vm_password='cubswin:)'):
         logger.info('Expecting that ping from VM should fail')
         # Get ping results
-        result = network_checks.check_ping_from_vm_helper(
-            self.env, self.os_conn, vm, vm_keypair, ip_to_ping,
-            timeout, vm_login, vm_password)
-
-        error_msg = (
-            'Instance has a connection, but it should NOT have.\n'
-            'EXIT CODE: "{exit_code}"\n'
-            'STDOUT: "{stdout}"\n'
-            'STDERR {stderr}').format(**result)
-
-        # As ping should fail we expect NOT '0' in exit_code
-        assert 0 != result['exit_code'], error_msg
+        with pytest.raises(AssertionError):
+            network_checks.check_ping_from_vm(env=self.env,
+                                              os_conn=self.os_conn,
+                                              vm=vm,
+                                              vm_keypair=vm_keypair,
+                                              ip_to_ping=ip_to_ping,
+                                              timeout=timeout)
 
     def check_ping_from_vm_with_ip(self, vm_ip, vm_keypair=None,
                                    ip_to_ping=None, ping_count=1,
@@ -189,12 +188,9 @@ class TestBase(object):
                 for pkey in private_keys]
 
     def run_udhcpc_on_vm(self, vm):
-        command = 'sudo -i cirros-dhcpc up eth0'
-        result = network_checks.run_on_vm(self.env, self.os_conn, vm,
-                                          self.instance_keypair, command)
-        err_msg = 'Failed to start the udhcpc on vm std_err: {}'.format(
-            result['stderr'])
-        assert not result['exit_code'], err_msg
+        with self.os_conn.ssh_to_instance(
+                self.env, vm, vm_keypair=self.instance_keypair) as remote:
+            remote.check_call('sudo -i cirros-dhcpc up eth0')
 
     def create_delete_number_of_instances(self, net_number, router, net_list,
                                           inst_keypair, security_group):

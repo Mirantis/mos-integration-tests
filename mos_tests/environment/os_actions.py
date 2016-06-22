@@ -17,6 +17,7 @@ import random
 import time
 
 from cinderclient import client as cinderclient
+from contextlib2 import suppress
 from dateutil.parser import parse as dateparse
 from glanceclient.v2.client import Client as GlanceClient
 from heatclient.v1.client import Client as HeatClient
@@ -834,6 +835,57 @@ class OpenStackActions(object):
                          password=password,
                          private_keys=instance_keys,
                          proxy_commands=proxy_commands)
+
+    def run_on_vm(self,
+                  env,
+                  vm,
+                  vm_keypair=None,
+                  command='uname',
+                  vm_login="cirros",
+                  timeout=3 * 60,
+                  vm_password='cubswin:)',
+                  vm_ip=None):
+        """Execute command on vm and return CommandResult instance
+
+        :param vm: server to execute command on
+        :param vm_keypair: keypair used during vm creating
+        :param command: command (or commands list) to execute
+        :param vm_login: username to login to vm via ssh
+        :param vm_password: password to login to vm via ssh
+        :param timeout: type - int or None
+            - if None - execute command and return results
+            - if int - wait `timeout` seconds until command exit_code will be 0
+        :rtype: mos_tests.environment.ssh.CommandResult
+        :returns: result of command executing
+        """
+        results = []
+
+        def execute(expected_exceptions=None):
+            if not self.server_status_is(vm, 'ACTIVE'):
+                return False
+            expected_exceptions = expected_exceptions or ()
+            with suppress(*expected_exceptions):
+                with self.ssh_to_instance(env,
+                                          vm,
+                                          vm_keypair,
+                                          username=vm_login,
+                                          password=vm_password,
+                                          vm_ip=vm_ip) as remote:
+                    result = remote.execute(command)
+                    results.append(result)
+                    return result.is_ok
+
+        if timeout is None:
+            logger.info('Executing `{cmd}` on {vm}'.format(cmds=command,
+                                                           vm=vm.name))
+            execute()
+        else:
+            wait(lambda: execute(expected_exceptions=(Exception, )),
+                 sleep_seconds=(1, 20, 2),
+                 timeout_seconds=timeout,
+                 waiting_for=("SSH commands: `{cmd}` completed "
+                              "with 0 exit code").format(cmd=command))
+        return results[-1]
 
     def wait_agents_alive(self, agt_ids_to_check):
         wait(lambda: all(agt['alive'] for agt in
