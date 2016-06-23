@@ -147,9 +147,9 @@ class TestBaseNFV(object):
         compute = os_conn.env.find_node_by_fqdn(host)
         devops_node = devops_env.get_node_by_fuel_node(compute)
         if state == 'down':
-            devops_node.suspend()
+            devops_node.destroy()
         else:
-            devops_node.resume()
+            devops_node.start()
         common.wait(is_compute_state,
                     timeout_seconds=20 * 60,
                     waiting_for='compute is {}'.format(state))
@@ -260,6 +260,7 @@ class TestBaseNFV(object):
         return memory_allocation
 
     def get_vm_dump(self, os_conn, vm):
+        vm.get()
         name = getattr(vm, "OS-EXT-SRV-ATTR:instance_name")
         host = os_conn.env.find_node_by_fqdn(
             getattr(vm, "OS-EXT-SRV-ATTR:host"))
