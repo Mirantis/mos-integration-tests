@@ -147,3 +147,81 @@ def test_deploy_app_with_volume_creation_from_volume(volume, environment,
                                           session, keypair, volumes)
     assert volume_data.attributes['size'] == 1
     assert volume_data.attributes['source_volid'] == volume.id
+
+
+@pytest.mark.testrail_id('844939')
+def test_deploy_app_with_volume_creation_from_snapshot(volume_snapshot,
+                                                       environment, murano,
+                                                       session, keypair):
+    """Check app deployment with volume creation from volume snapshot
+    Steps:
+        1. Create Cinder volume and make snapshot from it
+        2. Create Murano environment
+        3. Add ApacheHTTPServer application with ability to create Cinder
+        volume with size 1 GiB from exist volume snapshot and attach it to
+        the instance
+        4. Deploy environment
+        5. Make sure that deployment finished successfully
+        6. Check that application is accessible
+        7. Check that volume is attached to the instance, has size 1GiB and
+        created from exist volume snapshot
+        8. Delete environment, volume, snapshot
+    """
+    volumes = {
+        "/dev/vdb": {
+            "?": {
+                "type": "io.murano.resources.CinderVolume"
+            },
+            "size": 1,
+            "sourceSnapshot": {
+                "?": {
+                    "type": "io.murano.resources.CinderVolumeSnapshot"
+                },
+                "openstackId": volume_snapshot.id
+            }
+        }
+    }
+    volume_data = deploy_and_check_apache(environment, murano,
+                                          session, keypair, volumes)
+    assert volume_data.attributes['size'] == 1
+    assert volume_data.attributes['snapshot_id'] == volume_snapshot.id
+
+
+@pytest.mark.testrail_id('844940')
+def test_deploy_app_with_volume_creation_from_backup(volume_backup,
+                                                     environment, murano,
+                                                     session, keypair):
+    """Check app deployment with volume creation from volume backup
+    Steps:
+        1. Create Cinder volume and make backup from it
+        2. Create Murano environment
+        3. Add ApacheHTTPServer application with ability to create Cinder
+        volume with size 1 GiB from exist volume backup and attach it to
+        the instance
+        4. Deploy environment
+        5. Make sure that deployment finished successfully
+        6. Check that application is accessible
+        7. Check that volume is attached to the instance, has size 1GiB and
+        restored from exist volume backup
+        8. Delete environment, volume, backup
+    """
+    volumes = {
+        "/dev/vdb": {
+            "?": {
+                "type": "io.murano.resources.CinderVolume"
+            },
+            "size": 1,
+            "name": "restore_backup" + volume_backup.id,
+            "sourceVolumeBackup": {
+                "?": {
+                    "type": "io.murano.resources.CinderVolumeBackup"
+                },
+                "openstackId": volume_backup.id
+            }
+        }
+    }
+    volume_data = deploy_and_check_apache(environment, murano,
+                                          session, keypair, volumes)
+    assert volume_data.attributes['size'] == 1
+    assert volume_backup.id in volume_data.attributes['name']
+

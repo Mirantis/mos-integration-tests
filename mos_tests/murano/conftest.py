@@ -342,3 +342,33 @@ def volume(os_conn):
     volume = common.create_volume(os_conn.cinder, image.id)
     yield volume
     os_conn.delete_volume(volume)
+
+
+@pytest.fixture
+def volume_snapshot(os_conn, volume):
+    snapshot = os_conn.cinder.volume_snapshots.create(volume.id)
+
+    def is_snapshot_available(os_conn, snapshot):
+        snp_status = os_conn.cinder.volume_snapshots.get(snapshot.id).status
+        assert snp_status != 'error'
+        return snp_status == 'available'
+
+    common.wait(lambda: is_snapshot_available(os_conn, snapshot),
+                timeout_seconds=300,
+                waiting_for='snapshot to become in available status')
+    return snapshot
+
+
+@pytest.fixture
+def volume_backup(os_conn, volume):
+    backup = os_conn.cinder.backups.create(volume.id)
+
+    def is_backup_available(os_conn, backup):
+        bck_status = os_conn.cinder.backups.get(backup.id).status
+        assert bck_status != 'error'
+        return bck_status == 'available'
+
+    common.wait(lambda: is_backup_available(os_conn, backup),
+                timeout_seconds=300,
+                waiting_for='backup to become in available status')
+    return backup
