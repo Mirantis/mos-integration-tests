@@ -256,15 +256,21 @@ class TestLiveMigrationBase(object):
                          block_migration, big_hypervisors):
         project_id = os_conn.session.get_project_id()
         max_volumes = os_conn.cinder.quotas.get(project_id).volumes
-        params = getattr(request, 'param', {'volume_backed': False})
+        params = getattr(request, 'param', {'volume_backed': False,
+                                            'inst_count': 'max'})
         self.check_lm_restrictions(nova_ceph, params['volume_backed'],
                                    block_migration)
 
         hypervisor1, hypervisor2 = big_hypervisors
         flavor = self.os_conn.nova.flavors.find(name='m1.small')
-        instances_count = min(
-            self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
-            self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
+
+        if 'inst_count' in params.keys():
+            if type(params['inst_count']) is int:
+                instances_count = params['inst_count']
+        else:
+            instances_count = min(
+                self.os_conn.get_hypervisor_capacity(hypervisor1, flavor),
+                self.os_conn.get_hypervisor_capacity(hypervisor2, flavor))
         instances_zone = 'nova:{0.hypervisor_hostname}'.format(hypervisor1)
         create_args = None
         if params['volume_backed']:
@@ -779,9 +785,6 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     @pytest.mark.testrail_id('838238', block_migration=False,
                              stress_instances={'volume_backed': True},
                              cmd=memory_cmd)
-    @pytest.mark.testrail_id('838039', block_migration=True,
-                             stress_instances={'volume_backed': False},
-                             cmd=hdd_cmd)
     @pytest.mark.parametrize('block_migration, stress_instances, cmd',
                              [
                                  (True, {'volume_backed': False}, cpu_cmd),
@@ -790,7 +793,6 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                  (False, {'volume_backed': False}, memory_cmd),
                                  (False, {'volume_backed': True}, cpu_cmd),
                                  (False, {'volume_backed': True}, memory_cmd),
-                                 (True, {'volume_backed': False}, hdd_cmd),
                              ],
                              ids=[
                                  'cpu-block LM',
@@ -799,7 +801,6 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
                                  'memory-true LM',
                                  'cpu-true LM volume-backed',
                                  'memory-true LM volume-backed',
-                                 'hdd-block LM',
                              ],
                              indirect=['block_migration', 'stress_instances'])
     @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
@@ -844,6 +845,52 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
         self.concurrent_migration(block_migration, hypervisor_to=hypervisor1)
 
         self.os_conn.wait_servers_ssh_ready(self.instances)
+
+    @pytest.mark.testrail_id('838039')
+    @pytest.mark.parametrize('block_migration, stress_instances, cmd',
+                             [(True, {'volume_backed': False,
+                                      'inst_count': 2},
+                               hdd_cmd)],
+                             ids=['hdd-block LM, 2 instances'],
+                             indirect=['block_migration', 'stress_instances'])
+    @pytest.mark.usefixtures('router', 'unlimited_live_migrations')
+    def test_lm_under_work_multi_instances_hdd_block(
+            self, stress_instances, keypair, big_hypervisors, block_migration,
+            cmd):
+        """LM of multiple instances under workload
+
+        Scenario:
+            1. Allow unlimited concurrent live migrations
+            2. Restart nova-api services on controllers and
+                nova-compute services on computes
+            3. Create maximum allowed number of instances on a single compute
+                node and install stress utilities on it
+            4. Initiate serial block LM of previously created instances
+                to another compute node
+            5. Check that all live-migrated instances are hosted on target host
+                and are in Active state:
+            6. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is still alive
+            7. Initiate concurrent block LM of previously created instances
+                to another compute node
+            8. Check that all live-migrated instances are hosted on target host
+                and are in Active state
+            9. Send pings between pairs of VMs to check that network
+                connectivity between these hosts is alive
+        """
+        hypervisor1, _ = big_hypervisors
+        for instance in self.instances:
+            with self.os_conn.ssh_to_instance(self.env,
+                                              instance,
+                                              vm_keypair=keypair,
+                                              username='ubuntu') as remote:
+                remote.check_call(cmd)
+
+        self.successive_migration(block_migration, hypervisor_from=hypervisor1)
+
+        self.os_conn.wait_servers_ssh_ready(self.instances)
+
+        self.os_conn.wait_hypervisor_be_free(hypervisor1)
 
     @pytest.mark.testrail_id('838038', block_migration=True,
                              stress_instances={'volume_backed': False})
