@@ -77,6 +77,16 @@ def cleanup(os_conn):
                 timeout_seconds=10 * 60, waiting_for='images cleanup')
 
 
+@pytest.fixture
+def cinder_lvm_hosts(os_conn):
+    hosts = [node.host + '#LVM-backend' for node in
+             os_conn.cinder.services.list(binary='cinder-volume') if
+             node.status == 'enabled']
+    if len(hosts) < 2:
+        pytest.skip("Insufficient count of cinder lvm nodes")
+    return hosts
+
+
 def check_snapshot_status(
         os_conn, snapshot, status='available', positive=True):
     snp_status = os_conn.cinder.volume_snapshots.get(snapshot.id).status
@@ -379,3 +389,35 @@ def test_create_image_from_volume(os_conn, disk_format, volume, cleanup):
 
     common.wait(is_image_active, timeout_seconds=60 * 5,
                 waiting_for='image became to active status')
+
+
+@pytest.mark.undestructive
+@pytest.mark.check_env_('not is_ceph_enabled')
+@pytest.mark.testrail_id('857389')
+def test_cinder_migrate(os_conn, volume, cinder_lvm_hosts):
+    """This test case checks cinder migration for volume
+    Steps:
+    1. Create volume
+    2. Check volume host
+    3. Migrate volume
+    4. Check that migration is finished without errors
+    5. Check that host is changed
+    """
+    volume_host = getattr(volume, 'os-vol-host-attr:host')
+    assert volume_host in cinder_lvm_hosts
+    cinder_lvm_hosts.remove(volume_host)
+    new_host = cinder_lvm_hosts[0]
+    os_conn.cinder.volumes.migrate_volume(volume, new_host,
+                                          force_host_copy=False,
+                                          lock_volume=False)
+
+    def is_migration_success():
+        volume.get()
+        assert volume.migration_status != 'error'
+        return volume.migration_status == 'success'
+
+    common.wait(is_migration_success, timeout_seconds=300,
+                waiting_for='volume migration')
+    new_volume_host = getattr(volume, 'os-vol-host-attr:host')
+    assert new_host == new_volume_host
+    assert new_volume_host in cinder_lvm_hosts
