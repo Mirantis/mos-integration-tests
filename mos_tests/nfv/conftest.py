@@ -13,6 +13,8 @@
 #    under the License.
 
 import csv
+
+import dpath.util
 import pytest
 import re
 
@@ -21,6 +23,13 @@ from mos_tests.functions import file_cache
 from mos_tests.nfv.base import page_1gb
 from mos_tests.nfv.base import page_2mb
 from mos_tests.settings import UBUNTU_QCOW2_URL
+
+
+@pytest.fixture
+def nova_ceph(env):
+    data = env.get_settings_data()
+    if not dpath.util.get(data, '*/storage/**/ephemeral_ceph/value'):
+        pytest.skip("Nova ceph is required")
 
 
 @pytest.yield_fixture

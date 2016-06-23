@@ -22,6 +22,7 @@ import pytest
 from mos_tests.environment.os_actions import InstanceError
 from mos_tests.functions.common import wait
 from mos_tests.functions import network_checks
+from mos_tests.functions import service
 from mos_tests.nfv.base import TestBaseNFV
 from mos_tests.nfv.conftest import get_cpu_distribition_per_numa_node
 from mos_tests.nfv.conftest import get_memory_distribition_per_numa_node
@@ -52,6 +53,16 @@ def aggregate_n(os_conn):
     os_conn.nova.aggregates.delete(aggr)
 
 
+@pytest.yield_fixture
+def disable_nova_config_drive(env):
+    # WA for bug https://bugs.launchpad.net/mos/+bug/1589460/
+    # This should be removed in MOS 10.0
+    config = [('DEFAULT', 'force_config_drive', False)]
+    for step in service.nova_patch(env, config):
+        yield step
+
+
+@pytest.mark.undestructive
 @pytest.mark.check_env_('is_vlan')
 class TestCpuPinningOneNuma(TestBaseNFV):
 
@@ -65,7 +76,6 @@ class TestCpuPinningOneNuma(TestBaseNFV):
          'params': {'ram': 2048, 'vcpus': 2, 'disk': 20},
          'keys': {'aggregate_instance_extra_specs:pinned': 'false'}}]
 
-    @pytest.mark.undestructive
     @pytest.mark.testrail_id('838320')
     def test_cpu_pinning_one_numa_cell(
             self, env, os_conn, networks, flavors, security_group,
@@ -101,6 +111,61 @@ class TestCpuPinningOneNuma(TestBaseNFV):
             self.check_cpu_for_vm(os_conn, vm, 1, cpus[host])
 
         network_checks.check_vm_connectivity(env, os_conn)
+
+    @pytest.mark.testrail_id('838340')
+    @pytest.mark.usefixtures('disable_nova_config_drive')
+    def test_vms_connectivity_after_evacuation(self, env, os_conn, nova_ceph,
+                                               networks, flavors, aggregate,
+                                               security_group, devops_env):
+        """This test checks vms connectivity for vms with cpu pinning with 1
+        NUMA after evacuation
+
+        Steps:
+            1. Create net1 with subnet, net2 with subnet and router1 with
+            interfaces to both nets
+            2. Boot vm0 with cpu flavor on host0 and net0
+            3. Boot vm1 with old flavor on host1 and net1
+            4. Check vms connectivity
+            5. Kill compute0 and evacuate vm0 to compute1 with
+            --on-shared-storage parameter
+            6. Check vms connectivity
+            7. Check numa nodes for vm0
+            8. Make compute0 alive
+            9. Check that resources for vm0 were deleted from compute0
+        """
+        cpus = get_cpu_distribition_per_numa_node(env)
+        hosts = aggregate.hosts
+        vms = []
+
+        for i in range(2):
+            vm = os_conn.create_server(
+                name='vm{}'.format(i), flavor=flavors[i].id,
+                nics=[{'net-id': networks[i]}],
+                availability_zone='nova:{}'.format(hosts[i]),
+                security_groups=[security_group.id])
+            vms.append(vm)
+        network_checks.check_vm_connectivity(env, os_conn)
+        self.check_cpu_for_vm(os_conn, vms[0], 1, cpus[hosts[0]])
+
+        self.compute_change_state(os_conn, devops_env, hosts[0], state='down')
+        vm0_new = self.evacuate(os_conn, devops_env, vms[0])
+        vm0_new.get()
+        new_host = getattr(vm0_new, "OS-EXT-SRV-ATTR:host")
+        assert new_host in hosts, "Unexpected host after evacuation"
+        assert new_host != hosts[0], "No host changed after evacuation"
+        network_checks.check_vm_connectivity(env, os_conn)
+        self.check_cpu_for_vm(os_conn, vm0_new, 1, cpus[new_host])
+
+        self.compute_change_state(os_conn, devops_env, hosts[0], state='up')
+        old_hv = os_conn.nova.hypervisors.find(hypervisor_hostname=hosts[0])
+        assert old_hv.running_vms == 0, (
+            "Old hypervisor {0} shouldn't have running vms").format(hosts[0])
+
+        instance_name = getattr(vm0_new, "OS-EXT-SRV-ATTR:instance_name")
+        assert instance_name in self.get_instances(os_conn, new_host), (
+            "Instance should be in the list of instances on the new host")
+        assert instance_name not in self.get_instances(os_conn, hosts[0]), (
+            "Instance shouldn't be in the list of instances on the old host")
 
 
 @pytest.mark.check_env_('is_vlan')
