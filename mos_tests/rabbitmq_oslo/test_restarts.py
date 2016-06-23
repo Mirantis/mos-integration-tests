@@ -437,6 +437,7 @@ def test_check_send_and_receive_messages_from_the_same_nodes(
     computes = env.get_nodes_by_role('compute')
     compute = random.choice(computes)
     controller = random.choice(controllers)
+    topic = str(uuid.uuid4())
 
     # Get management IPs of all controllers
     ctrl_ips = get_mngmnt_ip_of_ctrllrs(env)
@@ -453,7 +454,7 @@ def test_check_send_and_receive_messages_from_the_same_nodes(
         for ctrl_ip in ctrl_ips:
             configure_oslomessagingchecktool(
                 remote, rabbit_message_is_event=False,
-                rabbit_custom_topic=str(uuid.uuid4()),
+                rabbit_custom_topic=topic,
                 rabbit_custom_hosts=[ctrl_ip],
                 custom_cfg_filename='oslo_msg_check_%s.conf' % ctrl_ip,
             )
