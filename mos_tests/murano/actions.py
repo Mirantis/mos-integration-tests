@@ -265,8 +265,13 @@ class MuranoActions(object):
     def get_instance_id(self, name):
         instance_list = self.os_conn.nova.servers.list()
         for instance in instance_list:
-            if instance.name.find(name) > -1:
+            if name in instance.name:
                 return instance.id
+
+    def check_volume_attached(self, name, volume_id):
+        vm_id = self.get_instance_id(name)
+        attached_volumes = self.os_conn.nova.volumes.get_server_volumes(vm_id)
+        assert attached_volumes[0].id == volume_id
 
     def get_volume_name(self, environment_id):
         stack = self._get_stack(environment_id)
