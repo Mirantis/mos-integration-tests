@@ -401,3 +401,16 @@ def computes_with_dpdk_hp(env, experimental_features):
 @pytest.fixture
 def experimental_features(fuel):
     return 'experimental' in fuel.version['feature_groups']
+
+
+@pytest.fixture
+def hosts_with_hyper_threading(os_conn):
+    computes = os_conn.env.get_nodes_by_role('compute')
+    hosts = []
+    for compute in computes:
+        with compute.ssh() as remote:
+            res = remote.check_call("lscpu | grep 'Thread(s) per core'")
+        threads_count = int(re.findall('[\d]+', res['stdout'][0])[0])
+        if threads_count >= 2:
+            hosts.append(compute.data['fqdn'])
+    return hosts

@@ -11,6 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import re
 import xml.etree.ElementTree as ElementTree
 
 from mos_tests.environment.os_actions import InstanceError
@@ -273,3 +274,38 @@ class TestBaseNFV(object):
         with host.ssh() as remote:
             instances = remote.check_call('virsh list --name').stdout_string
         return instances.splitlines()
+
+    def get_thread_siblings_lists(self, os_conn, host, numanode):
+        """This method returns list of thread_siblings_list for numanode. Only
+        cpus isolated for cpu_pinning are taken into account
+
+        :param os_conn: os_conn
+        :param host: fqdn hostname
+        :param numanode: id from numa node
+        :return: list of thread_siblings_list
+        """
+        compute = os_conn.env.find_node_by_fqdn(host)
+        with compute.ssh() as remote:
+            # Get all thread_siblings_list
+            cmd = ("cat /sys/bus/node/devices/node{0}/cpu*/topology/"
+                   "thread_siblings_list".format(numanode))
+            res = remote.check_call(cmd).stdout_string.splitlines()
+            all_ts = [re.split('-|,', item) for item in res]
+
+            # Get cpus for cpu pinning usage
+            cpus = remote.check_call("cat /proc/cmdline")["stdout"][0]
+            isolcpus = {x[0]: x[2] for x in [y.partition('=')
+                        for y in cpus.split()]}['isolcpus'].split(',')
+        return [tuple(i) for i in all_ts if set(i).issubset(set(isolcpus))]
+
+    def get_vm_thread_siblings_lists(self, os_conn, vm):
+        """This method returns thread_siblings_lists used by vm"""
+        vm.get()
+        host = getattr(vm, "OS-EXT-SRV-ATTR:host")
+        dump = self.get_vm_dump(os_conn, vm)
+        numa = dump.find('numatune').find('memnode').get('cellid')
+        ts_lsts = self.get_thread_siblings_lists(os_conn, host, numa)
+        vcpus = [vcpupin.get('cpuset') for vcpupin in
+                 dump.find('cputune').findall('vcpupin')]
+        used_ts = set([ts for ts in ts_lsts for vcpu in vcpus if vcpu in ts])
+        return used_ts
