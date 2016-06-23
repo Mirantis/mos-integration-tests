@@ -257,6 +257,41 @@ class TestImportPackageWithDepencies(base.PackageTestCase):
 @pytest.mark.undestructive
 @pytest.mark.usefixtures('screen')
 @murano_test_patch
+@pytest.mark.incremental
+class TestCategoryManagement(base.PackageTestCase):
+
+    """Test application category adds and deletes successfully
+    Scenario:
+        1. Navigate to 'Categories' page
+        2. Click on 'Add Category' button
+        3. Create new category and check it's browsed in the table
+        4. Delete new category and check it's not browsed anymore
+    """
+
+    @pytest.mark.testrail_id('836686')
+    def test_add_category(self):
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.driver.find_element_by_id(c.AddCategory).click()
+        self.fill_field(by.By.XPATH, "//input[@id='id_name']", 'TEST_CATEGORY')
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.wait_for_alert_message()
+
+    @pytest.mark.testrail_id('836687')
+    def test_delete_category(self):
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        delete_new_category_btn = c.DeleteCategory.format('TEST_CATEGORY')
+        self.driver.find_element_by_xpath(delete_new_category_btn).click()
+        self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
+        self.wait_for_alert_message()
+        self.check_element_not_on_page(by.By.XPATH, delete_new_category_btn)
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
+@pytest.mark.usefixtures('screen')
+@murano_test_patch
 class TestSuitePackageCategory(base.PackageTestCase):
     def _import_package_with_category(self, package_archive, category):
         self.go_to_submenu('Packages')
@@ -321,26 +356,37 @@ class TestSuitePackageCategory(base.PackageTestCase):
                                 "//tr[@data-display='{}']".format(category))
         self.check_element_on_page(*category_locator)
 
-    @pytest.mark.testrail_id('836686', '836687')
-    def test_category_management(self):
-        """Test application category adds and deletes successfully
-        Scenario:
-            1. Navigate to 'Categories' page
-            2. Click on 'Add Category' button
-            3. Create new category and check it's browsed in the table
-            4. Delete new category and check it's not browsed anymore
-        """
+    @pytest.mark.testrail_id('836691')
+    def test_category_pagination(self):
+        """Test categories pagination in case of many categories created """
         self.navigate_to('Manage')
         self.go_to_submenu('Categories')
-        self.driver.find_element_by_id(c.AddCategory).click()
-        self.fill_field(by.By.XPATH, "//input[@id='id_name']", 'TEST_CATEGORY')
-        self.driver.find_element_by_xpath(c.InputSubmit).click()
-        self.wait_for_alert_message()
-        delete_new_category_btn = c.DeleteCategory.format('TEST_CATEGORY')
-        self.driver.find_element_by_xpath(delete_new_category_btn).click()
-        self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
-        self.wait_for_alert_message()
-        self.check_element_not_on_page(by.By.XPATH, delete_new_category_btn)
+
+        categories_list = [elem.name for elem in
+                           self.murano_client.categories.list()]
+        # Murano client lists the categories in order of creation
+        # starting from the last created. So need to reverse it to align with
+        # the table in UI form. Where categories are listed starting from the
+        # first created to the last one.
+        categories_list.reverse()
+
+        categories_per_page = cfg.common.items_per_page
+        pages_itself = [categories_list[i:i + categories_per_page] for i in
+                        range(0, len(categories_list), categories_per_page)]
+        for i, names in enumerate(pages_itself, 1):
+            for name in names:
+                self.check_element_on_page(by.By.XPATH, c.Status.format(name))
+            if i != len(pages_itself):
+                self.driver.find_element_by_xpath(c.NextBtn).click()
+        # Wait till the Next button disappear
+        # Otherwise 'Prev' button from the previous page might be used
+        self.check_element_not_on_page(by.By.XPATH, c.NextBtn)
+        pages_itself.reverse()
+        for i, names in enumerate(pages_itself, 1):
+            for name in names:
+                self.check_element_on_page(by.By.XPATH, c.Status.format(name))
+            if i != len(pages_itself):
+                self.driver.find_element_by_xpath(c.PrevBtn).click()
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
