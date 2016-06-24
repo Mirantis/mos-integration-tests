@@ -224,4 +224,3 @@ def test_deploy_app_with_volume_creation_from_backup(volume_backup,
                                           session, keypair, volumes)
     assert volume_data.attributes['size'] == 1
     assert volume_backup.id in volume_data.attributes['name']
-
