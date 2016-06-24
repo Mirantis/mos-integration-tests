@@ -51,7 +51,12 @@ class IronicActions(object):
 
         return True
 
-    def boot_instance(self, image, flavor, keypair, **kwargs):
+    def boot_instance(self,
+                      image,
+                      flavor,
+                      keypair,
+                      name='ironic-server',
+                      **kwargs):
         """Boot and return ironic instance
 
         :param os_conn: initialized `os_conn` fixture
@@ -70,7 +75,7 @@ class IronicActions(object):
                     sleep_seconds=15,
                     waiting_for='ironic nodes to be provisioned')
         baremetal_net = self.os_conn.nova.networks.find(label='baremetal')
-        return self.os_conn.create_server('ironic-server',
+        return self.os_conn.create_server(name,
                                           image_id=image.id,
                                           flavor=flavor.id,
                                           key_name=keypair.name,
@@ -117,7 +122,7 @@ class IronicActions(object):
             self.os_conn.nova.servers.delete(node.instance_uuid)
             common.wait(
                 lambda: len(self.os_conn.nova.servers.findall(
-                    id=node.instance_uuid)) == 0,
+                            id=node.instance_uuid)) == 0,
                 timeout_seconds=60,
                 waiting_for='instance to be deleted')
         for port in self.client.node.list_ports(node.uuid):
