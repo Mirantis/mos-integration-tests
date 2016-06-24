@@ -135,7 +135,7 @@ def is_backup_deleted(os_conn, backup):
     return len(os_conn.cinder.backups.findall(id=backup.id)) == 0
 
 
-@pytest.mark.undestructive
+@pytest.mark.check_env_('not is_ceph_enabled')
 @pytest.mark.testrail_id('543176')
 def test_creating_multiple_snapshots(os_conn, quota, volume):
     """This test case checks creation of several snapshot at the same time
@@ -327,8 +327,8 @@ def test_create_delete_snapshots_in_parallel(os_conn, volume):
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ceph_enabled')
-@pytest.mark.testrail_id('857361', disk_format='qcow2')
-@pytest.mark.testrail_id('857362', disk_format='raw')
+@pytest.mark.testrail_id('857361', ubuntu_image='qcow2')
+@pytest.mark.testrail_id('857362', ubuntu_image='raw')
 @pytest.mark.parametrize('ubuntu_image', ['qcow2', 'raw'],
                          indirect=['ubuntu_image'])
 def test_create_volume_from_image(os_conn, ubuntu_image, cleanup):
