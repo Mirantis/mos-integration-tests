@@ -26,11 +26,10 @@ from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import get_os_conn
 from mos_tests.functions.common import wait
+from mos_tests.functions import file_cache
 from mos_tests.functions import os_cli
-from mos_tests.settings import KEYSTONE_PASS
-from mos_tests.settings import KEYSTONE_USER
-from mos_tests.settings import SERVER_ADDRESS
-from mos_tests.settings import SSH_CREDENTIALS
+from mos_tests import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +110,7 @@ def fuel_master_ip(request, env_name, snapshot_name):
     if not fuel_ip:
         fuel_ip = DevopsClient.get_admin_node_ip(env_name=env_name)
     if not fuel_ip:
-        fuel_ip = SERVER_ADDRESS
+        fuel_ip = settings.SERVER_ADDRESS
     return fuel_ip
 
 
@@ -166,10 +165,10 @@ def cleanup(request, env_name, snapshot_name):
 
 def get_fuel_client(fuel_ip):
     return FuelClient(ip=fuel_ip,
-                      login=KEYSTONE_USER,
-                      password=KEYSTONE_PASS,
-                      ssh_login=SSH_CREDENTIALS['login'],
-                      ssh_password=SSH_CREDENTIALS['password'])
+                      login=settings.KEYSTONE_USER,
+                      password=settings.KEYSTONE_PASS,
+                      ssh_login=settings.SSH_CREDENTIALS['login'],
+                      ssh_password=settings.SSH_CREDENTIALS['password'])
 
 
 @pytest.fixture(scope="session")
@@ -462,3 +461,17 @@ def controller_remote(env):
 @pytest.fixture
 def openstack_client(controller_remote):
     return os_cli.OpenStack(controller_remote)
+
+
+@pytest.yield_fixture
+def ubuntu_image_id(os_conn):
+    logger.info('Creating ubuntu image')
+    image = os_conn.glance.images.create(name="image_ubuntu",
+                                         disk_format='qcow2',
+                                         container_format='bare')
+    with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
+        os_conn.glance.images.upload(image.id, f)
+
+    logger.info('Ubuntu image created')
+    yield image.id
+    os_conn.glance.images.delete(image.id)
