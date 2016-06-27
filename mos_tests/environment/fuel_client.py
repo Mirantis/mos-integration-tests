@@ -70,14 +70,8 @@ class NodeProxy(object):
         )
 
     def is_ssh_avaliable(self):
-        try:
-            with self.ssh() as remote:
-                remote.check_call('uname')
-        except (ssh_exception.SSHException,
-                ssh_exception.NoValidConnectionsError):
-            return False
-        else:
-            return True
+        ssh_client = self.ssh()
+        return bool(ssh_client.check_connection())
 
     def get_mac_net_mapping(self):
         interfaces = self.get_attribute('interfaces')
