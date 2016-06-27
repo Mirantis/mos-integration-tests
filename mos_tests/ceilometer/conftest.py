@@ -12,11 +12,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from ceilometerclient import client
 import pytest
 
 from mos_tests.functions import os_cli
 
 
 @pytest.fixture
-def ceilometer_client(controller_remote):
+def ceilometer_cli(controller_remote):
     return os_cli.Ceilometer(controller_remote)
+
+
+@pytest.fixture
+def ceilometer_client(os_conn):
+    return client.get_client(version='2', session=os_conn.session)

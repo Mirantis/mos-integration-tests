@@ -67,7 +67,7 @@ def instance(os_conn, compute):
 
 
 @pytest.mark.testrail_id('842507')
-def test_nova_polling(env, compute, patch_config, instance, ceilometer_client):
+def test_nova_polling(env, compute, patch_config, instance, ceilometer_cli):
     """Test nova polling
 
     Scenario:
@@ -85,5 +85,5 @@ def test_nova_polling(env, compute, patch_config, instance, ceilometer_client):
     with env.get_nodes_by_role('mongo')[0].ssh() as remote:
         remote.check_call('echo "db.meter.remove({}), db.resource.remove({})" '
                           '| mongo ceilometer')
-    result = ceilometer_client('sample-list -m cpu_util').listing()
+    result = ceilometer_cli('sample-list -m cpu_util').listing()
     assert len(result) == 0
