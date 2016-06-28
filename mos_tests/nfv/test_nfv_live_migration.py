@@ -19,6 +19,7 @@ import pytest
 
 from mos_tests.functions import file_cache
 from mos_tests.functions import network_checks
+from mos_tests.functions import service
 from mos_tests.nfv.base import page_1gb
 from mos_tests.nfv.base import page_2mb
 from mos_tests.nfv.base import TestBaseNFV
@@ -29,16 +30,27 @@ from mos_tests.settings import UBUNTU_QCOW2_URL
 logger = logging.getLogger(__name__)
 
 marker = 'cpulimit is installed'
-userdata = ("#!/bin/bash -v ;"
-            "apt-get install -y cpulimit ;"
-            "echo '{0}'".format(marker))
+
+userdata = '\n'.join([
+    '#!/bin/bash -v',
+    'apt-get install -y cpulimit',
+    'echo "{0}"'.format(marker)], )
 
 
-@pytest.fixture()
+@pytest.fixture
 def nova_ceph(env):
     data = env.get_settings_data()
     if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value'):
         pytest.skip("Nova Ceph RBD should be disabled")
+
+
+@pytest.yield_fixture(scope='module', autouse=True)
+def disable_nova_config_drive(env):
+    # WA for bug https://bugs.launchpad.net/mos/+bug/1589460/
+    # This should be removed in MOS 10.0
+    config = [('DEFAULT', 'force_config_drive', False)]
+    for step in service.nova_patch(env, config):
+        yield step
 
 
 @pytest.yield_fixture
