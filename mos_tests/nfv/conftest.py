@@ -211,13 +211,11 @@ def computes_with_hp_1gb(env, request):
     min_count = getattr(request, 'param', {'host_count': 1,
                                            'hp_count_per_host': 4})
     computes = computes_configuration(env)
-    computes_with_1gb_hp = [host for host, attr in computes.items() if
-                            attr[page_1gb]['total'] != 0]
+    computes_with_1gb_hp = [
+        host for host, attr in computes.items() if
+        attr[page_1gb]['total'] >= min_count['hp_count_per_host']]
     if len(computes_with_1gb_hp) < min_count['host_count']:
         pytest.skip("Insufficient count of compute nodes with 1Gb huge pages")
-    for host in computes_with_1gb_hp:
-        if computes[host][page_1gb]['total'] < min_count['hp_count_per_host']:
-            pytest.skip("Insufficient count of 1Gb huge pages for host")
     return computes_with_1gb_hp
 
 
@@ -226,13 +224,11 @@ def computes_with_hp_2mb(env, request):
     min_count = getattr(request, 'param', {'host_count': 1,
                                            'hp_count_per_host': 1024})
     computes = computes_configuration(env)
-    computes_with_2mb_hp = [host for host, attr in computes.items() if
-                            attr[page_2mb]['total'] != 0]
+    computes_with_2mb_hp = [
+        host for host, attr in computes.items() if
+        attr[page_2mb]['total'] >= min_count['hp_count_per_host']]
     if len(computes_with_2mb_hp) < min_count['host_count']:
         pytest.skip("Insufficient count of compute nodes with 2Mb huge pages")
-    for host in computes_with_2mb_hp:
-        if computes[host][page_2mb]['total'] < min_count['hp_count_per_host']:
-            pytest.skip("Insufficient count of 2Mb huge pages for host")
     return computes_with_2mb_hp
 
 
@@ -241,17 +237,11 @@ def computes_with_mixed_hp(env, request):
     min_count = getattr(request.cls, 'mixed_hp_computes')
     computes = computes_configuration(env)
     mixed_computes = [host for host, attr in computes.items()
-                      if attr[page_2mb]['total'] != 0 and
-                      attr[page_1gb]['total'] != 0]
+                      if attr[page_2mb]['total'] >= min_count['count_2mb'] and
+                      attr[page_1gb]['total'] >= min_count['count_1gb']]
     if len(mixed_computes) < min_count['host_count']:
         pytest.skip(
             "Insufficient count of compute nodes with 2Mb & 1Gb huge pages")
-    for host in mixed_computes:
-        counts = [(computes[host][page_1gb]['total'], min_count['count_1gb']),
-                  (computes[host][page_2mb]['total'], min_count['count_2mb'])]
-        for (act, minimum) in counts:
-            if act < minimum:
-                pytest.skip("Insufficient count huge pages for host")
     return mixed_computes
 
 
@@ -266,6 +256,13 @@ def computes_with_numa_nodes(env, request):
     if len(conf.keys()) < min_count["hosts_count"]:
         pytest.skip("Insufficient count of computes with required numa nodes")
     return conf
+
+
+def get_numa_count(compute):
+    with compute.ssh() as remote:
+        res = remote.execute("lscpu | grep 'NUMA node(s)'")['stdout']
+    count = int(re.findall('[\d]+', res[0])[0])
+    return count
 
 
 def get_cpu_distribition_per_numa_node(env):
@@ -288,6 +285,7 @@ def get_cpu_distribition_per_numa_node(env):
     host_def = {}
     computes = env.get_nodes_by_role('compute')
     for host in computes:
+        count = get_numa_count(host)
         with host.ssh() as remote:
             nodes = {}
             cpus = remote.execute('cat /proc/cmdline')['stdout'][0]
@@ -295,8 +293,6 @@ def get_cpu_distribition_per_numa_node(env):
                 continue
             isolcpus = set(convert_vcpu({x[0]: x[2] for x in [y.partition('=')
                            for y in cpus.split()]}['isolcpus']))
-            res = remote.execute("lscpu | grep 'NUMA node(s)'")['stdout']
-            count = int(res[0].split(':')[1])
             for i in range(count):
                 cmd = "lscpu | grep 'NUMA node{0} CPU(s)'".format(i)
                 res = remote.execute(cmd)['stdout'][0]
@@ -326,7 +322,7 @@ def get_memory_distribition_per_numa_node(env):
     return host_def
 
 
-def get_hp_distribution_per_numa_node(env, numa_count=1):
+def get_hp_distribution_per_numa_node(env):
     computes = env.get_nodes_by_role('compute')
 
     def huge_pages_per_numa_node(host, node, size):
@@ -341,6 +337,7 @@ def get_hp_distribution_per_numa_node(env, numa_count=1):
 
     def huge_pages_per_compute(compute):
         node_def = {}
+        numa_count = get_numa_count(compute)
         for node in range(numa_count):
             sizes = {size: huge_pages_per_numa_node(compute, node, size)
                      for size in [page_1gb, page_2mb]}

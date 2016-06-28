@@ -160,7 +160,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
         for vm in vms:
-            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+            assert self.get_instance_page_size(os_conn, vm) == page_2mb
         network_checks.check_vm_connectivity(env, os_conn)
 
         self.live_migrate(os_conn, vms[0], hosts[1], block_migration=False)
@@ -189,7 +189,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
-            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+            assert self.get_instance_page_size(os_conn, vm) == page_2mb
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838329')
@@ -327,7 +327,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
-            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+            assert self.get_instance_page_size(os_conn, vm) == page_2mb
 
         check_vm_connectivity_cirros_ubuntu(
             env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
@@ -360,7 +360,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
-            self.check_instance_page_size(os_conn, vm, size=page_2mb)
+            assert self.get_instance_page_size(os_conn, vm) == page_2mb
         check_vm_connectivity_cirros_ubuntu(
             env, os_conn, keypair, cirros=vms[0], ubuntu=vms[1])
         self.cpu_load(env, os_conn, vms[1], vm_keypair=keypair, action='stop')
@@ -524,7 +524,7 @@ class TestLiveMigrationMixedFeatures(TestBaseNFV):
                               (hosts_to_use[0], vm2),
                               (hosts_to_use[0], vm3)]
             for host, vm in expected_hosts:
-                self.check_instance_page_size(os_conn, vm, page_size)
+                assert self.get_instance_page_size(os_conn, vm) == page_size
                 self.check_cpu_for_vm(os_conn, vm, numa, cpus[host])
 
             expected_hosts_usage = [(hosts_to_use[0], 2), (hosts_to_use[1], 1)]
@@ -609,7 +609,7 @@ class TestLiveMigrationMixedFeatures(TestBaseNFV):
 
             expected_hosts = [(hosts[1], vm1), (hosts[0], vm2)]
             for host, vm in expected_hosts:
-                self.check_instance_page_size(os_conn, vm, page_size)
+                assert self.get_instance_page_size(os_conn, vm) == page_size
                 self.check_cpu_for_vm(os_conn, vm, numa, cpus[host])
 
             final_conf_hp = computes_configuration(env)
