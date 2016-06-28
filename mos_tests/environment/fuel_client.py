@@ -24,7 +24,6 @@ from fuelclient.objects import FuelVersion
 from fuelclient.objects.node import Node as FuelNode
 from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
-from paramiko import ssh_exception
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.environment.ssh import SSHClient
