@@ -1045,8 +1045,14 @@ class OpenStackActions(object):
 
     def delete_volumes(self, volumes):
         names = ', '.join([x.name for x in volumes])
+        # Exclude non-existing volumes
+        all_volumes = self.cinder.volumes.findall()
+        provided_volumes_ids = [x.id for x in volumes]
+        volumes = [x for x in all_volumes
+                   if x.id in provided_volumes_ids]
+        del all_volumes, provided_volumes_ids
+        # Detach volume from instances; delete snapshots and backups from VOL.
         for volume in volumes:
-            volume.get()
             # if volume attached to any instance
             for attach in volume.attachments:
                 serv_id = attach['server_id']
@@ -1060,11 +1066,12 @@ class OpenStackActions(object):
             backups = self.cinder.backups.findall(volume_id=volume.id)
             for backup in backups:
                 self.cinder.backups.delete(backup)
-        wait(lambda: not any([self.cinder.backups.findall(
-            volume_id=x.id) for x in volumes]),
-            timeout_seconds=60 * 10,
-            waiting_for=('backups from volumes [{names}] '
-                         'to be deleted').format(names=names))
+        # Wait till volume will be detached and all connections will be removed
+        wait(lambda: not any([self.cinder.backups.findall(volume_id=x.id)
+                              for x in volumes]),
+             timeout_seconds=60 * 10,
+             waiting_for=('backups from volumes [{names}] '
+                          'to be deleted').format(names=names))
         wait(lambda: not any([self.cinder.volume_snapshots.findall(
                               volume_id=x.id) for x in volumes]),
              timeout_seconds=60 * 5,
@@ -1077,11 +1084,11 @@ class OpenStackActions(object):
              sleep_seconds=10,
              waiting_for=('volumes [{names}] '
                           'to became available').format(names=names))
+        # Delete volumes
         for volume in volumes:
             self.cinder.volumes.delete(volume.id)
             # Too fast deletion requests make deletion too long
             time.sleep(2)
-
         self.wait_volumes_deleted(volumes)
 
     def wait_volumes_deleted(self, volumes):

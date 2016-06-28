@@ -1057,6 +1057,15 @@ class TestBugVerification(TestBase):
 
 class TestServicesRestart(TestBase):
 
+    test_message = 'Some test message for test'  # message to write in files
+
+    @pytest.yield_fixture
+    def volume(self, os_conn):
+        logger.info('Create volume')
+        image = os_conn.nova.images.find(name='TestVM')
+        volume = common_functions.create_volume(os_conn.cinder, image.id, 1)
+        yield volume
+
     def restart_nova_services(self, nodes):
         """Restart all active nova services on all controllers
         and/or computes.
@@ -1079,6 +1088,46 @@ class TestServicesRestart(TestBase):
         for vm in vms:
             network_checks.check_ping_from_vm(
                 self.env, self.os_conn, vm, key, vm_login=username)
+
+    def mount_and_create_file_on_volume(self, vm, volume, vm_keypair):
+        # Attach volume to vm
+        self.os_conn.nova.volumes.create_server_volume(
+            vm.id, volume.id)
+        # Make attached volume usable inside VM
+        with self.os_conn.ssh_to_instance(
+                self.env, vm, vm_keypair=vm_keypair,
+                username='ubuntu') as remote:
+            # Create FS on mounted volume
+            res = remote.check_call(                 # find exact mount point
+                'lsblk -rdn -o NAME | tail -n1').stdout_string.strip()
+            cmd_1 = 'sudo mkfs -t ext3 /dev/{}'.format(res)
+            cmd_2 = 'sudo mkdir /mnt/{}'.format(res)
+            cmd_3 = 'sudo mount /dev/{0} /mnt/{0}'.format(res)
+            remote.check_call(cmd_1)
+            remote.check_call(cmd_2)
+            remote.check_call(cmd_3)
+            filename = '/mnt/{0}/file1.txt'.format(res)
+            tmp_filename = '/tmp/file1.txt'
+            # Write message to tmp file
+            with remote.open(tmp_filename, 'w') as f:
+                f.write(self.test_message)
+            # Put tmp file to mounted volume
+            remote.check_call('sudo mv {0} {1}'.format(tmp_filename, filename))
+            return filename
+
+    def control_cindervolume_service(self, action='start'):
+        """Performs start/stop/.. 'cinder-volume' service on all controllers"""
+        controllers = self.env.get_nodes_by_role('controller')
+        for controller in controllers:
+            with controller.ssh() as remote:
+                remote.check_call('service cinder-volume %s' % action)
+
+    def control_novacompute_service(self, action='start'):
+        """Performs start/stop/.. 'nova-compute' service on all computes"""
+        computes = self.env.get_nodes_by_role('compute')
+        for compute in computes:
+            with compute.ssh() as remote:
+                remote.check_call('service nova-compute %s' % action)
 
     @pytest.mark.testrail_id('1295467')
     def test_restart_all_nova_services(
@@ -1146,3 +1195,72 @@ class TestServicesRestart(TestBase):
         for vm in [vm1, vm2, vm3]:
             vm.delete()
         os_conn.wait_servers_deleted([vm1, vm2, vm3])
+
+    @pytest.mark.check_env_('is_ceph_enabled')
+    @pytest.mark.testrail_id('1295483')
+    def test_stop_cinder_nova(
+            self, os_conn, keypair, security_group, volume, ubuntu_image_id):
+        """Nova: Cinder+Nova. Boot vm, attach volume,
+        stop cinder-volume and nova-compute.
+
+        Actions:
+        1) Boot VM with Ubuntu and verify that we can ping this VM and login
+        to this VM via SSH;
+        2) Create volume and attach it to "test1" VM, mount this volume on VM
+        and create file(test1.txt with text) on the volume;
+        3) Stop service cinder-volume on all controllers;
+        4) Stop service nova-compute on compute nodes;
+        5) Login to this VM via SSH and create file(test2.txt with same
+        content as in test1.txt);
+        6) Read text from test2.txt, test1.txt and compare it;
+        7) Start nova-compute service on compute nodes;
+        8) Start cinder-volume on all controllers;
+        9) Detach and delete volume, delete VM.
+        """
+        int_net_id = os_conn.nova.networks.find(label='admin_internal_net').id
+        flavor = os_conn.nova.flavors.find(name='m1.small')
+
+        # Create and check connection for the first VM
+        vm1 = os_conn.create_server(
+            name='server01',
+            image_id=ubuntu_image_id,
+            flavor=flavor.id,
+            key_name=keypair.id,
+            nics=[{'net-id': int_net_id}],
+            security_groups=[security_group.id])
+        self.ping_public_ip_from_vms([vm1], keypair, username='ubuntu')
+
+        # Mount volume to vm and create file on it
+        filename_on_vl = self.mount_and_create_file_on_volume(
+            vm1, volume, keypair)
+
+        # Stop cinder-volume and nova-compute service on nodes
+        self.control_cindervolume_service('stop')
+        self.control_novacompute_service('stop')
+
+        # Write new file on vm
+        filename_on_vm = '/tmp/file2.txt'
+        with os_conn.ssh_to_instance(
+                self.env, vm1, vm_keypair=keypair,
+                username='ubuntu') as remote:
+            # Write message to a new file on VM
+            with remote.open(filename_on_vm, 'w') as f:
+                f.write(self.test_message)
+            # Compare file on VM and file on volume attache to VM
+            remote.check_call('cmp {0} {1}'.format(
+                filename_on_vl, filename_on_vm))
+
+        # Start services back
+        self.control_cindervolume_service('start')
+        self.control_novacompute_service('start')
+
+        # Detach, delete volume and VM
+        os_conn.nova.volumes.delete_server_volume(vm1.id, volume.id)
+        common_functions.wait(
+            lambda: (os_conn.cinder.volumes.get(volume.id)
+                     .status == 'available'),
+            timeout_seconds=60 * 2,
+            sleep_seconds=10,
+            waiting_for='volume to became available')
+        volume.delete()
+        vm1.delete()
