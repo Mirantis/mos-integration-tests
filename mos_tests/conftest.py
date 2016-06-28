@@ -141,7 +141,7 @@ def reinit_fixtures(request):
 
 
 @pytest.yield_fixture(autouse=True)
-def cleanup(request, env_name, snapshot_name):
+def revert_destructive(request, env_name, snapshot_name):
     yield
     item = request.node
     if hasattr(item.session, 'nextitem') and item.session.nextitem is None:

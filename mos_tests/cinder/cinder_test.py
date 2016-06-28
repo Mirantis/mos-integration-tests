@@ -63,18 +63,15 @@ def cleanup(os_conn):
     images_before = os_conn.nova.images.list()
     yield None
     vlms_after = os_conn.cinder.volumes.list()
-    vlms_for_del = [vol for vol in vlms_after if vol not in vlms_before]
-    for vlm in vlms_for_del:
-        vlm.delete()
-    common.wait(lambda: len(os_conn.cinder.volumes.list()) == len(vlms_before),
-                timeout_seconds=10 * 60, waiting_for='volumes cleanup')
+    vlms_for_del = set(vlms_after) - set(vlms_before)
+    os_conn.delete_volumes(vlms_for_del)
 
     images_after = os_conn.nova.images.list()
-    img_for_del = [img for img in images_after if img not in images_before]
+    img_for_del = set(images_after) - set(images_before)
     for image in img_for_del:
         os_conn.glance.images.delete(image.id)
     common.wait(lambda: len(os_conn.nova.images.list()) == len(images_before),
-                timeout_seconds=10 * 60, waiting_for='images cleanup')
+                timeout_seconds=5 * 60, waiting_for='images cleanup')
 
 
 @pytest.fixture
@@ -85,6 +82,13 @@ def cinder_lvm_hosts(os_conn):
     if len(hosts) < 2:
         pytest.skip("Insufficient count of cinder lvm nodes")
     return hosts
+
+
+@pytest.yield_fixture
+def keypair(os_conn):
+    key = os_conn.create_key(key_name='cinder_key')
+    yield key
+    os_conn.delete_key(key_name=key.name)
 
 
 def check_snapshot_status(
@@ -143,6 +147,25 @@ def check_all_backups_statuses(
 
 def is_backup_deleted(os_conn, backup):
     return len(os_conn.cinder.backups.findall(id=backup.id)) == 0
+
+
+def mount_volume(os_conn, env, vm, volume, keypair):
+    os_conn.nova.volumes.create_server_volume(vm.id, volume.id)
+    common.wait(
+        lambda: check_volume_status(os_conn, volume, status='in-use'),
+        timeout_seconds=300,
+        waiting_for='volume to be attached')
+
+    with os_conn.ssh_to_instance(
+            env, vm, vm_keypair=keypair, username='ubuntu') as remote:
+        dev_name = remote.check_call(
+            'lsblk -rdn -o NAME | tail -n1')['stdout'][0].strip()
+        mount_path = '/mnt/{}'.format(dev_name)
+        remote.check_call('sudo mkfs -t ext3 /dev/{}'.format(dev_name))
+        remote.check_call('sudo mkdir {}'.format(mount_path))
+        remote.check_call('sudo mount /dev/{0} {1}'.format(
+            dev_name, mount_path))
+        return mount_path
 
 
 @pytest.mark.check_env_('not is_ceph_enabled')
@@ -421,3 +444,98 @@ def test_cinder_migrate(os_conn, volume, cinder_lvm_hosts):
     new_volume_host = getattr(volume, 'os-vol-host-attr:host')
     assert new_host == new_volume_host
     assert new_volume_host in cinder_lvm_hosts
+
+
+@pytest.mark.testrail_id('1295471')
+def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
+    """This test case checks cinder works after restart all cinder services
+
+    Steps:
+        1. Create vm using Ubuntu image
+        2. Create volume 1, attach it to vm
+        3. Mount volume 1 and create file on it
+        4. Restart all cinder services
+        5. Create volume 2, attach it to vm
+        6. Mount volume 2 and copy the file from volume 1 to volume 2
+        7. Check that file is not changed
+        8. Detach volume 1 and volume 2 from vm
+        9. Delete vm
+        10. Delete volume 1 and volume 2
+    """
+    internal_net = os_conn.int_networks[0]
+    security_group = os_conn.create_sec_group_for_ssh()
+    flavor = os_conn.nova.flavors.find(name='m1.small')
+
+    # Boot vm from ubuntu
+    logger.info('Create instance with Ubuntu image')
+    vm = os_conn.create_server(name='test_vm', image_id=ubuntu_image_id,
+                               flavor=flavor, key_name=keypair.name,
+                               security_groups=[security_group.id],
+                               nics=[{'net-id': internal_net['id']}],
+                               wait_for_avaliable=False)
+
+    # Create 1 volume
+    logger.info("Create volume 'test_volume_1' with size 10Gb")
+    vlm_1 = os_conn.cinder.volumes.create(size=10, name='test_volume_1')
+    common.wait(
+        lambda: check_volume_status(os_conn, vlm_1),
+        timeout_seconds=300,
+        waiting_for='volume to become in available status')
+    file_1 = mount_volume(os_conn, env, vm, vlm_1, keypair) + '/file_test'
+
+    with os_conn.ssh_to_instance(
+            env, vm, vm_keypair=keypair, username='ubuntu') as remote:
+        cmd_1 = 'sudo dd if=/dev/urandom of={} bs=1M count=100'.format(file_1)
+        remote.check_call(cmd_1)
+        result = remote.check_call('md5sum {}'.format(file_1))['stdout'][0]
+    md5_1 = result.split('  /')[0]
+
+    # Restart cinder services on all controllers
+    cinder_services_cmd = ("service --status-all 2>&1 | grep '+' | "
+                           "grep cinder | awk '{ print $4 }'")
+    for node in env.get_nodes_by_role('controller'):
+        with node.ssh() as remote:
+            output = remote.check_call(cinder_services_cmd).stdout_string
+            for service in output.splitlines():
+                remote.check_call('service {0} restart'.format(service))
+
+    # Create 2 volume
+    logger.info("Create volume 'test_volume_2' with size 10Gb")
+    vlm_2 = os_conn.cinder.volumes.create(size=10, name='test_volume_2')
+    volumes = [vlm_1, vlm_2]
+    common.wait(
+        lambda: check_volume_status(os_conn, vlm_2),
+        timeout_seconds=300,
+        waiting_for='volume to become in available status')
+
+    file_2 = mount_volume(os_conn, env, vm, vlm_2, keypair) + '/file_test'
+    with os_conn.ssh_to_instance(
+            env, vm, vm_keypair=keypair, username='ubuntu') as remote:
+        cmd_1 = 'sudo cp {} {}'.format(file_1, file_2)
+        remote.check_call(cmd_1)
+        result = remote.check_call('md5sum {}'.format(file_2))['stdout'][0]
+    md5_2 = result.split('  /')[0]
+
+    err_msg = 'File is changed'
+    assert md5_1 == md5_2, err_msg
+
+    # Detach volumes from vm
+    for vlm in volumes:
+        vlm.detach()
+    common.wait(
+        lambda: check_all_volumes_statuses(os_conn, volumes),
+        timeout_seconds=300,
+        waiting_for='volumes to become in available status')
+
+    # Delete vm
+    vm.delete()
+    common.wait(lambda: vm.id in [i.id for i in os_conn.nova.servers.list()],
+                timeout_seconds=10 * 60, waiting_for='instance cleanup')
+
+    # Delete volumes
+    for vlm in volumes:
+        vlm.delete()
+    common.wait(
+        lambda: all([is_volume_deleted(os_conn, vlm) for vlm in volumes]),
+        timeout_seconds=300,
+        waiting_for='all volumes to be deleted')
