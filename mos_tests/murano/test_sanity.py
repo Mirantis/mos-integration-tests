@@ -328,8 +328,6 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
         self.wait_for_alert_message()
-        self.check_element_on_page(
-            by.By.XPATH, c.CategoryPackageCount.format(self.category, 0))
 
         # save category id
         self.category_id = self.get_element_id(self.category)

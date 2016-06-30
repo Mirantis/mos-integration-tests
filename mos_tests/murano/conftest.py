@@ -372,3 +372,14 @@ def volume_backup(os_conn, volume):
                 timeout_seconds=300,
                 waiting_for='backup to become in available status')
     return backup
+
+
+@pytest.fixture
+def restart_murano_services(env):
+    murano_services_cmd = ("service --status-all 2>&1 | grep '+' | "
+                           "grep murano | awk '{ print $4 }'")
+    for node in env.get_nodes_by_role('controller'):
+        with node.ssh() as remote:
+            output = remote.check_call(murano_services_cmd).stdout_string
+            for service in output.splitlines():
+                remote.check_call('service {0} restart'.format(service))
