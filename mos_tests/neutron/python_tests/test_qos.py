@@ -13,7 +13,10 @@
 #    under the License.
 
 import csv
+import itertools
 import logging
+from random import randint
+import re
 
 import pytest
 
@@ -52,7 +55,7 @@ def delete_ports_policy(os_conn):
 
 def delete_net_policy(os_conn):
     for net in os_conn.neutron.list_networks()['networks']:
-        policy_id = net['network']['qos_policy_id']
+        policy_id = net['qos_policy_id']
         if policy_id is not None:
             logger.debug('Deleting QoS policy from net')
             os_conn.neutron.update_network(
@@ -76,7 +79,8 @@ def iperf_image_id(os_conn):
 
 @pytest.fixture(scope='class')
 def instance_keypair(os_conn):
-    return os_conn.create_key(key_name='instancekey')
+    return os_conn.create_key(key_name='instancekey{0}'.format(
+        randint(0, 1000)))
 
 
 @pytest.fixture(scope='class')
@@ -148,7 +152,7 @@ class TestQoSBase(base.TestBase):
     @pytest.yield_fixture
     def clean_net_policy(self, os_conn):
         yield
-        delete_ports_policy(os_conn)
+        delete_net_policy(os_conn)
 
     @pytest.yield_fixture
     def clean_port_policy(self, os_conn):
@@ -966,3 +970,382 @@ class TestWithFloating(TwoNetAndComputesThreeInstances, TestQoSBase):
                                    instance3,
                                    limit=3000 * 1024,
                                    ip_type='floating')
+
+
+@pytest.mark.check_env_('is_qos_enabled')
+@pytest.mark.check_env_('is_vlan')
+class TestTrafficRestrictionWithSRIoV(TestQoSBase):
+
+    # no limits bandwidth on BM server = ~ 700 Mbits/sec
+    default_limit = 20000  # 20 Mbits/sec
+
+    @classmethod
+    @pytest.yield_fixture(scope='class', autouse=True)
+    def cleanup_env(cls, os_conn):
+        """SR-IOV env has no support of snapshots.
+        So need to clean all manually.
+        """
+        initial_floating_ips = os_conn.nova.floating_ips.list()
+        yield
+        # delete floatings
+        for floating_ip in [x for x in os_conn.nova.floating_ips.list()
+                            if x not in initial_floating_ips]:
+            os_conn.delete_floating_ip(floating_ip)
+        cls.instance_keypair.delete()
+        cls.security_group.delete()
+        os_conn.nova.flavors.find(name='iperf_flavor').delete()
+
+    @pytest.yield_fixture
+    def cleanup_vms(cls, os_conn):
+        """SR-IOV env has no support of snapshots.
+        So need to clean all manually.
+        """
+        def instances_cleanup(os_conn):
+            instances = os_conn.nova.servers.list()
+            for instance in instances:
+                instance.delete()
+            common.wait(lambda: len(os_conn.nova.servers.list()) == 0,
+                        timeout_seconds=10 * 60,
+                        waiting_for='instances cleanup')
+        instances_cleanup(os_conn)
+        yield
+        instances_cleanup(os_conn)
+
+    @pytest.fixture
+    def sriov_hosts(self, env):
+        """Find computes with SR-IOV enabled"""
+        computes_list = []
+        for compute in env.get_nodes_by_role('compute'):
+            with compute.ssh() as remote:
+                result = remote.check_call(
+                    'lspci -vvv | grep -i "initial vf"').stdout_string
+            vfs_number = re.findall('Number of VFs: (\d+)', result)
+            if sum(map(int, vfs_number)) > 0:
+                computes_list.append(compute)
+        if len(computes_list) < 2:
+            pytest.skip("Insufficient count of compute with SR-IOV")
+        hosts = [compute.data['fqdn'] for compute in computes_list]
+        return hosts
+
+    @pytest.yield_fixture
+    def two_connected_networks(self, os_conn):
+        """Creates 2 networks with access to external net
+        with router between them.
+        """
+        router = os_conn.create_router(name="router_test")['router']
+        ext_net = os_conn.ext_network
+        os_conn.router_gateway_add(router_id=router['id'],
+                                   network_id=ext_net['id'])
+        net01 = os_conn.add_net(router['id'])
+        net02 = os_conn.add_net(router['id'])
+        yield [net01, net02]
+        logger.debug("Delete router and networks")
+        os_conn.delete_net_subnet_smart(net01)
+        os_conn.delete_net_subnet_smart(net02)
+        os_conn.delete_router(router['id'])
+
+    @pytest.yield_fixture
+    def ports(self, os_conn, two_connected_networks):
+        """Creates SR-IOV ports"""
+        nets = {}
+        vnic_types = ['direct', 'macvtap']
+        for net in two_connected_networks:
+            ovs_ports = []
+            vf_ports = {}
+            for i in range(2):
+                # OVS ports
+                ovs_port = os_conn.neutron.create_port(
+                    {'port': {'network_id': net,
+                              'name': 'ovs-port{}'.format(i),
+                              'security_groups': [self.security_group.id]}
+                     })
+                ovs_ports.append(ovs_port['port']['id'])
+                # vnic_type: direct, macvtap
+                for vnic_type in vnic_types:
+                    vf_port = os_conn.neutron.create_port(
+                        {'port': {'network_id': net,
+                                  'name': 'sriov-port-{}-{}'.format(vnic_type,
+                                                                    i),
+                                  'binding:vnic_type': vnic_type,
+                                  'device_owner': 'nova-compute',
+                                  'security_groups': [self.security_group.id]}
+                         })
+                    if vnic_type not in vf_ports.keys():
+                        vf_ports[vnic_type] = []
+                    vf_ports[vnic_type].append(vf_port['port']['id'])
+
+            nets[net] = {'ovs_ports': ovs_ports, 'vf_ports': vf_ports}
+        yield nets
+        for ports in nets.values():
+            for port in itertools.chain.from_iterable(
+                    [ports['ovs_ports']] + ports['vf_ports'].values()):
+                os_conn.neutron.delete_port(port)
+
+    def set_policy_for_vm_port(self, vm, limit=None):
+        """Creates limit policy for port with fixed IP for VM.
+        :param vm: VM instance
+        :param limit: Limit in kbps
+        """
+        if limit is None:
+            limit = self.default_limit
+        vm.get()
+        vm_ips = [x['addr'] for y in vm.addresses.values()
+                  for x in y
+                  if x['OS-EXT-IPS:type'] == 'fixed']
+        for vm_ip in vm_ips:
+            policy = self.os_conn.create_qos_policy('policy_qos-sriov')
+            self.os_conn.neutron.create_bandwidth_limit_rule(
+                policy['policy']['id'],
+                {'bandwidth_limit_rule': {'max_kbps': limit, }})
+            port = self.os_conn.get_port_by_fixed_ip(vm_ip)
+            logger.debug("Set limit for VM's ({0}) "
+                         "port with IP {1}".format(vm.name, vm_ip))
+            self.os_conn.neutron.update_port(
+                port['id'], {'port': {'qos_policy_id': policy['policy']['id']}}
+            )
+
+    def create_instance(self, num, host, flavor_id, nics):
+        """Creates instance with installed iperf.
+        :param num: Just index number. Like: 1,2,3,4;
+        :param host: (str) FQDN name of a compute.
+        Like: 'node-2.test.domain.local'
+        :param flavor_id: (str) ID of a flavor;
+        :param nics: nics for new VM. Like: [{'port-id': '1111'}]
+        :return: VM instance.
+        """
+        # Userdata to install iperf on instance
+        iperf_userdata = '\n'.join([
+            '#!/bin/bash -v',
+            'apt-get install -yq iperf',
+            'iperf -s -p {tcp_port} <&- > /tmp/iperf.log 2>&1 &',
+            'iperf -u -s -p {udp_port} <&- > /tmp/iperf_udp.log 2>&1 &',
+            'echo "{marker}"', ]).format(
+                marker=BOOT_MARKER, tcp_port=TCP_PORT, udp_port=UDP_PORT)
+        # Create instance
+        vm = self.os_conn.create_server(
+            name='vm_ports_{}'.format(num),
+            image_id=self.image_id,
+            key_name=self.instance_keypair.id,
+            flavor=flavor_id,
+            availability_zone='nova:{}'.format(host),
+            nics=nics,
+            userdata=iperf_userdata,
+            security_groups=[self.security_group.id],
+            wait_for_active=False,
+            wait_for_avaliable=False)
+        return vm
+
+    def check_policy_before_after_set(
+            self, vms, limit=None, assign_floating=True):
+        """Assign floating IP to one VM.
+        Then check that all VMs accessible by floating/fixed IPs.
+        After that apply limit policy to one VM and check policy.
+        :param vms: List of VMs.
+        :param limit: Value for policy to limit bandwidth
+        :param assign_floating: Assign floatIP to VM here or it was done before
+        """
+        if limit is None:
+            limit = self.default_limit
+
+        if assign_floating:
+            # Assign floating IP to first VM
+            floating_ip = self.os_conn.nova.floating_ips.create()
+            vms[0].add_floating_ip(floating_ip)
+
+        # Check floating IP connection for the first VM with rest VMs
+        srv = vms[0]
+        for client in vms[1:]:
+            logger.debug(
+                "Check floating IP connection: "
+                "client={0}, server={1}".format(client.name, srv.name))
+            with pytest.raises(AssertionError):
+                self.check_iperf_bandwidth(
+                    client, srv, limit=limit * 1024, time=20,
+                    ip_type='floating')
+        # Check fixed IPs connection between all VMs
+        for client, srv in itertools.combinations(vms, 2):
+            logger.debug(
+                "Check fixed IP connection: "
+                "client={0}, server={1}".format(client.name, srv.name))
+            with pytest.raises(AssertionError):
+                self.check_iperf_bandwidth(
+                    client, srv, limit=limit * 1024, time=20, ip_type='fixed')
+        # Set policy for the first VM
+        self.set_policy_for_vm_port(vms[0], limit=limit)
+        # Check policy for first VM
+        client = vms[0]
+        for srv in vms[1::]:
+            logger.debug(
+                "Check fixed IP connection after policy apply: "
+                "client={0}, server={1}".format(client.name, srv.name))
+            self.check_iperf_bandwidth(
+                client, srv, limit=limit * 1024, ip_type='fixed')
+
+    @pytest.mark.testrail_id('838307')
+    def test_traffic_restriction_between_vms_on_vf_ports(
+            self, cleanup_vms, os_conn, ports, flavor, sriov_hosts,
+            clean_port_policy):
+        """Check traffic restriction for vm between two vms on vf ports.
+
+        1. Create net01, subnet. Create net02, subnet;
+        2. Create router01, set gateway and add interfaces to net01 and net02;
+        3. Create 4 vf ports (binding:vnic-type direct) for future vms: 2
+        ports on net01, 2 ports on net02;
+        4. Boot 4 ubuntu VMs: 2 on first compute, 2 on second compute;
+        5. Assign floating to first VM;
+        6. Start iperf between all vms by floating and fixed IP;
+        7. Create new policy: neutron qos-policy-create bw-limiter;
+        8. Create new rule: neutron qos-bandwidth-limit-rule-create
+        rule-id bw-limiter --max-kbps 50000;
+        9. Find neutron port for vm1: neutron port-list | grep <vm1 ip>;
+        10. Update port with new policy:
+        neutron port-update your-port-id --qos-policy bw-limiter;
+        11. Check in nload that traffic changed properly.
+        """
+        nets_id = ports.keys()
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['direct'][0]),
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['direct'][1]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][1])]
+
+        # Create VMs
+        vms = []
+        for i, (host, port) in enumerate(vm_distribution, 1):
+            vm = self.create_instance(
+                i, host, flavor.id,
+                nics=[{'port-id': port}])
+            vms.append(vm)
+        os_conn.wait_servers_active(vms)
+        os_conn.wait_servers_ssh_ready(vms)
+
+        self.check_policy_before_after_set(vms)
+
+    @pytest.mark.testrail_id('838308')
+    def test_traffic_restriction_between_vms_on_vf_ovs_ports(
+            self, cleanup_vms, os_conn, ports, flavor, sriov_hosts,
+            clean_port_policy):
+        """Check traffic restriction for vm between two vms on vf ports
+        and ovs ports.
+
+        1. Create net01, subnet. Create net02, subnet;
+        2. Create router01, set gateway and add interfaces to net01 and net02;
+        3. Create 4 vf and ovs ports for future vms:
+        2 ports on net01, 2 ports on net02;
+        4. Boot 4 ubuntu VMs: 2 on first compute, 2 on second compute;
+        5. Assign floating to first VM;
+        6. Start iperf between all vms by floating and fixed IP;
+        7. Create new policy: neutron qos-policy-create bw-limiter;
+        8. Create new rule: neutron qos-bandwidth-limit-rule-create
+        rule-id bw-limiter --max-kbps 50000;
+        9. Find neutron port for vm1: neutron port-list | grep <vm1 ip>;
+        10. Update port with new policy:
+        neutron port-update your-port-id --qos-policy bw-limiter;
+        11. Check in nload that traffic changed properly.
+        """
+        nets_id = ports.keys()
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['direct'][0],
+                ports[nets_id[1]]['ovs_ports'][0]),
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['direct'][1],
+                ports[nets_id[1]]['ovs_ports'][1]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][0],
+                ports[nets_id[0]]['ovs_ports'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][1],
+                ports[nets_id[0]]['ovs_ports'][1])]
+
+        # Create VMs
+        vms = []
+        for i, (host, vf_port, ovs_port) in enumerate(vm_distribution, 1):
+            if i == 1:
+                nics = [{'port-id': ovs_port}, {'port-id': vf_port}]
+            else:
+                nics = [{'port-id': vf_port}]
+            vm = self.create_instance(
+                i, host, flavor.id, nics=nics)
+            vms.append(vm)
+        os_conn.wait_servers_active(vms)
+        os_conn.wait_servers_cloud_init_finished(vms)
+
+        # Add floating to first VM
+        vm = vms[0]
+        floating_ip = self.os_conn.nova.floating_ips.create()
+        vm.add_floating_ip(floating_ip.ip)
+        vm.get()
+        # Add and activate eth1 interface on first VM
+        tmp_file = '/tmp/eth1.cfg'
+        eth1_file = '/etc/network/interfaces.d/eth1.cfg'
+        with os_conn.ssh_to_instance(
+                os_conn.env, vm, vm_keypair=self.instance_keypair,
+                username='ubuntu', password='ubuntu',
+                vm_ip=floating_ip.ip) as remote:
+            with remote.open(tmp_file, 'w') as f:
+                f.write('auto eth1' + '\n' + 'iface eth1 inet dhcp')
+            remote.check_call('sudo mv {0} {1}'.format(tmp_file, eth1_file))
+            remote.check_call('sudo ifup eth1')
+
+        os_conn.wait_servers_ssh_ready(vms)
+        self.check_policy_before_after_set(vms, assign_floating=False)
+
+    @pytest.mark.testrail_id('838309')
+    def test_traffic_restriction_between_vms_on_vf_ports_after_upd_del(
+            self, cleanup_vms, os_conn, ports, flavor, sriov_hosts,
+            clean_port_policy):
+        """Check traffic restriction for vm between two vms on vf ports
+        during updating and after deleting.
+
+        1. Create net01, subnet. Create net02, subnet;
+        2. Create router01, set gateway and add interfaces to net01 and net02;
+        3. Create 4 vf ports (binding:vnic-type direct) for future vms:
+        2 ports on net01, 2 ports on net02;
+        4. Boot 2 ubuntu VMs: 1 on first compute, 1 on second compute;
+        6. Start iperf between all vms to check connection;
+        7. Create new policy: neutron qos-policy-create bw-limiter;
+        8. Create new rule: neutron qos-bandwidth-limit-rule-create
+        rule-id bw-limiter --max-kbps 50000;
+        9. Find neutron port for vm1: neutron port-list | grep <vm1 ip>;
+        10. Update port with new policy:
+        neutron port-update your-port-id --qos-policy bw-limiter;
+        11. Check in nload that traffic changed properly;
+        12. Modify rule to set bandwidth to 80000;
+        13. Check in nload that traffic changed properly.
+        14. Delete qos-bandwidth-limit-rule;
+        15. Check in nload that traffic changed properly.
+        """
+        limit_1 = self.default_limit
+        limit_2 = self.default_limit * 2
+
+        nets_id = ports.keys()
+        vm_distribution = [
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['direct'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['direct'][0])]
+
+        # Create VMs
+        vms = []
+        for i, (host, port) in enumerate(vm_distribution, 1):
+            vm = self.create_instance(
+                i, host, flavor.id, nics=[{'port-id': port}])
+            vms.append(vm)
+        os_conn.wait_servers_active(vms)
+        os_conn.wait_servers_ssh_ready(vms)
+
+        # Check VMs has connection between them
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(
+                client=vms[0], server=vms[1], limit=limit_1 * 1024, time=20)
+
+        # Set first limit and check it
+        self.set_policy_for_vm_port(vms[0], limit=limit_1)
+        self.check_iperf_bandwidth(
+            client=vms[0], server=vms[1], limit=limit_1 * 1024)
+
+        # Set second limit and check it
+        self.set_policy_for_vm_port(vms[0], limit=limit_2)
+        self.check_iperf_bandwidth(
+            client=vms[0], server=vms[1], limit=limit_2 * 1024)
+
+        # Delete limit and check that there are no restrictions
+        delete_ports_policy(os_conn)
+        with pytest.raises(AssertionError):
+            self.check_iperf_bandwidth(
+                client=vms[0], server=vms[1], limit=limit_2 * 1024)

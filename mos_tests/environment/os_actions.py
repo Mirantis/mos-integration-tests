@@ -14,6 +14,7 @@
 
 import logging
 import random
+import re
 import time
 
 from cinderclient import client as cinderclient
@@ -341,73 +342,83 @@ class OpenStackActions(object):
     def delete_subnet(self, id):
         return self.neutron.delete_subnet(id)
 
-    def delete_net_subnet_smart(self, net_id, subnet_id):
-        """Delete subnetwork and network.
+    def delete_net_subnet_smart(self, net_id):
+        """Delete network and it's subnetwork(s).
         If subnet has dependencies like instances or routers - remove interface
         from instance or router.
         :param net_id: ID of network
-        :param subnet_id: ID of subnetwork
         """
-        def subnet_in_router_ports():
+        def subnet_in_router_ports(subnet_id):
             routers_ports = self.neutron.list_ports(
                 device_owner='network:router_interface')['ports']
             return subnet_id in str(routers_ports)
 
-        net_name = self.neutron.show_network(net_id)['network']['name']
-        subnet_name = self.neutron.show_subnet(subnet_id)['subnet']['name']
+        net_info = self.neutron.list_networks(id=net_id)['networks']
+        if len(net_info) == 0:
+            logger.debug('Network [{0}] not present. '
+                         'Nothing to delete.'.format(net_id))
+            return
 
-        del_msg = 'Deleting Network [{n}] and SubNetwork [{sn}] ... '
-        logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'start')
-        try:
-            self.neutron.delete_subnet(subnet_id)
-        except NeutronConflict:  # Inst/router has assigned IP/port from subnet
-            logger.debug("Seems that SubNetwork still in use. "
-                         "Deleting interfaces from dependencies.")
+        net_name = net_info[0]['name']
+        subnets_id = net_info[0]['subnets']
 
-            # -- Delete IPs from subnet from instances --
-            # get instances with IPs from net
-            insts_with_net = [x for x in self.nova.servers.findall()
-                              if net_name in getattr(x, 'networks', [])]
-            for inst in insts_with_net:
-                # get ports(ips) from instances
-                inst_ports = self.neutron.list_ports(
-                    device_id=inst.id)['ports']
-                inst_ports_ids = [x['id'] for x in inst_ports]
-                # detach interface/port/ip from instance
-                for port_id in inst_ports_ids:
-                    self.nova.servers.interface_detach(inst.id, port_id)
-                # wait till interface will be deleted from instance
-                wait(
-                    lambda: net_name not in str(
-                        self.nova.servers.find(id=inst.id).networks),
-                    timeout_seconds=60,
-                    waiting_for="interface deletion from instance")
+        # delete all subnets from net
+        del_msg = 'Deleting SubNetwork [{sn}] from Network [{n}] ... '
+        for subnet_id in subnets_id:
+            subnet_name = self.neutron.show_subnet(subnet_id)['subnet']['name']
+            logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'start')
 
-            # -- Delete Internal Interface from router --
-            routers_ports = self.neutron.list_ports(
-                device_owner='network:router_interface')['ports']
-            for router_ports in routers_ports:
-                # get router id that has attached port from subnet
-                routers_with_subnet_id = [router_ports['device_id']
-                                          for x in router_ports['fixed_ips']
-                                          if x['subnet_id'] == subnet_id]
-                # delete interface from router
-                for router_id in routers_with_subnet_id:
-                        self.router_interface_delete(
-                            router_id=router_id, subnet_id=subnet_id)
-            # wait till there will be no subnet_id in list of router's ports
-            wait(lambda: subnet_in_router_ports() is False,
-                 timeout_seconds=60,
-                 waiting_for="interface deletion from router")
+            try:
+                self.neutron.delete_subnet(subnet_id)
+            except NeutronConflict:
+                # Inst/router has assigned IP/port from subnet
+                logger.debug("Seems that SubNetwork still in use. "
+                             "Deleting interfaces from dependencies.")
 
-            # -- Finally delete subnet and net --
-            self.neutron.delete_subnet(subnet_id)
-            self.neutron.delete_network(net_id)
-        else:
-            # subnet was delete successfully, so now delete net
-            self.neutron.delete_network(net_id)
+                # -- Delete IPs from subnet from instances --
+                # get instances with IPs from net
+                insts_with_net = [x for x in self.nova.servers.findall()
+                                  if net_name in getattr(x, 'networks', [])]
+                for inst in insts_with_net:
+                    # get ports(ips) from instances
+                    inst_ports = self.neutron.list_ports(
+                        device_id=inst.id, network_id=net_id)['ports']
+                    inst_ports_ids = [x['id'] for x in inst_ports]
+                    # detach interface/port/ip from instance
+                    for port_id in inst_ports_ids:
+                        self.nova.servers.interface_detach(inst.id, port_id)
+                    # wait till interface will be deleted from instance
+                    wait(
+                        lambda: net_name not in str(
+                            self.nova.servers.find(id=inst.id).networks),
+                        timeout_seconds=60,
+                        waiting_for="interface deletion from instance")
 
-        logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'done')
+                # -- Delete Internal Interface from router --
+                routers_ports = self.neutron.list_ports(
+                    device_owner='network:router_interface')['ports']
+                for router_ports in routers_ports:
+                    # get router id that has attached port from subnet
+                    routers_with_subnet_id = [
+                        router_ports['device_id']
+                        for x in router_ports['fixed_ips']
+                        if x['subnet_id'] == subnet_id]
+                    # delete interface from router
+                    for router_id in routers_with_subnet_id:
+                            self.router_interface_delete(
+                                router_id=router_id, subnet_id=subnet_id)
+                # wait till no subnet_id in list of router's ports
+                wait(lambda: subnet_in_router_ports(subnet_id) is False,
+                     timeout_seconds=60,
+                     waiting_for="interface deletion from router")
+
+                # -- Delete subnet --
+                self.neutron.delete_subnet(subnet_id)
+            logger.debug(del_msg.format(n=net_name, sn=subnet_name) + 'done')
+
+        # Delete Network
+        logger.debug('Deleting Network [{n}]'.format(n=net_name))
+        self.neutron.delete_network(net_id)
 
     def list_subnets(self):
         return self.neutron.list_subnets()
@@ -490,6 +501,13 @@ class OpenStackActions(object):
             except nova_exceptions.ClientException:
                 logger.info('floating_ip {} is not deletable'
                             .format(floating_ip))
+            else:
+                wait(
+                    lambda: len(
+                        self.nova.floating_ips.findall(
+                            ip=floating_ip.ip)) == 0,
+                    timeout_seconds=1 * 60,
+                    waiting_for='floating {0} removal'.format(floating_ip.ip))
 
     def create_router(self, name, tenant_id=None, distributed=False):
         router = {'name': name, 'distributed': distributed}
@@ -1077,3 +1095,17 @@ class OpenStackActions(object):
             timeout_seconds=60 * 2,
             sleep_seconds=10,
             waiting_for='volumes [{names}] to be deleted'.format(names=names))
+
+    def is_server_cloud_init_finished(self, vm):
+        finish_mark = 'Cloud-init .* finished'
+        vm.get()
+        if re.findall(finish_mark, vm.get_console_output()):
+            return True
+        else:
+            return False
+
+    def wait_servers_cloud_init_finished(self, vms, timeout=5 * 60):
+        """Wait till vm will be booted and ready"""
+        wait(lambda: all(self.is_server_cloud_init_finished(x) for x in vms),
+             timeout_seconds=timeout,
+             waiting_for='cloud init finish')

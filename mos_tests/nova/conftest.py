@@ -30,8 +30,7 @@ def network(os_conn, request):
                                    name='net01__subnet', cidr='192.168.1.0/24')
     yield network
     if 'undestructive' in request.node.keywords:
-        os_conn.delete_net_subnet_smart(network['network']['id'],
-                                        subnet['subnet']['id'])
+        os_conn.delete_net_subnet_smart(network['network']['id'])
 
 
 @pytest.yield_fixture
