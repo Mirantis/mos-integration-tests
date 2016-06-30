@@ -230,7 +230,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                          "Unexpected instance flavor before resize")
 
         floating_ip = self.nova.floating_ips.create()
-        self.floating_ips.append(floating_ip.ip)
+        self.floating_ips.append(floating_ip)
         instance.add_floating_ip(floating_ip.ip)
 
         # 3. Resize from m1.small to m1.tiny
@@ -615,7 +615,7 @@ class NovaIntegrationTests(OpenStackTestCase):
                          "Unexpected instance flavor after creation")
 
         floating_ip = self.nova.floating_ips.create()
-        self.floating_ips.append(floating_ip.ip)
+        self.floating_ips.append(floating_ip)
         instance.add_floating_ip(floating_ip.ip)
 
         # Check that instance is reachable
