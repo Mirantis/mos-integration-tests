@@ -14,6 +14,7 @@
 
 import logging
 import random
+from time import sleep
 
 import pytest
 
@@ -174,3 +175,108 @@ def test_check_appropriate_async_thread_pool_size(env):
 
     assert calculated_pool_size == thread_pool_size, \
         "Real rabbit thread_pool_size != calculated."
+
+
+# Destructive
+class TestRabbitSegfaultsAndInteraction(object):
+
+    cmd_grep_diagnostics = 'rabbitmqctl status |& grep DIAGNOSTICS'
+    cmd_grep_active = (
+        'service rabbitmq-server status |& grep "Active: active (running)"')
+    cmd_grep_exited = (
+        'service rabbitmq-server status |& grep "Status: .Exited.."')
+
+    def control_rabbit_service(self, admin_remote, action='start'):
+        """Performs 'service rabbitmq-server {action}' on fuel admin node.
+        And checks that output does not contains error words from 'err_words'
+        """
+        err_words = ('segfault', 'error', 'failed')
+        err_msg = ('Some of the err messages {0} are in service '
+                   'rabbitmq-server {action} output.'.format(err_words,
+                                                             action))
+
+        out = admin_remote.check_call(
+            'service rabbitmq-server {0}'.format(action))
+        # Check that there are no error words in cmd output
+        combined_out = out.stdout_string + out.stderr_string
+        assert not any(
+            i in str(combined_out).lower()
+            for i in err_words), err_msg
+
+    def wait_rabbit_became_active(self, admin_remote, timeout_min=1):
+        """Wait till Rabbit on fuel master node has
+        [Active: active (running)] in it's status.
+        """
+        wait(lambda: admin_remote.execute(self.cmd_grep_active).is_ok,
+             timeout_seconds=60 * timeout_min,
+             sleep_seconds=20,
+             waiting_for='service rabbitmq-server became active')
+
+    def wait_rabbit_became_exited(self, admin_remote, timeout_min=1):
+        """Wait till Rabbit on fuel master node has
+        [Status: "Exited."] in it's status.
+        """
+        wait(lambda: admin_remote.execute(self.cmd_grep_exited).is_ok,
+             timeout_seconds=60 * timeout_min,
+             sleep_seconds=20,
+             waiting_for='service rabbitmq-server became exited')
+
+    @pytest.mark.testrail_id('844790')
+    def test_no_segfaults_on_master(self, admin_remote):
+        """Check rabbitmqctl segfaults on master node
+
+        Actions:
+        1. Stop rabbit service and check that there are no errors in output;
+        2. Wait till rabbitmq-server status has DIAGNOSTICS info;
+        3. Start rabbit service and check that there are no errors in output;
+        4. Wait till rabbitmq-server status has
+        "Active: active (running)" string.
+        """
+        timeout = 1  # minute
+
+        # Stop rabbit and check that there are no errors in output
+        self.control_rabbit_service(admin_remote, 'stop')
+
+        # Wait till rabbitmq-server status has DIAGNOSTICS info
+        wait(lambda: admin_remote.execute(self.cmd_grep_diagnostics).is_ok,
+             timeout_seconds=60 * timeout,
+             sleep_seconds=20,
+             waiting_for='service rabbitmq-server has DIAGNOSTICS info')
+
+        # Start rabbit and check that there are no errors in output
+        self.control_rabbit_service(admin_remote, 'start')
+
+        # Wait till rabbitmq-server has "Active: active (running)" string
+        self.wait_rabbit_became_active(admin_remote, timeout)
+
+    @pytest.mark.testrail_id('844787')
+    def test_interaction_on_master(self, admin_remote):
+        """Validate RabbitMQ/systemd interaction on master node.
+
+        Actions:
+        1. Stop rabbit service and check that there are no errors in output;
+        2. Wait till rabbitmq-server status has "Status: "Exited."" string;
+        3. Perform several rabbit start-stops with sleep between actions;
+        4. Start rabbit service and check that there are no errors in output;
+        5. Wait till rabbitmq-server status has
+        "Active: active (running)" string
+        """
+        timeout = 1                # minute
+        sleep_between_restart = 1  # minute
+
+        # Stop rabbit and check that there are no errors in output
+        self.control_rabbit_service(admin_remote, 'stop')
+
+        # Wait till rabbitmq-server has "Status: "Exited."" string
+        self.wait_rabbit_became_exited(admin_remote, timeout)
+        sleep(60 * sleep_between_restart)
+
+        # Rabbit start-stops with check that there are no errors in output
+        for i in range(5):
+            self.control_rabbit_service(admin_remote, 'start')
+            sleep(60 * sleep_between_restart)
+            self.control_rabbit_service(admin_remote, 'stop')
+
+        # Wait till rabbitmq-server has "Active: active (running)" string
+        self.control_rabbit_service(admin_remote, 'start')
+        self.wait_rabbit_became_active(admin_remote, timeout)
