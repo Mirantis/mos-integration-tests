@@ -34,6 +34,7 @@ import paramiko
 import six
 
 from mos_tests.environment.ssh import SSHClient
+from mos_tests.environment.ssh import NetNsProxy
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli
@@ -807,7 +808,7 @@ class OpenStackActions(object):
                      'with {ip} ({ip_type})'.format(name=vm.name,
                                                     ip=vm_ip,
                                                     ip_type=ip_type))
-        proxy_commands = []
+        proxies = []
 
         # retrieve proxy nodes
         if ip_type == 'fixed':
@@ -827,17 +828,11 @@ class OpenStackActions(object):
                 proxy_nodes = [proxy_node]
 
             for node in proxy_nodes:
-                ip = env.find_node_by_fqdn(node).data['ip']
-                key_paths = env.admin_ssh_keys_paths
-                proxy_command = (
-                    "ssh {keys} -o 'StrictHostKeyChecking no' "
-                    "root@{node_ip} 'ip netns exec {ns} "
-                    "nc {vm_ip} 22'".format(
-                        keys=' '.join('-i {}'.format(k) for k in key_paths),
-                        ns=dhcp_namespace,
-                        node_ip=ip,
-                        vm_ip=vm_ip))
-                proxy_commands.append(proxy_command)
+                for pkey in env.admin_ssh_keys:
+                    ip = env.find_node_by_fqdn(node).data['ip']
+                    proxy = NetNsProxy(ip=ip, pkey=pkey, ns=dhcp_namespace,
+                                       proxy_to_ip=vm_ip)
+                    proxies.append(proxy)
         instance_keys = []
         if vm_keypair is not None:
             instance_keys.append(paramiko.RSAKey.from_private_key(six.StringIO(
@@ -847,7 +842,7 @@ class OpenStackActions(object):
                          username=username,
                          password=password,
                          private_keys=instance_keys,
-                         proxy_commands=proxy_commands)
+                         proxies=proxies)
 
     def run_on_vm(self,
                   env,

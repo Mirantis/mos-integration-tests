@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from contextlib import contextmanager
 import functools
 import itertools
 import logging
@@ -21,6 +22,7 @@ import select
 import stat
 import time
 
+from contextlib2 import ExitStack
 import paramiko
 import six
 
@@ -91,7 +93,78 @@ class CommandResult(dict):
         return self._list_to_string('stderr')
 
 
-class SSHClient(object):
+class CleanableCM(object):
+    """Cleanable context manager (based on ExitStack)"""
+
+    def __init__(self):
+        self.stack = ExitStack()
+
+    def _enter(self):
+        """Should be override"""
+        raise NotImplementedError
+
+    @contextmanager
+    def _cleanup_on_error(self):
+        with ExitStack() as stack:
+            stack.push(self)
+            yield
+            stack.pop_all()
+
+    def __enter__(self):
+        with self._cleanup_on_error():
+            self.stack.__enter__()
+            return self._enter()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stack.__exit__(exc_type, exc_value, traceback)
+
+
+class NetNsProxy(CleanableCM):
+    """Make proxy channel through net namespace on proxy node"""
+
+    def __init__(self,
+                 ip,
+                 port=22,
+                 username='root',
+                 password=None,
+                 pkey=None,
+                 ns=None,
+                 proxy_to_ip=None,
+                 proxy_to_port=22):
+        super(NetNsProxy, self).__init__()
+        self.ip = ip
+        self.port = port
+        self.username = username
+        self.password = password
+        self.pkey = pkey
+        self.ns = ns
+        self.proxy_to_ip = proxy_to_ip
+        self.proxy_to_port = proxy_to_port
+        self.proxy_cmd = ('ip netns exec {ns} nc '
+                          '{proxy_to_ip} {proxy_to_port}').format(
+                              ns=ns,
+                              proxy_to_ip=proxy_to_ip,
+                              proxy_to_port=proxy_to_port)
+
+    def _enter(self):
+        c = paramiko.SSHClient()
+        c = self.stack.enter_context(c)
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        c.connect(self.ip,
+                  port=self.port,
+                  username=self.username,
+                  password=self.password,
+                  pkey=self.pkey)
+        chan = c.get_transport().open_session()
+        chan = self.stack.enter_context(chan)
+        chan.exec_command(self.proxy_cmd)
+        return chan
+
+    def __repr__(self):
+        return '<NetNsProxy {0.ip}>'.format(self)
+
+
+class SSHClient(CleanableCM):
 
     def __repr__(self):
         orig = super(SSHClient, self).__repr__()
@@ -101,6 +174,7 @@ class SSHClient(object):
     def _sftp(self):
         if self._sftp_client is None:
             self._sftp_client = self._ssh.open_sftp()
+            self.stack.enter_context(self._sftp_client)
         return self._sftp_client
 
     class get_sudo(object):
@@ -110,12 +184,13 @@ class SSHClient(object):
         def __enter__(self):
             self.ssh.sudo_mode = True
 
-        def __exit__(self, exc_type, value, traceback):
+        def __exit__(self, exc_type, exc_value, traceback):
             self.ssh.sudo_mode = False
 
     def __init__(self, host, port=22, username=None, password=None,
-                 private_keys=None, proxy_commands=(), timeout=60,
+                 private_keys=None, proxies=(), timeout=60,
                  execution_timeout=60 * 60):
+        super(SSHClient, self).__init__()
         self.host = str(host)
         self.port = int(port)
         self.username = username
@@ -128,74 +203,39 @@ class SSHClient(object):
         self.sudo = self.get_sudo(self)
         self.timeout = timeout
         self.execution_timeout = execution_timeout
-        self.proxy_commands = proxy_commands
+        self.proxies = proxies
         self._ssh = None
         self._sftp_client = None
         self._proxy = None
-        self.closed = True
 
-    def clear(self):
-        if self._sftp_client is not None:
-            try:
-                self._sftp_client.close()
-                self._sftp_client = None
-            except Exception:
-                logger.exception("Could not close sftp connection")
-
-        if self._ssh is not None:
-            try:
-                self._ssh.close()
-                self._ssh = None
-            except Exception:
-                logger.exception("Could not close ssh connection")
-
-        if self._proxy is not None:
-            try:
-                self._proxy.close()
-                self._proxy = None
-            except Exception:
-                logger.exception("Could not close proxy connection")
-
-    def __del__(self):
-        self.clear()
-
-    def __enter__(self):
-        if not self.closed:
-            return self
-        try:
-            self.reconnect()
-        except Exception:
-            self.clear()
-            raise
-        self.closed = False
+    def _enter(self):
+        self.reconnect()
         return self
 
-    def __exit__(self, *err):
-        if self.closed:
-            return
-        self.closed = True
-        self.clear()
-
-    def connect(self, pkey=None, password=None, proxy_command=None):
+    def connect(self, pkey=None, password=None, proxy=None):
+        proxy_repr = ''
+        if proxy is not None:
+            proxy_repr = 'through {0}'.format(proxy)
         if pkey:
-            logger.debug("Connecting to '{0.host}:{0.port}' "
-                         "as '{0.username}' with key....".format(self))
+            logger.debug("Connecting to '{0.host}:{0.port}' {1} "
+                         "as '{0.username}' with key....".format(self,
+                                                                 proxy_repr))
         else:
-            logger.debug("Connecting to '{0.host}:{0.port}' "
-                         "as '{0.username}:{1}'....".format(self, password))
+            logger.debug("Connecting to '{0.host}:{0.port}' {1} "
+                         "as '{0.username}:{2}'....".format(self, proxy_repr,
+                                                            password))
 
-        sock = None
-        if proxy_command is not None:
-            logger.debug('Proxy for ssh: "{0}"'.format(proxy_command))
-            self._proxy = paramiko.ProxyCommand(proxy_command)
-            self._proxy.settimeout(self.timeout)
-            sock = self._proxy
-
-        self._ssh = paramiko.SSHClient()
+        self._ssh = self.stack.enter_context(paramiko.SSHClient())
+        if proxy is not None:
+            proxy = self.stack.enter_context(proxy)
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        return self._ssh.connect(self.host, port=self.port,
-                                 username=self.username, password=password,
-                                 pkey=pkey, banner_timeout=30, sock=sock)
+        self._ssh.connect(self.host,
+                          port=self.port,
+                          username=self.username,
+                          password=password,
+                          pkey=pkey,
+                          banner_timeout=30,
+                          sock=proxy)
 
     def check_connection(self, close=True, try_all=False):
         """Check is ssh connection are available
@@ -211,13 +251,14 @@ class SSHClient(object):
         if self.password is not None:
             params.append({'password': self.password})
 
-        proxies = self.proxy_commands or [None]
+        proxies = self.proxies or [None]
         auth_exception = False
-        try:
-            for proxy_command, param in itertools.product(proxies, params):
-                self.clear()
+        for proxy, param in itertools.product(proxies, params):
+            with ExitStack() as stack:
+                if close:
+                    stack.push(self)
                 try:
-                    self.connect(proxy_command=proxy_command, **param)
+                    self.connect(proxy=proxy, **param)
                     return True
                 except paramiko.AuthenticationException as e:
                     logger.debug('Authentication exception: {}'.format(e))
@@ -226,19 +267,17 @@ class SSHClient(object):
                         return auth_exception
                 except Exception as e:
                     logger.debug('Instance unavailable: {}'.format(e))
-        finally:
-            if close:
-                self.clear()
         return auth_exception
 
     @retry(count=3, delay=3)
     def reconnect(self):
-        check_result = self.check_connection(close=False, try_all=True)
-        if check_result is True:
-            return
-        else:
-            self.clear()
-            if isinstance(check_result, Exception):
+        with ExitStack() as stack:
+            stack.push(self)
+            check_result = self.check_connection(close=False, try_all=True)
+            if check_result is True:
+                stack.pop_all()
+                return
+            elif isinstance(check_result, Exception):
                 raise check_result
             else:
                 raise Exception("Can't connect to server")
