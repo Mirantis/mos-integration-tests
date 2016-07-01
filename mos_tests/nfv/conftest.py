@@ -58,26 +58,6 @@ def aggregate(os_conn):
 
 
 @pytest.yield_fixture()
-def small_nfv_flavor(os_conn, cleanup, request):
-    param = getattr(
-        request.cls, 'small_nfv_flavor',
-        {"name": "m1.small.hpgs", "ram": 512, "vcpu": 1, "disk": 1})
-    flv = os_conn.nova.flavors.create(param['name'], param['ram'],
-                                      param['vcpu'], param['disk'])
-    flv.set_keys({'hw:mem_page_size': page_2mb})
-    yield flv
-    os_conn.nova.flavors.delete(flv.id)
-
-
-@pytest.yield_fixture()
-def medium_nfv_flavor(os_conn, cleanup, request):
-    flv = os_conn.nova.flavors.create("m1.medium.hpgs", 2048, 2, 20)
-    flv.set_keys({'hw:mem_page_size': page_1gb})
-    yield flv
-    os_conn.nova.flavors.delete(flv.id)
-
-
-@pytest.yield_fixture()
 def flavors(os_conn, request, cleanup):
     flvs = getattr(request.cls, 'flavors_to_create')
     created_flavors = []

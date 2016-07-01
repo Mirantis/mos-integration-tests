@@ -96,7 +96,13 @@ class TestLiveMigrationCeph(TestBaseNFV):
         {'name': 'm1.medium.perfomance_2',
          'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
          'keys': {'aggregate_instance_extra_specs:pinned': 'true',
-                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}}]
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}},
+        {'name': 'm1.small.hpgs',
+         'params': {'ram': 512, 'vcpu': 1, 'disk': 1},
+         'keys': {'hw:mem_page_size': page_2mb}},
+        {'name': 'm1.medium.hpgs',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'hw:mem_page_size': page_1gb}}]
 
     @pytest.mark.parametrize('computes_with_hp_2mb',
                              [{'host_count': 2, 'hp_count_per_host': 768}],
@@ -104,8 +110,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
     @pytest.mark.testrail_id('838327')
     def test_lm_ceph_for_huge_pages(self, env, os_conn, nova_ceph,
                                     computes_with_hp_2mb, networks,
-                                    volume, keypair, small_nfv_flavor,
-                                    security_group):
+                                    volume, keypair, flavors, security_group):
         """This test checks that live migration executed successfully for
             instances created on computes with ceph and huge pages
             Steps:
@@ -128,6 +133,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
             compute-1 with Active state
             12. Check vms connectivity
         """
+        small_nfv_flavor = flavors[2]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
@@ -219,9 +225,10 @@ class TestLiveMigrationCeph(TestBaseNFV):
                 11. Repeat actions for flavor m1.medium.performance_2
         """
         hosts = aggregate.hosts
+        cpu_pinning_flavors = flavors[:2]
         cpus = get_cpu_distribition_per_numa_node(env)
 
-        for numa_count, cpu_flavor in enumerate(flavors, start=1):
+        for numa_count, cpu_flavor in enumerate(cpu_pinning_flavors, start=1):
             vm_1 = os_conn.create_server(
                 name='vm1', flavor=cpu_flavor.id,
                 nics=[{'net-id': networks[0]}],
@@ -260,8 +267,6 @@ class TestLiveMigrationCeph(TestBaseNFV):
 @pytest.mark.check_env_('is_vlan', 'not is_ceph_enabled')
 class TestLiveMigrationCinder(TestBaseNFV):
 
-    small_nfv_flavor = {"name": "small.hpgs", "ram": 512, "vcpu": 1, "disk": 5}
-
     flavors_to_create = [
         {'name': 'm1.medium.perfomance_1',
          'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
@@ -270,7 +275,10 @@ class TestLiveMigrationCinder(TestBaseNFV):
         {'name': 'm1.medium.perfomance_2',
          'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
          'keys': {'aggregate_instance_extra_specs:pinned': 'true',
-                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}}]
+                  'hw:cpu_policy': 'dedicated', 'hw:numa_nodes': 2}},
+        {'name': 'small.hpgs',
+         'params': {'ram': 512, 'vcpu': 1, 'disk': 5},
+         'keys': {'hw:mem_page_size': page_2mb}}]
 
     @pytest.mark.parametrize('computes_with_hp_2mb',
                              [{'host_count': 2, 'hp_count_per_host': 512}],
@@ -278,7 +286,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
     @pytest.mark.testrail_id('838323')
     def test_lm_cinder_lvm_for_huge_pages(self, os_conn, env,
                                           computes_with_hp_2mb, networks,
-                                          volume, small_nfv_flavor, keypair,
+                                          volume, flavors, keypair,
                                           security_group, ubuntu_image_id):
         """This test checks that live migration executed successfully for
             instances created on computes with cinder lvm and huge pages
@@ -301,6 +309,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
             check that vm moved to compute-2 with Active state
             11. Check vms connectivity
         """
+        small_nfv_flavor = flavors[2]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
@@ -392,9 +401,10 @@ class TestLiveMigrationCinder(TestBaseNFV):
                 11. Repeat actions for flavor m1.medium.performance_2
         """
         hosts = aggregate.hosts
+        cpu_pinning_flavors = flavors[:2]
         cpus = get_cpu_distribition_per_numa_node(env)
 
-        for numa_count, cpu_flavor in enumerate(flavors, start=1):
+        for numa_count, cpu_flavor in enumerate(cpu_pinning_flavors, start=1):
             vm_1 = os_conn.create_server(
                 name='vm1', flavor=cpu_flavor.id,
                 nics=[{'net-id': networks[0]}], key_name=keypair.name,

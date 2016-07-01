@@ -30,6 +30,17 @@ logger = logging.getLogger(__name__)
 class TestHugePages(TestBaseNFV):
 
     mixed_hp_computes = {'host_count': 2, 'count_2mb': 1024, 'count_1gb': 4}
+    flavors_to_create = [
+        {'name': 'm1.small.hpgs',
+         'params': {'ram': 512, 'vcpu': 1, 'disk': 20},
+         'keys': {'hw:mem_page_size': page_2mb}},
+
+        {'name': 'm1.medium.hpgs',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 20},
+         'keys': {'hw:mem_page_size': page_1gb}},
+
+        {'name': 'old.flavor',
+         'params': {'ram': 2048, 'vcpu': 1, 'disk': 20}}]
 
     @pytest.mark.check_env_('has_3_or_more_computes')
     @pytest.mark.parametrize('computes_with_hp_2mb',
@@ -37,7 +48,7 @@ class TestHugePages(TestBaseNFV):
                              indirect=['computes_with_hp_2mb'])
     @pytest.mark.testrail_id('838318')
     def test_cold_migration_for_huge_pages_2m(
-            self, env, os_conn, networks, small_nfv_flavor, security_group,
+            self, env, os_conn, networks, flavors, security_group,
             computes_with_hp_2mb):
         """This test checks that cold migration executed successfully for
             instances created on computes with huge pages 2M
@@ -53,6 +64,7 @@ class TestHugePages(TestBaseNFV):
             huge pages
             8. Check vms connectivity
         """
+        small_nfv_flavor = flavors[0]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
@@ -105,8 +117,7 @@ class TestHugePages(TestBaseNFV):
                              indirect=['computes_with_hp_2mb'])
     def test_allocation_huge_pages_2m_for_vms(self, env, os_conn, networks,
                                               computes_with_hp_2mb,
-                                              small_nfv_flavor,
-                                              security_group):
+                                              flavors, security_group):
         """This test checks allocation 2M HugePages for instances
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
@@ -119,6 +130,7 @@ class TestHugePages(TestBaseNFV):
             7. Associate floating to vm1
             8. Check pings from all vms to all vms by all ips
         """
+        small_nfv_flavor = flavors[0]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
@@ -154,8 +166,7 @@ class TestHugePages(TestBaseNFV):
     @pytest.mark.testrail_id('838313')
     def test_hp_distribution_1g_2m_for_vms(self, env, os_conn,
                                            computes_with_mixed_hp, networks,
-                                           small_nfv_flavor, medium_nfv_flavor,
-                                           security_group):
+                                           flavors, security_group):
         """This test checks huge pages 1Gb and 2Mb distribution for vms
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
@@ -167,6 +178,7 @@ class TestHugePages(TestBaseNFV):
             6. Check quantity of HP on computes
             7. Check pings from all vms to all vms by all ips
         """
+        small_nfv_flavor, medium_nfv_flavor = flavors[0], flavors[1]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         count_to_allocate_1gb = medium_nfv_flavor.ram * 1024 / page_1gb
 
@@ -206,8 +218,7 @@ class TestHugePages(TestBaseNFV):
     @pytest.mark.testrail_id('838316')
     def test_resizing_of_vms_with_huge_pages(self, env, os_conn,
                                              computes_with_mixed_hp,
-                                             networks, small_nfv_flavor,
-                                             medium_nfv_flavor, flavor,
+                                             networks, flavors,
                                              security_group):
         """This test checks resizing of VM with flavor for 2M to flavor
             for 1G flavor and on old flavor
@@ -223,10 +234,11 @@ class TestHugePages(TestBaseNFV):
             8. Resize vm1 to 1Gb and check ping
             9. Resize vm1 to 2Mb and check ping
         """
+        small_nfv_flv, meduim_nfv_flv, old_flv = flavors
         hosts = computes_with_mixed_hp
         vms_params = [
-            (hosts[0], networks[0], small_nfv_flavor, page_2mb),
-            (hosts[1], networks[1], flavor, None), ]
+            (hosts[0], networks[0], small_nfv_flv, page_2mb),
+            (hosts[1], networks[1], old_flv, None), ]
         vms = {}
         for i, (host, network, flavor, size) in enumerate(vms_params):
             vm = os_conn.create_server(
@@ -239,10 +251,10 @@ class TestHugePages(TestBaseNFV):
         for vm, exp_size in vms.items():
             self.check_instance_page_size(os_conn, vm, size=exp_size)
 
-        params = [(medium_nfv_flavor, page_1gb),
-                  (flavor, None),
-                  (medium_nfv_flavor, page_1gb),
-                  (small_nfv_flavor, page_2mb), ]
+        params = [(meduim_nfv_flv, page_1gb),
+                  (old_flv, None),
+                  (meduim_nfv_flv, page_1gb),
+                  (small_nfv_flv, page_2mb), ]
 
         for (flavor, size) in params:
             self.resize(os_conn, vms.keys()[0], flavor_to_resize=flavor)
@@ -255,7 +267,7 @@ class TestHugePages(TestBaseNFV):
                              indirect=['computes_with_hp_1gb'])
     @pytest.mark.testrail_id('838315')
     def test_cold_migration_for_huge_pages_1g(
-            self, env, os_conn, networks, medium_nfv_flavor, security_group,
+            self, env, os_conn, networks, flavors, security_group,
             computes_with_hp_1gb):
         """This test checks that cold migration executed successfully for
             instances created on computes with huge pages 1G
@@ -271,6 +283,7 @@ class TestHugePages(TestBaseNFV):
             huge pages
             8. Check vms connectivity
         """
+        medium_nfv_flavor = flavors[1]
         count_to_allocate_1gb = medium_nfv_flavor.ram * 1024 / page_1gb
         initial_conf = computes_configuration(env)
 
@@ -319,13 +332,10 @@ class TestHugePages(TestBaseNFV):
 
     @pytest.mark.parametrize('computes_without_hp', [1],
                              indirect=['computes_without_hp'])
-    @pytest.mark.parametrize('flavor', [{"name": "old.flavor", "ram": 512,
-                                         "vcpu": 1, "disk": 1}],
-                             indirect=['flavor'])
     @pytest.mark.testrail_id('838311')
     def test_allocation_huge_pages_2m_for_vms_with_old_flavor(
-            self, env, os_conn, networks, computes_with_hp_2mb,
-            computes_without_hp, small_nfv_flavor, flavor, security_group):
+            self, env, os_conn, networks, computes_with_hp_2mb, flavors,
+            computes_without_hp, security_group):
         """This test checks that Huge pages set for vm1, vm2 and vm3 shouldn't
             use Huge pages, connectivity works properly
             Steps:
@@ -337,6 +347,7 @@ class TestHugePages(TestBaseNFV):
             5. Check huge pages. Check that it was allocated only HP for vm1
             6. Check pings from all vms to all vms by all ips
         """
+        small_nfv_flavor, old_flavor = flavors[0], flavors[2]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts_hp = computes_with_hp_2mb
@@ -344,8 +355,8 @@ class TestHugePages(TestBaseNFV):
 
         vms_params = [
             (hosts_hp[0], networks[0], small_nfv_flavor, page_2mb),
-            (hosts_no_hp[0], networks[1], flavor, None),
-            (hosts_hp[0], networks[0], flavor, None)]
+            (hosts_no_hp[0], networks[1], old_flavor, None),
+            (hosts_hp[0], networks[0], old_flavor, None)]
         vms = {}
 
         for i, (host, network, flavor, size) in enumerate(vms_params):
@@ -374,7 +385,7 @@ class TestHugePages(TestBaseNFV):
                              indirect=['computes_with_hp_2mb'])
     @pytest.mark.testrail_id('838317')
     def test_evacuation_for_huge_pages_2m(
-            self, env, os_conn, devops_env, networks, small_nfv_flavor,
+            self, env, os_conn, devops_env, networks, flavors,
             security_group, computes_with_hp_2mb):
         """This test checks that evacuation executed successfully for
             instances created on computes with huge pages 2M
@@ -390,6 +401,7 @@ class TestHugePages(TestBaseNFV):
             8. Make compute-1 alive
             9. Check that resources for vm1 were deleted from compute-1
         """
+        small_nfv_flavor = flavors[0]
         count_to_allocate_2mb = small_nfv_flavor.ram * 1024 / page_2mb
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
