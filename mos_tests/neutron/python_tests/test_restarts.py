@@ -12,8 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from difflib import get_close_matches
 import logging
+import xml.etree.ElementTree as ElementTree
 
+from neutronclient.common.exceptions import ServiceUnavailable
 import pytest
 
 from mos_tests.functions.common import wait
@@ -549,3 +552,85 @@ class TestRestarts(TestBase):
 
         # Run udhcp on vm
         self.run_udhcpc_on_vm(self.server1)
+
+    @pytest.mark.testrail_id('1295480')
+    def test_restart_all_neutron_services(self, env, os_conn):
+        """Check that neutron services works fine after restart
+
+        Scenario:
+            1. Boot "vm1" in exists internal net
+            2. Vefiry ping public IP from "vm1"
+            3. Restart all neutron services on all nodes
+            4. Boot "vm2" in same net as "vm1"
+            5. Verify pings betwheen vms and to public ip
+            6. Create new network "net01" and router between "net01" and
+                external net
+            7. Boot "vm3" on "net01"
+            8. Vefiry ping public IP from "vm3"
+            9. Delete all created servers
+            10. Delete created router and network
+        """
+
+        security_group = os_conn.create_sec_group_for_ssh()
+        int_net = os_conn.int_networks[0]
+        vm1 = os_conn.create_server('vm1',
+                                    nics=[{'net-id': int_net['id']}],
+                                    security_groups=[security_group.name])
+
+        network_checks.check_ping_from_vm(env, os_conn, vm1)
+
+        controllers = env.get_nodes_by_role('controller')
+        computes = env.get_nodes_by_role('compute')
+
+        # Restart pacemaker resources
+        neutron_psc_ids = []
+        with controllers[0].ssh() as remote:
+            # Get pcs resources info
+            result = remote.check_call("crm_mon -1 -X", verbose=False)
+            root = ElementTree.fromstring(result.stdout_string)
+            for node in root.findall('.//clone'):
+                clone_id = node.attrib.get('id', '')
+                if 'neutron' in clone_id:
+                    neutron_psc_ids.append(clone_id)
+                    # Restart pcs resource
+                    remote.check_call('pcs resource restart '
+                                      '{0}'.format(clone_id))
+
+        # Restart all upstart services
+        for node in controllers + computes:
+            with node.ssh() as remote:
+                result = remote.check_call("initctl list | grep running | "
+                                           "grep neutron | awk '{ print $1 }'")
+                for service in result.stdout_string.splitlines():
+                    if len(get_close_matches(service, neutron_psc_ids)) == 0:
+                        remote.check_call('restart {}'.format(service))
+
+        wait(os_conn.neutron.list_networks,
+             expected_exceptions=ServiceUnavailable,
+             timeout_seconds=60,
+             sleep_seconds=5,
+             waiting_for='neutron services to be up')
+
+        vm2 = os_conn.create_server('vm2',
+                                    nics=[{'net-id': int_net['id']}],
+                                    security_groups=[security_group.name])
+
+        network_checks.check_vm_connectivity(env, os_conn)
+
+        net01, subnet01 = self.create_internal_network_with_subnet(suffix=1)
+        router = self.create_router_between_nets(os_conn.ext_network, subnet01,
+                                                 suffix=1)
+
+        vm3 = os_conn.create_server('vm3',
+                                    nics=[{'net-id': net01['network']['id']}],
+                                    security_groups=[security_group.name])
+
+        network_checks.check_ping_from_vm(env, os_conn, vm3)
+
+        for vm in vm1, vm2, vm3:
+            vm.delete()
+        os_conn.wait_servers_deleted([vm1, vm2, vm3])
+
+        os_conn.delete_router(router['router']['id'])
+
+        os_conn.delete_network(net01['network']['id'])
