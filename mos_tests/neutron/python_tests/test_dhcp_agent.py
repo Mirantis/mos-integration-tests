@@ -16,9 +16,11 @@ import logging
 import re
 import time
 
+from contextlib2 import ExitStack
 import pytest
 
 from mos_tests.functions.common import wait
+from mos_tests.functions.common import wait_no_exception
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,23 @@ class TestDHCPAgent(TestBase):
         diff = max_val - min_val
         result = (100 * diff) / float(max_val)
         return round(result)
+
+    def check_tap_ids_unique(self, net_id, remotes):
+        cmd = ('ip netns exec qdhcp-{0} ip a | grep tap').format(net_id)
+        output_list = []
+        for remote in remotes:
+            result = remote.execute(cmd, verbose=False)
+            if result.is_ok:
+                output_list.append(result.stdout_string)
+        taps_list = []
+        err_msg = 'Number of tap interfaces is more than 1'
+        for out in output_list:
+            result = re.findall(r'(?:\d+): (tap[^:]+)', out)
+            assert len(result) == 1, err_msg
+            taps_list.extend(result)
+        err_msg = ("Tap interface's ids are not unique on controllers "
+                   "for net {0}").format(net_id)
+        assert len(set(taps_list)) == len(taps_list), err_msg
 
     @pytest.mark.testrail_id('542614')
     def test_to_check_dhcp_agents_work(self):
@@ -368,37 +387,28 @@ class TestDHCPAgent(TestBase):
                               '"delete from networkdhcpagentbindings;"')
 
         logger.info('making all dhcp ports as "reserved_dhcp_port"')
+        port_data = {'port': {'device_id': 'reserved_dhcp_port'}}
         for port in dhcp_ports_id:
-            self.os_conn.neutron.update_port(port['id'],
-                                             {'port': {'device_id':
-                                                       'reserved_dhcp_port'}})
+            self.os_conn.neutron.update_port(port['id'], port_data)
         with controller.ssh() as remote:
             logger.info('enable all dhcp agents')
             remote.check_call('pcs resource enable neutron-dhcp-agent')
             self.os_conn.wait_agents_alive(self.dhcp_agent_ids)
 
-        wait(lambda:
-             len(self.os_conn.neutron.list_ports(
-                 device_id='reserved_dhcp_port')['ports']) == 0,
-             timeout_seconds=60 * 3,
-             waiting_for='all reserved ports are acquired by dhcp agents')
-        time.sleep(60)
+        wait(
+            lambda: len(self.os_conn.neutron.list_ports(
+                device_id='reserved_dhcp_port')['ports']) == 0,
+            timeout_seconds=60 * 15,
+            waiting_for='all reserved ports are acquired by dhcp agents')
 
         logger.info("check uniqueness of tap interface's ids")
-        for net_id in self.networks:
-            namespace = 'qdhcp-{0}'.format(net_id)
-            cmd = 'ip netns exec {0} ip a | grep tap'.format(namespace)
-            output_list = []
-            controllers = self.env.get_nodes_by_role('controller')
-            for controller in controllers:
-                with controller.ssh() as remote:
-                    if remote.execute(cmd).is_ok:
-                        output_list.append(remote.execute(cmd).stdout_string)
-            taps_list = []
-            err_msg = 'Number of tap interfaces is more than 1'
-            for out in output_list:
-                result = set(re.findall(r'tap[\w]+-[\w]+', out))
-                assert len(result) == 1, err_msg
-                taps_list.extend(result)
-            err_msg = "Tap interface's ids are not unique on controllers"
-            assert len(set(taps_list)) == len(taps_list), err_msg
+        controllers = self.env.get_nodes_by_role('controller')
+        with ExitStack() as stack:
+            remotes = [stack.enter_context(x.ssh()) for x in controllers]
+            wait_no_exception(lambda: all([self.check_tap_ids_unique(x,
+                                                                     remotes)
+                              for x in self.networks]),
+                              timeout_seconds=5 * 60,
+                              exceptions=AssertionError,
+                              sleep_seconds=30,
+                              waiting_for='uniquess of tap ids')

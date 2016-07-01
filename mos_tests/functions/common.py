@@ -640,6 +640,38 @@ def wait(predicate, log=True, **kwargs):
         raise e
 
 
+def wait_no_exception(predicate, log=True, exceptions=Exception, **kwargs):
+    """Execute predicate until no specified exeception raised
+
+    Predicate result is ignored
+
+
+    :param exceptions: one (or more) Exception, which should be not raised
+        during successful predicate evalution
+    """
+    __tracebackhide__ = True
+
+    logger = logging.getLogger('waiting')
+    exc = []
+
+    def predicate_wrapper():
+        try:
+            predicate()
+        except exceptions as e:
+            exc.append(e)
+            if log:
+                logger.info('{} raised'.format(e))
+            return False
+
+    try:
+        wait(lambda: predicate_wrapper() is not False, log=log, **kwargs)
+    except TimeoutExpired as e:
+        if len(exc) > 0:
+            raise exc[-1]
+        else:
+            raise e
+
+
 def gen_random_resource_name(prefix=None, reduce_by=None):
     random_name = str(uuid.uuid4()).replace('-', '')[::reduce_by]
     if prefix:
