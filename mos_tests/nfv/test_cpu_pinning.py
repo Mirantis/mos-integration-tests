@@ -62,6 +62,24 @@ def disable_nova_config_drive(env):
         yield step
 
 
+@pytest.fixture
+def hosts_hyper_threading(aggregate, hosts_with_hyper_threading):
+    hosts = list(set(hosts_with_hyper_threading) & set(aggregate.hosts))
+    if len(hosts) == 0:
+        pytest.skip("At least one compute with cpu_pinning and "
+                    "hyper_threading is required")
+    return hosts
+
+
+@pytest.fixture
+def hosts_without_hyper_threading(aggregate, hosts_with_hyper_threading):
+    hosts = list(set(aggregate.hosts) - set(hosts_with_hyper_threading))
+    if len(hosts) == 0:
+        pytest.skip("At least one compute with cpu_pinning and "
+                    "without hyper_threading is required")
+    return hosts
+
+
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_vlan')
 class TestCpuPinningOneNuma(TestBaseNFV):
@@ -582,3 +600,265 @@ class TestResourceDistributionWithLessResources(TestBaseNFV):
         logger.info("Instance status is error:\n{0}".format(str(e.value)))
         assert expected_message in str(e.value), (
             "Unexpected reason of instance error")
+
+
+@pytest.mark.check_env_('is_vlan')
+@pytest.mark.undestructive
+class TestCpuPinningWithCpuThreadPolicy(TestBaseNFV):
+
+    flavors_to_create = [
+        {'name': 'm1.small.perfomance',
+         'params': {'ram': 2048, 'vcpu': 2, 'disk': 1},
+         'keys': {'aggregate_instance_extra_specs:pinned': 'true',
+                  'hw:cpu_policy': 'dedicated',
+                  'hw:numa_nodes': 1}}]
+
+    @pytest.mark.testrail_id('864071', policy='prefer', expected_count=1)
+    @pytest.mark.testrail_id('864073', policy='isolate', expected_count=2)
+    @pytest.mark.testrail_id('864075', policy='require', expected_count=1)
+    @pytest.mark.parametrize('policy, expected_count',
+                             [('prefer', 1), ('isolate', 2), ('require', 1)],
+                             ids=['prefer - same core',
+                                  'isolate - different cores',
+                                  'require - same core'])
+    def test_vms_with_custom_threading_policy(self, env, os_conn,
+                                              hosts_hyper_threading,
+                                              flavors, networks, keypair,
+                                              security_group, policy,
+                                              expected_count):
+        """This test checks vcpu allocation for vms with different values of
+        flavor cpu_thread_policy
+
+        Steps:
+            1. Create net1 with subnet and router1 with interface to net1
+            2. Create cpu pinning flavor with hw:numa_nodes=1 and required
+            cpu_thread_policy
+            3. Boot vm
+            4. Check that both cpu are on the different cores in case of
+            cpu_thread_policy = isolate and on the same core in case of prefer
+            or require
+            5. Check ping 8.8.8.8 from vm
+        """
+
+        host = hosts_hyper_threading[0]
+        cpus = get_cpu_distribition_per_numa_node(env)[host]
+
+        flavors[0].set_keys({'hw:cpu_thread_policy': policy})
+        vm = os_conn.create_server(name='vm', flavor=flavors[0].id,
+                                   key_name=keypair.name,
+                                   nics=[{'net-id': networks[0]}],
+                                   security_groups=[security_group.id],
+                                   availability_zone='nova:{}'.format(host),
+                                   wait_for_avaliable=False)
+        self.check_cpu_for_vm(os_conn, vm, 1, cpus)
+
+        used_ts = self.get_vm_thread_siblings_lists(os_conn, vm)
+        assert len(used_ts) == expected_count, (
+            "Unexpected count of used cores. It should be {0} for '{1}' "
+            "threading policy, but actual it's {2}").format(
+            expected_count, policy, len(used_ts))
+
+        network_checks.check_ping_from_vm(env, os_conn, vm, vm_keypair=keypair)
+
+
+@pytest.mark.check_env_('is_vlan')
+@pytest.mark.undestructive
+class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
+
+    keys = [('aggregate_instance_extra_specs:pinned', 'true'),
+            ('hw:cpu_policy', 'dedicated'),
+            ('hw:numa_nodes', 1)]
+    params = {'ram': 1024, 'vcpu': 2, 'disk': 1}
+
+    flavors_to_create = [
+        {'name': 'm1.small.prefer', 'params': params,
+         'keys': dict(keys + [('hw:cpu_thread_policy', 'prefer')])},
+        {'name': 'm1.small.isolate', 'params': params,
+         'keys': dict(keys + [('hw:cpu_thread_policy', 'isolate')])},
+        {'name': 'm1.small.require', 'params': params,
+         'keys': dict(keys + [('hw:cpu_thread_policy', 'require')])}]
+
+    @pytest.mark.testrail_id('864074')
+    def test_vms_with_isolate_cpu_thread_policy_less_resources(
+            self, env, os_conn, hosts_hyper_threading, flavors, networks,
+            keypair, security_group):
+        """This test checks vms with cpu_thread_policy isolate parameter with
+        less resources
+
+        Steps:
+            1. Create net1 with subnet and router1 with interface to net1
+            2. Create cpu pinning flavor with hw:numa_nodes=1 and required
+            cpu_thread_policy
+            3. Boot vms to have no ability to create vm on different cores
+            4. Boot vm with cpu pinning flavor (cpu_thread_policy = isolate)
+            5. Check that vm is in error state
+        """
+        host = hosts_hyper_threading[0]
+        cpus = get_cpu_distribition_per_numa_node(env)[host]
+        zone = 'nova:{}'.format(host)
+
+        # Get total pairs of cpus
+        numa_nodes_count = len(cpus.keys())
+        ts = set()
+        for i in range(numa_nodes_count):
+            ts.update(self.get_thread_siblings_lists(os_conn, host, i))
+        ts_lsts = list(ts)
+
+        # Boot vms to allocate vcpus in order to have no change to use cpus
+        # from different cores: N-1 vms with 'require' flavor if N is total
+        # count of vcps pairs
+        count_require = len(ts_lsts) - 1
+        for i in range(count_require):
+            os_conn.create_server(name='vm{0}'.format(i),
+                                  flavor=flavors[2].id,
+                                  key_name=keypair.name,
+                                  nics=[{'net-id': networks[0]}],
+                                  security_groups=[security_group.id],
+                                  wait_for_avaliable=False,
+                                  availability_zone=zone)
+
+        with pytest.raises(InstanceError) as e:
+            os_conn.create_server(name='vm_isolate',
+                                  flavor=flavors[1].id,
+                                  key_name=keypair.name,
+                                  nics=[{'net-id': networks[0]}],
+                                  security_groups=[security_group.id],
+                                  wait_for_avaliable=False,
+                                  availability_zone=zone)
+        exp_message = ("Insufficient compute resources: "
+                       "Requested instance NUMA topology cannot fit the "
+                       "given host NUMA topology")
+        logger.info("Instance status is error:\n{0}".format(str(e.value)))
+        assert exp_message in str(e.value), "Unexpected reason of error"
+
+    @pytest.mark.testrail_id('864072', policy='prefer')
+    @pytest.mark.testrail_id('864076', policy='require')
+    @pytest.mark.parametrize('policy', ['prefer', 'require'])
+    def test_vms_with_custom_cpu_thread_policy_less_resources(
+            self, env, os_conn, hosts_hyper_threading, flavors, networks,
+            keypair, security_group, policy):
+        """This test checks vms with cpu_thread_policy prefer/require parameter
+         with less resources
+
+        Steps:
+            1. Create net1 with subnet and router1 with interface to net1
+            2. Create cpu pinning flavor with hw:numa_nodes=1 and required
+            cpu_thread_policy
+            3. Boot vms to have no ability to create vm on one core
+            4. Boot vm with cpu pinning flavor with required cpu_thread_policy
+            5. For 'require' policy check that vm is in error state, for
+            policy 'prefer' vm should be active and available
+        """
+
+        host = hosts_hyper_threading[0]
+        cpus = get_cpu_distribition_per_numa_node(env)[host]
+        zone = 'nova:{}'.format(host)
+        flv_prefer, flv_isolate, flv_require = flavors
+
+        numa_count = len(cpus.keys())
+        ts_lists = [list(set(self.get_thread_siblings_lists(os_conn, host, i)))
+                    for i in range(numa_count)]
+        if ts_lists[0] <= 1 and ts_lists[1] <= 1:
+            pytest.skip("Configuration is NOK since instance should be on the "
+                        "one numa node and use cpus from the different cores")
+        # Vms boot order depends on current environment
+        #
+        # If only 1 thread siblings list is on numa0 => we're not able to boot
+        # vm on different cores anyway. Steps are:
+        # 1) allocate whole numa0 by vm with flavor_require => numa0 is busy
+        # 2) boot N-2 vms with the same flavor (N=count of thread siblings list
+        #  is on numa1) => 2 cores are free
+        # 3) Boot 1 vm with flavor_isolate => 2 vcpus from different cores to
+        #  be allocated => 2 vcpus from different cores are free
+        #
+        # If 2 thread siblings list is on numa0 steps are:
+        # 1) Boot 1 vm with flavor_isolate => 2 vcpus from different cores to
+        #  be allocated => 2 vcpus from different cores are free
+        # 2) Boot N vms with flavor_require (N=count of thread siblings list
+        #  is on numa1)
+        #
+        # If more than 2 thread siblings list is on numa0 steps are:
+        # 1) boot N-2 vms with flavor_require (N=count of thread siblings list
+        #  is on numa0) => 2 cores are free
+        # 2) boot vm with flavor_isolate => 2 vcpus from different cores are
+        #  free
+        # 3) Boot N vms with flavor_require (N=count of thread siblings list
+        #  is on numa1)
+        if len(ts_lists[0]) == 1:
+            boot_order = [(flv_require, 1),
+                          (flv_require, len(ts_lists[1]) - 2),
+                          (flv_isolate, 1)]
+        elif len(ts_lists[0]) == 2:
+            boot_order = [(flv_isolate, 1),
+                          (flv_require, len(ts_lists[1]))]
+        else:
+            boot_order = [(flv_require, len(ts_lists[0]) - 2),
+                          (flv_isolate, 1),
+                          (flv_require, len(ts_lists[1]))]
+
+        for (flavor, count) in boot_order:
+            for i in range(count):
+                os_conn.create_server(name='vm{0}_{1}'.format(i, flavor.name),
+                                      flavor=flavor.id,
+                                      key_name=keypair.name,
+                                      nics=[{'net-id': networks[0]}],
+                                      security_groups=[security_group.id],
+                                      wait_for_avaliable=False,
+                                      availability_zone=zone)
+        if policy == 'prefer':
+            vm = os_conn.create_server(name='vm_{0}'.format(flv_prefer.name),
+                                       flavor=flv_prefer.id,
+                                       key_name=keypair.name,
+                                       nics=[{'net-id': networks[0]}],
+                                       security_groups=[security_group.id],
+                                       wait_for_avaliable=False,
+                                       availability_zone=zone)
+            network_checks.check_ping_from_vm(env, os_conn, vm,
+                                              vm_keypair=keypair)
+        else:
+            with pytest.raises(InstanceError) as e:
+                os_conn.create_server(name='vm', flavor=flv_require.id,
+                                      nics=[{'net-id': networks[0]}],
+                                      key_name=keypair.name,
+                                      security_groups=[security_group.id],
+                                      availability_zone='nova:{}'.format(host),
+                                      wait_for_avaliable=False)
+            expected_message = ("Insufficient compute resources: "
+                                "Requested instance NUMA topology cannot fit "
+                                "the given host NUMA topology")
+            logger.info("Instance status is error:\n{0}".format(str(e.value)))
+            assert expected_message in str(e.value), (
+                "Unexpected reason of instance error")
+
+    @pytest.mark.testrail_id('864077')
+    def test_vms_with_cpu_thread_policy_wo_hyper_threading(
+            self, env, os_conn, hosts_without_hyper_threading, flavors,
+            networks, keypair, security_group):
+        """This test checks vms with cpu_thread_policy parameter in case of
+        disabled hyper-threading
+
+        Steps:
+            1. Create net1 with subnet and router1 with interface to net1
+            2. Create cpu pinning flavors with hw:numa_nodes=1 and
+            cpu_thread_policy
+            3. Boot vm and check that all vcpus are on the different core
+            4. Redo for all flavors
+            5. Check vms connectivity
+        """
+
+        host = hosts_without_hyper_threading[0]
+        zone = 'nova:{}'.format(host)
+
+        for flv in flavors:
+            vm = os_conn.create_server(name='vm{}'.format(flv.name),
+                                       flavor=flv.id,
+                                       key_name=keypair.name,
+                                       nics=[{'net-id': networks[0]}],
+                                       security_groups=[security_group.id],
+                                       availability_zone=zone)
+
+            used_ts_list = self.get_vm_thread_siblings_lists(os_conn, vm)
+            assert len(used_ts_list) == flv.vcpus, (
+                "vcpus should be on the different cores")
+
+        network_checks.check_vm_connectivity(env, os_conn)
