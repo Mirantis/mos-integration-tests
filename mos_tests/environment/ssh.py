@@ -96,9 +96,6 @@ class CommandResult(dict):
 class CleanableCM(object):
     """Cleanable context manager (based on ExitStack)"""
 
-    def __init__(self):
-        self.stack = ExitStack()
-
     def _enter(self):
         """Should be override"""
         raise NotImplementedError
@@ -111,6 +108,7 @@ class CleanableCM(object):
             stack.pop_all()
 
     def __enter__(self):
+        self.stack = ExitStack()
         with self._cleanup_on_error():
             self.stack.__enter__()
             return self._enter()
@@ -172,7 +170,7 @@ class SSHClient(CleanableCM):
 
     @property
     def _sftp(self):
-        if self._sftp_client is None:
+        if self._sftp_client is None or self._sftp_client.get_channel().closed:
             self._sftp_client = self._ssh.open_sftp()
             self.stack.enter_context(self._sftp_client)
         return self._sftp_client
