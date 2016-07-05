@@ -312,6 +312,11 @@ def has_2_or_more_ironic_conductors(env):
     return len(env.get_nodes_by_role('ironic')) >= 2
 
 
+def has_3_or_more_standalone_rabbitmq_nodes(env):
+    """Env deployed with three or more standalone-rabbitmq nodes"""
+    return len(env.get_nodes_by_role('standalone-rabbitmq')) >= 3
+
+
 def is_any_compute_suitable_for_max_flavor(env):
     attrs_to_check = {
         "vcpus": 8,
