@@ -35,9 +35,9 @@ pytestmark = pytest.mark.undestructive
      '-m image.size -q project={project_id}; user={user_id}',
      '-m storage.containers.objects -q project={project_id}; user={user_id}',
      ])
-def test_statistic(ceilometer_client, param, os_conn):
+def test_statistic(ceilometer_cli, param, os_conn):
     """Check that ceilometer statistics {params} return 0 exit code"""
     project_id = os_conn.session.get_project_id()
     user_id = os_conn.session.get_user_id()
     param = param.format(project_id=project_id, user_id=user_id)
-    ceilometer_client('statistics {param}'.format(param=param))
+    ceilometer_cli('statistics {param}'.format(param=param))
