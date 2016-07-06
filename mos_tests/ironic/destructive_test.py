@@ -24,8 +24,7 @@ from mos_tests.functions import os_cli
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631921', params={'boot_instance_before': False})
 @pytest.mark.testrail_id('631922', params={'boot_instance_before': True})
-@pytest.mark.parametrize('boot_instance_before',
-                         [True, False],
+@pytest.mark.parametrize('boot_instance_before', [True, False],
                          ids=['boot_instance_before', 'boot_instance_after'])
 def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
                           flavors, keypair, devops_env, boot_instance_before):
@@ -205,3 +204,47 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
                                  vm_keypair=keypair,
                                  username='ubuntu') as remote:
         remote.check_call('uname')
+
+
+@pytest.mark.testrail_id('1295473')
+@pytest.mark.check_env_('has_ironic_conductor')
+@pytest.mark.parametrize('ironic_nodes', [2], indirect=True)
+@pytest.mark.need_devops
+def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
+                                     ubuntu_image, flavors, keypair):
+    """Test ironic after restarting all ironic services
+
+    Scenario:
+        1. Launch baremetal instance 'test1'
+        2. Check that 'test1' instance ACTIVE and operable
+        3. Restart all ironic-<name> services on each controllers and ironic
+            nodes:
+            service ironic-<name of service> restart
+        4. Launch baremetal instance 'test2'
+        5. Check that 'test1' instance ACTIVE and operable
+        6. Delete created instances
+    """
+    instance1 = ironic.boot_instance(name='test1',
+                                     image=ubuntu_image,
+                                     flavor=flavors[0],
+                                     keypair=keypair)
+
+    nodes = (set(env.get_nodes_by_role('controller')) |
+             set(env.get_nodes_by_role('ironic')))
+    ironic_services_cmd = ("service --status-all 2>&1 | grep '+' | "
+                           "grep ironic | awk '{ print $4 }'")
+    for node in nodes:
+        with node.ssh() as remote:
+            output = remote.check_call(ironic_services_cmd).stdout_string
+            for service in output.splitlines():
+                remote.check_call('service {0} restart'.format(service))
+
+    instance2 = ironic.boot_instance(name='test2',
+                                     image=ubuntu_image,
+                                     flavor=flavors[0],
+                                     keypair=keypair)
+
+    instance1.delete()
+    instance2.delete()
+
+    os_conn.wait_servers_deleted([instance1, instance2])
