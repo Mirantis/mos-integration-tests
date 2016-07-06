@@ -408,6 +408,11 @@ def is_kvm(env):
     return data['common']['libvirt_type']['value'] == 'kvm'
 
 
+def is_sahara_enabled(env):
+    data = env.get_settings_data()['editable']
+    return data['additional_components']['sahara']['value']
+
+
 @pytest.fixture(autouse=True)
 def executable_requirements(request, env_name):
     marker = request.node.get_marker('requires_')
