@@ -96,6 +96,10 @@ class CommandResult(dict):
 class CleanableCM(object):
     """Cleanable context manager (based on ExitStack)"""
 
+    def __init__(self):
+        super(CleanableCM, self).__init__()
+        self.stack = ExitStack()
+
     def _enter(self):
         """Should be override"""
         raise NotImplementedError
@@ -108,7 +112,6 @@ class CleanableCM(object):
             stack.pop_all()
 
     def __enter__(self):
-        self.stack = ExitStack()
         with self._cleanup_on_error():
             self.stack.__enter__()
             return self._enter()
