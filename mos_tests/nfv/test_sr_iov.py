@@ -723,7 +723,7 @@ class TestNegativeSRIOV(TestBaseNFV):
         """
         host = mixed_hosts[0]
         cpus = get_cpu_distribition_per_numa_node(env)[host]
-        hps = get_hp_distribution_per_numa_node(env, numa_count=2)[host]
+        hps = get_hp_distribution_per_numa_node(env)[host]
 
         # Calculate number of vcpus/huge pages for each numa in order to occupy
         #  all of them. Usually pci device is on numa1 => next step

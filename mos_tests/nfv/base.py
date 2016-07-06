@@ -34,14 +34,14 @@ class TestBaseNFV(object):
                 "grep HugePages_Free /proc/meminfo")['stdout']
             assert str(free_pages) in free[0], "Unexpected HugePages_Free"
 
-    def check_instance_page_size(self, os_conn, vm, size):
+    def get_instance_page_size(self, os_conn, vm):
         root = self.get_vm_dump(os_conn, vm)
-        if size is None:
-            assert not root.find('memoryBacking'), "Huge pages are unexpected"
-        else:
+        if root.find('memoryBacking'):
             page_size = root.find('memoryBacking').find('hugepages').find(
                 'page').get('size')
-            assert str(size) == page_size, "Unexpected package size"
+            return int(page_size)
+        else:
+            return None
 
     def live_migrate(self, os_conn, vm, host, block_migration=True,
                      disk_over_commit=False):

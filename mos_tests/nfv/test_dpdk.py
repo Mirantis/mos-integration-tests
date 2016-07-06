@@ -102,7 +102,10 @@ class TestDpdk(TestBaseNFV):
 
         for vm in vms:
             self.check_vif_type_for_vm(vm, os_conn)
-            self.check_instance_page_size(os_conn, vm, page_2mb)
+            act_size = self.get_instance_page_size(os_conn, env)
+            assert act_size == page_2mb, (
+                "Unexpected package size. Should be {0} instead of {1}".format(
+                    page_2mb, act_size))
 
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 1)]

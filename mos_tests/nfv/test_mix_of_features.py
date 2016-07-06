@@ -28,7 +28,7 @@ def computes_for_mixed_hp_and_numa(os_conn, env, computes_with_mixed_hp,
     hosts = list(
         set(computes_with_mixed_hp) & set(computes_with_numa_nodes))
     conf_cpu = get_cpu_distribition_per_numa_node(env)
-    conf_hp = get_hp_distribution_per_numa_node(env, numa_count=2)
+    conf_hp = get_hp_distribution_per_numa_node(env)
     for host in hosts:
         cpu0 = len(conf_cpu[host]['numa0'])
         cpu1 = len(conf_cpu[host]['numa1'])
@@ -141,7 +141,10 @@ class TestMixedHugePagesAndNuma(TestBaseNFV):
         os_conn.wait_servers_ssh_ready(vms)
 
         for vm, param in vms.items():
-            self.check_instance_page_size(os_conn, vm, param['size'])
+            act_size = self.get_instance_page_size(os_conn, vm)
+            assert act_size == param['size'], (
+                "Unexpected package size. Should be {0} instead of {1}".format(
+                    param['size'], act_size))
             if param['numa'] is not None:
                 host = getattr(vm, 'OS-EXT-SRV-ATTR:host')
                 self.check_cpu_for_vm(os_conn, vm, param['numa'], cpus[host])
@@ -227,7 +230,10 @@ class TestMixedAllFeatures(TestBaseNFV):
         os_conn.wait_servers_active(vms.keys())
         os_conn.wait_servers_ssh_ready(vms.keys())
         for vm, param in vms.items():
-            self.check_instance_page_size(os_conn, vm, param['size'])
+            act_size = self.get_instance_page_size(os_conn, vm)
+            assert act_size == param['size'], (
+                "Unexpected package size. Should be {0} instead of {1}".format(
+                    param['size'], act_size))
             if param['numa'] is not None:
                 host = getattr(vm, 'OS-EXT-SRV-ATTR:host')
                 self.check_cpu_for_vm(os_conn, vm, param['numa'], cpus[host])
