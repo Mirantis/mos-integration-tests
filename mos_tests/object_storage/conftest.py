@@ -20,6 +20,7 @@ import tempfile
 
 import pytest
 from six.moves import configparser
+from swiftclient import client
 
 from mos_tests.functions import os_cli
 
@@ -236,3 +237,12 @@ def s3cmd_cleanup(ctrl_remote, env):
     for controller in env.get_nodes_by_role('controller'):
         with controller.ssh() as node:
             parser_set_value()
+
+
+@pytest.fixture
+def swift_client(os_conn):
+    return client.Connection(authurl=os_conn.session.auth.auth_url,
+                             user=os_conn.session.auth.username,
+                             key=os_conn.session.auth.password,
+                             tenant_name=os_conn.session.auth.tenant_name,
+                             auth_version='2')

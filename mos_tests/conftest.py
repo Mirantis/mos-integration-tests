@@ -384,14 +384,19 @@ def is_ceph_enabled(env):
     return data['volumes_ceph']['value']
 
 
-def is_qos_enabled(env):
-    data = env.get_settings_data()['editable']
-    return data['neutron_advanced_configuration']['neutron_qos']['value']
-
-
 def is_radosgw_enabled(env):
     data = env.get_settings_data()['editable']['storage']
     return data['objects_ceph']['value']
+
+
+def is_images_ceph_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['images_ceph']['value']
+
+
+def is_qos_enabled(env):
+    data = env.get_settings_data()['editable']
+    return data['neutron_advanced_configuration']['neutron_qos']['value']
 
 
 def is_kvm(env):
