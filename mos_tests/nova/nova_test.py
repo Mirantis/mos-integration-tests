@@ -1053,3 +1053,96 @@ class TestBugVerification(TestBase):
         with instance_ssh as remote:
             cmd_result = remote.check_call('ls /mnt')
             assert cmd_result.stdout_string == ''
+
+
+class TestServicesRestart(TestBase):
+
+    def restart_nova_services(self, nodes):
+        """Restart all active nova services on all controllers
+        and/or computes.
+        """
+        get_alive_services = ("initctl list | grep running | grep nova | "
+                              "awk '{ print $1 }'")
+        logger.debug('Restart nova services on {0}'.format(nodes))
+        for node in nodes:
+            with node.ssh() as remote:
+                # get alive services
+                out = remote.check_call(get_alive_services).stdout_string
+                alive_services = out.split()
+                # restart alive services one-by-one
+                for nova_service in alive_services:
+                    remote.check_call(
+                        'restart {0}'.format(nova_service),
+                        verbose=False)
+
+    def ping_public_ip_from_vms(self, vms, key, username='cirros'):
+        for vm in vms:
+            network_checks.check_ping_from_vm(
+                self.env, self.os_conn, vm, key, vm_login=username)
+
+    @pytest.mark.testrail_id('1295467')
+    def test_restart_all_nova_services(
+            self, os_conn, keypair, security_group):
+        """Nova: restart all Nova services.
+
+        Actions:
+        1. Boot first VM and verify that we can ping this VM and login to this
+        VM via SSH;
+        2. Restart all running nova services on all controllers;
+        3. Boot second VM and verify that we can ping this VM and login to this
+        VM via SSH and can login to first VM;
+        4. Restart all running nova services on all computes;
+        5. Boot third VM and verify that we can ping this VM and login to this
+        VM via SSH and can login to rest two as well;
+        6. Restart all running nova services on all controllers and computes;
+        7. Delete all VMs and verify that we can successfully delete VMs after
+        the restart of all Nova services;
+        """
+        int_net_id = os_conn.nova.networks.find(label='admin_internal_net').id
+        controllers = self.env.get_nodes_by_role('controller')
+        computes = self.env.get_nodes_by_role('compute')
+
+        # Create and check connection for the first VM
+        vm1 = os_conn.create_server(
+            name='server01',
+            key_name=keypair.id,
+            nics=[{'net-id': int_net_id}],
+            security_groups=[security_group.id])
+        self.ping_public_ip_from_vms([vm1], keypair)
+
+        # Restart nova services on all controllers
+        self.restart_nova_services(controllers)
+
+        # Create second WM
+        vm2 = os_conn.create_server(
+            name='server02',
+            key_name=keypair.id,
+            nics=[{'net-id': int_net_id}],
+            security_groups=[security_group.id])
+        self.ping_public_ip_from_vms([vm1, vm2], keypair)
+
+        # Restart nova services on all computes
+        self.restart_nova_services(computes)
+
+        # Check two VMs' connection
+        os_conn.wait_servers_ssh_ready([vm1, vm2])
+        self.ping_public_ip_from_vms([vm1, vm2], keypair)
+
+        # Create third WM
+        vm3 = os_conn.create_server(
+            name='server03',
+            key_name=keypair.id,
+            nics=[{'net-id': int_net_id}],
+            security_groups=[security_group.id])
+
+        # Restart nova services on all computes+controllers
+        self.restart_nova_services(controllers + computes)
+
+        # Check all three VMs' connection
+        os_conn.wait_servers_ssh_ready([vm1, vm2, vm3])
+        self.ping_public_ip_from_vms([vm1, vm2, vm3], keypair)
+
+        # After services restart instances should be deleted with no errors
+        for vm in [vm1, vm2, vm3]:
+            vm.delete()
+        os_conn.wait_servers_deleted([vm1, vm2, vm3])
