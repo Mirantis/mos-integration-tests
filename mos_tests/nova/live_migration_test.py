@@ -21,10 +21,9 @@ from novaclient import exceptions as nova_exceptions
 import pytest
 from six.moves import configparser
 
+from mos_tests.conftest import ubuntu_image_id as ubuntu_image_id_base
 from mos_tests.functions import common
-from mos_tests.functions import file_cache
 from mos_tests.functions import service
-from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.undestructive
@@ -123,16 +122,8 @@ def block_migration(env, request):
 
 @pytest.yield_fixture(scope='module')
 def ubuntu_image_id(os_conn):
-    logger.info('Creating ubuntu image')
-    image = os_conn.glance.images.create(name="image_ubuntu",
-                                         disk_format='qcow2',
-                                         container_format='bare')
-    with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
-        os_conn.glance.images.upload(image.id, f)
-
-    logger.info('Ubuntu image created')
-    yield image.id
-    os_conn.glance.images.delete(image.id)
+    for step in ubuntu_image_id_base(os_conn):
+        yield step
 
 
 @pytest.yield_fixture
