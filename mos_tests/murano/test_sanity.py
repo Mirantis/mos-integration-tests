@@ -268,7 +268,7 @@ class TestCategoryManagement(base.PackageTestCase):
         4. Delete new category and check it's not browsed anymore
     """
 
-    @pytest.mark.testrail_id('836686')
+    @pytest.mark.testrail_id('836684')
     def test_add_category(self):
         self.navigate_to('Manage')
         self.go_to_submenu('Categories')
@@ -277,7 +277,7 @@ class TestCategoryManagement(base.PackageTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.wait_for_alert_message()
 
-    @pytest.mark.testrail_id('836687')
+    @pytest.mark.testrail_id('836685')
     def test_delete_category(self):
         self.navigate_to('Manage')
         self.go_to_submenu('Categories')
@@ -286,6 +286,30 @@ class TestCategoryManagement(base.PackageTestCase):
         self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
         self.wait_for_alert_message()
         self.check_element_not_on_page(by.By.XPATH, delete_new_category_btn)
+
+    @pytest.mark.testrail_id('836692')
+    def test_add_existing_category(self):
+        """Add category with name of already existing category
+
+        Scenario:
+            1. Log into OpenStack Horizon dashboard as admin user
+            2. Navigate to 'Categories' page
+            3. Add new category
+            4. Check that new category has appeared in category list
+            5. Try to add category with the same name
+            6. Check that appropriate user friendly error message has
+                appeared.
+        """
+        category_name = self.murano_client.categories.list()[0].name
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.driver.find_element_by_id(c.AddCategory).click()
+        self.fill_field(by.By.XPATH, "//input[@id='id_name']", category_name)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        error_message = ("Error: Requested operation conflicts "
+                         "with an existing object.")
+        self.check_alert_message(error_message)
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
