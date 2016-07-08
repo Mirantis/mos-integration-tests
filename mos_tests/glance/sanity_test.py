@@ -208,8 +208,8 @@ def test_image_create_delete_from_url_v2(glance_remote, os_conn, suffix):
         1. Create image
         2. Add location for image
         3. Wait until image has active `status`
-        3. Delete image
-        4. Check that image deleted
+        4. Delete image
+        5. Check that image deleted
     """
     image = os_conn.glance.images.create(name='Test_{}'.format(suffix),
                                          container_format="bare",
@@ -425,6 +425,7 @@ def test_big_image_create_delete_from_file(glance_remote, image_file_remote,
         2. Check that image exists and has `active` status;
         3. Delete image;
         4. Check that image deleted.
+
     Duration: ~ 25 minutes
     """
     name = 'Test_big_{}'.format(suffix)

@@ -22,6 +22,7 @@ Contents:
    mos_tests/neutron
    mos_tests/nova
    mos_tests/sahara
+   mos_tests/windows
 
 
 

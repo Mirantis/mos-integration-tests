@@ -155,6 +155,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
         4. Baremetal node must be reassigned to another Ironic-conductor
         5. Run OSTF including Ironic tests.
         6. Check that Ironic instance still ACTIVE and operable
+
     Info: https://bugs.launchpad.net/mos/+bug/1557464
     """
     flavor, ironic_node = zip(flavors, ironic_nodes)[0]
