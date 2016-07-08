@@ -15,6 +15,9 @@
 import pytest
 
 
+pytestmark = pytest.mark.undestructive
+
+
 @pytest.mark.parametrize('package', [('ApacheHttpServer',)],
                          indirect=['package'])
 @pytest.mark.testrail_id('1295478')

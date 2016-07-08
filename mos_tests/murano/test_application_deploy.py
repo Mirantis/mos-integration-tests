@@ -15,6 +15,9 @@
 import pytest
 
 
+pytestmark = pytest.mark.undestructive
+
+
 @pytest.mark.parametrize('package', [('databases.MySql',)],
                          indirect=['package'])
 @pytest.mark.testrail_id('836380')

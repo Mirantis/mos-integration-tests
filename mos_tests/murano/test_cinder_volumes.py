@@ -15,17 +15,18 @@
 import pytest
 import uuid
 
-
 flavor = 'm1.medium'
-linux = 'debian-8-m-agent.qcow2'
 availability_zone = 'nova'
 
+pytestmark = pytest.mark.undestructive
 
-def deploy_and_check_apache(environment, murano, session, keypair, volumes):
+
+def deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            image):
     post_body = {
         "instance": {
             "flavor": flavor,
-            "image": linux,
+            "image": image.name,
             "assignFloatingIp": True,
             "keyname": keypair.id,
             "availabilityZone": availability_zone,
@@ -50,11 +51,11 @@ def deploy_and_check_apache(environment, murano, session, keypair, volumes):
     murano.deployment_success_check(environment, ports=[22, 80])
 
 
-@pytest.mark.parametrize('package', [('ApacheHttpServer',)],
-                         indirect=['package'])
 @pytest.mark.testrail_id('844935')
-def test_deploy_app_with_volume_creation(environment, murano,
-                                         session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_volume_creation(environment, murano, session, keypair,
+                                         linux_image):
     """Check app deployment with volume creation
     Steps:
         1. Create Murano environment
@@ -74,18 +75,20 @@ def test_deploy_app_with_volume_creation(environment, murano,
             "size": 1
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
     assert volume_data.attributes['size'] == 1
 
 
-@pytest.mark.check_env_("not is_ceph_enabled")
 @pytest.mark.testrail_id('844936')
-def test_deploy_app_with_volume_creation_multiattach_readonly(environment,
-                                                              murano, session,
-                                                              keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+@pytest.mark.check_env_("not is_ceph_enabled")
+def test_deploy_app_with_volume_creation_multiattach_readonly(
+        environment, murano, session, keypair, linux_image):
     """Check app deployment with volume creation with multiattach and readonly
     attributes
     Steps:
@@ -110,7 +113,8 @@ def test_deploy_app_with_volume_creation_multiattach_readonly(environment,
             "multiattach": True
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
@@ -120,8 +124,10 @@ def test_deploy_app_with_volume_creation_multiattach_readonly(environment,
 
 
 @pytest.mark.testrail_id('844937')
-def test_deploy_app_with_volume_creation_from_image(environment, murano,
-                                                    session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_volume_creation_from_image(
+        environment, murano, session, keypair, linux_image):
     """Check app deployment with volume creation from image
     Steps:
         1. Create Murano environment
@@ -140,21 +146,24 @@ def test_deploy_app_with_volume_creation_from_image(environment, murano,
                 "type": "io.murano.resources.CinderVolume"
             },
             "size": 2,
-            "sourceImage": linux
+            "sourceImage": linux_image.name
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
     assert volume_data.attributes['size'] == 2
     image = volume_data.attributes['volume_image_metadata']['image_name']
-    assert image == linux
+    assert image == linux_image.name
 
 
 @pytest.mark.testrail_id('844938')
-def test_deploy_app_with_volume_creation_from_volume(volume, environment,
-                                                     murano, session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_volume_creation_from_volume(
+        volume, environment, murano, session, keypair, linux_image):
     """Check app deployment with volume creation from image
     Steps:
         1. Create Murano environment
@@ -181,7 +190,8 @@ def test_deploy_app_with_volume_creation_from_volume(volume, environment,
             }
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
@@ -190,9 +200,10 @@ def test_deploy_app_with_volume_creation_from_volume(volume, environment,
 
 
 @pytest.mark.testrail_id('844939')
-def test_deploy_app_with_volume_creation_from_snapshot(volume_snapshot,
-                                                       environment, murano,
-                                                       session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_volume_creation_from_snapshot(
+        volume_snapshot, environment, murano, session, keypair, linux_image):
     """Check app deployment with volume creation from volume snapshot
     Steps:
         1. Create Cinder volume and make snapshot from it
@@ -221,7 +232,8 @@ def test_deploy_app_with_volume_creation_from_snapshot(volume_snapshot,
             }
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
@@ -230,9 +242,10 @@ def test_deploy_app_with_volume_creation_from_snapshot(volume_snapshot,
 
 
 @pytest.mark.testrail_id('844940')
-def test_deploy_app_with_volume_creation_from_backup(volume_backup,
-                                                     environment, murano,
-                                                     session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_volume_creation_from_backup(
+        volume_backup, environment, murano, session, keypair, linux_image):
     """Check app deployment with volume creation from volume backup
     Steps:
         1. Create Cinder volume and make backup from it
@@ -262,7 +275,8 @@ def test_deploy_app_with_volume_creation_from_backup(volume_backup,
             }
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     volume_data = murano.get_volume(environment.id)
     murano.check_volume_attached('testMurano',
                                  volume_data.physical_resource_id)
@@ -271,8 +285,10 @@ def test_deploy_app_with_volume_creation_from_backup(volume_backup,
 
 
 @pytest.mark.testrail_id('844941')
-def test_deploy_app_with_existing_volume(volume, environment, murano,
-                                         session, keypair):
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
+def test_deploy_app_with_existing_volume(volume, environment, murano, session,
+                                         keypair, linux_image):
     """Check app deployment with existing volume attached to instance
     Steps:
         1. Create Cinder volume
@@ -293,13 +309,16 @@ def test_deploy_app_with_existing_volume(volume, environment, murano,
             "openstackId": volume.id
         }
     }
-    deploy_and_check_apache(environment, murano, session, keypair, volumes)
+    deploy_and_check_apache(environment, murano, session, keypair, volumes,
+                            linux_image)
     murano.check_volume_attached('testMurano', volume.id)
 
 
 @pytest.mark.testrail_id('844942')
+@pytest.mark.parametrize('package', [('ApacheHttpServer', )],
+                         indirect=True)
 def test_deploy_app_with_boot_volume_as_image(environment, murano, session,
-                                              keypair):
+                                              keypair, linux_image):
     """Check app deployment using boot volume as image
     Steps:
         1. Create Murano environment
@@ -321,7 +340,7 @@ def test_deploy_app_with_boot_volume_as_image(environment, murano, session,
                         "type": "io.murano.resources.CinderVolume"
                     },
                     "size": 4,
-                    "sourceImage": linux
+                    "sourceImage": linux_image.name
                 },
                 "bootIndex": 0,
                 "deviceName": "vda",
@@ -355,4 +374,4 @@ def test_deploy_app_with_boot_volume_as_image(environment, murano, session,
     assert not murano.os_conn.nova.servers.get(vm_id).image
     assert volume_data.attributes['size'] == 4
     image = volume_data.attributes['volume_image_metadata']['image_name']
-    assert image == linux
+    assert image == linux_image.name
