@@ -287,6 +287,11 @@ def has_2_or_more_controllers(env):
     return len(env.get_nodes_by_role('controller')) >= 2
 
 
+def has_3_or_more_controllers(env):
+    """Env deployed with 3 or more controllers"""
+    return len(env.get_nodes_by_role('controller')) >= 3
+
+
 def has_1_or_more_computes(env):
     """Env deployed with 1 or more computes"""
     return len(env.get_nodes_by_role('compute')) >= 1
@@ -345,6 +350,11 @@ def is_any_compute_suitable_for_max_flavor(env):
         check_hypervisor_fit(hv)
         for hv in os_connection.nova.hypervisors.list())
     return result
+
+
+def is_ldap_plugin_installed(env):
+    """Env deployed with LDAP plugin"""
+    return "ldap" in env.get_plugins()
 
 
 def is_vlan(env):

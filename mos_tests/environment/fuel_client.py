@@ -23,6 +23,7 @@ from fuelclient import fuelclient_settings
 from fuelclient.objects import environment
 from fuelclient.objects import FuelVersion
 from fuelclient.objects.node import Node as FuelNode
+from fuelclient.objects import Plugins as FuelPlugins
 from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
 import requests
@@ -145,6 +146,11 @@ class Environment(environment.Environment):
         """Returns nodes by assigned role"""
         return [x for x in self.get_all_nodes()
                 if role in x.data['roles']]
+
+    @staticmethod
+    def get_plugins():
+        """Returns list of plugins"""
+        return [p['name'] for p in FuelPlugins.get_all_data()]
 
     def get_tests(self):
         return self.connection.get_request('tests/{0}'.format(self.id),
