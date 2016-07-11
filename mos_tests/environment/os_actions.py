@@ -33,8 +33,8 @@ from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
 
-from mos_tests.environment.ssh import SSHClient
 from mos_tests.environment.ssh import NetNsProxy
+from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import wait
 from mos_tests.functions import os_cli

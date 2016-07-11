@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 @pytest.yield_fixture
 def network(os_conn, request):
     network = os_conn.create_network(name='net01')
-    subnet = os_conn.create_subnet(network_id=network['network']['id'],
-                                   name='net01__subnet', cidr='192.168.1.0/24')
+    os_conn.create_subnet(network_id=network['network']['id'],
+                          name='net01__subnet', cidr='192.168.1.0/24')
     yield network
     if 'undestructive' in request.node.keywords:
         os_conn.delete_net_subnet_smart(network['network']['id'])

@@ -158,20 +158,20 @@ def restart_ping(os_conn, env, servers):
 
 def cmp_pings_ids(compute):
     """Compare pings isd and returns:
-        -1 if UNREPLIED has lower id
+        <0 if UNREPLIED has lower id
         0 if ids is equal
-        1 if UNREPLIED has upper id
+        >0 if UNREPLIED has upper id
     """
     id_expr = re.compile(r'id=(?P<id>\d+)')
     with compute.ssh() as remote:
         output = remote.execute('conntrack -L | grep 10.0.0.4 | grep icmp')
 
-    result = dict.fromkeys([True, False])
+    ping_ids = dict.fromkeys([True, False])
     for line in output['stdout']:
         id_val = int(id_expr.search(line).group('id'))
         key = '[UNREPLIED]' in line
-        result[key] = max(id_val, result[key])
-    return cmp(result[True], result[False])
+        ping_ids[key] = max(id_val, ping_ids[key])
+    return ping_ids[True] - ping_ids[False]
 
 
 def check_zones_assigment_to_devices(compute):
