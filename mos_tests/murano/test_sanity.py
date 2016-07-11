@@ -318,6 +318,7 @@ class TestCategoryManagement(base.PackageTestCase):
 @murano_test_patch
 class TestSuitePackageCategory(base.PackageTestCase):
     def _import_package_with_category(self, package_archive, category):
+        self.navigate_to('Manage')
         self.go_to_submenu('Packages')
         self.driver.find_element_by_id(c.UploadPackage).click()
 
@@ -343,24 +344,16 @@ class TestSuitePackageCategory(base.PackageTestCase):
 
         # add new category
         self.category = str(uuid.uuid4())
-
-        self.navigate_to('Manage')
-        self.go_to_submenu('Categories')
-        self.driver.find_element_by_id(c.AddCategory).click()
-        self.fill_field(
-            by.By.XPATH, "//input[@id='id_name']", self.category)
-        self.driver.find_element_by_xpath(c.InputSubmit).click()
-
-        self.wait_for_alert_message()
-
-        # save category id
-        self.category_id = self.get_element_id(self.category)
+        self.category_id = self.murano_client.categories.add(
+            {"name": self.category}).id
 
     def tearDown(self):
         super(TestSuitePackageCategory, self).tearDown()
 
         # delete created category
-        self.murano_client.categories.delete(self.category_id)
+        if self.category_id in (category.id for category in
+                                self.murano_client.categories.list()):
+            self.murano_client.categories.delete(self.category_id)
 
     @pytest.mark.testrail_id('836683')
     def test_list_of_existing_categories(self):
@@ -370,6 +363,7 @@ class TestSuitePackageCategory(base.PackageTestCase):
             2. Check that list of categories available and basic categories
                 ("Web", "Databases") are present in the list
         """
+        self.navigate_to('Manage')
         self.go_to_submenu("Categories")
         categories_table_locator = (by.By.CSS_SELECTOR, "table#categories")
         self.check_element_on_page(*categories_table_locator)
@@ -409,6 +403,86 @@ class TestSuitePackageCategory(base.PackageTestCase):
                 self.check_element_on_page(by.By.XPATH, c.Status.format(name))
             if i != len(pages_itself):
                 self.driver.find_element_by_xpath(c.PrevBtn).click()
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836687')
+    def test_add_delete_package_to_category(self):
+        """Test package importing with new category and deleting the package
+        from the category.
+
+        Scenario:
+            1. Log into OpenStack Horizon dashboard as admin user
+            2. Navigate to 'Categories' page
+            3. Click on 'Add Category' button
+            4. Create new category and check it's browsed in the table
+            5. Navigate to 'Packages' page
+            6. Click on 'Import Package' button
+            7. Import package and select created 'test' category for it
+            8. Navigate to "Categories" page
+            9. Check that package count = 1 for created category
+            10. Navigate to 'Packages' page
+            11. Modify imported earlier package, by changing its category
+            12. Navigate to 'Categories' page
+            13. Check that package count = 0 for created category
+        """
+        # add new package to the created category
+        self._import_package_with_category(self.archive, self.category)
+
+        # Check that package count = 1 for created category
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
+            self.category, 1))
+
+        # Modify imported earlier package by changing its category
+        self.go_to_submenu('Packages')
+        package = self.driver.find_element_by_xpath(c.AppPackages.format(
+            self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+
+        self.select_action_for_package(pkg_id, 'modify_package')
+        sel = self.driver.find_element_by_xpath(
+            "//select[contains(@name, 'categories')]")
+        sel = ui.Select(sel)
+        sel.deselect_all()
+        sel.select_by_value('Web')
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+
+        # Check that package count = 0 for created category
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
+            self.category, 0))
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836693')
+    def test_delete_category_with_package(self):
+        """Deletion of category with package in it
+
+        Scenario:
+            1. Log into OpenStack Horizon dashboard as admin user
+            2. Navigate to 'Categories' page
+            3. Add new category
+            4. Navigate to 'Packages' page
+            5. Import package and select created category for it
+            6. Navigate to "Categories" page
+            7. Check that package count = 1 for created category
+            8. Check that there is no 'Delete Category' button for the category
+        """
+        # add new package to the created category
+        self._import_package_with_category(self.archive, self.category)
+
+        # Check that package count = 1 for created category
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
+            self.category, 1))
+        delete_category_btn = c.DeleteCategory.format(self.category)
+        self.driver.find_element_by_xpath(delete_category_btn).click()
+        self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
+        self.wait_for_alert_message()
+        self.check_element_not_on_page(by.By.XPATH, delete_category_btn)
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
@@ -752,3 +826,59 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         instance = self.os_conn.nova.servers.get(open_stack_id)
         self.assertIn(net_name, instance.addresses.keys())
         self.assertNotIn(self.net_name, instance.addresses.keys())
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
+@pytest.mark.usefixtures('screen')
+@murano_test_patch
+class TestPackageRepository(base.PackageTestCase):
+
+    @pytest.mark.testrail_id('836655')
+    def test_import_unexciting_package_from_repository(self):
+        """Negative test when unexciting package is imported from repository"""
+        pkg_name = self.gen_random_resource_name('pkg')
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_name")
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-repo_name']")
+        el.send_keys("io.murano.apps.{0}.zip".format(pkg_name))
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        error_message = ("Error: Package creation failed.Reason: "
+                         "Can't find Package name from repository.")
+        self.check_alert_message(error_message)
+
+        self.check_element_not_on_page(
+            by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    @pytest.mark.testrail_id('836656')
+    def test_import_package_by_invalid_url(self):
+        """Negative test when package is imported by invalid url."""
+        pkg_name = self.gen_random_resource_name('pkg')
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_url")
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-url']")
+        el.send_keys("http://storage.apps.openstack.org/apps/"
+                     "io.murano.apps.{0}.zip".format(pkg_name))
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        error_message = ("Error: Package creation failed.Reason: "
+                         "Can't find Package name from repository.")
+        self.check_alert_message(error_message)
+
+        self.check_element_not_on_page(
+            by.By.XPATH, c.AppPackages.format(pkg_name))
