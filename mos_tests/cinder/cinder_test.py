@@ -471,8 +471,7 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
     vm = os_conn.create_server(name='test_vm', image_id=ubuntu_image_id,
                                flavor=flavor, key_name=keypair.name,
                                security_groups=[security_group.id],
-                               nics=[{'net-id': internal_net['id']}],
-                               wait_for_avaliable=False)
+                               nics=[{'net-id': internal_net['id']}])
 
     # Create 1 volume
     logger.info("Create volume 'test_volume_1' with size 10Gb")
