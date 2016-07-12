@@ -16,10 +16,30 @@ import logging
 import pytest
 
 from mos_tests.functions import common
-from mos_tests.functions import file_cache
-from mos_tests.settings import UBUNTU_URL
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.yield_fixture
+def cleanup(os_conn):
+    vlms_ids_before = [x.id for x in os_conn.cinder.volumes.list()]
+    images_ids_before = [x.id for x in os_conn.glance.images.list()]
+
+    yield None
+
+    vlms_after = os_conn.cinder.volumes.list()
+    vlms_for_del = [x for x in vlms_after if x.id not in vlms_ids_before]
+    os_conn.delete_volumes(vlms_for_del)
+
+    images_ids_after = [x.id for x in os_conn.glance.images.list()]
+    img_ids_for_del = set(images_ids_after) - set(images_ids_before)
+    for image_id in img_ids_for_del:
+        os_conn.glance.images.delete(image_id)
+    common.wait(
+        lambda: all(x.id not in img_ids_for_del
+                    for x in os_conn.glance.images.list()),
+        timeout_seconds=5 * 60,
+        waiting_for='images cleanup')
 
 
 @pytest.yield_fixture
@@ -40,38 +60,20 @@ def volume(os_conn):
     os_conn.delete_volume(volume)
 
 
-@pytest.fixture
-def ubuntu_image(os_conn, request):
-    disk_format = getattr(request, 'param', 'qcow2')
-    image = os_conn.glance.images.create(
-        name="image_ubuntu", url=UBUNTU_URL, disk_format=disk_format,
-        container_format='bare', visibility='public')
-    with file_cache.get_file(UBUNTU_URL) as f:
-        os_conn.glance.images.upload(image.id, f)
-    return disk_format, image.id
+def image_factory(disk_format):
+    @pytest.fixture
+    def image(os_conn, cleanup):
+        image = os_conn.glance.images.create(
+            name="image_{0}".format(disk_format), disk_format=disk_format,
+            container_format='bare', visibility='public')
+        os_conn.glance.images.upload(image.id, 'image content')
+        return image, disk_format
+
+    return image
 
 
-@pytest.fixture
-def disk_format(request):
-    disk_format = getattr(request, 'param', 'qcow2')
-    return disk_format
-
-
-@pytest.yield_fixture
-def cleanup(os_conn):
-    vlms_before = os_conn.cinder.volumes.list()
-    images_before = os_conn.nova.images.list()
-    yield None
-    vlms_after = os_conn.cinder.volumes.list()
-    vlms_for_del = set(vlms_after) - set(vlms_before)
-    os_conn.delete_volumes(vlms_for_del)
-
-    images_after = os_conn.nova.images.list()
-    img_for_del = set(images_after) - set(images_before)
-    for image in img_for_del:
-        os_conn.glance.images.delete(image.id)
-    common.wait(lambda: len(os_conn.nova.images.list()) == len(images_before),
-                timeout_seconds=5 * 60, waiting_for='images cleanup')
+qcow2_image = image_factory('qcow2')
+raw_image = image_factory('raw')
 
 
 @pytest.fixture
@@ -172,14 +174,15 @@ def mount_volume(os_conn, env, vm, volume, keypair):
 @pytest.mark.testrail_id('543176')
 def test_creating_multiple_snapshots(os_conn, quota, volume):
     """This test case checks creation of several snapshot at the same time
+
     Steps:
-    1. Create a volume
-    2. Create 70 snapshots for it. Wait for all snapshots to become in
-    available status
-    3. Delete all of them
-    4. Launch creation of 50 snapshot without waiting of deletion
-    5. Wait for all old snapshots to be deleted
-    6. Wait for all new snapshots to become in available status
+        1. Create a volume
+        2. Create 70 snapshots for it. Wait for all snapshots to become in
+           available status
+        3. Delete all of them
+        4. Launch creation of 50 snapshot without waiting of deletion
+        5. Wait for all old snapshots to be deleted
+        6. Wait for all new snapshots to become in available status
     """
     #  Creation of 70 snapshots
     logger.info('Create 70 snapshots')
@@ -252,6 +255,7 @@ def test_create_backup_snapshot(os_conn, volume):
 @pytest.mark.testrail_id('857367')
 def test_delete_backups_in_parallel(os_conn, volume):
     """This test case checks deletion of 10 backups in parallel
+
     Steps:
     1. Create 10 backups
     2. Check that all backups are in available status
@@ -290,6 +294,7 @@ def test_delete_backups_in_parallel(os_conn, volume):
 @pytest.mark.testrail_id('857365')
 def test_create_delete_volumes_in_parallel(os_conn):
     """This test case checks creation and deletion of 10 volumes in parallel
+
     Steps:
     1. Create 10 volumes in parallel
     2. Check that all volumes are in available status
@@ -327,6 +332,7 @@ def test_create_delete_volumes_in_parallel(os_conn):
 @pytest.mark.testrail_id('857366')
 def test_create_delete_snapshots_in_parallel(os_conn, volume):
     """This test case checks creation and deletion of 10 snapshots in parallel
+
     Steps:
     1. Create 10 snapshots in parallel
     2. Check that all snapshots are in available status
@@ -360,57 +366,60 @@ def test_create_delete_snapshots_in_parallel(os_conn, volume):
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ceph_enabled')
-@pytest.mark.testrail_id('857361', ubuntu_image='qcow2')
-@pytest.mark.testrail_id('857362', ubuntu_image='raw')
-@pytest.mark.parametrize('ubuntu_image', ['qcow2', 'raw'],
-                         indirect=['ubuntu_image'])
-def test_create_volume_from_image(os_conn, ubuntu_image, cleanup):
+@pytest.mark.testrail_id('857361', image_fixture='qcow2_image')
+@pytest.mark.testrail_id('857362', image_fixture='raw_image')
+@pytest.mark.parametrize('image_fixture', ['qcow2_image', 'raw_image'])
+def test_create_volume_from_image(request, os_conn, image_fixture):
     """This test case checks creation of volume with qcow2/raw image
+
     Steps:
-    1. Create image with corresponding disk format(qcow2 or raw)
-    2. Create a volume
-    3. Check that volume is created without errors
+        1. Create image with corresponding disk format(qcow2 or raw)
+        2. Create a volume
+        3. Check that volume is created without errors
     """
-    disk_format, image_id = ubuntu_image
+    image, disk_format = request.getfuncargvalue(image_fixture)
     logger.info('Create volume from image with disk format {}'.format(
         disk_format))
-    volume = common.create_volume(os_conn.cinder, image_id=image_id,
+    volume = common.create_volume(os_conn.cinder,
+                                  image_id=image.id,
                                   name='volume_{}'.format(disk_format))
     assert volume.volume_image_metadata['disk_format'] == disk_format
-    assert volume.volume_image_metadata['image_id'] == image_id
+    assert volume.volume_image_metadata['image_id'] == image.id
 
 
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ceph_enabled')
 @pytest.mark.testrail_id('857363', disk_format='qcow2')
 @pytest.mark.testrail_id('857364', disk_format='raw')
-@pytest.mark.parametrize('disk_format', ['qcow2', 'raw'],
-                         indirect=['disk_format'])
-def test_create_image_from_volume(os_conn, disk_format, volume, cleanup):
+@pytest.mark.parametrize('disk_format', ['qcow2', 'raw'])
+def test_create_image_from_volume(request, os_conn, disk_format, volume):
     """This test case checks creation of qcow2/raw image from volume
+
     Steps:
-    1. Create a volume
-    2. Create image with corresponding disk format(qcow2 or raw)
-    3. Check that image is created without errors
+        1. Create a volume
+        2. Create image with corresponding disk format(qcow2 or raw)
+        3. Check that image is created without errors
     """
 
     logger.info('Create image with disk format {} from volume'.format(
         disk_format))
 
     image_id = os_conn.cinder.volumes.upload_to_image(
-        volume=volume, force=True, image_name='image_{}'.format(disk_format),
-        container_format='bare', disk_format=disk_format, visibility='public',
-        protected=False)[1]['os-volume_upload_image']['image_id']
+        volume=volume,
+        force=True,
+        image_name='image_{}'.format(disk_format),
+        container_format='bare',
+        disk_format=disk_format)[1]['os-volume_upload_image']['image_id']
 
     def is_image_active():
-        image = [img for img in os_conn.nova.images.list() if
-                 img.id == image_id][0]
-        if image.status == 'ERROR':
+        image = os_conn.glance.images.get(image_id)
+        if image.status == 'error':
             raise ValueError("Image is in error state")
         else:
-            return image.status == 'ACTIVE'
+            return image.status == 'active'
 
-    common.wait(is_image_active, timeout_seconds=60 * 5,
+    common.wait(is_image_active,
+                timeout_seconds=60 * 5,
                 waiting_for='image became to active status')
 
 
@@ -419,12 +428,13 @@ def test_create_image_from_volume(os_conn, disk_format, volume, cleanup):
 @pytest.mark.testrail_id('857389')
 def test_cinder_migrate(os_conn, volume, cinder_lvm_hosts):
     """This test case checks cinder migration for volume
+
     Steps:
-    1. Create volume
-    2. Check volume host
-    3. Migrate volume
-    4. Check that migration is finished without errors
-    5. Check that host is changed
+        1. Create volume
+        2. Check volume host
+        3. Migrate volume
+        4. Check that migration is finished without errors
+        5. Check that host is changed
     """
     volume_host = getattr(volume, 'os-vol-host-attr:host')
     assert volume_host in cinder_lvm_hosts
