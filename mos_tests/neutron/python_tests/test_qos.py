@@ -59,7 +59,7 @@ def delete_net_policy(os_conn):
         if policy_id is not None:
             logger.debug('Deleting QoS policy from net')
             os_conn.neutron.update_network(
-                net['network']['id'], {'network': {'qos_policy_id': None}})
+                net['id'], {'network': {'qos_policy_id': None}})
             os_conn.delete_qos_policy(policy_id)
 
 
@@ -980,8 +980,25 @@ class TestTrafficRestrictionWithSRIoV(TestQoSBase):
     default_limit = 20000  # 20 Mbits/sec
 
     @classmethod
+    @pytest.fixture(scope='class')
+    def sriov_hosts(cls, env):
+        """Find computes with SR-IOV enabled"""
+        computes_list = []
+        for compute in env.get_nodes_by_role('compute'):
+            with compute.ssh() as remote:
+                result = remote.execute(
+                    'lspci -vvv | grep -i "initial vf"').stdout_string
+            vfs_number = re.findall('Number of VFs: (\d+)', result)
+            if sum(map(int, vfs_number)) > 0:
+                computes_list.append(compute)
+        if len(computes_list) < 2:
+            pytest.skip("Insufficient count of compute with SR-IOV")
+        hosts = [compute.data['fqdn'] for compute in computes_list]
+        return hosts
+
+    @classmethod
     @pytest.yield_fixture(scope='class', autouse=True)
-    def cleanup_env(cls, os_conn):
+    def cleanup_env(cls, os_conn, sriov_hosts):
         """SR-IOV env has no support of snapshots.
         So need to clean all manually.
         """
@@ -996,36 +1013,20 @@ class TestTrafficRestrictionWithSRIoV(TestQoSBase):
         os_conn.nova.flavors.find(name='iperf_flavor').delete()
 
     @pytest.yield_fixture
-    def cleanup_vms(cls, os_conn):
+    def cleanup_vms(self, os_conn):
         """SR-IOV env has no support of snapshots.
         So need to clean all manually.
         """
-        def instances_cleanup(os_conn):
+        def instances_cleanup():
             instances = os_conn.nova.servers.list()
             for instance in instances:
                 instance.delete()
-            common.wait(lambda: len(os_conn.nova.servers.list()) == 0,
-                        timeout_seconds=10 * 60,
-                        waiting_for='instances cleanup')
-        instances_cleanup(os_conn)
-        yield
-        instances_cleanup(os_conn)
 
-    @pytest.fixture
-    def sriov_hosts(self, env):
-        """Find computes with SR-IOV enabled"""
-        computes_list = []
-        for compute in env.get_nodes_by_role('compute'):
-            with compute.ssh() as remote:
-                result = remote.check_call(
-                    'lspci -vvv | grep -i "initial vf"').stdout_string
-            vfs_number = re.findall('Number of VFs: (\d+)', result)
-            if sum(map(int, vfs_number)) > 0:
-                computes_list.append(compute)
-        if len(computes_list) < 2:
-            pytest.skip("Insufficient count of compute with SR-IOV")
-        hosts = [compute.data['fqdn'] for compute in computes_list]
-        return hosts
+            os_conn.wait_servers_deleted(instances)
+
+        instances_cleanup()
+        yield
+        instances_cleanup()
 
     @pytest.yield_fixture
     def two_connected_networks(self, os_conn):
