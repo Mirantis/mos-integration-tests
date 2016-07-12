@@ -82,3 +82,9 @@ def patch_iptables(controller, request):
         with controller.ssh() as remote:
             remote.check_call(tbl_modif_tmpl.format(action='D',
                                                     portnum=oneport))
+
+
+@pytest.yield_fixture
+def admin_remote(fuel):
+    with fuel.ssh_admin() as remote:
+        yield remote
