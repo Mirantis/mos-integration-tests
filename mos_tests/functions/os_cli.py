@@ -219,6 +219,10 @@ class S3CMD(CLICLient):
     def bucket_del_file(self, bucket_name, filename):
         return self('del s3://{0}/{1}'.format(bucket_name, filename))
 
+    def bucket_get_file(self, bucket_name, filename, dest_filename):
+        return self('get s3://{0}/{1} {2}'.format(bucket_name, filename,
+                                                  dest_filename))
+
 
 class OpenStackSwift(CLICLient):
     command = 'openstack'
@@ -258,6 +262,34 @@ class OpenStackSwift(CLICLient):
         output = self('object show {container} {filename} -f json'.format(
             container=container, filename=filename))
         return json.loads(output)
+
+    def object_download(self, container, filename, dest_filename):
+        output = self('object save {container} {filename} '
+                      '--file {dest_file}'.format(container=container,
+                                                  filename=filename,
+                                                  dest_file=dest_filename))
+        return output
+
+
+class Swift(CLICLient):
+    command = 'swift'
+
+    def upload_object(self, container, filename, object_name, segment=False):
+        output = self('upload -S {segment_size}M --object-name {obj_name} '
+                      '{container} {filename}'.format(segment_size=segment,
+                                                      obj_name=object_name,
+                                                      container=container,
+                                                      filename=filename))
+        return output
+
+    def download_object(self, container, filename, dest_filename):
+        output = self('download {container} {filename} -o {dest_file}'.format(
+            container=container, filename=filename, dest_file=dest_filename))
+        return output
+
+    def object_list(self, container):
+        output = self('list -l {container}'.format(container=container))
+        return output.split('\n')
 
 
 class Nova(CLICLient):

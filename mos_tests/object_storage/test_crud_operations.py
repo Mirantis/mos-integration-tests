@@ -23,6 +23,12 @@ from mos_tests.neutron.python_tests.base import TestBase
 logger = logging.getLogger(__name__)
 
 
+def calc_md5(remote, filename):
+    logger.debug("Calculate md5 checksum")
+    res = remote.check_call('md5sum {0}'.format(filename))['stdout'][0]
+    return res.split()[0]
+
+
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_radosgw_enabled')
 class TestObjectStorageS3CMD(TestBase):
@@ -93,6 +99,34 @@ class TestObjectStorageS3CMD(TestBase):
         s3cmd_client.bucket_remove(bname, recursive=True)
         obj_path = '{0}/{1}'.format(bname, f_name)
         assert obj_path in ''.join(ls_in)
+
+    @pytest.mark.testrail_id('1616773', create_file_on_node=f_size)
+    @pytest.mark.testrail_id('1616775', create_file_on_node=f_size_b)
+    @pytest.mark.parametrize('create_file_on_node', [f_size, f_size_b],
+                             ids=['100Mb', '5432Mb'], indirect=True)
+    def test_object_storage_s3cmd_obj_download(self, create_file_on_node,
+                                               s3cmd_client, ctrl_remote,
+                                               s3cmd_create_container):
+        """Download object from Object Storage (RadosGW)
+
+        Actions:
+        1. Create file (object) on controller.
+        2. Create container with swift.
+        3. Put object to created container.
+        4. Download object from created container.
+        5. Check that MD5 checksum is the same as for initial file.
+        6. Delete container.
+        """
+        f_path, f_name = create_file_on_node
+        initial_md5 = calc_md5(ctrl_remote, f_path)
+        b_name, _ = s3cmd_create_container
+        s3cmd_client.bucket_put_file(b_name, f_path)
+
+        destination_path = '{0}_new'.format(f_path)
+        s3cmd_client.bucket_get_file(b_name, f_name, destination_path)
+        final_md5 = calc_md5(ctrl_remote, destination_path)
+
+        assert initial_md5 == final_md5
 
     @pytest.mark.testrail_id('842478')
     @pytest.mark.parametrize('create_file_on_node', [f_size], indirect=True)
@@ -243,11 +277,47 @@ class TestObjectStorageSWIFT(TestBase):
         ls_in_out = os_swift_client.object_list(bname)
         assert bname not in str(ls_in_out)
 
+    @pytest.mark.testrail_id('1616772', create_file_on_node=f_size)
+    @pytest.mark.testrail_id('1616830', create_file_on_node=f_sizebig)
+    @pytest.mark.parametrize('create_file_on_node', [f_size, f_sizebig],
+                             ids=['100Mb', '5432Mb'], indirect=True)
+    def test_object_storage_os_swift_obj_download(self, ctrl_remote,
+                                                  os_swift_client,
+                                                  swift_container,
+                                                  create_file_on_node):
+        """Download object from Object Storage
+
+        Actions:
+        1. Create file (object) on controller.
+        2. Create container with swift.
+        3. Put object to created container.
+        4. Download object from created container.
+        5. Check that file exists
+        6. Check that MD5 checksum is the same as for initial file.
+        7. Delete container.
+
+        BUG: https://bugs.launchpad.net/mos/+bug/1583033
+        openstack cli can not upload big (5432MB) file to container
+        """
+        f_path = create_file_on_node[0]
+        initial_md5 = calc_md5(ctrl_remote, f_path)
+
+        # Object creation doesn't work for big file due to
+        # https://bugs.launchpad.net/mos/+bug/1583033
+        os_swift_client.object_create(swift_container, f_path)
+
+        f_dest = '{0}_new'.format(f_path)
+        os_swift_client.object_download(swift_container, f_path, f_dest)
+
+        ctrl_remote.check_call('ls {0}'.format(f_path))
+        final_md5 = calc_md5(ctrl_remote, f_dest)
+        assert initial_md5 == final_md5
+
     @pytest.mark.testrail_id('842484')
     @pytest.mark.parametrize('create_file_on_node', [f_sizebig], indirect=True)
-    def test_object_storage_swift_obj_upload_big(
+    def test_object_storage_os_swift_obj_upload_big(
             self, os_swift_client, swift_container, create_file_on_node):
-        """Upload big object to Object Storage (RadosGW)
+        """Upload big object to Object Storage (openstack cli)
 
         Actions:
         1. Create file (object) on controller.
@@ -266,3 +336,63 @@ class TestObjectStorageSWIFT(TestBase):
         ls_in_out = os_swift_client.object_list(bname)
         assert any(f_path == x['Name'] for x in ls_in_out)
         assert any(self.f_size_bytes == x['Bytes'] for x in ls_in_out)
+
+    @pytest.mark.testrail_id('1616831')
+    @pytest.mark.parametrize('create_file_on_node', [f_sizebig], indirect=True)
+    def test_object_storage_swift_obj_upload_big(
+            self, swift_cli, swift_container, create_file_on_node):
+        """Upload big object to Object Storage (swift cli)
+
+        Actions:
+        1. Create file (object) on controller.
+        2. Create container with swift.
+        3. Put object to container with option 'segment-size'.
+        4. With list check that object present in container.
+        5. Check that size of container is the same as it was created.
+        6. Check expected and actual chunk slice number.
+        5. Delete container.
+
+        BUG: https://bugs.launchpad.net/mos/+bug/1543135
+        """
+        f_path, f_name = create_file_on_node
+        f_size_big_bytes = self.f_sizebig * 1024 * 1024
+        seg_count = math.ceil(float(self.f_sizebig) / float(self.segment_size))
+
+        swift_cli.upload_object(
+            swift_container, f_path, f_name, segment=self.segment_size)
+
+        objects_list = swift_cli.object_list(swift_container)
+        assert f_name in objects_list[0], (
+            "No file {0} found in {1}".format(f_name, swift_container))
+
+        segments = swift_cli.object_list(swift_container + '_segments')
+        assert int(segments[-1]) == f_size_big_bytes, "Unexpected object size"
+        assert len(segments[:-1]) == seg_count, "Unexpected segments count"
+
+    @pytest.mark.testrail_id('1616774')
+    @pytest.mark.parametrize('create_file_on_node', [f_sizebig], indirect=True)
+    def test_object_storage_swift_obj_download_big(self, create_file_on_node,
+                                                   swift_cli, swift_container,
+                                                   ctrl_remote):
+        """Download big object from Object Storage (swift cli)
+
+        Actions:
+        1. Create file (object) on controller.
+        2. Create container with swift.
+        3. Put object to created container.
+        4. Download object from created container.
+        5. Check that MD5 checksum is the same as for initial file.
+        6. Delete container.
+
+        BUG: https://bugs.launchpad.net/mos/+bug/1543135
+        """
+        f_path, f_name = create_file_on_node
+        initial_md5 = calc_md5(ctrl_remote, f_path)
+        swift_cli.upload_object(
+            swift_container, f_path, f_name, segment=self.segment_size)
+
+        destination_file = '{0}_new'.format(f_path)
+        swift_cli.download_object(swift_container, f_name, destination_file)
+        final_md5 = calc_md5(ctrl_remote, destination_file)
+
+        assert initial_md5 == final_md5
