@@ -350,8 +350,7 @@ def test_deploy_app_with_boot_volume_as_image(environment, murano, session,
     murano.deployment_success_check(environment, ports=[22, 80])
 
     volume_data = murano.get_volume(environment.id)
-    vm_id = murano.get_instance_id('testMurano',
-                                   volume_data.physical_resource_id)
+    vm_id = murano.get_instance_id('testMurano')
     assert not murano.os_conn.nova.servers.get(vm_id).image
     assert volume_data.attributes['size'] == 4
     image = volume_data.attributes['volume_image_metadata']['image_name']
