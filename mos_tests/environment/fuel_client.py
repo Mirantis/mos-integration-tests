@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
 from itertools import groupby
 import logging
 import os
@@ -24,6 +25,7 @@ from fuelclient.objects import FuelVersion
 from fuelclient.objects.node import Node as FuelNode
 from fuelclient.objects import task as fuel_task
 from paramiko import RSAKey
+import requests
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.environment.ssh import SSHClient
@@ -388,8 +390,26 @@ class Environment(environment.Environment):
         self.assign(fuel_nodes, roles)
 
 
+def retry_on_error(obj, f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            resp = f(*args, **kwargs)
+        except requests.exceptions.ConnectionError:
+            resend = True
+        else:
+            resend = (resp.status_code == 401)
+        if resend:
+            logger.info('Reinit fuel client session')
+            obj._session = None
+            resp = f(*args, **kwargs)
+        return resp
+    return wrapper
+
+
 class FuelClient(object):
     """Fuel API client"""
+
     def __init__(self, ip, login, password, ssh_login, ssh_password):
         logger.debug('Init fuel client on {0}'.format(ip))
         self.reconfigure_fuelclient(ip, login, password)
@@ -407,6 +427,9 @@ class FuelClient(object):
             'OS_PASSWORD': password,
         })
         fuelclient_settings._SETTINGS = None
+        # Workaround for keystone token expiration
+        client.APIClient.get_request_raw = retry_on_error(
+            client.APIClient, client.APIClient.get_request_raw)
         client.APIClient.__init__()
 
     def get_all_cluster(self):
