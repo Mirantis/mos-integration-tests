@@ -398,6 +398,11 @@ def is_images_ceph_enabled(env):
     return data['images_ceph']['value']
 
 
+def is_ephemeral_ceph_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['ephemeral_ceph']['value']
+
+
 def is_qos_enabled(env):
     data = env.get_settings_data()['editable']
     return data['neutron_advanced_configuration']['neutron_qos']['value']
