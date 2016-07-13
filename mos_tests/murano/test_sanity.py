@@ -13,8 +13,11 @@
 #    under the License.
 
 import logging
+import multiprocessing
 import os
 import shutil
+import SimpleHTTPServer
+import SocketServer
 import tempfile
 import types
 import uuid
@@ -908,6 +911,85 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
 @pytest.mark.usefixtures('screen')
 @murano_test_patch
 class TestPackageRepository(base.PackageTestCase):
+    _apps_to_delete = set()
+
+    def _compose_app(self, name, require=None):
+        package_dir = os.path.join(self.serve_dir, 'apps/', name)
+        shutil.copytree(c.PackageDir, package_dir)
+
+        app_name = utils.compose_package(
+            name,
+            os.path.join(package_dir, 'manifest.yaml'),
+            package_dir,
+            require=require,
+            archive_dir=os.path.join(self.serve_dir, 'apps/'),
+        )
+        self._apps_to_delete.add(name)
+        return app_name
+
+    def _compose_bundle(self, name, app_names):
+        bundles_dir = os.path.join(self.serve_dir, 'bundles/')
+        shutil.os.mkdir(bundles_dir)
+        utils.compose_bundle(os.path.join(bundles_dir, name + '.bundle'),
+                             app_names)
+
+    def _make_pkg_zip_regular_file(self, name):
+        file_name = os.path.join(self.serve_dir, 'apps', name + '.zip')
+        with open(file_name, 'w') as f:
+            f.write("I'm not an application. I'm not a zip file at all")
+        return file_name
+
+    def _make_non_murano_zip_in_pkg(self, name):
+        file_name = os.path.join(self.serve_dir, 'apps', 'manifest.yaml')
+        with open(file_name, 'w') as f:
+            f.write("Description: I'm not a murano package at all")
+        zip_name = os.path.join(self.serve_dir, 'apps', name + '.zip')
+        with zipfile.ZipFile(zip_name, 'w') as archive:
+            archive.write(file_name)
+        return zip_name
+
+    def _make_big_zip_pkg(self, name, size):
+        file_name = os.path.join(self.serve_dir, 'apps', 'images.lst')
+        self._compose_app(name)
+
+        # create file with size 10 mb
+        with open(file_name, 'wb') as f:
+            f.seek(size - 1)
+            f.write('\0')
+
+        # add created file to archive
+        zip_name = os.path.join(self.serve_dir, 'apps', name + '.zip')
+        with zipfile.ZipFile(zip_name, 'a') as archive:
+            archive.write(file_name)
+        return zip_name
+
+    def setUp(self):
+        super(TestPackageRepository, self).setUp()
+        self.serve_dir = tempfile.mkdtemp(suffix="repo")
+
+        def serve_function():
+            class Handler(SimpleHTTPServer.SimpleHTTPRequestHandler):
+                pass
+            os.chdir(self.serve_dir)
+            httpd = SocketServer.TCPServer(
+                ("0.0.0.0", 8099),
+                Handler, bind_and_activate=False)
+            httpd.allow_reuse_address = True
+            httpd.server_bind()
+            httpd.server_activate()
+            httpd.serve_forever()
+
+        self.p = multiprocessing.Process(target=serve_function)
+        self.p.start()
+
+    def tearDown(self):
+        super(TestPackageRepository, self).tearDown()
+        self.p.terminate()
+        for package in self.murano_client.packages.list(include_disabled=True):
+            if package.name in self._apps_to_delete:
+                self.murano_client.packages.delete(package.id)
+                self._apps_to_delete.remove(package.name)
+        shutil.rmtree(self.serve_dir)
 
     @pytest.mark.testrail_id('836655')
     def test_import_unexciting_package_from_repository(self):
@@ -957,3 +1039,84 @@ class TestPackageRepository(base.PackageTestCase):
 
         self.check_element_not_on_page(
             by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    @pytest.mark.testrail_id('836652')
+    def test_import_non_zip_file(self):
+        """"Negative test import regualr file instead of zip package."""
+        # Create dummy package with zip file replaced by text one
+        pkg_name = self.gen_random_resource_name('pkg')
+        self._compose_app(pkg_name)
+        pkg_path = self._make_pkg_zip_regular_file(pkg_name)
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-package']")
+        el.send_keys(pkg_path)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        err_msg = self.wait_for_error_message()
+        self.assertIn('File is not a zip file', err_msg)
+
+        self.check_element_not_on_page(
+            by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    @pytest.mark.testrail_id('836653')
+    def test_import_invalid_zip_file(self):
+        """"Negative test import zip file which is not a murano package."""
+        # At first create dummy package with zip file replaced by text one
+        pkg_name = self.gen_random_resource_name('pkg')
+        self._compose_app(pkg_name)
+        pkg_path = self._make_non_murano_zip_in_pkg(pkg_name)
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-package']")
+        el.send_keys(pkg_path)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        err_msg = self.wait_for_error_message()
+        self.assertIn("There is no item named 'manifest.yaml' in the archive",
+                      err_msg)
+
+        self.check_element_not_on_page(
+            by.By.XPATH, c.AppPackages.format(pkg_name))
+
+    @pytest.mark.testrail_id('836654')
+    def test_import_big_zip_file(self):
+        """Import very big zip archive.
+
+        Scenario:
+            1. Log in Horizon with admin credentials
+            2. Navigate to 'Packages' page
+            3. Click 'Import Package' and select 'File' as a package source
+            4. Choose very big zip file
+            5. Click on 'Next' button
+            6. Check that error message that user can't upload file more than
+                5 MB is displayed
+        """
+        pkg_name = self.gen_random_resource_name('pkg')
+        pkg_path = self._make_big_zip_pkg(name=pkg_name, size=10 * 1024 * 1024)
+
+        # import package and choose big zip file for it
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-package']")
+        el.send_keys(pkg_path)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        # check that error message appeared
+        error_message = 'It is forbidden to upload files larger than 5 MB.'
+        self.driver.find_element_by_xpath(
+            c.ErrorMessage.format(error_message))
