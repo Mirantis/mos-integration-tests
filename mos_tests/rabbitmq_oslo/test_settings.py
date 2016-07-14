@@ -192,8 +192,7 @@ class TestRabbitSegfaultsAndInteraction(object):
         """
         err_words = ('segfault', 'error', 'failed')
         err_msg = ('Some of the err messages {0} are in service '
-                   'rabbitmq-server {action} output.'.format(err_words,
-                                                             action))
+                   'rabbitmq-server {1} output.'.format(err_words, action))
 
         out = admin_remote.check_call(
             'service rabbitmq-server {0}'.format(action))
