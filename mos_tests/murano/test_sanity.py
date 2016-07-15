@@ -325,6 +325,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.log_in(username, password)
         elm = self.driver.find_element_by_tag_name('html')
         elm.send_keys(Keys.HOME)
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
 
     def _import_package_with_category(self, package_archive, category):
         self.navigate_to('Manage')
@@ -347,6 +349,16 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # To wait till the focus is swithced
         # from modal dialog back to the window.
         self.wait_for_sidebar_is_loaded()
+
+    def _create_new_user_in_new_project(self):
+        new_project = str(uuid.uuid4())[::4]
+        project_id = self.create_project(new_project)
+        user_name = 'test{}'.format(new_project)
+        password = 'Test'
+        self.create_user(name=user_name, password=password,
+                         email='{}@example.com'.format(user_name),
+                         tenant_id=project_id)
+        return user_name, password
 
     @classmethod
     def setUpClass(cls):
@@ -603,9 +615,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # relogin as test user
         self.log_out()
         self._log_in(self.testuser_name, self.testuser_password)
+
         # change category for package
-        self.navigate_to('Manage')
-        self.go_to_submenu('Packages')
         package = self.driver.find_element_by_xpath(c.AppPackages.format(
             self.archive_name))
         pkg_id = package.get_attribute("data-object-id")
@@ -616,7 +627,6 @@ class TestSuitePackageCategory(base.PackageTestCase):
         sel = ui.Select(sel)
         sel.deselect_all()
         sel.select_by_value(new_category.name)
-        # import pdb; pdb.set_trace()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.wait_for_alert_message()
         self.log_out()
@@ -624,31 +634,17 @@ class TestSuitePackageCategory(base.PackageTestCase):
     @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836640')
     def test_check_toggle_non_public_package(self):
-        """Test check ability to make package active or inactive
+        """Test check ability to make package non public
 
         Scenario:
-            1. Create new project but keep default project active
-            2. Navigate to 'Packages' page
-            3. Select some package and make it inactive and non-public
-            4. Check that package is non-public
-            5. Switch to the new project and check that the application is
-               unavailable in the catalog
-            6. Switch back to default project
-            7. Select the same package and inactivate it "More>Toggle Public"
-            8. Check that package is unpublic
-            9. Switch to the new project and check that the application
-               is not available in the catalog
+            1. Add new package
+            2. Make the package non 'Public' and inactive
+            3. Verify, that package is unavailable for other users
         """
         self._import_package_with_category(self.archive, self.category)
 
         # create new user in new project
-        new_project = str(uuid.uuid4())[::4]
-        project_id = self.create_project(new_project)
-        user_name = 'test{}'.format(new_project)
-        password = 'Test'
-        self.create_user(name=user_name, password=password,
-                         email='{}@example.com'.format(user_name),
-                         tenant_id=project_id)
+        user_name, password = self._create_new_user_in_new_project()
 
         # make package inactive and non-public
         self.navigate_to('Manage')
@@ -673,9 +669,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # re-login as test user
         self.log_out()
         self._log_in(user_name, password)
-        # change category for package
-        self.navigate_to('Manage')
-        self.go_to_submenu('Packages')
+
+        # check that package is unavailable
         self.check_element_not_on_page(by.By.XPATH, c.AppPackages.format(
             self.archive_name))
 
@@ -687,6 +682,139 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.select_action_for_package(pkg_id, 'more')
         self.select_action_for_package(pkg_id, 'toggle_enabled')
         self.delete_user(user_name)
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836675')
+    def test_package_share(self):
+        """Test that admin is able to share Murano Apps
+
+        Scenario:
+            1. Add new package
+            2. Make the package 'Public'
+            3. Verify, that package is available for other users
+        """
+        self._import_package_with_category(self.archive, self.category)
+
+        # create new user in new project
+        user_name, password = self._create_new_user_in_new_project()
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        package = self.driver.find_element_by_xpath(c.AppPackages.format(
+            self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+
+        # make package public
+        try:
+            self.check_package_parameter_by_id(pkg_id, 'Public', 'True')
+        except Exception:
+            self.select_action_for_package(pkg_id, 'more')
+            self.select_action_for_package(pkg_id, 'toggle_public_enabled')
+
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+
+        # re-login as test user
+        self.log_out()
+        self._log_in(user_name, password)
+
+        # check that package is available
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+        self.delete_user(user_name)
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836679')
+    def test_sharing_app_without_permission(self):
+        """Tests sharing Murano App without permission
+
+        Scenario:
+            1) Create 2 new users
+            2) Add new non-public package by first user
+            3) Login to Horizon as second user
+            4) Verify, that package is unavailable for the user
+            5) Login to Horizon as first user
+            6) Change package to public
+            7) Login to Horizon as second user
+            8) Verify, that package is available for the user
+            9) Try to change the package
+            10) Check error message
+        """
+        # create new users in new projects
+        user_name_1, password_1 = self._create_new_user_in_new_project()
+        user_name_2, password_2 = self._create_new_user_in_new_project()
+
+        # login as first new user
+        self.log_out()
+        self._log_in(user_name_1, password_1)
+
+        # Import package
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-package']")
+        el.send_keys(self.archive)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        # Public = OFF; Active = ON.
+        public_checkbox = self.driver.find_element_by_id('id_modify-is_public')
+        active_checkbox = self.driver.find_element_by_id('id_modify-enabled')
+        if public_checkbox.is_selected():
+            public_checkbox.click()
+        if not active_checkbox.is_selected():
+            active_checkbox.click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.wait_for_alert_message()
+        self.check_element_on_page(
+            by.By.XPATH, c.AppPackages.format(self.archive_name))
+
+        # login as second new user
+        self.log_out()
+        self._log_in(user_name_2, password_2)
+
+        # check that package is unavailable
+        self.check_element_not_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+
+        # login as first new user
+        self.log_out()
+        self._log_in(user_name_1, password_1)
+
+        # Modify Package to set Public = ON
+        package = self.driver.find_element_by_xpath(
+            c.AppPackages.format(self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+        self.select_action_for_package(pkg_id, 'modify_package')
+        label = self.driver.find_element_by_css_selector(
+            "label[for=id_is_public]")
+        label.click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.wait_for_alert_message()
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+
+        # login as second new user
+        self.log_out()
+        self._log_in(user_name_2, password_2)
+
+        # check that package is available
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+        # Modify Package to set Public = OFF
+        package = self.driver.find_element_by_xpath(
+            c.AppPackages.format(self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+        self.select_action_for_package(pkg_id, 'modify_package')
+        label = self.driver.find_element_by_css_selector(
+            "label[for=id_is_public]")
+        label.click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        # Check Error
+        err_msg = self.wait_for_error_message()
+        self.assertIn('You are not allowed to perform this operation', err_msg)
+
+        self.delete_user(user_name_1)
+        self.delete_user(user_name_2)
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
