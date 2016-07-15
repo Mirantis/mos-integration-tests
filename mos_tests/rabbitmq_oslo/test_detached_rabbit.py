@@ -13,6 +13,7 @@
 #    under the License.
 
 import logging
+import random
 from time import sleep
 import xml.etree.ElementTree as ElementTree
 
@@ -24,14 +25,7 @@ from mos_tests.neutron.python_tests.base import TestBase
 logger = logging.getLogger(__name__)
 
 
-@pytest.yield_fixture
-def admin_remote(fuel):
-    with fuel.ssh_admin() as remote:
-        yield remote
-
-
-@pytest.mark.check_env_("has_3_or_more_standalone_rabbitmq_nodes")
-class TestDetachRabbitPlugin(TestBase):
+class DetachRabbitPluginFunctions(TestBase):
 
     rabbit_plugin_name = 'detach-rabbitmq'
 
@@ -40,12 +34,6 @@ class TestDetachRabbitPlugin(TestBase):
         cmd = "fuel plugins --list | grep '{0}' | awk '{{print $5}}'".format(
             self.rabbit_plugin_name)
         return admin_remote.check_call(cmd).stdout_string.strip()
-
-    def is_rabbit_plugin_installed(self, admin_remote):
-        cmd = "fuel plugins --list | grep '{0}'".format(
-            self.rabbit_plugin_name)
-        out = admin_remote.execute(cmd)
-        return out.is_ok
 
     def alive_standalone_rabbitmq_node(self):
         """Returns one alive rabbit node"""
@@ -65,8 +53,8 @@ class TestDetachRabbitPlugin(TestBase):
         :    {'master': ['node-1.test.domain.local'],
         :    'slave': ['node-3.test.domain.local', 'node-5.test.domain.local']}
         """
-        counted_roles = ('master', 'slave')
         get_cluster_status_cmd = 'pcs status xml'
+        counted_roles = ('master', 'slave')
 
         nodes_roles = {}
         for role in counted_roles:
@@ -111,7 +99,7 @@ class TestDetachRabbitPlugin(TestBase):
         return nodes_statuses
 
     def rabbit_node(self, role='slave'):
-        """Return rabbit master node
+        """Returns rabbit master or slave node.
         :param role: Role of a node: 'slave' or 'master'
         :return: Node
         """
@@ -125,20 +113,61 @@ class TestDetachRabbitPlugin(TestBase):
 
     def disable_node(self, node):
         """Performs 'halt' on provided node. Waits till it'll be offline"""
+        disable_cmd = 'halt'
         with node.ssh() as remote:
-            remote.check_call('halt')
+            remote.check_call(disable_cmd)
 
         wait(lambda: not node.is_ssh_avaliable(),
              timeout_seconds=60 * 2,
              sleep_seconds=10,
-             waiting_for="Env reset finish")
+             waiting_for="Node to became unavailable")
 
-    def check_rabbit_cluster_is_ok(self):
-        """Check that exit_code of rabbitmqctl is 0. Runs OSTF tests"""
-        rabbit_node = self.alive_standalone_rabbitmq_node()
+    def is_rabbit_plugin_installed(self, admin_remote):
+        """Checks if plugin installed on admin node
+        :param admin_remote: connection point to admin node
+        :return: True of False
+        """
+        cmd = "fuel plugins --list | grep '{0}'".format(
+            self.rabbit_plugin_name)
+        out = admin_remote.execute(cmd)
+        return out.is_ok
+
+    def is_rabbit_cluster_ok(self, rabbit_node=None):
+        """Performs execution of commands below on node.
+        If successful - Runs OSTF tests and returns True.
+        :param rabbit_node: Node
+        :return: True of False
+        """
+        rabb_status_cmd = 'rabbitmqctl cluster_status'
+        pcs_res_cmd = 'pcs resource show p_rabbitmq-server'
+
+        if not rabbit_node:
+            rabbit_node = self.alive_standalone_rabbitmq_node()
+
+        # Run commands on node
         with rabbit_node.ssh() as remote:
-            remote.check_call('rabbitmqctl cluster_status')
-        self.env.wait_for_ostf_pass()
+            rabb_status_out = remote.execute(rabb_status_cmd)
+            pcs_res_out = remote.execute(pcs_res_cmd)
+
+        if rabb_status_out.is_ok and pcs_res_out.is_ok:
+            self.env.wait_for_ostf_pass()
+            return True
+        else:
+            return False
+
+    def is_rabbit_running_on_node(self, node):
+        """Checks if rabbitmq is running or not on provided node.
+        :param node: Node
+        :return: True of False
+        """
+        grep_ps_cmd = 'ps aux | grep beam.smp | grep -v grep'
+        grep_pcs_cmd = 'pcs resource | grep rabbit'
+
+        with node.ssh() as remote:
+            grep_ps_out = remote.execute(grep_ps_cmd)
+            grep_pcs_out = remote.execute(grep_pcs_cmd)
+
+        return all((grep_ps_out.is_ok, grep_pcs_out.is_ok))
 
     def get_rabbit_pid_on_node(self, node):
         """Returns pid of rabbitmq running on provided node
@@ -190,7 +219,9 @@ class TestDetachRabbitPlugin(TestBase):
              waiting_for="Env reset finish")
         self.env.delete()
 
-    # ------------------------------------------------------------------------
+
+@pytest.mark.check_env_("has_3_or_more_standalone_rabbitmq_nodes")
+class TestDetachRabbitPlugin3nodes(DetachRabbitPluginFunctions):
 
     @pytest.mark.undestructive
     @pytest.mark.testrail_id('1455768')
@@ -203,23 +234,22 @@ class TestDetachRabbitPlugin(TestBase):
         """
         get_rabbit_nodes_cmd = ("pcs status --full | grep p_rabbitmq-server |"
                                 "grep ocf | grep -o 'node-.*'")
-        grep_plugin_list_cmd = (
-            "fuel plugins --list | grep {0}".format(self.rabbit_plugin_name))
 
         # Check plugin present on fuel node
-        admin_remote.check_call(grep_plugin_list_cmd)
+        assert self.is_rabbit_plugin_installed(admin_remote)
+        assert self.is_rabbit_cluster_ok()
 
         rabbit_nodes = env.get_nodes_by_role('standalone-rabbitmq')
         rabbit_nodes_fqdns = [x.data['fqdn'] for x in rabbit_nodes]
 
         # Check roles on rabbit node
-        with rabbit_nodes[0].ssh() as remote:
+        with random.choice(rabbit_nodes).ssh() as remote:
             out = remote.check_call(get_rabbit_nodes_cmd).stdout_string
         assert all(i in out for i in rabbit_nodes_fqdns)
 
     # Destructive
     @pytest.mark.testrail_id('1455771')
-    def test_uninstall_plugin(self, env, admin_remote):
+    def test_uninstall_plugin(self, admin_remote):
         """Uninstall of plugin with deployed environment.
 
         Actions:
@@ -245,7 +275,7 @@ class TestDetachRabbitPlugin(TestBase):
 
         # Try to delete rabbit plugin on deployed env
         del_out = admin_remote.execute(del_plugin_cmd)
-        # Check that deletion was not successful
+        # Check that deletion was NOT successful
         assert not del_out.is_ok, 'Enabled plugin deletion should fail'
         assert all(i in del_out.stderr_string for i in err_words), (
             'Stderr should contain certain words in it: {0}').format(err_words)
@@ -298,13 +328,14 @@ class TestDetachRabbitPlugin(TestBase):
         4. Check that old master is offline;
         5. Check that new master != old master;
         """
-        timeout = 4  # minutes, wait for rabbit recover
+        timeout = 5  # minutes, wait for rabbit recover
 
         # Get master standalone rabbit node for disabling
         old_master = self.rabbit_node('master')
         old_master_fqdn = old_master.data['fqdn']
 
         # Disable master rabbit node
+        logger.debug("Disabling RabbitMQ master node")
         self.disable_node(old_master)
 
         # Wait for rabbit cluster to recover
@@ -312,7 +343,10 @@ class TestDetachRabbitPlugin(TestBase):
         sleep(60 * timeout)
 
         # Check rabbit status,
-        self.check_rabbit_cluster_is_ok()
+        wait(lambda: self.is_rabbit_cluster_ok(),
+             timeout_seconds=60 * timeout,
+             sleep_seconds=30,
+             waiting_for="RabbitMQ became online")
 
         # Check that old master now offline
         assert self.rabbit_nodes_statuses()[old_master_fqdn] == 'offline'
@@ -335,18 +369,12 @@ class TestDetachRabbitPlugin(TestBase):
         rabbit_slave = self.rabbit_node('slave')
         rabbit_master = self.rabbit_node('master')
 
-        # Kill and check Rabbit Slave node
-        self.kill_rabbit_on_node(rabbit_slave)
-        self.wait_rabbit_respawn_on_node(rabbit_slave)
-        sleep(60 * 1)
-        self.wait_rabbit_respawn_on_node(rabbit_slave, fast_check=True)
-        self.check_rabbit_cluster_is_ok()
-
-        # Kill and check Rabbit Master node
-        self.kill_rabbit_on_node(rabbit_master)
-        self.wait_rabbit_respawn_on_node(rabbit_master)
-        sleep(60 * 1)
-        self.wait_rabbit_respawn_on_node(rabbit_master, fast_check=True)
+        for node in (rabbit_slave, rabbit_master):
+            self.kill_rabbit_on_node(node)
+            self.wait_rabbit_respawn_on_node(node)
+            sleep(60 * 1)
+            self.wait_rabbit_respawn_on_node(node, fast_check=True)
+            assert self.is_rabbit_cluster_ok()
 
     # Destructive
     @pytest.mark.testrail_id('1455772')
@@ -380,3 +408,54 @@ class TestDetachRabbitPlugin(TestBase):
         install_plugin_cmd = "fuel plugins --install {}".format(plugin_path)
         admin_remote.check_call(install_plugin_cmd)
         assert self.is_rabbit_plugin_installed(admin_remote)
+
+
+@pytest.mark.check_env_("is_ha", "has_1_standalone_rabbitmq_node")
+class TestDetachRabbitPlugin1node(DetachRabbitPluginFunctions):
+
+    @pytest.mark.undestructive
+    @pytest.mark.testrail_id('1616815')
+    def test_check_installed_plugin_1node(self, env, admin_remote):
+        """Checks that plugin installed successfully.(1 RabbitMQ node)
+
+        Actions:
+        1. Check that fuel node has installed rabbit plugin;
+        2. Check that detached rabbitmq nodes has rabbitmq_server role.
+        """
+        get_rabbit_nodes_cmd = ("pcs status --full | grep p_rabbitmq-server | "
+                                "grep ocf | grep -o 'node-.*'")
+
+        # Check plugin present on fuel node
+        assert self.is_rabbit_plugin_installed(admin_remote)
+        assert self.is_rabbit_cluster_ok()
+
+        rabbit_nodes = env.get_nodes_by_role('standalone-rabbitmq')
+        rabbit_nodes_fqdns = [x.data['fqdn'] for x in rabbit_nodes]
+
+        # Check roles on rabbit node
+        with random.choice(rabbit_nodes).ssh() as remote:
+            out = remote.check_call(get_rabbit_nodes_cmd).stdout_string
+        assert all(i in out for i in rabbit_nodes_fqdns)
+
+    @pytest.mark.undestructive
+    @pytest.mark.check_env_("has_3_or_more_mongo_nodes")
+    @pytest.mark.testrail_id('1616821')
+    def test_check_ceilometer_with_detached_plugin(self, admin_remote):
+        """Check that Ceilometer successfully worked with detached RabbitMQ.
+
+        Actions:
+        1. Check RabbitMQ health on RabbitMQ standalone node;
+        2. Run OSFT tests;
+        3. Check RabbitMQ is running on RabbitMQ standalone node;
+        4. Check RabbitMQ is not running on controller.
+        """
+        rabbit_node = self.alive_standalone_rabbitmq_node()
+        controller = random.choice(self.env.get_nodes_by_role('controller'))
+
+        assert self.is_rabbit_plugin_installed(admin_remote)
+
+        assert self.is_rabbit_cluster_ok(rabbit_node)
+        assert self.is_rabbit_running_on_node(rabbit_node)
+
+        assert not self.is_rabbit_cluster_ok(controller)
+        assert not self.is_rabbit_running_on_node(controller)

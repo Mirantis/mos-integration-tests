@@ -317,6 +317,16 @@ def has_3_or_more_standalone_rabbitmq_nodes(env):
     return len(env.get_nodes_by_role('standalone-rabbitmq')) >= 3
 
 
+def has_1_standalone_rabbitmq_node(env):
+    """Env deployed with one standalone-rabbitmq node"""
+    return len(env.get_nodes_by_role('standalone-rabbitmq')) == 1
+
+
+def has_3_or_more_mongo_nodes(env):
+    """Env has 3 nodes with mongo roles"""
+    return len(env.get_nodes_by_role('mongo')) >= 3
+
+
 def is_any_compute_suitable_for_max_flavor(env):
     attrs_to_check = {
         "vcpus": 8,
