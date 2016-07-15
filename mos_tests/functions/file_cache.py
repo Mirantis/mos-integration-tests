@@ -14,8 +14,10 @@
 
 from contextlib import contextmanager
 import email.utils
+import functools
 import logging
 import os
+import tarfile
 
 import requests
 
@@ -25,12 +27,29 @@ logger = logging.getLogger(__name__)
 
 
 @contextmanager
+def get_and_unpack(url, name=None):
+    if url.endswith('.tar.gz'):
+        decoder = functools.partial(_tar_decoder, compression='gz')
+    elif url.endswith('.tar.bz2'):
+        decoder = functools.partial(_tar_decoder, compression='bz2')
+    else:
+        decoder = _fake_decoder
+    with get_file(url, name) as src:
+        with decoder(src) as f:
+            yield f
+
+
+@contextmanager
 def get_file(url, name=None):
     with open(get_file_path(url, name), 'rb') as f:
         yield f
 
 
 def get_file_path(url, name=None):
+
+    if os.path.isfile(url):
+        return url
+
     if not os.path.exists(settings.TEST_IMAGE_PATH):
         try:
             os.makedirs(settings.TEST_IMAGE_PATH)
@@ -69,3 +88,15 @@ def get_file_name(url):
     name = url.rsplit('/')[-1]
     return "".join(c for c in name
                    if c.isalnum() or c in keepcharacters).rstrip()
+
+
+@contextmanager
+def _tar_decoder(src, compression='*'):
+    mode = 'r|{0}'.format(compression)
+    with tarfile.open(fileobj=src, mode=mode) as tar:
+        yield tar.extractfile(tar.firstmember)
+
+
+@contextmanager
+def _fake_decoder(src):
+    yield src

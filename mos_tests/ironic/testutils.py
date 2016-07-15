@@ -14,7 +14,6 @@
 
 import json
 import logging
-import tarfile
 
 from mos_tests.functions import file_cache
 from mos_tests import settings
@@ -22,26 +21,41 @@ from mos_tests import settings
 logger = logging.getLogger(__name__)
 
 
-def ubuntu_image(os_conn):
-    image_name = 'ironic_trusty'
+def make_image(os_conn):
+    images = []
 
-    logger.info('Creating ubuntu image')
-    image = os_conn.glance.images.create(
-        name=image_name,
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        visibility='public',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
+    def get_or_create_image(node_driver='fuel_libvirt'):
+        if node_driver == 'fuel_ipmitool':
+            image_name = 'ironic_trusty_baremetal'
+            disk_info = settings.IRONIC_GLANCE_DISK_INFO_BAREMETAL
+        else:
+            image_name = 'ironic_trusty_virtual'
+            disk_info = settings.IRONIC_GLANCE_DISK_INFO_VIRTUAL
 
-    with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            os_conn.glance.images.upload(image.id, img)
+        try:
+            image = next(x for x in os_conn.glance.images.list()
+                         if x['name'] == image_name)
+        except StopIteration:
+            logger.info('Creating %s image', image_name)
+            image = os_conn.glance.images.create(
+                name=image_name,
+                disk_format='raw',
+                container_format='bare',
+                hypervisor_type='baremetal',
+                visibility='public',
+                cpu_arch='x86_64',
+                fuel_disk_info=json.dumps(disk_info))
 
-    logger.info('Creating ubuntu image ... done')
+            images.append(image)
 
-    yield image
+            with file_cache.get_and_unpack(settings.IRONIC_IMAGE_URL) as img:
+                os_conn.glance.images.upload(image.id, img)
 
-    os_conn.glance.images.delete(image.id)
+            logger.info('Creating %s image ... done', image_name)
+
+        return image
+
+    yield get_or_create_image
+
+    for image in images:
+        os_conn.glance.images.delete(image.id)

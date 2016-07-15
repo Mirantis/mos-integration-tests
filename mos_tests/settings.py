@@ -78,8 +78,10 @@ MURANO_BUNDLE_NAME = "docker-n-kubernetes"
 # Ironic settings #
 ###################
 
-IRONIC_IMAGE_URL = 'https://cloud-images.ubuntu.com/trusty/current/trusty-server-cloudimg-amd64.tar.gz'  # noqa
-IRONIC_GLANCE_DISK_INFO = [{
+# url of local file (with file:// prefix)
+IRONIC_IMAGE_URL = os.environ.get('IRONIC_IMAGE_URL',
+                                  'https://cloud-images.ubuntu.com/trusty/current/trusty-server-cloudimg-amd64.tar.gz')  # noqa
+IRONIC_GLANCE_DISK_INFO_VIRTUAL = [{
     "name": "vda",
     "extra": [],
     "free_space": 11000,
@@ -93,7 +95,22 @@ IRONIC_GLANCE_DISK_INFO = [{
         "size": 10000
     }]
 }]
-IRONIC_DISK_GB = 50
+IRONIC_GLANCE_DISK_INFO_BAREMETAL = [{
+    "name": "sda",
+    "extra": [],
+    "free_space": 11000,
+    "type": "disk",
+    "id": "sda",
+    "size": 11000,
+    "volumes": [{
+        "mount": "/",
+        "type": "partition",
+        "file_system": "ext4",
+        "size": 10000
+    }]
+}]
+IRONIC_NODES_CONFIG = os.environ.get('IRONIC_NODES_CONFIG',
+                                     'mos_tests/ironic/ironic_nodes.yaml')
 
 ##############################
 # RabbitMQ and OSLO settings #

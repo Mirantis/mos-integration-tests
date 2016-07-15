@@ -24,7 +24,7 @@ from mos_tests.ironic import testutils
 
 logger = logging.getLogger(__name__)
 
-ubuntu_image = pytest.yield_fixture(scope='class')(testutils.ubuntu_image)
+make_image = pytest.yield_fixture(scope='class')(testutils.make_image)
 
 
 def map_interfaces(devops_env, fuel_node):
@@ -105,7 +105,7 @@ class TestScale(object):
     @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631899',
                              roles=['ironic', 'controller', 'ceph-osd'])
-    def test_add_node(self, env, env_name, suffix, os_conn, ubuntu_image,
+    def test_add_node(self, env, env_name, suffix, os_conn, make_image,
                       flavors, keypair, ironic, ironic_nodes, roles):
         """Test ironic work after add new ironic-conductor node to cluster
 
@@ -174,7 +174,8 @@ class TestScale(object):
         with fuel_node.ssh() as remote:
             remote.check_call('service ironic-conductor status | grep running')
 
-        instance = ironic.boot_instance(image=ubuntu_image,
+        image = make_image(node_driver=ironic_nodes[0].driver)
+        instance = ironic.boot_instance(image=image,
                                         flavor=flavors[0],
                                         keypair=keypair)
 
@@ -190,7 +191,7 @@ class TestScale(object):
     @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
     @pytest.mark.testrail_id('631900',
                              roles=['ironic', 'controller', 'ceph-osd'])
-    def test_delete_node(self, env, roles, ironic, ubuntu_image, flavors,
+    def test_delete_node(self, env, roles, ironic, make_image, flavors,
                          keypair, os_conn, ironic_nodes):
         """Delete one of multiple ironic nodes.
 
@@ -215,7 +216,8 @@ class TestScale(object):
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')
 
-        instance = ironic.boot_instance(image=ubuntu_image,
+        image = make_image(node_driver=ironic_nodes[0].driver)
+        instance = ironic.boot_instance(image=image,
                                         flavor=flavors[0],
                                         keypair=keypair)
 
