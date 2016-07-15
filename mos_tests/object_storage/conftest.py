@@ -48,6 +48,12 @@ def os_swift_client(ctrl_remote):
 
 
 @pytest.fixture
+def swift_cli(ctrl_remote):
+    """Swift cli client"""
+    return os_cli.Swift(ctrl_remote)
+
+
+@pytest.fixture
 def s3cmd_client(ctrl_remote):
     """Client to s3cmd tool"""
     return os_cli.S3CMD(ctrl_remote)
