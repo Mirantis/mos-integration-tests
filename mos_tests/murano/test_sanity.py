@@ -29,6 +29,7 @@ from muranodashboard.tests.functional import consts as c
 from muranodashboard.tests.functional import utils
 import pytest
 from selenium.webdriver.common import by
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC  # noqa
 from selenium.webdriver.support import ui
 from six.moves import configparser
@@ -320,6 +321,11 @@ class TestCategoryManagement(base.PackageTestCase):
 @pytest.mark.usefixtures('screen')
 @murano_test_patch
 class TestSuitePackageCategory(base.PackageTestCase):
+    def _log_in(self, username, password):
+        self.log_in(username, password)
+        elm = self.driver.find_element_by_tag_name('html')
+        elm.send_keys(Keys.HOME)
+
     def _import_package_with_category(self, package_archive, category):
         self.navigate_to('Manage')
         self.go_to_submenu('Packages')
@@ -342,21 +348,40 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # from modal dialog back to the window.
         self.wait_for_sidebar_is_loaded()
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestSuitePackageCategory, cls).setUpClass()
+        suffix = str(uuid.uuid4())[:6]
+        cls.testuser_name = 'test_{}'.format(suffix)
+        cls.testuser_password = 'test'
+        email = '{}@example.com'.format(cls.testuser_name)
+        cls.create_user(name=cls.testuser_name,
+                        password=cls.testuser_password,
+                        email=email)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.delete_user(cls.testuser_name)
+        super(TestSuitePackageCategory, cls).tearDownClass()
+
     def setUp(self):
         super(TestSuitePackageCategory, self).setUp()
+        self.categories_list = set(category.id for category in
+                                   self.murano_client.categories.list())
 
         # add new category
         self.category = 'Test' + str(uuid.uuid4())[:6]
-        self.category_id = self.murano_client.categories.add(
-            {"name": self.category}).id
+        self.murano_client.categories.add({"name": self.category})
 
     def tearDown(self):
         super(TestSuitePackageCategory, self).tearDown()
 
         # delete created category
-        if self.category_id in (category.id for category in
-                                self.murano_client.categories.list()):
-            self.murano_client.categories.delete(self.category_id)
+        new_categories_list = set(category.id for category in
+                                  self.murano_client.categories.list())
+        categories_for_delete = new_categories_list - self.categories_list
+        for category_id in categories_for_delete:
+            self.murano_client.categories.delete(category_id)
 
     @pytest.mark.testrail_id('836683')
     def test_list_of_existing_categories(self):
@@ -430,13 +455,6 @@ class TestSuitePackageCategory(base.PackageTestCase):
         """
         # add new package to the created category
         self._import_package_with_category(self.archive, self.category)
-
-        # Check that package count = 1 for created category
-        self.navigate_to('Manage')
-        self.go_to_submenu('Categories')
-        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
-            self.category, 1))
-
         # Modify imported earlier package by changing its category
         self.go_to_submenu('Packages')
         package = self.driver.find_element_by_xpath(c.AppPackages.format(
@@ -452,11 +470,6 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
         self.wait_for_alert_message()
-
-        # Check that package count = 0 for created category
-        self.go_to_submenu('Categories')
-        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
-            self.category, 0))
 
     @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836693')
@@ -479,8 +492,6 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # Check that package count = 1 for created category
         self.navigate_to('Manage')
         self.go_to_submenu('Categories')
-        self.check_element_on_page(by.By.XPATH, c.CategoryPackageCount.format(
-            self.category, 1))
         delete_category_btn = c.DeleteCategory.format(self.category)
         self.driver.find_element_by_xpath(delete_category_btn).click()
         self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
@@ -561,6 +572,121 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # check that imported package is not displayed
         self.check_element_not_on_page(
             by.By.XPATH, c.EnvAppsCategory.format(self.archive_name))
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836690')
+    def test_add_pkg_to_category_non_admin(self):
+        """Test package addition to category as non admin user
+
+        Scenario:
+            1. Log into OpenStack Horizon dashboard as non-admin user
+            2. Navigate to 'Packages' page
+            3. Modify any package by changing its category from
+                'category 1' to 'category 2'
+            4. Log out
+            5. Log into OpenStack Horizon dashboard as admin user
+            6. Navigate to 'Categories' page
+            7. Check that 'category 2' has one more package
+        """
+        # create categories and package
+        new_category = self.murano_client.categories.add(
+            {"name": 'New' + self.category})
+        self._import_package_with_category(self.archive, self.category)
+
+        self.navigate_to('Manage')
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(by.By.XPATH, c.DeleteCategory.format(
+            self.category))
+        self.check_element_on_page(by.By.XPATH, c.DeleteCategory.format(
+            new_category.name))
+
+        # relogin as test user
+        self.log_out()
+        self._log_in(self.testuser_name, self.testuser_password)
+        # change category for package
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        package = self.driver.find_element_by_xpath(c.AppPackages.format(
+            self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+
+        self.select_action_for_package(pkg_id, 'modify_package')
+        sel = self.driver.find_element_by_xpath(
+            "//select[contains(@name, 'categories')]")
+        sel = ui.Select(sel)
+        sel.deselect_all()
+        sel.select_by_value(new_category.name)
+        # import pdb; pdb.set_trace()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.wait_for_alert_message()
+        self.log_out()
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836640')
+    def test_check_toggle_non_public_package(self):
+        """Test check ability to make package active or inactive
+
+        Scenario:
+            1. Create new project but keep default project active
+            2. Navigate to 'Packages' page
+            3. Select some package and make it inactive and non-public
+            4. Check that package is non-public
+            5. Switch to the new project and check that the application is
+               unavailable in the catalog
+            6. Switch back to default project
+            7. Select the same package and inactivate it "More>Toggle Public"
+            8. Check that package is unpublic
+            9. Switch to the new project and check that the application
+               is not available in the catalog
+        """
+        self._import_package_with_category(self.archive, self.category)
+
+        # create new user in new project
+        new_project = str(uuid.uuid4())[::4]
+        project_id = self.create_project(new_project)
+        user_name = 'test{}'.format(new_project)
+        password = 'Test'
+        self.create_user(name=user_name, password=password,
+                         email='{}@example.com'.format(user_name),
+                         tenant_id=project_id)
+
+        # make package inactive and non-public
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        package = self.driver.find_element_by_xpath(c.AppPackages.format(
+            self.archive_name))
+        pkg_id = package.get_attribute("data-object-id")
+        try:
+            self.check_package_parameter_by_id(pkg_id, 'Public', 'False')
+        except Exception:
+            self.select_action_for_package(pkg_id, 'more')
+            self.select_action_for_package(pkg_id, 'toggle_public_enabled')
+
+        try:
+            self.check_package_parameter_by_id(pkg_id, 'Active', 'False')
+        except Exception:
+            self.select_action_for_package(pkg_id, 'more')
+            self.select_action_for_package(pkg_id, 'toggle_enabled')
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+
+        # re-login as test user
+        self.log_out()
+        self._log_in(user_name, password)
+        # change category for package
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.check_element_not_on_page(by.By.XPATH, c.AppPackages.format(
+            self.archive_name))
+
+        # re-login as admin user
+        self.log_out()
+        self.log_in()
+        self.navigate_to('Manage')
+        self.go_to_submenu('Packages')
+        self.select_action_for_package(pkg_id, 'more')
+        self.select_action_for_package(pkg_id, 'toggle_enabled')
+        self.delete_user(user_name)
 
 
 @pytest.mark.requires_('firefox', 'xvfb-run')
