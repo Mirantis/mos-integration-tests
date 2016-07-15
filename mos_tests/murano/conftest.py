@@ -13,23 +13,63 @@
 #    under the License.
 
 import functools
+import logging
 import pytest
 import uuid
 
 from mos_tests.functions import common
+from mos_tests.functions import file_cache
 from mos_tests.functions import os_cli
 from mos_tests.murano import actions
+from mos_tests import settings
 
+
+logger = logging.getLogger(__name__)
 
 flavor = 'm1.medium'
-docker_image = 'ubuntu14.04-x64-docker'
-kubernetes_image = 'ubuntu14.04-x64-kubernetes'
 labels = "testkey=testvalue"
 
 
+def image_factory(name, url):
+
+    @pytest.yield_fixture(scope='session')
+    def image(os_conn):
+
+        exists = [x for x in os_conn.glance.images.list() if x.name == name]
+
+        if len(exists) > 0:
+            image = exists[0]
+        else:
+            logger.info('Creating {0} image'.format(name))
+            image = os_conn.glance.images.create(
+                name=name,
+                disk_format='qcow2',
+                container_format='bare',
+                visibility='public')
+
+            with file_cache.get_file(url) as f:
+                os_conn.glance.images.upload(image.id, f)
+
+            logger.info('Creating {0} image ... done'.format(name))
+
+        yield image
+
+        if len(exists) == 0:
+            os_conn.glance.images.delete(image.id)
+
+    return image
+
+linux_image = image_factory('debian-8-m-agent.qcow2',
+                            settings.MURANO_IMAGE_URL)
+docker_image = image_factory('ubuntu14.04-x64-docker',
+                             settings.MURANO_DOCKER_IMAGE_URL)
+kubernetes_image = image_factory('ubuntu14.04-x64-kubernetes',
+                                 settings.MURANO_KUBERNETES_IMAGE_URL)
+
+
 @pytest.fixture
-def murano(os_conn):
-    return actions.MuranoActions(os_conn)
+def murano(os_conn, linux_image):
+    return actions.MuranoActions(os_conn, linux_image.name)
 
 
 @pytest.yield_fixture
@@ -97,14 +137,14 @@ def package(murano_cli, os_conn, request):
 
 
 @pytest.fixture
-def docker(murano, keypair, environment, session):
+def docker(murano, keypair, environment, session, docker_image):
     docker_data = {
         "instance": {
             "name": murano.rand_name("Docker"),
             "assignFloatingIp": True,
             "keyname": keypair.name,
             "flavor": flavor,
-            "image": docker_image,
+            "image": docker_image.name,
             "availabilityZone": 'nova',
             "?": {
                 "type": "io.murano.resources.LinuxMuranoInstance",
@@ -125,7 +165,7 @@ def docker(murano, keypair, environment, session):
 
 
 @pytest.fixture
-def cluster(murano, keypair, environment, session, request):
+def cluster(murano, keypair, environment, session, request, kubernetes_image):
     nodes = getattr(request, 'param', {'initial_gateways': 1,
                                        'max_gateways': 1, 'initial_nodes': 1,
                                        'max_nodes': 1, 'cadvisor': True})
@@ -138,7 +178,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -160,7 +200,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -179,7 +219,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -201,7 +241,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -224,7 +264,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -244,7 +284,7 @@ def cluster(murano, keypair, environment, session, request):
                     "assignFloatingIp": True,
                     "keyname": keypair.name,
                     "flavor": flavor,
-                    "image": kubernetes_image,
+                    "image": kubernetes_image.name,
                     "availabilityZone": 'nova',
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -278,7 +318,7 @@ def cluster(murano, keypair, environment, session, request):
                 "assignFloatingIp": True,
                 "keyname": keypair.name,
                 "flavor": flavor,
-                "image": kubernetes_image,
+                "image": kubernetes_image.name,
                 "availabilityZone": 'nova',
                 "?": {
                     "type": "io.murano.resources.LinuxMuranoInstance",

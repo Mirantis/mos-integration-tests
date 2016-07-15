@@ -15,6 +15,9 @@
 import pytest
 
 
+pytestmark = pytest.mark.undestructive
+
+
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('package', [('DockerCrate', 'DockerNginxSite',
                                       'DockerGlassFish')],

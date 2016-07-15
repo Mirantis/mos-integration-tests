@@ -27,15 +27,15 @@ from mos_tests.functions.common import wait
 
 
 flavor = 'm1.medium'
-linux = 'debian-8-m-agent.qcow2'
 availability_zone = 'nova'
 
 
 class MuranoActions(object):
     """Murano-specific actions"""
 
-    def __init__(self, os_conn):
+    def __init__(self, os_conn, linux_image='debian-8-m-agent.qcow2'):
         self.os_conn = os_conn
+        self.linux_image = linux_image
         self.murano_endpoint = os_conn.session.get_endpoint(
             service_type='application-catalog', endpoint_type='publicURL')
         self.glare_endpoint = os_conn.session.get_endpoint(
@@ -68,12 +68,18 @@ class MuranoActions(object):
             session_id=session.id)
 
     def wait_for_deploy(self, environment):
-        def is_murano_env_deployed():
-            status = self.murano.environments.get(environment.id).status
-            if status == 'deploy failure':
-                raise Exception('Environment deploy finished with errors')
-            return status == 'ready'
-        wait(is_murano_env_deployed, timeout_seconds=1800,
+        def is_murano_env_deployed(environment):
+            environment = self.murano.environments.get(environment.id)
+            if environment.status == 'deploy failure':
+                deploy_result = self.murano.deployments.list(environment.id)[
+                    -1].result['result']
+                raise Exception('Environment deploy finished with errors\n'
+                                'Message: {message}\n'
+                                '{details}'.format(**deploy_result))
+            return environment.status == 'ready'
+
+        wait(lambda: is_murano_env_deployed(environment),
+             timeout_seconds=1800,
              waiting_for='environment is ready')
 
         environment = self.murano.environments.get(environment.id)
@@ -575,7 +581,7 @@ class MuranoActions(object):
             "instance": {
                 "name": self.rand_name("testMurano"),
                 "flavor": flavor,
-                "image": linux,
+                "image": self.linux_image,
                 "assignFloatingIp": True,
                 "keyname": keypair.id,
                 "availabilityZone": availability_zone,
@@ -620,7 +626,7 @@ class MuranoActions(object):
         post_body = {
             "instance": {
                 "flavor": flavor,
-                "image": linux,
+                "image": self.linux_image,
                 "assignFloatingIp": True,
                 "keyname": keypair.id,
                 "availabilityZone": availability_zone,
@@ -645,7 +651,7 @@ class MuranoActions(object):
         post_body = {
             "instance": {
                 "flavor": flavor,
-                "image": linux,
+                "image": self.linux_image,
                 "keyname": keypair.id,
                 "assignFloatingIp": True,
                 "availabilityZone": availability_zone,
@@ -673,7 +679,7 @@ class MuranoActions(object):
         post_body = {
             "instance": {
                 "flavor": flavor,
-                "image": linux,
+                "image": self.linux_image,
                 "keyname": keypair.id,
                 "assignFloatingIp": True,
                 "availabilityZone": availability_zone,
@@ -701,7 +707,7 @@ class MuranoActions(object):
         post_body = {
             "instance": {
                 "flavor": flavor,
-                "image": linux,
+                "image": self.linux_image,
                 "keyname": keypair.id,
                 "assignFloatingIp": True,
                 "availabilityZone": availability_zone,
@@ -741,7 +747,7 @@ class MuranoActions(object):
         }
         return post_body
 
-    def cluster(self, keypair, sequence):
+    def cluster(self, keypair, sequence, image):
         post_body = {
             "gatewayCount": 1,
             "gatewayNodes": [
@@ -751,7 +757,7 @@ class MuranoActions(object):
                         "assignFloatingIp": True,
                         "keyname": keypair.id,
                         "flavor": flavor,
-                        "image": "ubuntu14.04-x64-kubernetes",
+                        "image": image,
                         "availabilityZone": availability_zone,
                         "?": {
                             "type": "io.murano.resources.LinuxMuranoInstance",
@@ -780,7 +786,7 @@ class MuranoActions(object):
                     "assignFloatingIp": True,
                     "keyname": keypair.id,
                     "flavor": flavor,
-                    "image": "ubuntu14.04-x64-kubernetes",
+                    "image": image,
                     "availabilityZone": availability_zone,
                     "?": {
                         "type": "io.murano.resources.LinuxMuranoInstance",
@@ -800,7 +806,7 @@ class MuranoActions(object):
                         "assignFloatingIp": True,
                         "keyname": keypair.id,
                         "flavor": flavor,
-                        "image": "ubuntu14.04-x64-kubernetes",
+                        "image": image,
                         "availabilityZone": availability_zone,
                         "?": {
                             "type": "io.murano.resources.LinuxMuranoInstance",

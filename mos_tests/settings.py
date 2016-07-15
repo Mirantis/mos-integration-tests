@@ -64,6 +64,8 @@ MURANO_PACKAGE_DEPS_NAMES = (
     'Kubernetes Pod',
 )
 MURANO_IMAGE_URL = 'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'  # noqa
+MURANO_DOCKER_IMAGE_URL = 'http://storage.apps.openstack.org/images/ubuntu14.04-x64-docker.qcow2'  # noqa
+MURANO_KUBERNETES_IMAGE_URL = 'http://storage.apps.openstack.org/images/ubuntu14.04-x64-kubernetes.qcow2'  # noqa
 MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
 MURANO_BUNDLE_URL = 'http://storage.apps.openstack.org/bundles/docker-n-kubernetes.bundle'  # noqa
 MURANO_PACKAGE_BUNDLE_NAMES = (

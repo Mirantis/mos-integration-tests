@@ -14,6 +14,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.undestructive
+
 
 @pytest.mark.testrail_id('836410')
 def test_deploy_docker_influx(environment, murano, session, docker):

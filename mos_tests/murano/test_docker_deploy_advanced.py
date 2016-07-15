@@ -14,6 +14,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.undestructive
+
 
 @pytest.mark.parametrize('package', [('DockerCrate', 'DockerNginxSite',
                                       'DockerGlassFish')],

@@ -17,6 +17,9 @@ import pytest
 from mos_tests.functions.common import wait
 
 
+pytestmark = pytest.mark.undestructive
+
+
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
 @pytest.mark.parametrize('cluster', [{'initial_gateways': 1, 'max_gateways': 2,
                                      'initial_nodes': 2, 'max_nodes': 2,
@@ -405,7 +408,7 @@ def test_k8s_deploy_without_cadvisor(
                          indirect=['package'])
 @pytest.mark.testrail_id('543020')
 def test_k8s_deploy_multiple_clusters_in_one_environment(
-        environment, murano, session, package, keypair):
+        environment, murano, session, package, keypair, kubernetes_image):
     """Check deploy multiple Kubernetes klusters in one environment
     Steps:
         1. Create Murano environment
@@ -421,30 +424,31 @@ def test_k8s_deploy_multiple_clusters_in_one_environment(
         10. Check that all applications are accessible
         11. Delete environment
     """
-    cluster_one = murano.create_service(environment, session,
-                                        murano.cluster(keypair, 1))
-    pod_one = murano.create_service(environment,
-                                    session, murano.pod(cluster_one, 1))
+    cluster_one = murano.create_service(
+        environment, session,
+        murano.cluster(keypair, 1, kubernetes_image.name))
+    pod_one = murano.create_service(environment, session,
+                                    murano.pod(cluster_one, 1))
     murano.create_service(environment, session, murano.mysql(pod_one))
-    cluster_two = murano.create_service(environment, session,
-                                        murano.cluster(keypair, 2))
-    pod_two = murano.create_service(environment,
-                                    session, murano.pod(cluster_two, 1))
+    cluster_two = murano.create_service(
+        environment, session,
+        murano.cluster(keypair, 2, kubernetes_image.name))
+    pod_two = murano.create_service(environment, session,
+                                    murano.pod(cluster_two, 1))
     murano.create_service(environment, session, murano.nginx_site(pod_two))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=2, nodes_count=2,
+    murano.check_instances(gateways_count=2,
+                           nodes_count=2,
                            masternodes_count=2)
     murano.status_check(deployed_environment,
                         [[cluster_one['name'], "master-1", 8080],
                          [cluster_one['name'], "gateway-1", 3306],
-                         [cluster_one['name'], "minion-1", 4194]
-                         ],
+                         [cluster_one['name'], "minion-1", 4194]],
                         kubernetes=True)
     murano.status_check(deployed_environment,
                         [[cluster_two['name'], "master-2", 8080],
                          [cluster_two['name'], "gateway-2", 80],
-                         [cluster_two['name'], "minion-2", 4194]
-                         ],
+                         [cluster_two['name'], "minion-2", 4194]],
                         kubernetes=True)
 
 
