@@ -387,6 +387,36 @@ def test_create_volume_from_image(request, os_conn, image_fixture):
     assert volume.volume_image_metadata['image_id'] == image.id
 
 
+@pytest.mark.testrail_id('1640540')
+def test_create_volume_from_snapshot(os_conn, volume, cleanup):
+    """Check creating volume from snapshot
+
+    Steps:
+        1. Create volume V1
+        2. Make snapshot S1 from V1
+        3. Create volume V2 from S1
+        4. Check ant V2 are present in list
+    """
+
+    snapshot = os_conn.cinder.volume_snapshots.create(volume.id,
+                                                      name='volume_snapshot')
+
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=300,
+                waiting_for='Snapshot to become in available status')
+
+    volume2 = os_conn.cinder.volumes.create(size=snapshot.size,
+                                            snapshot_id=snapshot.id,
+                                            name='V2')
+
+    common.wait(lambda: check_volume_status(os_conn, volume2),
+                timeout_seconds=300,
+                waiting_for='Volume to become in available status')
+
+    volume2.get()
+    assert volume2 in os_conn.cinder.volumes.list()
+
+
 @pytest.mark.undestructive
 @pytest.mark.check_env_('is_ceph_enabled')
 @pytest.mark.testrail_id('857363', disk_format='qcow2')
