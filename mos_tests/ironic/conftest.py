@@ -21,6 +21,7 @@ import yaml
 
 from mos_tests.ironic import actions
 from mos_tests.ironic import testutils
+from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ def libvirt_proxy_ip(devops_env):
 
 @pytest.fixture(scope='session')
 def ironic_drivers_params(libvirt_proxy_ip):
-    base_dir = os.path.dirname(__file__)
-
-    with open(os.path.join(base_dir, 'ironic_nodes.yaml')) as f:
+    with open(settings.IRONIC_NODES_CONFIG) as f:
         config = yaml.load(f)
     for i, node in enumerate(config):
         if node['driver'] != 'fuel_libvirt':
@@ -86,7 +85,7 @@ def flavors(ironic_drivers_params, os_conn):
         flavor.delete()
 
 
-ubuntu_image = pytest.yield_fixture()(testutils.ubuntu_image)
+make_image = pytest.yield_fixture()(testutils.make_image)
 
 
 def make_devops_node(config, devops_env, fuel_env, name):

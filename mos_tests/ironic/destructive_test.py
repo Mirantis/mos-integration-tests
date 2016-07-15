@@ -26,7 +26,7 @@ from mos_tests.functions import os_cli
 @pytest.mark.testrail_id('631922', params={'boot_instance_before': True})
 @pytest.mark.parametrize('boot_instance_before', [True, False],
                          ids=['boot_instance_before', 'boot_instance_after'])
-def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
+def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, make_image,
                           flavors, keypair, devops_env, boot_instance_before):
     """Check ironic state after restart conductor node
 
@@ -39,10 +39,11 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
         6. Verify that CLI ironicclient can list nodes, ports, chassis, drivers
         7. Boot new Ironic instance (if not `boot_instance_before`).
     """
-
+    flavor, ironic_node = zip(flavors, ironic_nodes)[0]
+    image = make_image(node_driver=ironic_node.driver)
     if boot_instance_before:
-        instance = ironic.boot_instance(image=ubuntu_image,
-                                        flavor=flavors[0],
+        instance = ironic.boot_instance(image=image,
+                                        flavor=flavor,
                                         keypair=keypair)
 
     conductor = env.get_nodes_by_role('ironic')[0]
@@ -80,8 +81,8 @@ def test_reboot_conductor(env, ironic, os_conn, ironic_nodes, ubuntu_image,
             ironic_cli(cmd)
 
     if not boot_instance_before:
-        instance = ironic.boot_instance(image=ubuntu_image,
-                                        flavor=flavors[0],
+        instance = ironic.boot_instance(image=image,
+                                        flavor=flavor,
                                         keypair=keypair)
 
     assert os_conn.nova.servers.get(instance.id).status == 'ACTIVE'
@@ -143,7 +144,7 @@ def test_reboot_all_ironic_conductors(env, devops_env):
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('675246')
-def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
+def test_kill_conductor_service(env, os_conn, ironic_nodes, make_image,
                                 flavors, keypair, env_name, ironic):
     """Kill ironic-conductor service with one bare-metal node
 
@@ -159,6 +160,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
     Info: https://bugs.launchpad.net/mos/+bug/1557464
     """
     flavor, ironic_node = zip(flavors, ironic_nodes)[0]
+    image = make_image(node_driver=ironic_node.driver)
 
     def find_conductor_node(ironic_node_uuid, conductors):
         cmd = 'ls /var/log/remote/ironic/{0}/'.format(ironic_node_uuid)
@@ -178,7 +180,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
                 if result.is_ok:
                     return conductor
 
-    instance = ironic.boot_instance(image=ubuntu_image,
+    instance = ironic.boot_instance(image=image,
                                     flavor=flavor,
                                     keypair=keypair)
 
@@ -212,7 +214,7 @@ def test_kill_conductor_service(env, os_conn, ironic_nodes, ubuntu_image,
 @pytest.mark.parametrize('ironic_nodes', [2], indirect=True)
 @pytest.mark.need_devops
 def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
-                                     ubuntu_image, flavors, keypair):
+                                     make_image, flavors, keypair):
     """Test ironic after restarting all ironic services
 
     Scenario:
@@ -225,8 +227,10 @@ def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
         5. Check that 'test1' instance ACTIVE and operable
         6. Delete created instances
     """
+    image1 = make_image(node_driver=ironic_nodes[0].driver)
+
     instance1 = ironic.boot_instance(name='test1',
-                                     image=ubuntu_image,
+                                     image=image1,
                                      flavor=flavors[0],
                                      keypair=keypair)
 
@@ -240,9 +244,11 @@ def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
             for service in output.splitlines():
                 remote.check_call('service {0} restart'.format(service))
 
+    image2 = make_image(node_driver=ironic_nodes[1].driver)
+
     instance2 = ironic.boot_instance(name='test2',
-                                     image=ubuntu_image,
-                                     flavor=flavors[0],
+                                     image=image2,
+                                     flavor=flavors[1],
                                      keypair=keypair)
 
     instance1.delete()

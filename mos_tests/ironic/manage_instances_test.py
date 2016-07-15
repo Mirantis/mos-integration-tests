@@ -12,31 +12,36 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 import logging
-import tarfile
 
 import ipaddress
 import pytest
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
-from mos_tests.functions import file_cache
 from mos_tests.ironic import actions
 from mos_tests.ironic import conftest
+from mos_tests.ironic import testutils
 from mos_tests import settings
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
-def instance(ubuntu_image, flavors, keypair, ironic_nodes, ironic, request):
+def instances(make_image, flavors, keypair, ironic_nodes, ironic, request):
     instance_count = getattr(request, 'param', 1)
-    instance = ironic.boot_instance(image=ubuntu_image,
-                                    flavor=flavors[0],
-                                    keypair=keypair,
-                                    min_count=instance_count)
-    return instance
+    instances = []
+
+    distribution = zip(flavors, ironic_nodes)[:instance_count]
+    for i, (flavor, ironic_node) in enumerate(distribution, 1):
+        image = make_image(node_driver=ironic_node.driver)
+        instance = ironic.boot_instance(name='ironic-{0}'.format(i),
+                                        image=image,
+                                        flavor=flavor,
+                                        keypair=keypair)
+        instances.append(instance)
+
+    return instances
 
 
 @pytest.yield_fixture
@@ -171,35 +176,15 @@ def env2_flavors(env2_ironic_drivers_params, env2):
 
 
 @pytest.yield_fixture
-def env2_ubuntu_image(env2):
-    image_name = 'ironic_trusty'
-
-    logger.info('Creating ubuntu image')
-    image = env2.os_conn.glance.images.create(
-        name=image_name,
-        disk_format='raw',
-        container_format='bare',
-        hypervisor_type='baremetal',
-        visibility='public',
-        cpu_arch='x86_64',
-        fuel_disk_info=json.dumps(settings.IRONIC_GLANCE_DISK_INFO))
-
-    with file_cache.get_file(settings.IRONIC_IMAGE_URL) as src:
-        with tarfile.open(fileobj=src, mode='r|gz') as tar:
-            img = tar.extractfile(tar.firstmember)
-            env2.os_conn.glance.images.upload(image.id, img)
-
-    logger.info('Creating ubuntu image ... done')
-
-    yield image
-
-    env2.os_conn.glance.images.delete(image.id)
+def env2_make_image(env2):
+    for step in testutils.make_image(env2.os_conn):
+        yield step
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631916')
-def test_instance_hard_reboot(os_conn, instance):
+def test_instance_hard_reboot(os_conn, instances):
     """Check instance state after hard reboot
 
     Scenario:
@@ -208,6 +193,7 @@ def test_instance_hard_reboot(os_conn, instance):
         3. Wait 2-3 minutes.
         4. Check that instance is back in ACTIVE status
     """
+    instance = instances[0]
     os_conn.server_hard_reboot(instance)
 
     def is_instance_active():
@@ -226,7 +212,7 @@ def test_instance_hard_reboot(os_conn, instance):
 @pytest.mark.testrail_id('631917', params={'start_instance': False})
 @pytest.mark.testrail_id('631918', params={'start_instance': True})
 @pytest.mark.parametrize('start_instance', [True, False])
-def test_instance_stop_start(os_conn, instance, start_instance):
+def test_instance_stop_start(os_conn, instances, start_instance):
     """Check instance statuses during instance restart
 
     Scenario:
@@ -236,7 +222,7 @@ def test_instance_stop_start(os_conn, instance, start_instance):
         4. Start Ironic instance (if 'start_instance')
         5. Check that instance is back in ACTIVE status (if 'start_instance')
     """
-
+    instance = instances[0]
     os_conn.server_stop(instance)
 
     def is_instance_shutoff():
@@ -269,8 +255,8 @@ def test_instance_stop_start(os_conn, instance, start_instance):
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.testrail_id('631920')
-def test_instance_terminate(env, ironic, os_conn, ironic_nodes, ubuntu_image,
-                            flavors, keypair, instance):
+def test_instance_terminate(env, ironic, os_conn, ironic_nodes, flavors,
+                            keypair, instances):
     """Check terminate instance
 
     Scenario:
@@ -278,6 +264,7 @@ def test_instance_terminate(env, ironic, os_conn, ironic_nodes, ubuntu_image,
         2. Terminate Ironic instance
         3. Wait and check that instance not present in nova list
     """
+    instance = instances[0]
     instance.delete()
     common.wait(lambda: os_conn.is_server_deleted(instance.id),
                 timeout_seconds=60,
@@ -286,8 +273,8 @@ def test_instance_terminate(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.testrail_id('631919')
-def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, ubuntu_image,
-                          flavors, keypair, instance):
+def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, make_image,
+                          flavors, keypair, instances):
     """Check rebuild instance
 
     Scenario:
@@ -296,7 +283,9 @@ def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, ubuntu_image,
         3. Check that instance status became REBUILD
         4. Wait until instance returns back to ACTIVE status.
     """
-    server = os_conn.rebuild_server(instance, ubuntu_image.id)
+    instance = instances[0]
+    image = make_image(node_driver=ironic_nodes[0].driver)
+    server = os_conn.rebuild_server(instance, image.id)
     common.wait(lambda: os_conn.nova.servers.get(server).status == 'ACTIVE',
                 timeout_seconds=60 * 10,
                 waiting_for="instance is active")
@@ -305,7 +294,7 @@ def test_instance_rebuild(env, ironic, os_conn, ironic_nodes, ubuntu_image,
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631910')
-def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
+def test_boot_instance_with_user_data(make_image, flavors, keypair, ironic,
                                       ironic_nodes, os_conn, env):
     """Boot Ubuntu14-based virtual-bare-metal instance with user-data
 
@@ -315,8 +304,9 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
         3. Ping 8.8.8.8 from instance
     """
     userdata_file = '/userdata_result'
+    image = make_image(node_driver=ironic_nodes[0].driver)
 
-    instance = ironic.boot_instance(image=ubuntu_image,
+    instance = ironic.boot_instance(image=image,
                                     flavor=flavors[0],
                                     keypair=keypair,
                                     userdata=(
@@ -335,7 +325,7 @@ def test_boot_instance_with_user_data(ubuntu_image, flavors, keypair, ironic,
 @pytest.mark.need_devops
 @pytest.mark.testrail_id('631912')
 @pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
-def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
+def test_boot_instances_on_different_tenants(env, os_conn, make_image,
                                              ironic_nodes, ironic, flavors,
                                              tenants_clients):
     """Check instance statuses during instance restart
@@ -355,11 +345,14 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
                 waiting_for='ironic nodes to be provisioned')
     instances, keypairs, ips = [], [], []
 
-    for flavor, tenant_conn in zip(flavors, tenants_clients):
+    distribution = zip(flavors, ironic_nodes, tenants_clients)
+
+    for i, (flavor, ironic_node, tenant_conn) in enumerate(distribution):
+        image = make_image(node_driver=ironic_node.driver)
         tenant_keypair = tenant_conn.create_key(key_name='ironic-key')
         brm_net = tenant_conn.nova.networks.find(label='baremetal')
-        instance = tenant_conn.create_server('ironic-server',
-                                             image_id=ubuntu_image.id,
+        instance = tenant_conn.create_server('ironic-server_{}'.format(i),
+                                             image_id=image.id,
                                              flavor=flavor.id,
                                              key_name=tenant_keypair.name,
                                              nics=[{'net-id': brm_net.id}],
@@ -390,9 +383,9 @@ def test_boot_instances_on_different_tenants(env, os_conn, ubuntu_image,
 
 @pytest.mark.check_env_('has_ironic_conductor')
 @pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
-@pytest.mark.parametrize('instance', [2], indirect=['instance'])
+@pytest.mark.parametrize('instances', [2], indirect=True)
 @pytest.mark.testrail_id('631915')
-def test_boot_nodes_concurrently(env, keypair, os_conn, instance):
+def test_boot_nodes_concurrently(env, keypair, os_conn, instances):
     """Check boot several bare-metal nodes concurrently
 
     Scenario:
@@ -400,11 +393,7 @@ def test_boot_nodes_concurrently(env, keypair, os_conn, instance):
         2. Check that instances statuses are ACTIVE
         3. Check that both baremetal instances are available via ssh
     """
-    servers = [x
-               for x in os_conn.nova.servers.list()
-               if x.name.startswith('ironic-server-')]
-    assert len(servers) == 2
-    for server in servers:
+    for server in instances:
         with os_conn.ssh_to_instance(env,
                                      server,
                                      vm_keypair=keypair,
@@ -413,10 +402,10 @@ def test_boot_nodes_concurrently(env, keypair, os_conn, instance):
 
 
 @pytest.mark.check_env_('has_ironic_conductor')
-@pytest.mark.parametrize('ironic_nodes', [2], indirect=['ironic_nodes'])
+@pytest.mark.parametrize('ironic_nodes', [2], indirect=True)
 @pytest.mark.testrail_id('631913')
-def test_boot_nodes_consequently(env, os_conn, ironic, ubuntu_image, flavors,
-                                 keypair, instance):
+def test_boot_nodes_consequently(env, os_conn, ironic, make_image, flavors,
+                                 keypair, instances, ironic_nodes):
     """Check boot several bare-metal nodes consequently
 
     Scenario:
@@ -426,7 +415,9 @@ def test_boot_nodes_consequently(env, os_conn, ironic, ubuntu_image, flavors,
         4. Check that 2nd instance is in ACTIVE status
         5. Check that both baremetal instances are available via ssh
     """
-    instance2 = ironic.boot_instance(image=ubuntu_image,
+    instance = instances[0]
+    image = make_image(node_driver=ironic_nodes[0].driver)
+    instance2 = ironic.boot_instance(image=image,
                                      flavor=flavors[0],
                                      keypair=keypair)
     for server in [instance, instance2]:
@@ -439,10 +430,11 @@ def test_boot_nodes_consequently(env, os_conn, ironic, ubuntu_image, flavors,
 
 @pytest.mark.testrail_id('631914')
 @pytest.mark.parametrize('ironic_nodes', [1], indirect=['ironic_nodes'])
-@pytest.mark.usefixtures('ironic_nodes', 'env2_ironic_node')
+@pytest.mark.usefixtures('env2_ironic_node')
 def test_deploy_baremetal_nodes_on_2_envs(
-        env, ironic, ubuntu_image, flavors, keypair, env2, env2_ironic,
-        env2_ubuntu_image, env2_flavors, env2_keypair):
+        env, ironic, ironic_nodes, make_image, flavors, keypair, env2,
+        env2_ironic, env2_make_image, env2_ironic_node, env2_flavors,
+        env2_keypair):
     """Check deploy bare-metal nodes on two environments concurrently
 
     Scenario:
@@ -452,13 +444,15 @@ def test_deploy_baremetal_nodes_on_2_envs(
             nodes in both Envs.
         4. Check that baremetal instances ase SSH available
     """
-    instance1 = ironic.boot_instance(image=ubuntu_image,
+    image1 = make_image(node_driver=ironic_nodes[0].node_driver)
+    instance1 = ironic.boot_instance(image=image1,
                                      flavor=flavors[0],
                                      keypair=keypair,
                                      wait_for_active=False,
                                      wait_for_avaliable=False)
 
-    instance2 = env2_ironic.boot_instance(image=env2_ubuntu_image,
+    image2 = env2_make_image(node_driver=env2_ironic_node[0].node_driver)
+    instance2 = env2_ironic.boot_instance(image=image2,
                                           flavor=env2_flavors[0],
                                           keypair=env2_keypair,
                                           wait_for_active=False,
