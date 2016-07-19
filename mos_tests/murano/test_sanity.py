@@ -15,6 +15,7 @@
 import logging
 import multiprocessing
 import os
+import pytest
 import shutil
 import SimpleHTTPServer
 import SocketServer
@@ -27,7 +28,7 @@ from muranodashboard.tests.functional import base
 from muranodashboard.tests.functional.config import config as cfg
 from muranodashboard.tests.functional import consts as c
 from muranodashboard.tests.functional import utils
-import pytest
+
 from selenium.webdriver.common import by
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC  # noqa
@@ -37,6 +38,7 @@ from six.moves.urllib import request
 from xvfbwrapper import Xvfb
 
 from mos_tests.functions import common
+from mos_tests.murano import consts as mc
 from mos_tests import settings
 
 
@@ -1374,3 +1376,128 @@ class TestPackageRepository(base.PackageTestCase):
         error_message = 'It is forbidden to upload files larger than 5 MB.'
         self.driver.find_element_by_xpath(
             c.ErrorMessage.format(error_message))
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
+@pytest.mark.usefixtures('screen')
+@murano_test_patch
+class TestSuiteApplications(base.ApplicationTestCase):
+    def _import_package(self, package_name):
+        self.go_to_submenu('Manage')
+        self.go_to_submenu('Packages')
+        self.driver.find_element_by_id(c.UploadPackage).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_name")
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-repo_name']")
+        el.send_keys(package_name)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+        self.wait_for_sidebar_is_loaded()
+
+    def _import_bundle(self, bundle_name):
+        self.driver.find_element_by_id(c.ImportBundle).click()
+        sel = self.driver.find_element_by_css_selector(
+            "select[name='upload-import_type']")
+        sel = ui.Select(sel)
+        sel.select_by_value("by_name")
+
+        el = self.driver.find_element_by_css_selector(
+            "input[name='upload-name']")
+        el.send_keys(bundle_name)
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.wait_for_alert_message()
+        self.wait_for_sidebar_is_loaded()
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836639')
+    def test_check_list_of_applications(self):
+        """Test check list application
+
+        Scenario:
+            1. Navigate to Catalog>Browse
+            2. Check that application are in the list
+        """
+        package = 'io.murano.apps.docker.DockerGrafana'
+        self._import_package(package)
+        self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
+            'Docker Grafana'))
+        self.go_to_submenu('Catalog')
+        self.go_to_submenu('Browse')
+        apps = ['Docker Grafana', 'Docker InfluxDB', 'Docker Standalone Host',
+                'Kubernetes Cluster', 'Kubernetes Pod']
+        for app_name in apps:
+            self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836641')
+    def test_check_app_quick_deploy(self):
+        """Test check 'Quick Deploy' action for application
+
+        Scenario:
+            1. Navigate to Catalog>Browse and click 'Quick Deploy' for
+            application
+            2. Check that application in "Ready to deploy" state
+            3. Click deploy
+            4. Check that for "Deploying" is started
+            5. Wait for deploy is finished, check that status is Ready
+        """
+        # add new application
+        package = 'io.murano.apps.docker.DockerInfluxDB'
+        self._import_package(package)
+        package = self.driver.find_element_by_xpath(c.AppPackages.format(
+            'Docker InfluxDB'))
+        pkg_id = package.get_attribute("data-object-id")
+
+        # Quick Deploy application
+        self.go_to_submenu('Catalog')
+        self.go_to_submenu('Browse')
+        self.select_and_click_action_for_app('quick-add', pkg_id)
+        self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
+        self.driver.find_element_by_xpath(mc.AddDockerStandaloneHost).click()
+        self.driver.find_element_by_xpath(mc.ButtonNext).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(mc.ButtonCreate).click()
+
+        self.check_element_on_page(by.By.XPATH,
+                                   c.Status.format('Ready to deploy'))
+        # start environment deploy
+        self.driver.find_element_by_id('services__action_deploy_env').click()
+
+        self.check_element_on_page(by.By.XPATH, c.Status.format('Deploying'))
+
+        self.check_element_on_page(by.By.XPATH, c.Status.format('Ready'),
+                                   sec=900)
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836651')
+    def test_import_bundle_when_dependencies_installed(self):
+        """Test bundle import if some dependencies are installed.
+
+        Check that bundle can be imported if some of its dependencies
+        are already installed from repository.
+        """
+        self.go_to_submenu('Manage')
+        self.go_to_submenu('Packages')
+        bundle_name = 'app-servers'
+        self._import_bundle(bundle_name)
+        wrns = self.driver.find_elements_by_xpath(mc.WarningClose)
+        assert len(wrns) == 0
+        self._import_bundle(bundle_name)
+        wrns = self.driver.find_elements_by_xpath(mc.WarningClose)
+        assert len(wrns) == 2
+        for wrn in wrns:
+            wrn.click()
+        self.go_to_submenu('Catalog')
+        self.go_to_submenu('Browse')
+        apps = ['Apache HTTP Server', 'Apache Tomcat']
+        for app_name in apps:
+            self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
