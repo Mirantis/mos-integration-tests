@@ -13,9 +13,14 @@
 #    under the License.
 
 import logging
+import random
+import string
+
+from cinderclient.exceptions import BadRequest
 import pytest
 
 from mos_tests.functions import common
+
 
 logger = logging.getLogger(__name__)
 
@@ -578,3 +583,302 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
         lambda: all([is_volume_deleted(os_conn, vlm) for vlm in volumes]),
         timeout_seconds=300,
         waiting_for='all volumes to be deleted')
+
+
+@pytest.mark.testrail_id('1640534')
+def test_create_volume_without_name(os_conn, cleanup):
+    """This test case checks volume creation without name
+
+    Steps:
+        1. Create volume without name
+        2. Check that volume is created
+    """
+    vol = common.create_volume(os_conn.cinder, image_id=None, name='')
+    assert vol.name == ''
+    assert vol in os_conn.cinder.volumes.list()
+
+
+@pytest.mark.testrail_id('1640537')
+def test_create_volume_with_long_name(os_conn, cleanup):
+    """This test case checks volume creation with name > 255 symbols
+
+    Steps:
+        1. Create volume with too long name (more that 255 symbols)
+        2. Check that volume is not created
+        3. Check error message
+    """
+    name = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(256))
+    with pytest.raises(BadRequest) as e:
+        common.create_volume(os_conn.cinder, image_id=None, name=name)
+
+    exp_msg = "Name has more than 255 characters"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1640539', description_len=50)
+@pytest.mark.testrail_id('1640538', description_len=255)
+@pytest.mark.parametrize('description_len', [50, 255])
+def test_create_volume_with_description(os_conn, description_len, cleanup):
+    """This test case checks volume creation description
+
+    Steps:
+        1. Create volume with description
+        2. Check that volume is available
+        3. Check that volume description is expected one
+    """
+    desc = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(description_len))
+    vol = common.create_volume(os_conn.cinder, image_id=None, description=desc)
+    assert vol.description == desc
+
+
+@pytest.mark.testrail_id('1640542')
+def test_create_volume_from_volume(os_conn, volume, cleanup):
+    """This test case checks volume creation from snapshot
+
+    Steps:
+        1. Create volume1
+        2. Create volume2 from volume1
+        3. Check that volume2 is created and available
+    """
+    vol = os_conn.cinder.volumes.create(name='Volume_from_volume',
+                                        size=volume.size,
+                                        source_volid=volume.id)
+    common.wait(lambda: check_volume_status(os_conn, vol),
+                waiting_for='volume became in available status')
+    vol.get()
+    assert vol in os_conn.cinder.volumes.list()
+
+
+@pytest.mark.testrail_id('1640543')
+def test_edit_volume_name(os_conn, volume, cleanup):
+    """This test case checks ability to change volume name
+
+    Steps:
+        1. Create volume1
+        2. Edit name of volume
+        3. Check that name of volume changed
+    """
+    old_name = volume.name
+    upd = {'name': '{}_updated'.format(old_name)}
+    os_conn.cinder.volumes.update(volume, **upd)
+    volume.get()
+    assert volume.name == '{}_updated'.format(old_name)
+
+
+@pytest.mark.testrail_id('1640544')
+def test_edit_volume_description(os_conn, volume, cleanup):
+    """This test case checks ability to change volume name
+
+    Steps:
+        1. Create volume1
+        2. Edit description of volume
+        3. Check that description of volume changed
+    """
+    old_description = volume.description
+    upd = {'description': '{}_updated'.format(old_description)}
+    os_conn.cinder.volumes.update(volume, **upd)
+    volume.get()
+    assert volume.description == '{}_updated'.format(old_description)
+
+
+@pytest.mark.testrail_id('1640545')
+def test_edit_volume_name_to_long_name(os_conn, volume, cleanup):
+    """This test case checks that not possible to edit volume new if new name
+    length more than 255 symbols
+
+    Steps:
+        1. Create volume1
+        2. Edit name of volume in order to have more than 255 symbols
+        3. Check edit operation is failed with correct reason
+    """
+    new_name = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                       for x in range(256))
+    upd = {'name': '{}_updated'.format(new_name)}
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volumes.update(volume, **upd)
+
+    exp_msg = "Name has more than 255 characters"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1640546', bootable='false')
+@pytest.mark.testrail_id('1640548', bootable='true')
+@pytest.mark.parametrize('bootable', ['false', 'true'])
+def test_enable_disable_bootable_checkbox(os_conn, bootable, cleanup):
+    """This test case checks ability to enable/disable bootable checkbox
+
+    Steps:
+        1. Create volume
+        2. Enable ot disable checkbox "Bootable"
+        3. Check that value is "Yes"/"No" in section "BOOTABLE"
+    """
+    image = None
+    if bootable == 'true':
+        image = os_conn.nova.images.find(name='TestVM').id
+
+    vol = common.create_volume(os_conn.cinder, image_id=image)
+    os_conn.cinder.volumes.set_bootable(vol, bootable)
+
+    vol.get()
+    assert vol.bootable == bootable
+
+
+@pytest.mark.testrail_id('1640554')
+def test_volume_extend(os_conn, volume, cleanup):
+    """This test case checks ability to extend volume with correct size
+
+    Steps:
+        1. Create volume with size=1
+        2. Extend volume (set size=2)
+        3. Check that volume is extended
+    """
+    new_size = volume.size + 1
+    os_conn.cinder.volumes.extend(volume, new_size=new_size)
+    common.wait(
+        lambda: os_conn.cinder.volumes.get(volume.id).size == new_size,
+        timeout_seconds=2 * 60, waiting_for='extend volume')
+
+
+@pytest.mark.testrail_id('1640555', size=1)
+@pytest.mark.testrail_id('1640556', size=-1)
+@pytest.mark.parametrize('size', [1, -1])
+def test_negative_volume_extend(os_conn, size, cleanup):
+    """This test case checks error case for volume extend operation
+
+    Steps:
+        1. Create volume with size=2
+        2. Extend volume - set size=1 or size=-1
+        3. Check that extend is not performed
+        4. Check error message
+    """
+    image = os_conn.nova.images.find(name='TestVM')
+    vol = common.create_volume(os_conn.cinder, size=2, image_id=image.id)
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volumes.extend(vol, new_size=size)
+
+    exp_msg = "New size for extend must be greater than current size"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1663148')
+def test_create_volume_snapshot_with_long_name(os_conn, volume, cleanup):
+    """This test case checks volume snapshot creation with name > 255 symbols
+
+    Steps:
+        1. Create volume
+        2. Try to create volume snapshot with too long name (> 255 symbols)
+        3. Check that volume snapshot is not created
+        4. Check error message
+    """
+    name = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(256))
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volume_snapshots.create(volume.id, name=name)
+
+    exp_msg = "Name has more than 255 characters"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1663150', desc_len=50)
+@pytest.mark.testrail_id('1663151', desc_len=255)
+@pytest.mark.parametrize('desc_len', [50, 255],
+                         ids=['desc length is 50', 'desc length is 255'])
+def test_create_snapshot_with_description(os_conn, volume, desc_len):
+    """This test case checks volume snapshot creation with description
+
+    Steps:
+        1. Create volume
+        2. Create volume snapshot with description
+        3. Check that volume snapshot is available
+        4. Check that volume snapshot description is expected one
+    """
+    desc = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(desc_len))
+    snapshot = os_conn.cinder.volume_snapshots.create(volume_id=volume.id,
+                                                      description=desc)
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=60, waiting_for='snapshot in available status')
+    assert snapshot.description == desc
+
+
+@pytest.mark.testrail_id('1663152')
+def test_create_volume_snapshot(os_conn, volume):
+    """This test case checks volume snapshot creation
+
+    Steps:
+        1. Create volume
+        2. Create volume snapshot
+        3. Check that volume snapshot is available
+    """
+    snapshot = os_conn.cinder.volume_snapshots.create(volume_id=volume.id,
+                                                      name='volume_snapshot')
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=60, waiting_for='snapshot in available status')
+
+
+@pytest.mark.testrail_id('1663407')
+def test_create_volume_backup(os_conn, volume):
+    """This test case checks volume backup creation
+
+    Steps:
+        1. Create volume
+        2. Create volume backup
+        3. Check that volume backup is available
+    """
+    backup = os_conn.cinder.backups.create(volume_id=volume.id,
+                                           name='volume_backup')
+    common.wait(lambda: check_backup_status(os_conn, backup),
+                timeout_seconds=60, waiting_for='backup in available status')
+
+
+@pytest.mark.testrail_id('1663409')
+def test_create_volume_backup_with_long_name(os_conn, volume):
+    """This test case checks volume backup creation
+
+    Steps:
+        1. Create volume
+        2. Create volume backup with name > 255 symbols
+        3. Check that volume backup is not created
+        4. Check error message
+    """
+    name = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(256))
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.backups.create(volume_id=volume.id, name=name)
+
+    exp_msg = "Name has more than 255 characters"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1663410', desc_len=50)
+@pytest.mark.testrail_id('1663411', desc_len=255)
+@pytest.mark.parametrize('desc_len', [50, 255],
+                         ids=['desc length is 50', 'desc length is 255'])
+def test_create_backup_with_description(os_conn, volume, desc_len):
+    """This test case checks volume backup creation with description
+
+    Steps:
+        1. Create volume
+        2. Create volume snapshot with description
+        3. Check that volume snapshot is available
+        4. Check that volume snapshot description is expected one
+    """
+    desc = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(desc_len))
+    backup = os_conn.cinder.backups.create(volume_id=volume.id,
+                                           description=desc)
+    common.wait(lambda: check_backup_status(os_conn, backup),
+                timeout_seconds=60, waiting_for='backup in available status')
+    assert backup.description == desc
