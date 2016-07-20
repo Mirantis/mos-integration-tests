@@ -370,7 +370,6 @@ def test_create_delete_snapshots_in_parallel(os_conn, volume):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_ceph_enabled')
 @pytest.mark.testrail_id('857361', image_fixture='qcow2_image')
 @pytest.mark.testrail_id('857362', image_fixture='raw_image')
 @pytest.mark.parametrize('image_fixture', ['qcow2_image', 'raw_image'])
@@ -423,11 +422,12 @@ def test_create_volume_from_snapshot(os_conn, volume, cleanup):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_ceph_enabled')
 @pytest.mark.testrail_id('857363', disk_format='qcow2')
 @pytest.mark.testrail_id('857364', disk_format='raw')
-@pytest.mark.parametrize('disk_format', ['qcow2', 'raw'])
-def test_create_image_from_volume(request, os_conn, disk_format, volume):
+@pytest.mark.testrail_id('1663423', disk_format='vdi')
+@pytest.mark.testrail_id('1663424', disk_format='vmdk')
+@pytest.mark.parametrize('disk_format', ['qcow2', 'raw', 'vdi', 'vmdk'])
+def test_create_image_from_volume(os_conn, disk_format, volume, cleanup):
     """This test case checks creation of qcow2/raw image from volume
 
     Steps:
@@ -635,8 +635,11 @@ def test_create_volume_with_description(os_conn, description_len, cleanup):
     assert vol.description == desc
 
 
-@pytest.mark.testrail_id('1640542')
-def test_create_volume_from_volume(os_conn, volume, cleanup):
+@pytest.mark.testrail_id('1640542', size_diff=0)
+@pytest.mark.testrail_id('1663427', size_diff=1)
+@pytest.mark.parametrize('size_diff', [0, 1],
+                         ids=['same_size', 'more_than_first_volume'])
+def test_create_volume_from_volume(os_conn, volume, size_diff, cleanup):
     """This test case checks volume creation from snapshot
 
     Steps:
@@ -645,7 +648,7 @@ def test_create_volume_from_volume(os_conn, volume, cleanup):
         3. Check that volume2 is created and available
     """
     vol = os_conn.cinder.volumes.create(name='Volume_from_volume',
-                                        size=volume.size,
+                                        size=volume.size + size_diff,
                                         source_volid=volume.id)
     common.wait(lambda: check_volume_status(os_conn, vol),
                 waiting_for='volume became in available status')
@@ -882,3 +885,19 @@ def test_create_backup_with_description(os_conn, volume, desc_len):
     common.wait(lambda: check_backup_status(os_conn, backup),
                 timeout_seconds=60, waiting_for='backup in available status')
     assert backup.description == desc
+
+
+@pytest.mark.testrail_id('1663421')
+def test_change_volume_type_from_empty(os_conn, volume, cleanup):
+    """This test case checks ability to change volume type none -> new type
+
+    Steps:
+        1. Create volume without volume type
+        2. Change volume type to any (volumes_lvm or volumes_ceph for example)
+        3. Check that volume type is changed
+    """
+    new_type = os_conn.cinder.volume_types.list()[0].name
+    volume.retype(volume_type=new_type, policy='never')
+    common.wait(
+        lambda: os_conn.cinder.volumes.get(volume.id).volume_type == new_type,
+        timeout_seconds=60, waiting_for='new type of volume')
