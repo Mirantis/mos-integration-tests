@@ -12,9 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import subprocess
 from time import sleep
 from time import time
+import xml.etree.ElementTree as ElementTree
 
 import paramiko
 import pytest
@@ -23,6 +25,10 @@ import six
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
+from mos_tests.neutron.python_tests.base import TestBase
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
@@ -651,3 +657,82 @@ class NovaIntegrationTests(OpenStackTestCase):
             # check that instance can be deleted
             common_functions.delete_instance(self.nova, instance.id)
             assert instance not in self.nova.servers.list()
+
+
+@pytest.mark.undestructive
+class TestBugVerification(TestBase):
+
+    @pytest.yield_fixture
+    def set_io_limits_to_flavor(self, os_conn):
+        limit = 10240000
+        logger.info('Setting I/O limits to flavor')
+        flv = os_conn.nova.flavors.find(name='m1.tiny')
+        flv.set_keys({'quota:disk_read_bytes_sec': '{0}'.format(limit)})
+        flv.set_keys({'quota:disk_write_bytes_sec': '{0}'.format(limit)})
+        yield limit
+        logger.info('Removing I/O limits from flavor')
+        flv.unset_keys({'quota:disk_read_bytes_sec': '{0}'.format(limit)})
+        flv.unset_keys({'quota:disk_write_bytes_sec': '{0}'.format(limit)})
+
+    @pytest.mark.testrail_id('1617024')
+    @pytest.mark.check_env_('is_ephemeral_ceph_enabled')
+    def test_disk_io_qos_settings_for_rbd_backend(self, os_conn,
+                                                  set_io_limits_to_flavor):
+        """Test checks that disk I/O QOS settings are set correctly in case of
+        rbd backend is used (it covers bug #1507504).
+
+        Steps:
+        1. On controller node set I/O limits to m1.tiny flavor:
+        'nova flavor-key m1.tiny set quota:disk_read_bytes_sec=10240000'
+        'nova flavor-key m1.tiny set quota:disk_write_bytes_sec=10240000'
+        2. Check that limits were applied to this flavor:
+        'nova flavor-show m1.tiny | grep extra_specs'
+        3. Create instance with this flavor
+        4. On compute node (on which created instance is hosted) check instance
+        xml file (located in /etc/libvirt/qemu). This file should contain
+        section of rbd disk with I/O limits read_bytes_sec=10240000,
+        write_bytes_sec=10240000
+        5. In the output of command 'ps axu | grep qemu' should be present
+        process with I/O limits: bps_rd=10240000, bps_wr=10240000.
+        6. Delete instance and unset I/O limits to m1.tiny flavor. Check that
+        limits were removed for m1.tiny flavor.
+        """
+        name = 'testVM_for_bug_1507504'
+        limit = set_io_limits_to_flavor
+        int_net_id = os_conn.nova.networks.find(label='admin_internal_net').id
+        image_id = os_conn.nova.images.find(name='TestVM').id
+        flv_id = os_conn.nova.flavors.find(name='m1.tiny').id
+
+        sec_group_id = os_conn.nova.security_groups.find(name='default').id
+
+        logger.info('Create instance using flavor with I/O limits')
+        instance = common_functions.create_instance(os_conn.nova, name,
+                                                    flv_id, int_net_id,
+                                                    [sec_group_id], image_id)
+
+        compute_hostname = getattr(instance, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_hostname)
+        inst_name = getattr(instance, 'OS-EXT-SRV-ATTR:instance_name')
+
+        logger.info('Verify that I/O limits are applied for instance rbd disk')
+        with compute.ssh() as remote:
+            cmd = 'virsh dumpxml {0}'.format(inst_name)
+            out = remote.check_call(cmd)
+        root = ElementTree.fromstring(out.stdout_string)
+        disk = root.find('devices').find('disk')
+        err_msg = "Disk is not connected to instance through 'rbd'"
+        assert disk.find('source').get('protocol') == 'rbd', err_msg
+        iotune = disk.find('iotune')
+        err_msg = "IO limits don't work correctly for instance"
+        assert iotune.find('read_bytes_sec').text == str(limit), err_msg
+        assert iotune.find('write_bytes_sec').text == str(limit), err_msg
+
+        logger.info('Verify that I/O limits are working correctly')
+        with compute.ssh() as remote:
+            cmd = "ps axu | grep qemu | grep 'drive file=rbd'"
+            out = remote.check_call(cmd).stdout_string
+            assert 'bps_rd={0}'.format(limit) in out
+            assert 'bps_wr={0}'.format(limit) in out
+
+        common_functions.delete_instance(os_conn.nova, instance.id)
+        assert instance not in os_conn.nova.servers.list()
