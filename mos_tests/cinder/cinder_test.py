@@ -17,6 +17,8 @@ import random
 import string
 
 from cinderclient.exceptions import BadRequest
+from cinderclient.exceptions import NotFound
+from cinderclient.exceptions import OverLimit
 import pytest
 
 from mos_tests.environment.os_actions import OpenStackActions
@@ -85,6 +87,16 @@ def quota(os_conn):
     os_conn.cinder.quotas.update(project_id, snapshots=200)
     yield {'old_quota': quota, 'new_quota': 200}
     os_conn.cinder.quotas.update(project_id, snapshots=quota)
+
+
+@pytest.yield_fixture
+def vol_size_quota(os_conn):
+    new_quota = 20
+    project_id = os_conn.session.get_project_id()
+    quota = os_conn.cinder.quotas.get(project_id).gigabytes
+    os_conn.cinder.quotas.update(project_id, gigabytes=new_quota)
+    yield new_quota
+    os_conn.cinder.quotas.update(project_id, gigabytes=quota)
 
 
 @pytest.yield_fixture
@@ -687,8 +699,11 @@ def test_create_volume_from_volume(os_conn, volume, size_diff, cleanup):
     assert vol in os_conn.cinder.volumes.list()
 
 
-@pytest.mark.testrail_id('1640543')
-def test_edit_volume_name(os_conn, volume, cleanup):
+@pytest.mark.testrail_id('1640543', empty_name=False)
+@pytest.mark.testrail_id('1664199', empty_name=True)
+@pytest.mark.parametrize('empty_name', [False, True],
+                         ids=['new name', 'empty name'])
+def test_edit_volume_name(os_conn, volume, empty_name, cleanup):
     """This test case checks ability to change volume name
 
     Steps:
@@ -697,14 +712,21 @@ def test_edit_volume_name(os_conn, volume, cleanup):
         3. Check that name of volume changed
     """
     old_name = volume.name
-    upd = {'name': '{}_updated'.format(old_name)}
+    new_name = ''
+    if not empty_name:
+        new_name = '{}_updated'.format(old_name)
+
+    upd = {'name': new_name}
     os_conn.cinder.volumes.update(volume, **upd)
     volume.get()
-    assert volume.name == '{}_updated'.format(old_name)
+    assert volume.name == new_name
 
 
-@pytest.mark.testrail_id('1640544')
-def test_edit_volume_description(os_conn, volume, cleanup):
+@pytest.mark.testrail_id('1640544', empty_desc=False)
+@pytest.mark.testrail_id('1664200', empty_desc=True)
+@pytest.mark.parametrize('empty_desc', [False, True],
+                         ids=['new description', 'empty description'])
+def test_edit_volume_description(os_conn, empty_desc, cleanup):
     """This test case checks ability to change volume name
 
     Steps:
@@ -712,11 +734,17 @@ def test_edit_volume_description(os_conn, volume, cleanup):
         2. Edit description of volume
         3. Check that description of volume changed
     """
-    old_description = volume.description
-    upd = {'description': '{}_updated'.format(old_description)}
+    description = 'volume_description'
+    new_description = ''
+    if not empty_desc:
+        new_description = '{}_updated'.format(description)
+
+    volume = common.create_volume(os_conn.cinder, 'TestVM',
+                                  description=description)
+    upd = {'description': new_description}
     os_conn.cinder.volumes.update(volume, **upd)
     volume.get()
-    assert volume.description == '{}_updated'.format(old_description)
+    assert volume.description == new_description
 
 
 @pytest.mark.testrail_id('1640545')
@@ -990,3 +1018,247 @@ def test_volume_transfer_cancel(os_conn, volume):
     common.wait(lambda: check_volume_status(os_conn, volume),
                 timeout_seconds=300, waiting_for='volume in available status')
     assert transfer not in os_conn.cinder.transfers.list()
+
+
+@pytest.mark.testrail_id('1664192')
+def test_create_volume_with_image_name(os_conn, cleanup):
+    """This test case checks ability to create volume using image name
+
+    Steps:
+        1. Create volume using image name (TestVM)
+        2. Check that volume is created and it's available
+        3. Check image id
+    """
+
+    vol = os_conn.cinder.volumes.create(size=1, name='Test_volume',
+                                        imageRef='TestVM')
+    common.wait(lambda: check_volume_status(os_conn, vol), timeout_seconds=60,
+                waiting_for='volume in available state')
+    used_image_id = vol.volume_image_metadata['image_id']
+    assert used_image_id == os_conn.nova.images.find(name='TestVM').id
+
+
+@pytest.mark.testrail_id('1664194')
+def test_create_volume_with_wrong_image_name(os_conn, cleanup):
+    """This test case checks ability to create volume using image name
+
+    Steps:
+        1. Create volume using wrong image name (TestVM)
+        2. Check that volume is not created
+        3. Check error message
+    """
+    wrong_name = common.gen_random_resource_name(prefix='image', reduce_by=6)
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volumes.create(size=1, name='Test_volume',
+                                      imageRef=wrong_name)
+
+    exp_msg = "Invalid image identifier or unable to access requested image"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664195')
+def test_create_volume_with_wrong_volume_type(os_conn, cleanup):
+    """This test case checks ability to create volume using image name
+
+    Steps:
+        1. Create volume using wrong volume_type
+        2. Check that volume is not created
+        3. Check error message
+    """
+    wrong_type = common.gen_random_resource_name(prefix='type', reduce_by=6)
+    with pytest.raises(NotFound) as e:
+        os_conn.cinder.volumes.create(size=1, name='Test_volume',
+                                      volume_type=wrong_type)
+
+    exp_msg = "Volume type with name {0} could not be found".format(wrong_type)
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664191')
+def test_create_volume_with_incorrect_image_id(os_conn, cleanup):
+    """This test case checks error in case of wrong image id during volume
+    creation
+
+    Steps:
+        1. Try to create volume with wrong image id
+        2. Check that volume is not created
+        3. Check error message
+    """
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volumes.create(size=1, name='Test_volume',
+                                      imageRef='77777777777777777')
+
+    exp_msg = "Invalid image identifier or unable to access requested image"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664196')
+def test_volume_delete_with_wrong_id(os_conn, volume):
+    """This test case checks error in case of wrong volume id during deletion
+
+    Steps:
+        1. Create volume
+        2. Try to create volume using wring id
+        3. Check that volume is not removed
+        4. Check error message
+    """
+    wrong_volume_id = common.gen_random_resource_name()
+    with pytest.raises(NotFound) as e:
+        os_conn.cinder.volumes.delete(wrong_volume_id)
+
+    exp_msg = "Volume {0} could not be found".format(wrong_volume_id)
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+    assert check_volume_status(os_conn, volume)
+
+
+@pytest.mark.testrail_id('1664197')
+def test_volume_delete_cascade(os_conn, cleanup):
+    """This test case checks cascade deletion of volume
+
+    Steps:
+        1. Create volume
+        2. Create snapshot along with this volume
+        3. Delete volume with cascade option
+        4. Check that volume and snapshot are deleted
+    """
+    volume = common.create_volume(os_conn.cinder, image_id='TestVM')
+    snapshot = os_conn.cinder.volume_snapshots.create(volume.id)
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=60, waiting_for='snapshot in available status')
+
+    os_conn.cinder.volumes.delete(volume, cascade=True)
+    os_conn.wait_volumes_deleted([volume])
+    assert snapshot not in os_conn.cinder.volume_snapshots.list()
+
+
+@pytest.mark.testrail_id('1664198')
+def test_volume_delete_without_cascade(os_conn, cleanup):
+    """This test case checks not cascade deletion of volume
+
+    Steps:
+        1. Create volume
+        2. Create snapshot along with this volume
+        3. Delete volume without cascade option
+        4. Check that error occurs
+    """
+    volume = common.create_volume(os_conn.cinder, image_id='TestVM')
+    snapshot = os_conn.cinder.volume_snapshots.create(volume.id)
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=60, waiting_for='snapshot in available status')
+
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.volumes.delete(volume)
+
+    exp_msg = ("must not be migrating, attached, belong to a consistency group"
+               " or have snapshots")
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664205')
+def test_volume_extend_more_than_limit(os_conn, volume):
+    """This test case checks error case for extend action
+
+    Steps:
+        1. Create volume
+        2. Try to extend volume - new size more than limit
+        3. Check that volume is not extended
+        4. Check error message
+    """
+    size = os_conn.cinder.quotas.defaults(os_conn.tenant).gigabytes + 1
+    with pytest.raises(OverLimit) as e:
+        os_conn.cinder.volumes.extend(volume, new_size=size)
+
+    exp_msg = "Requested volume or snapshot exceeds allowed gigabytes quota"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664206')
+def test_create_volume_transfer_with_long_name(os_conn, volume):
+    """This test case checks volume transfer creation with too long name
+
+    Steps:
+        1. Create volume
+        2. Create volume transfer with name > 255 symbols
+        3. Check that volume transfer is not created
+        4. Check error message
+    """
+    name = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                   for x in range(256))
+
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.transfers.create(volume_id=volume.id, name=name)
+
+    exp_msg = "Transfer name has more than 255 characters."
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664201')
+def test_create_volume_with_size_more_than_limit(os_conn, cleanup):
+    """This test case checks error case for volume with size > volume limit
+
+    Steps:
+        1. Create volume with size > volume limit
+        2. Check that creation is failed
+        3. Check error message
+    """
+    size = os_conn.cinder.quotas.defaults(os_conn.tenant).gigabytes + 1
+    image = os_conn.nova.images.find(name='TestVM')
+
+    with pytest.raises(OverLimit) as e:
+        common.create_volume(os_conn.cinder, size=size, image_id=image.id)
+
+    exp_msg = "Requested volume or snapshot exceeds allowed gigabytes quota"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of volume error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664203', size=0)
+@pytest.mark.testrail_id('1664204', size=-1)
+@pytest.mark.parametrize('size, errors', [
+    (0, ['must be an integer and greater than 0']),
+    (-1, ['size argument must be an integer', 'greater than zero'])],
+    ids=['size is 0', 'size is -1'])
+def test_create_volume_with_different_size(os_conn, size, errors, cleanup):
+    """This test case checks error cases for zero or negative volume size
+
+    Steps:
+        1. Try to create volume with size 0 or -1
+        2. Check that creation is failed
+        3. Check error message
+    """
+    image = os_conn.nova.images.find(name='TestVM')
+    with pytest.raises(BadRequest) as e:
+        common.create_volume(os_conn.cinder, size=size, image_id=image.id)
+
+    for err in errors:
+        assert err in str(e.value), (
+            "{0} should be in {1}".format(err, str(e.value)))
+
+
+@pytest.mark.testrail_id('1664202')
+def test_create_volume_with_max_limit_size(os_conn, vol_size_quota, cleanup):
+    """This test case checks ability to create volume with max size
+
+    Steps:
+        1. Try to create volume with size more than limit
+        2. Check that volume is available
+    """
+    image = os_conn.nova.images.find(name='TestVM')
+    vol = common.create_volume(os_conn.cinder, image.id, size=vol_size_quota)
+    assert vol.size == vol_size_quota
