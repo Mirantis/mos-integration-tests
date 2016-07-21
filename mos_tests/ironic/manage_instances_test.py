@@ -328,7 +328,7 @@ def test_boot_instance_with_user_data(make_image, flavors, keypair, ironic,
 def test_boot_instances_on_different_tenants(env, os_conn, make_image,
                                              ironic_nodes, ironic, flavors,
                                              tenants_clients):
-    """Check instance statuses during instance restart
+    """Check boot Ironic instances from different tenants
 
     Scenario:
         1. Boot 1st Ironic instance under 1st tenant
