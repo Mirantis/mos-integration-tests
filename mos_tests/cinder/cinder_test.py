@@ -19,6 +19,7 @@ import string
 from cinderclient.exceptions import BadRequest
 import pytest
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
 
 
@@ -45,6 +46,36 @@ def cleanup(os_conn):
                     for x in os_conn.glance.images.list()),
         timeout_seconds=5 * 60,
         waiting_for='images cleanup')
+
+
+@pytest.yield_fixture
+def new_os_conn(env, openstack_client):
+    """Returns OpenStackActions class (os_conn) for new tenant and new user.
+    """
+    new_user = {'name': 'someuser', 'password': 'somepassword'}
+    new_prj_name = 'newprj'
+
+    # create new tenant
+    tenant = openstack_client.project_create(new_prj_name)
+    # create user in new tenant
+    user = openstack_client.user_create(project=tenant['id'], **new_user)
+    # add admin role for a new tenant to a new user
+    openstack_client.assign_role_to_user(
+        role_name='admin', user=user['id'], project=tenant['id'])
+
+    # login to env as a new user from a new tenant
+    new_os_conn = OpenStackActions(
+        controller_ip=env.get_primary_controller_ip(),
+        user=new_user['name'],
+        password=new_user['password'],
+        tenant=tenant['name'],
+        cert=env.certificate,
+        env=env)
+
+    yield new_os_conn
+    # cleanUp
+    openstack_client.user_delete(new_user['name'])
+    openstack_client.project_delete(tenant['name'])
 
 
 @pytest.yield_fixture
@@ -901,3 +932,61 @@ def test_change_volume_type_from_empty(os_conn, volume, cleanup):
     common.wait(
         lambda: os_conn.cinder.volumes.get(volume.id).volume_type == new_type,
         timeout_seconds=60, waiting_for='new type of volume')
+
+
+@pytest.mark.testrail_id('1664209')
+def test_volume_transfer_accept(os_conn, new_os_conn, volume):
+    """This test checks volume transfer workflow
+
+    Steps:
+        1. Create volume for project1 using user1
+        2. Wait for available status
+        3. Create volume transfer and remember transfer_id and auth_key
+        4. Switch to for project2 as user2
+        5. Accept volume transfer by id and auth_key
+        6. Check that volume is available for project2
+        7. Check that volume is not available anymore for 1st project
+    """
+    new_user = new_os_conn.session.get_user_id()
+    new_prj = new_os_conn.session.get_project_id()
+
+    transfer = os_conn.cinder.transfers.create(volume_id=volume.id,
+                                               name='volume_transfer')
+    common.wait(
+        lambda: check_volume_status(os_conn, volume, 'awaiting-transfer'),
+        timeout_seconds=300, waiting_for='volume in awaiting-transfer status')
+
+    new_os_conn.cinder.transfers.accept(transfer.id, transfer.auth_key)
+    common.wait(lambda: check_volume_status(new_os_conn, volume),
+                timeout_seconds=300, waiting_for='volume in available status')
+
+    volume = new_os_conn.cinder.volumes.get(volume.id)
+    assert volume not in os_conn.cinder.volumes.list()
+    assert volume in new_os_conn.cinder.volumes.list()
+    assert new_user == volume.user_id, 'Wrong user after volume transfer'
+    assert new_prj == getattr(volume, 'os-vol-tenant-attr:tenant_id'), (
+        'Wrong project after volume transfer')
+
+
+@pytest.mark.testrail_id('1664210')
+def test_volume_transfer_cancel(os_conn, volume):
+    """This test checks volume transfer workflow for cancel
+
+    Steps:
+        1. Create volume for project1 using user1
+        2. Wait for available status
+        3. Create volume transfer and remember transfer_id and auth_key
+        4. Cancel volume transfer by id
+        5. Check that volume is available for project1
+        6. Check that transfer doesn't exist anymore
+    """
+    transfer = os_conn.cinder.transfers.create(volume_id=volume.id,
+                                               name='volume_transfer')
+    common.wait(
+        lambda: check_volume_status(os_conn, volume, 'awaiting-transfer'),
+        timeout_seconds=300, waiting_for='volume in awaiting-transfer status')
+
+    os_conn.cinder.transfers.delete(transfer.id)
+    common.wait(lambda: check_volume_status(os_conn, volume),
+                timeout_seconds=300, waiting_for='volume in available status')
+    assert transfer not in os_conn.cinder.transfers.list()
