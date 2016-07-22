@@ -19,6 +19,7 @@ import time
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
+from six.moves import configparser
 
 from mos_tests.functions import common
 
@@ -47,6 +48,63 @@ def slapd_running(os_conn):
     provide_slapd_state(os_conn.env, "running")
     yield
     provide_slapd_state(os_conn.env, "running")
+
+
+@pytest.yield_fixture
+def controllers(env):
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        move_cert(controller, to_original=True)
+    yield controllers
+    for controller in controllers:
+        move_cert(controller, to_original=True)
+
+
+@pytest.yield_fixture
+def keystone_conf(env):
+    controllers = env.get_nodes_by_role('controller')
+    cmd = 'cp /etc/keystone/keystone.conf /etc/keystone/keystone.conf.bk'
+    for controller in controllers:
+        with controller.ssh() as remote:
+            remote.check_call(cmd)
+    yield
+    cmd = 'cp /etc/keystone/keystone.conf.bk /etc/keystone/keystone.conf'
+    for controller in controllers:
+        with controller.ssh() as remote:
+            remote.check_call(cmd)
+            remote.check_call('service apache2 restart')
+            remote.check_call('rm /etc/keystone/keystone.conf.bk ')
+
+
+def restart_slapd(controller):
+    with controller.ssh() as remote:
+        remote.check_call('service slapd restart')
+        common.wait(
+            lambda: 'start/running' in remote.check_call(
+                'service slapd status').stdout_string,
+            timeout_seconds=60,
+            waiting_for='status is start/running')
+
+
+def move_cert(controller, to_original=True):
+    cert = 'ca-certificates.crt'
+    tmp_dir = '/tmp'
+    orig_dir = '/etc/ssl/certs'
+    if to_original:
+        dir_1, dir_2 = tmp_dir, orig_dir
+    else:
+        dir_1, dir_2 = orig_dir, tmp_dir
+
+    cmd = "mv {0}/{1} {2}".format(dir_1, cert, dir_2)
+    check_cmd = 'ls {}/ |grep {}'
+
+    with controller.ssh() as remote:
+        if cert in remote.execute(check_cmd.format(dir_1, cert)).stdout_string:
+            remote.check_call(cmd)
+            assert cert not in remote.execute(check_cmd.format(
+                dir_1, cert)).stdout_string
+            assert cert in remote.execute(check_cmd.format(
+                dir_2, cert)).stdout_string
 
 
 def provide_slapd_state(env, status):
@@ -158,7 +216,7 @@ def test_create_project_by_user(os_conn, domain_projects):
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1618359')
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed",
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ldap_proxy",
                         "has_3_or_more_controllers")
 def test_support_ldap_proxy(os_conn, slapd_running):
     """Check that getUsers results for domains configured with LDAP proxy
@@ -204,3 +262,114 @@ def test_support_ldap_proxy(os_conn, slapd_running):
 
     for domain in domains:
         assert len(keystone_v3.users.list(domain=domain)) > 0
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1663412')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_tls_use",
+                        "is_ldap_proxy", "has_3_or_more_controllers")
+def test_check_tls_option(os_conn, controllers, env):
+    """Check that tls option works correctly
+
+    Steps to reproduce:
+    1. Check lists of users for domains openldap1 and openldap2 (no errors)
+    2. Move ca-certificates.crt to tmp directory on 1 controller
+    3. Check lists of users for domains openldap1 and openldap2 (no errors)
+    4. Move ca-certificates.crt to tmp directory on all controllers
+    5. Restart slapd service on all controllers
+    6. Check lists of users for domains openldap1 and openldap2
+       (exception for openldap1)
+    7. Move ca-certificates.crt in the original directory on all controllers
+    8. Check lists of users for domains openldap1 and openldap2 (no errors)
+    """
+
+    domain_with_tls = "openldap1"
+    domain_without_tls = "openldap2"
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domains = [d for d in keystone_v3.domains.list() if 'openldap' in d.name]
+    assert len(domains) == 2
+
+    for domain in domains:
+        assert len(keystone_v3.users.list(domain=domain)) > 0
+    controller_1 = controllers[0]
+    move_cert(controller_1, to_original=False)
+    restart_slapd(controller_1)
+
+    for domain in domains:
+        assert len(keystone_v3.users.list(domain=domain)) > 0
+
+    for controller in controllers:
+        move_cert(controller, to_original=False)
+        restart_slapd(controller)
+
+    exp_mess = "An unexpected error prevented the server from fulfilling " \
+               "your request"
+
+    for domain in domains:
+        try:
+            users = keystone_v3.users.list(domain=domain)
+            assert domain.name == domain_without_tls
+            assert len(users) > 0
+        except Exception as e:
+            assert domain.name == domain_with_tls
+            assert exp_mess in e.message
+
+    for controller in controllers:
+        move_cert(controller)
+
+    for domain in domains:
+        assert len(keystone_v3.users.list(domain=domain)) > 0
+
+
+def change_list_limit(env, limit=100):
+    """Change list_limit in keystone.conf"""
+
+    config_keystone = '/etc/keystone/keystone.conf'
+
+    def change_limit(node, limit):
+        with node.ssh() as remote:
+            with remote.open(config_keystone) as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+            parser.set('DEFAULT', 'list_limit', limit)
+            with remote.open(config_keystone, 'w') as f:
+                parser.write(f)
+            remote.check_call('service apache2 restart')
+
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        change_limit(controller, limit)
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1640557')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed",
+                        "has_3_or_more_controllers")
+def test_check_list_limit(os_conn, env, keystone_conf):
+    """Check that list_limit option works correctly
+
+    Steps to reproduce:
+    1. Check values of list users for domains openldap1 and openldap2
+    2. Change /etc/keystone/keystone.conf [DEFAULT] list_limit to 100 on all
+    controllers
+    3. Restart apache2 service on all controllers
+    4. Check values of list users for domains openldap1 and openldap2 again
+    5. Compare values of list users before and after change limit
+    """
+    list_limit = 100
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domains = [d for d in keystone_v3.domains.list() if 'openldap' in d.name]
+    users_before = {}
+    for domain in domains:
+        users_before[domain.name] = len(keystone_v3.users.list(domain=domain))
+
+    change_list_limit(env, list_limit)
+    users_after = {}
+    for domain in domains:
+        users_after[domain.name] = len(keystone_v3.users.list(domain=domain))
+    for domain in users_before:
+        assert users_before[domain] >= users_after[domain]
+        assert users_after[domain] <= list_limit
