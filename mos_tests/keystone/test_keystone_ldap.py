@@ -14,7 +14,6 @@
 
 import pytest
 import re
-import time
 
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
@@ -105,6 +104,26 @@ def move_cert(controller, to_original=True):
                 dir_1, cert)).stdout_string
             assert cert in remote.execute(check_cmd.format(
                 dir_2, cert)).stdout_string
+
+
+def change_list_limit(env, limit=100):
+    """Change list_limit in keystone.conf"""
+
+    config_keystone = '/etc/keystone/keystone.conf'
+
+    def change_limit(node, limit):
+        with node.ssh() as remote:
+            with remote.open(config_keystone) as f:
+                parser = configparser.RawConfigParser()
+                parser.readfp(f)
+            parser.set('DEFAULT', 'list_limit', limit)
+            with remote.open(config_keystone, 'w') as f:
+                parser.write(f)
+            remote.check_call('service apache2 restart')
+
+    controllers = env.get_nodes_by_role('controller')
+    for controller in controllers:
+        change_limit(controller, limit)
 
 
 def provide_slapd_state(env, status):
@@ -239,7 +258,6 @@ def test_support_ldap_proxy(os_conn, slapd_running):
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     domains = [d for d in keystone_v3.domains.list() if 'openldap' in d.name]
     assert len(domains) == 2
-
     for domain in domains:
         assert len(keystone_v3.users.list(domain=domain)) > 0
 
@@ -257,8 +275,17 @@ def test_support_ldap_proxy(os_conn, slapd_running):
             assert domain.name == domain_with_LDAP_proxy
             assert exp_mess_1 in e.message or exp_mess_2 in e.message
 
+    def is_proxy_up():
+        proxy_domain = [d for d in domains if d.name == 'openldap1'][0]
+        try:
+            keystone_v3.users.list(domain=proxy_domain)
+            return True
+        except Exception:
+            return False
+
     provide_slapd_state(os_conn.env, "running")
-    time.sleep(1)
+    common.wait(is_proxy_up, timeout_seconds=180,
+                waiting_for='proxy is up')
 
     for domain in domains:
         assert len(keystone_v3.users.list(domain=domain)) > 0
@@ -323,26 +350,6 @@ def test_check_tls_option(os_conn, controllers, env):
         assert len(keystone_v3.users.list(domain=domain)) > 0
 
 
-def change_list_limit(env, limit=100):
-    """Change list_limit in keystone.conf"""
-
-    config_keystone = '/etc/keystone/keystone.conf'
-
-    def change_limit(node, limit):
-        with node.ssh() as remote:
-            with remote.open(config_keystone) as f:
-                parser = configparser.RawConfigParser()
-                parser.readfp(f)
-            parser.set('DEFAULT', 'list_limit', limit)
-            with remote.open(config_keystone, 'w') as f:
-                parser.write(f)
-            remote.check_call('service apache2 restart')
-
-    controllers = env.get_nodes_by_role('controller')
-    for controller in controllers:
-        change_limit(controller, limit)
-
-
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1640557')
 @pytest.mark.ldap
@@ -353,13 +360,13 @@ def test_check_list_limit(os_conn, env, keystone_conf):
 
     Steps to reproduce:
     1. Check values of list users for domains openldap1 and openldap2
-    2. Change /etc/keystone/keystone.conf [DEFAULT] list_limit to 100 on all
+    2. Change /etc/keystone/keystone.conf [DEFAULT] list_limit to 4 on all
     controllers
     3. Restart apache2 service on all controllers
     4. Check values of list users for domains openldap1 and openldap2 again
     5. Compare values of list users before and after change limit
     """
-    list_limit = 100
+    list_limit = 4
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     domains = [d for d in keystone_v3.domains.list() if 'openldap' in d.name]
     users_before = {}
@@ -373,3 +380,24 @@ def test_check_list_limit(os_conn, env, keystone_conf):
     for domain in users_before:
         assert users_before[domain] >= users_after[domain]
         assert users_after[domain] <= list_limit
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1618360')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_check_support_active_directory(os_conn):
+    """Check support active directory
+
+    Steps to reproduce:
+    1. Check that some LDAP domains have Active Directory(AD in domain name).
+    2. Check list of users for domains with active directory
+    3. Check list of groups for domains with active directory
+    """
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domains = [d for d in keystone_v3.domains.list() if 'AD' in d.name]
+    if len(domains) == 0:
+        pytest.skip('Domain with active directory is required')
+    for domain in domains:
+        assert len(keystone_v3.users.list(domain=domain)) > 0
+        assert len(keystone_v3.groups.list(domain=domain)) > 0
