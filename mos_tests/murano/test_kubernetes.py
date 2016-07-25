@@ -227,7 +227,7 @@ def test_kub_nodes_up_if_limit_reached(murano, environment, session, cluster,
     murano.check_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleGatewaysUp is scheduled' in logs
-    assert 'The maximum number of gateway nodes has been reached' in logs
+    assert 'The maximum number of nodes has been reached' in logs
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
@@ -263,7 +263,7 @@ def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
     murano.check_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleNodesDown is scheduled' in logs
-    assert 'No nodes that can be removed' in logs
+    assert 'At least one node must be in cluster' in logs
     murano.check_instances(gateways_count=1, nodes_count=1)
     action_id = murano.get_action_id(
         deployed_environment, 'scaleGatewaysDown', 0)
@@ -271,7 +271,7 @@ def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
     murano.check_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleGatewaysDown is scheduled' in logs
-    assert 'No gateway nodes that can be removed' in logs
+    assert 'At least one node must be in cluster' in logs
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
