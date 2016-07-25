@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #    Copyright 2015 Mirantis, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,17 +28,32 @@ from mos_tests.functions import common
 
 logger = logging.getLogger(__name__)
 
+name = "シンダー"
+description = "Я люблю синдер"
+
+normal_name = 'n_name'
+normal_description = 'n_description'
+
 
 @pytest.yield_fixture
 def cleanup(os_conn):
     vlms_ids_before = [x.id for x in os_conn.cinder.volumes.list()]
     images_ids_before = [x.id for x in os_conn.glance.images.list()]
+    vol_type_ids_before = [x.id for x in os_conn.cinder.volume_types.list()]
 
     yield None
 
     vlms_after = os_conn.cinder.volumes.list()
     vlms_for_del = [x for x in vlms_after if x.id not in vlms_ids_before]
+    for transfer in os_conn.cinder.transfers.list():
+        os_conn.cinder.transfers.delete(transfer.id)
     os_conn.delete_volumes(vlms_for_del)
+
+    vol_type_ids_after = [x.id for x in os_conn.cinder.volume_types.list()]
+    vol_types_for_del = set(vol_type_ids_after) - set(vol_type_ids_before)
+
+    for vol_type_id in vol_types_for_del:
+        os_conn.cinder.volume_types.delete(vol_type_id)
 
     images_ids_after = [x.id for x in os_conn.glance.images.list()]
     img_ids_for_del = set(images_ids_after) - set(images_ids_before)
@@ -888,19 +904,27 @@ def test_create_volume_snapshot(os_conn, volume):
                 timeout_seconds=60, waiting_for='snapshot in available status')
 
 
-@pytest.mark.testrail_id('1663407')
-def test_create_volume_backup(os_conn, volume):
+@pytest.mark.testrail_id('1663407', container=None)
+@pytest.mark.testrail_id('1664211', container='test_cont')
+@pytest.mark.parametrize('container', [None, 'test_cont'],
+                         ids=['without container', 'with container'])
+def test_create_volume_backup(os_conn, volume, container):
     """This test case checks volume backup creation
 
     Steps:
         1. Create volume
         2. Create volume backup
         3. Check that volume backup is available
+
+    Related bug (ceph only): https://bugs.launchpad.net/mos/+bug/1604755
     """
     backup = os_conn.cinder.backups.create(volume_id=volume.id,
-                                           name='volume_backup')
+                                           name='volume_backup',
+                                           container=container)
     common.wait(lambda: check_backup_status(os_conn, backup),
                 timeout_seconds=60, waiting_for='backup in available status')
+    if container is not None:
+        assert backup.container == container
 
 
 @pytest.mark.testrail_id('1663409')
@@ -1262,3 +1286,158 @@ def test_create_volume_with_max_limit_size(os_conn, vol_size_quota, cleanup):
     image = os_conn.nova.images.find(name='TestVM')
     vol = common.create_volume(os_conn.cinder, image.id, size=vol_size_quota)
     assert vol.size == vol_size_quota
+
+
+@pytest.mark.skip(reason='https://bugs.launchpad.net/mos/+bug/1606474')
+@pytest.mark.testrail_id('1664212')
+def test_create_backup_with_container_with_long_name(os_conn, volume, cleanup):
+    """This test case checks error message in case of too long name of
+    container during backup creation
+
+    Steps:
+        1. Create volume
+        2. Create volume backup with container name - name length > 255 symbols
+        3. Check that backup is not created
+        4. Check error message
+
+    Bug: https://bugs.launchpad.net/mos/+bug/1606474
+    """
+    container = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                        for x in range(256))
+
+    with pytest.raises(BadRequest) as e:
+        os_conn.cinder.backups.create(volume_id=volume.id,
+                                      name="volume_backup_with_container",
+                                      container=container)
+
+    exp_msg = "has more than 255 characters"
+    assert exp_msg in str(e.value), (
+        "Unexpected reason of error:\n got {0} instead of {1}".format(
+            str(e.value), exp_msg))
+
+
+@pytest.mark.testrail_id('1664213')
+def test_change_volume_type(os_conn, cleanup):
+    """This test case checks ability to change volume to newly created type
+
+    Steps:
+        1. Create volume with any type
+        2. Create new volume type
+        3. Change volume type
+        4. Check that new type is applied
+    """
+    vol_type = os_conn.cinder.volume_types.list()[0].name
+    vol = common.create_volume(os_conn.cinder, 'TestVM', volume_type=vol_type)
+
+    new_vol_type = os_conn.cinder.volume_types.create('custom_type').name
+    vol.retype(volume_type=new_vol_type, policy='never')
+
+    common.wait(
+        lambda: os_conn.cinder.volumes.get(vol.id).volume_type == new_vol_type,
+        timeout_seconds=60, waiting_for='new type of volume')
+
+
+@pytest.mark.skip(reason='https://bugs.launchpad.net/mos/+bug/1604255')
+@pytest.mark.testrail_id('1664240', v_desc=description)
+@pytest.mark.testrail_id('1664239', v_name=name)
+@pytest.mark.parametrize('v_name, v_desc', [(normal_name, description),
+                                            (name, normal_description)],
+                         ids=['description', 'name'])
+def test_create_volume_non_unicode(os_conn, cleanup, v_name, v_desc):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume with name/description with non unicode chars
+    """
+    volume = common.create_volume(os_conn.cinder, image_id=None,
+                                  name=v_name, description=v_desc)
+    assert volume.name == v_name.decode('utf-8')
+    assert volume.description == v_desc.decode('utf-8')
+
+
+@pytest.mark.testrail_id('1664243', s_name=name)
+@pytest.mark.testrail_id('1664244', s_desc=description)
+@pytest.mark.parametrize('s_name, s_desc', [(normal_name, description),
+                                            (name, normal_description)],
+                         ids=['description', 'name'])
+def test_create_snapshot_non_unicode(os_conn, volume, s_name, s_desc):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume
+        2. Create snapshot with name/description with non unicode chars
+    """
+    snapshot = os_conn.cinder.volume_snapshots.create(volume.id, name=s_name,
+                                                      description=s_desc)
+    common.wait(lambda: check_snapshot_status(os_conn, snapshot),
+                timeout_seconds=60, waiting_for='available snapshot')
+    assert snapshot.name == s_name.decode('utf-8')
+    assert snapshot.description == s_desc.decode('utf-8')
+
+
+@pytest.mark.testrail_id('1664247')
+def test_create_backup_with_non_unicode_container(os_conn, volume):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume
+        2. Create volume backup with container name with non unicode chars
+    """
+    backup = os_conn.cinder.backups.create(volume.id, container=name)
+    common.wait(lambda: check_backup_status(os_conn, backup),
+                timeout_seconds=60, waiting_for='available backup')
+    assert backup.container == name.decode('utf-8')
+
+
+@pytest.mark.testrail_id('1664248')
+def test_create_transfer_non_unicode_name(os_conn, volume, cleanup):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume
+        2. Create volume transfer with name with non unicode chars
+    """
+    transfer = os_conn.cinder.transfers.create(volume.id, name=name)
+    common.wait(
+        lambda: check_volume_status(os_conn, volume, 'awaiting-transfer'),
+        timeout_seconds=60, waiting_for='vol in awaiting-transfer state')
+    assert transfer.name == name.decode('utf-8')
+
+
+@pytest.mark.testrail_id('1664245', b_name=name)
+@pytest.mark.testrail_id('1664246', b_desc=description)
+@pytest.mark.parametrize('b_name, b_desc', [(normal_name, description),
+                                            (name, normal_description)],
+                         ids=['description', 'name'])
+def test_create_backup_non_unicode(os_conn, volume, b_name, b_desc):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume
+        2. Create backup with name/description with non unicode chars
+    """
+    backup = os_conn.cinder.backups.create(volume.id, name=b_name,
+                                           description=b_desc)
+    common.wait(lambda: check_backup_status(os_conn, backup),
+                timeout_seconds=60, waiting_for='available backup')
+    assert backup.name == b_name.decode('utf-8')
+    assert backup.description == b_desc.decode('utf-8')
+
+
+@pytest.mark.testrail_id('1664242', v_desc=description)
+@pytest.mark.testrail_id('1664241', v_name=name)
+@pytest.mark.parametrize('v_name, v_desc', [(normal_name, description),
+                                            (name, normal_description)],
+                         ids=['description', 'name'])
+def test_edit_volume_to_non_unicode(os_conn, volume, v_name, v_desc):
+    """This test case checks ability to use non unicode chars
+
+    Steps:
+        1. Create volume
+        2. Edit name/description to non unicode chars
+    """
+    upd = {'name': v_name, 'description': v_desc}
+    os_conn.cinder.volumes.update(volume, **upd)
+    volume.get()
+    assert volume.name == v_name.decode('utf-8')
+    assert volume.description == v_desc.decode('utf-8')

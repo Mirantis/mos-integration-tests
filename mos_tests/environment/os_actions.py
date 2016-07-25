@@ -1044,7 +1044,7 @@ class OpenStackActions(object):
         self.delete_volumes([volume])
 
     def delete_volumes(self, volumes):
-        names = ', '.join([x.name for x in volumes])
+        ids = ', '.join([x.id for x in volumes])
         # Exclude non-existing volumes
         all_volumes = self.cinder.volumes.findall()
         provided_volumes_ids = [x.id for x in volumes]
@@ -1070,20 +1070,20 @@ class OpenStackActions(object):
         wait(lambda: not any([self.cinder.backups.findall(volume_id=x.id)
                               for x in volumes]),
              timeout_seconds=60 * 10,
-             waiting_for=('backups from volumes [{names}] '
-                          'to be deleted').format(names=names))
+             waiting_for=('backups from volumes [{ids}] '
+                          'to be deleted').format(ids=ids))
         wait(lambda: not any([self.cinder.volume_snapshots.findall(
                               volume_id=x.id) for x in volumes]),
              timeout_seconds=60 * 5,
              sleep_seconds=10,
-             waiting_for=('snapshots from volumes [{names}] '
-                          'to be deleted').format(names=names))
+             waiting_for=('snapshots from volumes [{ids}] '
+                          'to be deleted').format(ids=ids))
         wait(lambda: all([self.cinder.volumes.get(x.id).status == 'available'
                           for x in volumes]),
              timeout_seconds=60 * 5,
              sleep_seconds=10,
-             waiting_for=('volumes [{names}] '
-                          'to became available').format(names=names))
+             waiting_for=('volumes [{ids}] '
+                          'to became available').format(ids=ids))
         # Delete volumes
         for volume in volumes:
             self.cinder.volumes.delete(volume.id)
@@ -1092,13 +1092,13 @@ class OpenStackActions(object):
         self.wait_volumes_deleted(volumes)
 
     def wait_volumes_deleted(self, volumes):
-        names = ', '.join([x.name for x in volumes])
+        ids = ', '.join([x.id for x in volumes])
         wait(
             lambda: not any([self.cinder.volumes.findall(id=x.id)
                              for x in volumes]),
             timeout_seconds=60 * 2,
             sleep_seconds=10,
-            waiting_for='volumes [{names}] to be deleted'.format(names=names))
+            waiting_for='volumes [{ids}] to be deleted'.format(ids=ids))
 
     def is_server_cloud_init_finished(self, vm):
         finish_mark = 'Cloud-init .* finished'
