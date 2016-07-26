@@ -1,0 +1,22 @@
+---
+  pacemaker:
+    full_status: "pcs status --full"
+    rabbit_slave_name:  "p_rabbitmq-server"
+    rabbit_master_name: "master_p_rabbitmq-server"
+    show:    "pcs resource show {service} --wait={timeout} {fqdn}"
+    enable:  "pcs resource enable {service} --wait={timeout} {fqdn}"
+    disable: "pcs resource disable {service} --wait={timeout} {fqdn}"
+    restart: "pcs resource restart {service} --wait={timeout} {fqdn}"
+    clear:   "pcs resource clear {service} --wait={timeout} {fqdn}"
+    ban:     "pcs resource ban {service} --wait={timeout} {fqdn}"
+
+  rabbitmqctl:
+    status:         "rabbitmqctl status"
+    cluster_status: "rabbitmqctl cluster_status"
+    list_queues:      "rabbitmqctl list_queues"
+    list_bindings:    "rabbitmqctl list_bindings"
+    list_channels:    "rabbitmqctl list_channels"
+    list_policies:    "rabbitmqctl list_policies"
+    list_consumers:   "rabbitmqctl list_consumers"
+    list_exchanges:   "rabbitmqctl list_exchanges"
+    list_connections: "rabbitmqctl list_connections"
