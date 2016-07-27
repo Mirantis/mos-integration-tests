@@ -5,3 +5,4 @@ WarningClose = '//div[@class="alert alert-warning alert-dismissable fade in"]//a
 # Buttons
 ButtonNext = '//button[contains(text(), "Next")]'
 ButtonCreate = '//button[contains(text(), "Create")]'
+ButtonNextOnAddForm = '//form[@data-add-to-field="{}_0-host"]//div[@class="modal-footer"]//button[contains(text(), "Next")]'  # noqa

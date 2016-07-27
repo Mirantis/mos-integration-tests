@@ -1417,6 +1417,14 @@ class TestSuiteApplications(base.ApplicationTestCase):
         self.wait_for_alert_message()
         self.wait_for_sidebar_is_loaded()
 
+    def _select_from_list(self, list_name, text, sec=10):
+        locator = (by.By.XPATH,
+                   "//select[contains(@name, '{0}')]"
+                   "/option[contains(text(), '{1}')]".format(list_name, text))
+        el = ui.WebDriverWait(self.driver, sec).until(
+            EC.presence_of_element_located(locator))
+        el.click()
+
     @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836639')
     def test_check_list_of_applications(self):
@@ -1501,3 +1509,95 @@ class TestSuiteApplications(base.ApplicationTestCase):
         apps = ['Apache HTTP Server', 'Apache Tomcat']
         for app_name in apps:
             self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
+
+    @pytest.mark.usefixtures('clean_packages')
+    @pytest.mark.testrail_id('836645')
+    def test_deploy_several_apps(self):
+        """Checks that app works after another app is deployed
+
+        Scenario:
+            1. Navigate to Environments
+            2. Create new environment
+            3. Navigate to Catalog>Browse and add application by 'Add to Env'
+            4. Fill the form and use environment from step 2 and click submit
+            5. Click deploy environment
+            6. Wait 'Ready' status
+            7. Repeat steps 3-6 to add two other application.
+        """
+        # import packages
+        pkgs = {'io.murano.apps.docker.DockerInfluxDB': 'Docker InfluxDB',
+                'com.example.docker.DockerCrate': 'Docker Crate',
+                'com.example.docker.DockerRedis': 'Docker Redis'}
+        pkg_ids = {}
+        for pkg in pkgs:
+            self._import_package(pkg)
+            for wrn in self.driver.find_elements_by_xpath(mc.WarningClose):
+                wrn.click()
+            pkg_name = pkgs[pkg]
+            package = self.driver.find_element_by_xpath(
+                c.AppPackages.format(pkg_name))
+            pkg_ids[pkg_name] = package.get_attribute("data-object-id")
+            self.go_to_submenu('Manage')
+
+        # create environment
+        env_name = str(uuid.uuid4())
+        self.go_to_submenu('Catalog')
+        self.go_to_submenu('Environments')
+        self.create_environment(env_name)
+        self.go_to_submenu('Environments')
+        self.check_element_on_page(by.By.LINK_TEXT, env_name)
+        env_id = self.get_element_id(env_name)
+
+        # Deploy applications
+        self.go_to_submenu('Browse')
+        pkg_id = pkg_ids.pop('Docker InfluxDB')
+        self.select_and_click_action_for_app('add', '{0}/{1}'.format(pkg_id,
+                                                                     env_id))
+        self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
+        self.driver.find_element_by_xpath(mc.AddDockerStandaloneHost).click()
+        self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
+            pkg_id)).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        self.driver.find_element_by_xpath(mc.ButtonNext).click()
+        self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+        self.check_element_on_page(by.By.XPATH,
+                                   c.Status.format('Ready to deploy'))
+        self.driver.find_element_by_id('services__action_deploy_env').click()
+        self.check_element_on_page(by.By.XPATH, c.Status.format('Deploying'))
+        self.check_element_on_page(by.By.XPATH, c.Status.format('Ready'),
+                                   sec=900)
+        common.wait(
+            lambda: len(self.driver.find_elements_by_xpath(
+                c.Status.format('Ready'))) == 2, timeout_seconds=900)
+        i = 2
+        for pkg_id in pkg_ids.values():
+            self.go_to_submenu('Browse')
+            try:
+                self.select_and_click_action_for_app('add', '{0}/{1}'.format(
+                    pkg_id, env_id))
+            except Exception:
+                elm = self.driver.find_element_by_tag_name('html')
+                elm.send_keys(Keys.HOME)
+                self.select_and_click_action_for_app('add', '{0}/{1}'.format(
+                    pkg_id, env_id))
+            self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
+            self.driver.find_element_by_xpath(
+                mc.AddDockerStandaloneHost).click()
+            self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
+                pkg_id)).click()
+            self._select_from_list('1-image', 'Ubuntu')
+            self.driver.find_element_by_xpath(c.InputSubmit).click()
+            self.driver.find_element_by_xpath(mc.ButtonNext).click()
+            self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+            self.check_element_on_page(by.By.XPATH,
+                                       c.Status.format('Ready to deploy'))
+            self.driver.find_element_by_id(
+                'services__action_deploy_env').click()
+            self.check_element_on_page(by.By.XPATH, c.Status.format(
+                'Deploying'))
+            common.wait(
+                lambda: len(self.driver.find_elements_by_xpath(
+                    c.Status.format('Ready'))) == i * 2, timeout_seconds=900)
+            i += 1
