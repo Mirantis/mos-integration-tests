@@ -271,7 +271,7 @@ def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
     murano.check_instances(gateways_count=1, nodes_count=1)
     logs = murano.get_log(deployed_environment)
     assert 'Action scaleGatewaysDown is scheduled' in logs
-    assert 'At least one node must be in cluster' in logs
+    assert 'No gateway nodes that can be removed' in logs
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")

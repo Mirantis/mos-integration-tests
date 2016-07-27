@@ -307,7 +307,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker InfluxDB"
                 },
-                "type": "io.murano.apps.docker.DockerInfluxDB",
+                "type": "com.example.docker.DockerInfluxDB",
                 "id": str(uuid.uuid4())
             }
         }
@@ -328,7 +328,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Grafana"
                 },
-                "type": "io.murano.apps.docker.DockerGrafana",
+                "type": "com.example.docker.DockerGrafana",
                 "id": str(uuid.uuid4())
             }
         }
@@ -343,7 +343,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker MongoDB"
                 },
-                "type": "io.murano.apps.docker.DockerMongoDB",
+                "type": "com.example.docker.DockerMongoDB",
                 "id": str(uuid.uuid4())
             }
         }
@@ -360,7 +360,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Nginx"
                 },
-                "type": "io.murano.apps.docker.DockerNginx",
+                "type": "com.example.docker.DockerNginx",
                 "id": str(uuid.uuid4())
             }
         }
@@ -380,7 +380,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker GlassFish"
                 },
-                "type": "io.murano.apps.docker.DockerGlassFish",
+                "type": "com.example.docker.DockerGlassFish",
                 "id": str(uuid.uuid4())
             }
         }
@@ -398,7 +398,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker MariaDB"
                 },
-                "type": "io.murano.apps.docker.DockerMariaDB",
+                "type": "com.example.docker.DockerMariaDB",
                 "id": str(uuid.uuid4())
             }
         }
@@ -416,7 +416,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker MySQL"
                 },
-                "type": "io.murano.apps.docker.DockerMySQL",
+                "type": "com.example.docker.DockerMySQL",
                 "id": str(uuid.uuid4())
             }
         }
@@ -433,7 +433,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Jenkins"
                 },
-                "type": "io.murano.apps.docker.DockerJenkins",
+                "type": "com.example.docker.DockerJenkins",
                 "id": str(uuid.uuid4())
             }
         }
@@ -451,7 +451,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker PostgreSQL"
                 },
-                "type": "io.murano.apps.docker.DockerPostgreSQL",
+                "type": "com.example.docker.DockerPostgreSQL",
                 "id": str(uuid.uuid4())
             }
         }
@@ -466,7 +466,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Crate"
                 },
-                "type": "io.murano.apps.docker.DockerCrate",
+                "type": "com.example.docker.DockerCrate",
                 "id": str(uuid.uuid4())
             }
         }
@@ -483,7 +483,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Redis"
                 },
-                "type": "io.murano.apps.docker.DockerRedis",
+                "type": "com.example.docker.DockerRedis",
                 "id": str(uuid.uuid4())
             }
         }
@@ -501,7 +501,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Tomcat"
                 },
-                "type": "io.murano.apps.docker.DockerTomcat",
+                "type": "com.example.docker.DockerTomcat",
                 "id": str(uuid.uuid4())
             }
         }
@@ -518,7 +518,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker HTTPd"
                 },
-                "type": "io.murano.apps.docker.DockerHTTPd",
+                "type": "com.example.docker.DockerHTTPd",
                 "id": str(uuid.uuid4())
             }
         }
@@ -536,7 +536,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker HTTPd"
                 },
-                "type": "io.murano.apps.docker.DockerHTTPdSite",
+                "type": "com.example.docker.DockerHTTPdSite",
                 "id": str(uuid.uuid4())
             }
         }
@@ -554,7 +554,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Docker Nginx Site"
                 },
-                "type": "io.murano.apps.docker.DockerNginxSite",
+                "type": "com.example.docker.DockerNginxSite",
                 "id": str(uuid.uuid4())
             }
         }
@@ -570,7 +570,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Kubernetes Pod"
                 },
-                "type": "io.murano.apps.docker.kubernetes.KubernetesPod",
+                "type": "com.mirantis.docker.kubernetes.KubernetesPod",
                 "id": str(uuid.uuid4())
             }
         }
@@ -598,7 +598,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "MySQL"
                 },
-                "type": "io.murano.databases.MySql",
+                "type": "com.example.databases.MySql",
                 "id": str(uuid.uuid4())
             }
         }
@@ -616,7 +616,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "WordPress"
                 },
-                "type": "io.murano.apps.WordPress",
+                "type": "com.example.WordPress",
                 "id": str(uuid.uuid4())
             }
         }
@@ -641,7 +641,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Apache"
                 },
-                "type": "io.murano.apps.apache.ApacheHttpServer",
+                "type": "com.example.apache.ApacheHttpServer",
                 "id": str(uuid.uuid4())
             }
         }
@@ -669,7 +669,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "PostgreSQL"
                 },
-                "type": "io.murano.databases.PostgreSql",
+                "type": "com.example.databases.PostgreSql",
                 "id": str(uuid.uuid4())
             }
         }
@@ -697,7 +697,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Tomcat"
                 },
-                "type": "io.murano.apps.apache.Tomcat",
+                "type": "com.example.apache.Tomcat",
                 "id": str(uuid.uuid4())
             }
         }
@@ -725,7 +725,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Zabbix Server"
                 },
-                "type": "io.murano.apps.ZabbixServer",
+                "type": "com.example.ZabbixServer",
                 "id": str(uuid.uuid4())
             }
         }
@@ -741,7 +741,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Zabbix Agent"
                 },
-                "type": "io.murano.apps.ZabbixAgent",
+                "type": "com.example.ZabbixAgent",
                 "id": str(uuid.uuid4())
             }
         }
@@ -765,7 +765,7 @@ class MuranoActions(object):
                         }
                     },
                     "?": {
-                        "type": "io.murano.apps.docker.kubernetes."
+                        "type": "com.mirantis.docker.kubernetes."
                                 "KubernetesGatewayNode",
                         "id": str(uuid.uuid4())
                     }
@@ -775,7 +775,7 @@ class MuranoActions(object):
                 "_{id}".format(id=uuid.uuid4().hex): {
                     "name": "Kubernetes Cluster"
                 },
-                "type": "io.murano.apps.docker.kubernetes.KubernetesCluster",
+                "type": "com.mirantis.docker.kubernetes.KubernetesCluster",
                 "id": str(uuid.uuid4())
             },
             "nodeCount": 1,
@@ -794,7 +794,7 @@ class MuranoActions(object):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesMasterNode",
                     "id": str(uuid.uuid4())
                 }
@@ -814,7 +814,7 @@ class MuranoActions(object):
                         }
                     },
                     "?": {
-                        "type": "io.murano.apps.docker.kubernetes."
+                        "type": "com.mirantis.docker.kubernetes."
                                 "KubernetesMinionNode",
                         "id": str(uuid.uuid4())
                     },

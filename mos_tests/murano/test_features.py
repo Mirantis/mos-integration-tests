@@ -76,7 +76,7 @@ def murano_cli(controller_remote, user_env):
 
 @pytest.yield_fixture
 def package(murano_cli):
-    fqn = 'io.murano.apps.docker.Interfaces'
+    fqn = 'com.mirantis.docker.Interfaces'
     packages = murano_cli(
         'package-import',
         params='{0} --exists-action s'.format(fqn),

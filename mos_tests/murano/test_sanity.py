@@ -1262,7 +1262,7 @@ class TestPackageRepository(base.PackageTestCase):
         sel.select_by_value("by_name")
         el = self.driver.find_element_by_css_selector(
             "input[name='upload-repo_name']")
-        el.send_keys("io.murano.apps.{0}.zip".format(pkg_name))
+        el.send_keys("com.example.{0}.zip".format(pkg_name))
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         error_message = ("Error: Package creation failed.Reason: "
                          "Can't find Package name from repository.")
@@ -1287,7 +1287,7 @@ class TestPackageRepository(base.PackageTestCase):
         el = self.driver.find_element_by_css_selector(
             "input[name='upload-url']")
         el.send_keys("http://storage.apps.openstack.org/apps/"
-                     "io.murano.apps.{0}.zip".format(pkg_name))
+                     "com.example.{0}.zip".format(pkg_name))
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         error_message = ("Error: Package creation failed.Reason: "
                          "Can't find Package name from repository.")
@@ -1426,7 +1426,7 @@ class TestSuiteApplications(base.ApplicationTestCase):
             1. Navigate to Catalog>Browse
             2. Check that application are in the list
         """
-        package = 'io.murano.apps.docker.DockerGrafana'
+        package = 'com.example.docker.DockerGrafana'
         self._import_package(package)
         self.check_element_on_page(by.By.XPATH, c.AppPackages.format(
             'Docker Grafana'))
@@ -1451,7 +1451,7 @@ class TestSuiteApplications(base.ApplicationTestCase):
             5. Wait for deploy is finished, check that status is Ready
         """
         # add new application
-        package = 'io.murano.apps.docker.DockerInfluxDB'
+        package = 'com.example.docker.DockerInfluxDB'
         self._import_package(package)
         package = self.driver.find_element_by_xpath(c.AppPackages.format(
             'Docker InfluxDB'))

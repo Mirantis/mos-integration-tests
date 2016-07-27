@@ -113,7 +113,7 @@ def murano_cli(controller_remote):
 
 @pytest.fixture
 def kubernetespod(murano_cli):
-    fqn = 'io.murano.apps.docker.kubernetes.KubernetesPod'
+    fqn = 'com.mirantis.docker.kubernetes.KubernetesPod'
     packages = murano_cli(
         'package-import',
         params='{0} --exists-action s'.format(fqn),
@@ -127,11 +127,11 @@ def package(murano_cli, os_conn, request):
     package_names = getattr(request, 'param', ('DockerGrafana',))
     for name in package_names:
         if 'Docker' in name:
-            name = 'apps.docker.{}'.format(name)
+            name = '.docker.{}'.format(name)
         elif 'Apache' in name:
-            name = 'apps.apache.{}'.format(name)
+            name = '.apache.{}'.format(name)
         murano_cli('package-import',
-                   params='io.murano.{} --exists-action s'.format(name),
+                   params='com.example.{} --exists-action s'.format(name),
                    flags='--murano-repo-url=http://storage.apps.openstack.'
                          'org').listing()
 
@@ -156,7 +156,7 @@ def docker(murano, keypair, environment, session, docker_image):
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Docker VM Service"
             },
-            "type": "io.murano.apps.docker.DockerStandaloneHost",
+            "type": "com.mirantis.docker.DockerStandaloneHost",
             "id": str(uuid.uuid4())
         }
     }
@@ -186,7 +186,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesGatewayNode",
                     "id": str(uuid.uuid4())
                 }
@@ -208,7 +208,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesGatewayNode",
                     "id": str(uuid.uuid4())
                 }
@@ -227,7 +227,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesGatewayNode",
                     "id": str(uuid.uuid4())
                 }
@@ -249,7 +249,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
@@ -272,7 +272,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
@@ -292,7 +292,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                     }
                 },
                 "?": {
-                    "type": "io.murano.apps.docker.kubernetes."
+                    "type": "com.mirantis.docker.kubernetes."
                             "KubernetesMinionNode",
                     "id": str(uuid.uuid4())
                 },
@@ -307,7 +307,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Kubernetes Cluster"
             },
-            "type": "io.murano.apps.docker.kubernetes.KubernetesCluster",
+            "type": "com.mirantis.docker.kubernetes.KubernetesCluster",
             "id": str(uuid.uuid4())
         },
         "nodeCount": nodes['initial_nodes'],
@@ -326,7 +326,7 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
                 }
             },
             "?": {
-                "type": "io.murano.apps.docker.kubernetes."
+                "type": "com.mirantis.docker.kubernetes."
                         "KubernetesMasterNode",
                 "id": str(uuid.uuid4())
             }
@@ -350,7 +350,7 @@ def pod(murano, environment, session, cluster, request):
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Kubernetes Pod"
             },
-            "type": "io.murano.apps.docker.kubernetes.KubernetesPod",
+            "type": "com.mirantis.docker.kubernetes.KubernetesPod",
             "id": str(uuid.uuid4())
         }
     }
@@ -369,7 +369,7 @@ def influx(murano, environment, session, pod):
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Docker InfluxDB"
             },
-            "type": "io.murano.apps.docker.DockerInfluxDB",
+            "type": "com.example.docker.DockerInfluxDB",
             "id": str(uuid.uuid4())
         }
     }

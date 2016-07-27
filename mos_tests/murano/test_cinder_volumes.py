@@ -42,7 +42,7 @@ def deploy_and_check_apache(environment, murano, session, keypair, volumes,
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Apache"
             },
-            "type": "io.murano.apps.apache.ApacheHttpServer",
+            "type": "com.example.apache.ApacheHttpServer",
             "id": str(uuid.uuid4())
         }
     }
@@ -360,7 +360,7 @@ def test_deploy_app_with_boot_volume_as_image(environment, murano, session,
             "_{id}".format(id=uuid.uuid4().hex): {
                 "name": "Apache"
             },
-            "type": "io.murano.apps.apache.ApacheHttpServer",
+            "type": "com.example.apache.ApacheHttpServer",
             "id": str(uuid.uuid4())
         }
     }
