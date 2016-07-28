@@ -407,7 +407,7 @@ def retry_on_error(obj, f):
             resend = (resp.status_code == 401)
         if resend:
             logger.info('Reinit fuel client session')
-            obj._session = None
+            obj.__init__()
             resp = f(*args, **kwargs)
         return resp
     return wrapper
