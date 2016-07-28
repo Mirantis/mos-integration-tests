@@ -168,7 +168,10 @@ def glare_client_non_adm(env, os_conn):
     password = 'glare'
     project = 'glare_project'
     new_tenant = os_conn.keystone.tenants.create(project)
-    new_user = os_conn.keystone.users.create(user, password=password, )
+    role = os_conn.keystone.roles.find(name='_member_')
+    new_user = os_conn.keystone.users.create(user, password=password)
+    os_conn.keystone.roles.add_user_role(new_user.id, role.id, new_tenant.id)
+
     os_conn_non_adm = OpenStackActions(
         controller_ip=env.get_primary_controller_ip(),
         cert=env.certificate,
