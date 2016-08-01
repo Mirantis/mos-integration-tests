@@ -312,6 +312,8 @@ def cluster(murano, keypair, environment, session, request, kubernetes_image):
         },
         "nodeCount": nodes['initial_nodes'],
         "dockerRegistry": "",
+        "gcloudKey": "",
+        "dockerMirror": "",
         "masterNode": {
             "instance": {
                 "name": "master-1",
