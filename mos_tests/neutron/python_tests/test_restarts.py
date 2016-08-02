@@ -14,6 +14,7 @@
 
 from difflib import get_close_matches
 import logging
+import time
 import xml.etree.ElementTree as ElementTree
 
 from neutronclient.common.exceptions import ServiceUnavailable
@@ -160,6 +161,11 @@ class TestRestarts(TestBase):
 
         # Check that there are no routers on the first agent
         self.check_no_routers_on_l3_agent(l3_agent['id'])
+
+        # Waiting for messaging layer recovery
+        # https://bugs.launchpad.net/mos/+bug/1592312
+        logger.debug('Waiting 5 minutes for messaging layer recovery')
+        time.sleep(5 * 60)
 
         self.os_conn.add_server(self.networks[0],
                                 self.instance_keypair.name,
