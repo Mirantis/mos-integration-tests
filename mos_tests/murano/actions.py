@@ -780,6 +780,8 @@ class MuranoActions(object):
             },
             "nodeCount": 1,
             "dockerRegistry": "",
+            "gcloudKey": "",
+            "dockerMirror": "",
             "masterNode": {
                 "instance": {
                     "name": self.rand_name("master-{}".format(sequence)),
