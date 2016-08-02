@@ -102,8 +102,8 @@ class TestDHCPAgent(TestBase):
               Check that quantity on agents are nearly equal
         """
         # max difference in % between max and min value for agents quantity
-        # according Kristina Kuznetsova 35% is OK.
-        perc_diff = 35  # like diff in % between 100 and 65
+        # according @kkuznetsova 50% is OK.
+        perc_diff = 50  # like diff in % between 100 and 65
 
         self.set_neutron_quota(network=50, router=50, subnet=50, port=250)
         self.networks = self.create_max_networks_with_instances(self.router)
