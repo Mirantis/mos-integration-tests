@@ -470,6 +470,11 @@ class OpenStackActions(object):
         exist_networks = self.list_networks()['networks']
         return [x for x in exist_networks if x.get('router:external')][0]
 
+    @property
+    def int_networks(self):
+        return self.neutron.list_networks(**{'router:external': False,
+                                             'status': 'ACTIVE'})['networks']
+
     def delete_subnets(self, networks):
         # Subnets and ports are simply filtered by network ids
         for subnet in self.neutron.list_subnets()['subnets']:
@@ -550,6 +555,24 @@ class OpenStackActions(object):
             except NeutronClientException:
                 logger.info('the port {} is not deletable'
                             .format(port['id']))
+
+    def remove_port(self, port_id):
+        """Remove port by port_id.
+
+        :param port_id: id of port that should be deleted.
+        """
+        port = self.neutron.show_port(port_id)['port']
+        try:
+            for fixed_ip in port['fixed_ips']:
+                self.neutron.remove_interface_router(
+                    port['device_id'],
+                    {
+                        'router_id': port['device_id'],
+                        'subnet_id': fixed_ip['subnet_id'],
+                    }
+                )
+        except NeutronClientException:
+            logger.info('port {} could not be deleted'.format(port['id']))
 
     def cleanup_network(self, networks_to_skip=tuple()):
         """Clean up the neutron networks.

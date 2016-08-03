@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 class NovaIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Nova verification. """
 
+    @pytest.yield_fixture
+    def cleanup_ports(self, os_conn):
+        """Ports cleanUp"""
+        yield
+        for port_id in self.ports:
+            os_conn.remove_port(port_id)
+
     def setUp(self):
         super(self.__class__, self).setUp()
 
@@ -43,6 +50,7 @@ class NovaIntegrationTests(OpenStackTestCase):
         self.volumes = []
         self.flavors = []
         self.keys = []
+        self.ports = []
 
         self.sec_group = self.nova.security_groups.create('security_nova',
                                                           'Security group, '
@@ -657,6 +665,46 @@ class NovaIntegrationTests(OpenStackTestCase):
             # check that instance can be deleted
             common_functions.delete_instance(self.nova, instance.id)
             assert instance not in self.nova.servers.list()
+
+    @pytest.mark.usefixtures('cleanup_ports')
+    @pytest.mark.testrail_id('857191')
+    def test_delete_instance_with_precreated_port(self):
+        """This test checks pre-created port is not deleted after deletion
+        instance created with this pre-created port
+
+        Steps:
+            1. Create a port
+            2. Boot a VM using created port
+            3. Delete VM
+            4. Check that corresponding pre-created port is not deleted
+        """
+        net_id = self.os_conn.int_networks[0]['id']
+        precreated_port_id = self.os_conn.create_port(net_id)['port']['id']
+        self.ports.append(precreated_port_id)
+
+        ports_ids_for_network = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='')]
+        assert precreated_port_id in ports_ids_for_network
+
+        instance = self.os_conn.create_server(
+            name='server01',
+            nics=[{'port-id': precreated_port_id}],
+            availability_zone='nova',
+            wait_for_avaliable=False)
+        self.instances.append(instance.id)
+
+        ports_for_instance = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='compute:nova')]
+        assert precreated_port_id in ports_for_instance
+
+        common_functions.delete_instance(self.os_conn.nova, instance.id)
+
+        ports_ids_for_network = [
+            port['id'] for port in self.os_conn.list_ports_for_network(
+                network_id=net_id, device_owner='')]
+        assert precreated_port_id in ports_ids_for_network
 
 
 @pytest.mark.undestructive
