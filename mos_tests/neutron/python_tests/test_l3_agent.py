@@ -13,6 +13,7 @@
 #    under the License.
 
 import logging
+import time
 
 from neutronclient.common.exceptions import NeutronClientException
 import pytest
@@ -519,6 +520,11 @@ class TestL3Agent(TestBase):
             timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
             waiting_for="migrating all routers from died L3 agent"
         )
+
+        # Waiting for messaging layer recovery
+        # https://bugs.launchpad.net/mos/+bug/1592312
+        logger.debug('Waiting 5 minutes for messaging layer recovery')
+        time.sleep(5 * 60)
 
         # create another server on net01
         net01 = self.os_conn.nova.networks.find(label="net01")
