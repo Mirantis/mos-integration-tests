@@ -578,7 +578,7 @@ class TestRestarts(TestBase):
         """
 
         security_group = os_conn.create_sec_group_for_ssh()
-        int_net = os_conn.int_networks[0]
+        int_net = next(x for x in os_conn.int_networks if 'admin' in x['name'])
         vm1 = os_conn.create_server('vm1',
                                     nics=[{'net-id': int_net['id']}],
                                     security_groups=[security_group.name])
@@ -616,6 +616,9 @@ class TestRestarts(TestBase):
              timeout_seconds=60,
              sleep_seconds=5,
              waiting_for='neutron services to be up')
+
+        # Additional timeout to prevent 503 error on nova->neutron calls
+        time.sleep(30)
 
         vm2 = os_conn.create_server('vm2',
                                     nics=[{'net-id': int_net['id']}],
