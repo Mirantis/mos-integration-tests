@@ -310,12 +310,13 @@ class OpenStackActions(object):
         return self.list_all_neutron_agents('l3')
 
     def get_l3_agent_hosts(self, router_id):
-        result = self.get_l3_for_router(router_id)
-        hosts = [i['host'] for i in result['agents']]
+        agents = self.get_l3_for_router(router_id)
+        hosts = [i['host'] for i in agents]
         return hosts
 
-    def get_l3_for_router(self, router_id):
-        return self.neutron.list_l3_agent_hosting_routers(router_id)
+    def get_l3_for_router(self, router_id, condition=lambda x: True):
+        result = self.neutron.list_l3_agent_hosting_routers(router_id)
+        return list(filter(condition, result['agents']))
 
     def create_network(self, name, tenant_id=None, qos_policy_id=None):
         network = {'name': name, 'admin_state_up': True}

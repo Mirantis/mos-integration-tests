@@ -21,7 +21,7 @@ import threading
 from contextlib2 import ExitStack
 import pytest
 
-from mos_tests.functions.common import gen_temp_file
+from mos_tests.functions import common
 from mos_tests.functions import network_checks
 from mos_tests.neutron.python_tests.base import TestBase
 
@@ -180,8 +180,17 @@ class TestVxlan(TestVxlanBase):
             nics=[{'net-id': network['network']['id']}],
             security_groups=[self.security_group.id])
 
-        router_node = self.os_conn.get_l3_agent_hosts(router['router']['id'])[
-            0]
+        def get_l3_agents():
+            # Return non standby l3 agent
+            return self.os_conn.get_l3_for_router(
+                router['router']['id'],
+                condition=lambda x: x['ha_state'] != 'standby')
+
+        l3_agents = common.wait(get_l3_agents,
+                                timeout_seconds=60,
+                                waiting_for='non standby router appears')
+
+        router_node = l3_agents[0]['host']
         controller = self.env.find_node_by_fqdn(router_node)
         compute = self.env.find_node_by_fqdn(compute_node)
 
@@ -189,17 +198,20 @@ class TestVxlan(TestVxlanBase):
         for node in (controller, compute):
             with self.env.get_ssh_to_node(node.data['ip']) as remote:
                 result = remote.execute('ovs-vsctl show | grep -q br-tun')
-                assert result['exit_code'] == 0
+                assert result.is_ok
 
-        log_file = gen_temp_file(prefix='vxlan', suffix='.log')
+        log_file = common.gen_temp_file(prefix='vxlan', suffix='.log')
         with ExitStack() as stack:
             stack.enter_context(tcpdump_vxlan(node=compute,
                                               log_path=log_file.name))
             remote = stack.enter_context(controller.ssh())
             vm_ip = self.os_conn.get_nova_instance_ips(server)['fixed']
-            result = remote.check_call(
-                'ip netns exec qrouter-{router_id} ping -c1 {ip}'.format(
-                    router_id=router['router']['id'], ip=vm_ip))
+            cmd = 'ip netns exec qrouter-{router_id} ping -c1 {ip}'.format(
+                router_id=router['router']['id'], ip=vm_ip)
+            common.wait(lambda: remote.execute(cmd).is_ok,
+                        timeout_seconds=3 * 60,
+                        sleep_seconds=10,
+                        waiting_for='success ping with router net namespace')
 
         # Check log
         vni = network['network']['provider:segmentation_id']
@@ -264,8 +276,8 @@ class TestVxlan(TestVxlanBase):
         # Start tcpdump
         compute1 = self.env.find_node_by_fqdn(compute_nodes[0])
         compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
-        log_file1 = gen_temp_file(prefix='vxlan', suffix='.log')
-        log_file2 = gen_temp_file(prefix='vxlan', suffix='.log')
+        log_file1 = common.gen_temp_file(prefix='vxlan', suffix='.log')
+        log_file2 = common.gen_temp_file(prefix='vxlan', suffix='.log')
         server1_ip = self.os_conn.get_nova_instance_ips(server1).values()[0]
         with ExitStack() as stack:
             stack.enter_context(tcpdump_vxlan(node=compute1,
@@ -360,7 +372,8 @@ class TestVxlanL2pop(TestVxlanBase):
         compute2 = self.env.find_node_by_fqdn(compute_nodes[1])
 
         # Initiate broadcast traffic from server1 to server2
-        broadcast_log_file = gen_temp_file(prefix='broadcast', suffix='.log')
+        broadcast_log_file = common.gen_temp_file(prefix='broadcast',
+                                                  suffix='.log')
         with tcpdump(node=compute2,
                      log_path=broadcast_log_file.name,
                      tcpdump_args=tcpdump_args.format(source_ip=server1_ip)):
@@ -374,7 +387,8 @@ class TestVxlanL2pop(TestVxlanBase):
                              log_file=broadcast_log_file.name)
 
         # Initiate unicast traffic from server1 to server2
-        unicast_log_file = gen_temp_file(prefix='unicast', suffix='.log')
+        unicast_log_file = common.gen_temp_file(prefix='unicast',
+                                                suffix='.log')
         with tcpdump(node=compute2,
                      log_path=unicast_log_file.name,
                      tcpdump_args=tcpdump_args.format(source_ip=server1_ip)):
@@ -546,7 +560,8 @@ class TestVxlanL2pop(TestVxlanBase):
         server2_port = self.os_conn.get_port_by_fixed_ip(server2_ip)
         server2_tap = 'tap{}'.format(server2_port['id'][:11])
         # Initiate broadcast traffic from server1 to server2
-        broadcast_log_file = gen_temp_file(prefix='broadcast', suffix='.log')
+        broadcast_log_file = common.gen_temp_file(prefix='broadcast',
+                                                  suffix='.log')
         with tcpdump(node=compute2,
                      log_path=broadcast_log_file.name,
                      tcpdump_args=' -n src host {ip} -i {interface}'.format(

@@ -1143,7 +1143,7 @@ class TestDVRTypeChange(TestDVRBase):
                                   self.env.get_nodes_by_role('controller')
                                   if x != snat_controller]
 
-        l3_agents = self.os_conn.get_l3_for_router(router_id)['agents']
+        l3_agents = self.os_conn.get_l3_for_router(router_id)
 
         # Get current l3 agent with snat
         current_l3_agt = [x for x in l3_agents
