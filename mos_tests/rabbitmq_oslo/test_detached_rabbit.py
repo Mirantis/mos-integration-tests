@@ -19,13 +19,18 @@ import xml.etree.ElementTree as ElementTree
 
 import pytest
 
+from mos_tests.functions.common import is_task_ready
 from mos_tests.functions.common import wait
+from mos_tests.ironic.scale_test import map_interfaces
 from mos_tests.neutron.python_tests.base import TestBase
 
 logger = logging.getLogger(__name__)
 
 
 class DetachRabbitPluginFunctions(TestBase):
+
+    TIMEOUT_FOR_DEPLOY = 120
+    TIMEOUT_SHORT = 3
 
     rabbit_plugin_name = 'detach-rabbitmq'
 
@@ -211,6 +216,13 @@ class DetachRabbitPluginFunctions(TestBase):
                  sleep_seconds=30,
                  waiting_for="RabbitMQ became online on {0}".format(node_fqdn))
 
+    def reset_env(self, timeout=2):
+        self.env.reset()
+        wait(lambda: self.env.status == 'new',
+             timeout_seconds=60 * timeout,
+             sleep_seconds=20,
+             waiting_for="Env reset finish")
+
     def delete_env(self, timeout=2):
         self.env.reset()
         wait(lambda: self.env.status == 'new',
@@ -218,6 +230,35 @@ class DetachRabbitPluginFunctions(TestBase):
              sleep_seconds=20,
              waiting_for="Env reset finish")
         self.env.delete()
+
+    def deploy_env(self):
+        """Deploy env and wait till it will be deployed"""
+        deploy_task = self.env.deploy_changes()
+        wait(lambda: is_task_ready(deploy_task),
+             timeout_seconds=60 * self.TIMEOUT_FOR_DEPLOY,
+             sleep_seconds=60,
+             waiting_for='changes to be deployed')
+
+    def map_devops_to_fuel_net(self, env, devops_env, fuel_node):
+        # Make devops network.id -> fuel networks mapping
+        controller = env.get_nodes_by_role('controller')[0]
+        interfaces_map = {}
+        for fuel_if, devop_if in map_interfaces(devops_env, controller):
+            interfaces_map[devop_if.network_id] = fuel_if['assigned_networks']
+
+        # Assign fuel networks to corresponding interfaces
+        interfaces = []
+        for fuel_if, devop_if in map_interfaces(devops_env, fuel_node):
+            fuel_if['assigned_networks'] = interfaces_map[devop_if.network_id]
+            interfaces.append(fuel_if)
+        return interfaces
+
+    def is_network_verification_ok(self):
+        """Run network verification in fuel.
+        :return: boolean
+        """
+        result = self.env.wait_network_verification()
+        return result.status == 'ready'
 
 
 @pytest.mark.check_env_("has_3_or_more_standalone_rabbitmq_nodes")
@@ -459,3 +500,204 @@ class TestDetachRabbitPlugin1node(DetachRabbitPluginFunctions):
 
         assert not self.is_rabbit_cluster_ok(controller)
         assert not self.is_rabbit_running_on_node(controller)
+
+
+# destructive
+@pytest.mark.need_devops
+@pytest.mark.check_env_("has_3_or_more_standalone_rabbitmq_nodes")
+class TestDetachRabbitPluginRedeploy3nodes(DetachRabbitPluginFunctions):
+
+    @pytest.mark.testrail_id('1455769')
+    def test_remove_add_rabbit_nodes_to_env(self, env, devops_env):
+        """Modify env with enabled plugin (removing/adding RabbitMQ nodes).
+
+        Actions:
+        1. Find node with RabbitMQ master role and remove it from fuel env.
+        2. Deploy changes.
+        3. Check RabbitMQ health and run OSFT tests.
+        4. Add back old node with RabbitMQ role to fuel env.
+        5. Run network verification.
+        6. Deploy changes.
+        7. Check RabbitMQ health and run OSFT tests.
+
+        Duration: ~ 30 min
+        """
+        master_fuel_node = self.rabbit_node(role='master')
+        master_devops_node = devops_env.get_node_by_fuel_node(master_fuel_node)
+
+        # Unassign rabbit master node
+        logger.debug("Unassign rabbit master node.")
+        env.unassign([master_fuel_node.id])
+
+        # Deploy env without old rabbit master node
+        logger.debug("Deploy env without old rabbit master node.")
+        self.deploy_env()
+        assert self.is_rabbit_cluster_ok(), 'RabbitMQ cluster is not OK'
+
+        # Add back old rabbit master node to env
+        logger.debug("Add back old rabbit master node to env.")
+        master_fuel_node = env.get_node_by_devops_node(master_devops_node)
+        master_fuel_node.set(
+            {'name': master_devops_node.name + '_standalone-rabbitmq_new'})
+        env.assign([master_fuel_node], ['standalone-rabbitmq'])
+
+        # Restore network interfaces for old master rabbit node
+        logger.debug("Restore network interfaces for old master rabbit node.")
+        interfaces = self.map_devops_to_fuel_net(env, devops_env,
+                                                 master_fuel_node)
+        master_fuel_node.upload_node_attribute('interfaces', interfaces)
+
+        # Run network verification
+        logger.debug("Run network verification.")
+        assert self.is_network_verification_ok(), "Network verification failed"
+
+        # Deploy env with old rabbit master node
+        logger.debug("Deploy env with old rabbit master node.")
+        self.deploy_env()
+
+        # Check env and rabbit is ok
+        env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+        assert self.is_rabbit_cluster_ok(), 'RabbitMQ cluster is not OK'
+
+    @pytest.mark.testrail_id('1455776')
+    def test_plugin_is_not_enabled(self, env):
+        """Check that plugin does not affect environment if the plugin
+        is not enabled.
+
+        Actions:
+        1. Check that rabbitmq is not running on controller nodes.
+        2. Reset environment.
+        3. Unassign 'standalone-rabbitmq' role from all standalone-rabbitmq
+        nodes.
+        4. Turn off "Detach RabbitMQ Plugin" option in Fuel settings.
+        5. Run network verification.
+        6. Deploy env without standalone rabbit nodes.
+        7. Check rabbit cluster status is OK and it is running on controllers.
+
+        Duration: ~ 60 min
+        """
+        controllers = env.get_nodes_by_role('controller')
+        rabbit_nodes = env.get_nodes_by_role('standalone-rabbitmq')
+
+        # Check rabbit is not running on controllers
+        for controller in controllers:
+            assert self.is_rabbit_running_on_node(controller) is False, (
+                "Rabbit is running on controller node, but it should not")
+
+        self.reset_env()
+
+        # Unassign all standalone rabbit nodes
+        for node in rabbit_nodes:
+            logger.debug("Unassign node with roles %s" % node.data['roles'])
+            env.unassign([node.id])
+
+        # Turn off "Detach RabbitMQ Plugin" in Fuel
+        data = env.get_settings_data()
+        data['editable']['detach-rabbitmq']['metadata']['enabled'] = False
+        env.set_settings_data(data)
+
+        # Run network verification.
+        # wait() required as it'll not always pass after the first attempt
+        logger.debug("Run network verification.")
+        wait(self.is_network_verification_ok,
+             timeout_seconds=60 * 12,
+             sleep_seconds=60 * 4,
+             waiting_for="network verification will pass")
+
+        # Deploy env without standalone rabbit nodes
+        logger.debug("Deploy env without standalone rabbit nodes.")
+        self.deploy_env()
+        assert self.env.status == 'operational', "Env is not operational"
+        env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+        # Check rabbit is running on controllers
+        controllers = env.get_nodes_by_role('controller')
+        for controller in controllers:
+            assert self.is_rabbit_running_on_node(controller), (
+                "Rabbit is NOT running on controller node, but it should")
+
+            assert self.is_rabbit_cluster_ok(rabbit_node=controller), (
+                "Rabbit cluster status is not OK")
+
+
+# destructive
+@pytest.mark.need_devops
+@pytest.mark.check_env_("is_ha", "has_1_standalone_rabbitmq_node")
+class TestDetachRabbitPluginRedeploy1node(DetachRabbitPluginFunctions):
+
+    @pytest.mark.testrail_id('1455770')
+    def test_remove_add_compute_controller_nodes_to_env(self, env, devops_env):
+        """Modify env with enabled plugin
+        (removing/adding compute and controller node).
+
+        Actions:
+        1. Find and remove controller node from the environment.
+        2. Run network verification.
+        3. Deploy environment.
+        4. Check that env and rabbitMQ cluster is OK.
+        5. Perform steps 1-4 for compute node.
+        6. Add back controller node to the environment.
+        7. Run network verification.
+        8. Deploy environment.
+        9. Check that env and rabbitMQ cluster is OK.
+        10. Perform steps 6-10 for compute node.
+
+        Duration: ~ 90 min
+        """
+        controller_fuel = self.env.get_nodes_by_role('controller')[0]
+        controller_devops = devops_env.get_node_by_fuel_node(controller_fuel)
+
+        compute_fuel = self.env.get_nodes_by_role('compute')[0]
+        compute_devops = devops_env.get_node_by_fuel_node(compute_fuel)
+
+        # Unassign controller and compute from env and deploy changes
+        for node in (controller_fuel, compute_fuel):
+
+            # Unassign node
+            logger.debug("Unassign node with roles %s" % node.data['roles'])
+            env.unassign([node.id])
+            assert self.is_network_verification_ok(), "Net verification failed"
+
+            # Deploy changes
+            logger.debug("Deploy changes and check rabbit is OK.")
+            self.deploy_env()
+
+            # Check env and rabbit is OK
+            assert self.env.status == 'operational', "Env is not operational"
+            env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+            assert self.is_rabbit_cluster_ok(), 'RabbitMQ cluster is not OK'
+
+        # Add back deleted controller and compute from env and deploy changes
+        for devops_node, fuel_node in ((controller_devops, controller_fuel),
+                                       (compute_devops, compute_fuel)):
+            # Assign node
+            node_name = fuel_node.data['name']
+            node_roles = fuel_node.data['roles']
+
+            logger.debug("Assign back node with roles %s" % node_roles)
+
+            # Update info about fuel node
+            fuel_node = env.get_node_by_devops_node(devops_node)
+            fuel_node.set({'name': node_name + '_new'})
+
+            # Assign roles to node
+            env.assign([fuel_node], node_roles)
+
+            # Restore network interfaces for old master rabbit node
+            logger.debug("Restore network interfaces for node.")
+            interfaces = self.map_devops_to_fuel_net(env, devops_env,
+                                                     fuel_node)
+            fuel_node.upload_node_attribute('interfaces', interfaces)
+
+            # Run network verification
+            logger.debug("Run network verification.")
+            assert self.is_network_verification_ok(), "Net verification failed"
+
+            # Deploy env with new node
+            logger.debug("Deploy env with old rabbit master node.")
+            self.deploy_env()
+
+            # Check env and rabbit is ok
+            assert self.env.status == 'operational', "Env is not operational"
+            env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+            assert self.is_rabbit_cluster_ok(), 'RabbitMQ cluster is not OK'
