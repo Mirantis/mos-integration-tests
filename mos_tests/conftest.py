@@ -359,12 +359,22 @@ def is_ldap_plugin_installed(env):
 
 def is_ldap_proxy(env):
     data = env.get_settings_data()['editable']
-    return data['ldap']['metadata']['versions'][0]['ldap_proxy']['value']
+    value = False
+    try:
+        value = data['ldap']['metadata']['versions'][0]['ldap_proxy']['value']
+    except (KeyError, IndexError) as e:
+        logger.info(e)
+    return value
 
 
 def is_tls_use(env):
     data = env.get_settings_data()['editable']
-    return data['ldap']['metadata']['versions'][0]['use_tls']['value']
+    value = False
+    try:
+        value = data['ldap']['metadata']['versions'][0]['use_tls']['value']
+    except (KeyError, IndexError) as e:
+        logger.info(e)
+    return value
 
 
 def is_vlan(env):
