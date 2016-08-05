@@ -348,9 +348,14 @@ class TestSuitePackageCategory(base.PackageTestCase):
 
         self.wait_for_alert_message()
 
-        # To wait till the focus is swithced
-        # from modal dialog back to the window.
-        self.wait_for_sidebar_is_loaded()
+        # NOTE: original muranodashboard calls wait_for_sidebar_is_loaded,
+        # but this method is meaningless here because it waits for
+        # CSS selector "div#sidebar li.active" which is always present
+
+        # wait for disappearing the success info window
+        locator = (by.By.CSS_SELECTOR, 'div.alert-success')
+        ui.WebDriverWait(self.driver, 10).until_not(
+            EC.visibility_of_element_located(locator))
 
     def _create_new_user_in_new_project(self):
         new_project = str(uuid.uuid4())[::4]
@@ -446,6 +451,7 @@ class TestSuitePackageCategory(base.PackageTestCase):
             if i != len(pages_itself):
                 self.driver.find_element_by_xpath(c.PrevBtn).click()
 
+    @pytest.mark.skip(reason="Disabled for Murano+Glare configuration")
     @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836687')
     def test_add_delete_package_to_category(self):
