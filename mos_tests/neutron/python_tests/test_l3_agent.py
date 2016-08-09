@@ -111,7 +111,7 @@ class TestL3Agent(TestBase):
         if wait_for_die:
             wait(
                 lambda: self.os_conn.get_l3_for_router(
-                    router['id'])['agents'][0]['alive'] is False,
+                    router['id'])[0]['alive'] is False,
                 timeout_seconds=60 * 3, waiting_for="L3 agent is die",
                 sleep_seconds=(1, 60)
             )
@@ -148,7 +148,7 @@ class TestL3Agent(TestBase):
         if wait_for_alive:
             wait(
                 lambda: self.os_conn.get_l3_for_router(
-                    router['id'])['agents'][0]['alive'] is True,
+                    router['id'])[0]['alive'] is True,
                 timeout_seconds=60 * 3, waiting_for="L3 agent is alive",
                 sleep_seconds=(1, 60)
             )
@@ -178,7 +178,7 @@ class TestL3Agent(TestBase):
         # wait for l3 agent died
         wait(
             lambda: self.os_conn.get_l3_for_router(
-                router['id'])['agents'][0]['alive'] is False,
+                router['id'])[0]['alive'] is False,
             timeout_seconds=60 * 3, waiting_for="L3 agent is died",
             sleep_seconds=(1, 60)
         )
@@ -480,7 +480,7 @@ class TestL3Agent(TestBase):
         """
         router = self.os_conn.neutron.list_routers(
             name='router01')['routers'][0]
-        l3_agent = self.os_conn.get_l3_for_router(router['id'])['agents'][0]
+        l3_agent = self.os_conn.get_l3_for_router(router['id'])[0]
         leader_node = self.env.leader_controller
 
         # Move router to slave l3 agent, if needed
@@ -508,7 +508,7 @@ class TestL3Agent(TestBase):
         # Wait for l3 agent die
         wait(
             lambda: self.os_conn.get_l3_for_router(
-                router['id'])['agents'][0]['alive'] is False,
+                router['id'])[0]['alive'] is False,
             expected_exceptions=NeutronClientException,
             timeout_seconds=60 * 5, sleep_seconds=(1, 60, 5),
             waiting_for="L3 agent is died")

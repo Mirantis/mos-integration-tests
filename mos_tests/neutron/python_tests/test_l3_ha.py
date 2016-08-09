@@ -197,7 +197,7 @@ class TestL3HA(TestBase):
 
     def get_active_l3_agents_for_router(self, router_id):
         agents = self.os_conn.get_l3_for_router(router_id)
-        return [x for x in agents['agents']
+        return [x for x in agents
                 if x['ha_state'] == 'active' and x['alive'] is True]
 
     def wait_router_rescheduled(self, router_id, from_node,
@@ -279,7 +279,7 @@ class TestL3HA(TestBase):
         # collect l3 agents and group it by hs_state
         agents = defaultdict(list)
         agent_list = self.os_conn.get_l3_for_router(router['router']['id'])
-        for agent in agent_list['agents']:
+        for agent in agent_list:
             agents[agent['ha_state']].append(agent)
 
         # check agents state
@@ -333,7 +333,7 @@ class TestL3HA(TestBase):
         server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
 
         agents = self.os_conn.get_l3_for_router(router['router']['id'])
-        agent_ids = [x['id'] for x in agents['agents']]
+        agent_ids = [x['id'] for x in agents]
         controller = self.env.get_nodes_by_role('controller')[0]
         with controller.ssh() as remote:
             logger.info('disable all l3 agents')
@@ -739,7 +739,7 @@ class TestL3HA(TestBase):
         err_msg = 'One and only one l3 agent should be active for the router'
         assert len(active_agents) == 1, err_msg
 
-        agents = self.os_conn.get_l3_for_router(router_id)['agents']
+        agents = self.os_conn.get_l3_for_router(router_id)
         standby_agents = [x for x in agents if x['ha_state'] == 'standby']
         err_msg = 'At least 2 controllers with standby agents are expected'
         assert len(standby_agents) >= 2, err_msg
