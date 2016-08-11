@@ -49,6 +49,8 @@ def check_net_settings_equals(fuel_settings, cli_settings):
                             cli=cli_settings[key]))
 
 
+@pytest.mark.skip(reason='Env becomes disabled after the test.'
+                         'Disabled till end of investigation')
 @pytest.mark.testrail_id('631890')
 def test_baremetal_network_settings(new_env, admin_remote):
     """Check baremetal network settings with enabled/disabled Ironic
