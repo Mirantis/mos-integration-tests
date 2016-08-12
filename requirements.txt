@@ -1,5 +1,5 @@
-git+git://github.com/openstack/fuel-devops.git@2.9.21
-git+git://github.com/openstack/python-fuelclient@stable/mitaka
+git+git://github.com/openstack/fuel-devops.git@2.9.23
+git+git://github.com/openstack/python-fuelclient@9.0.1
 paramiko>=1.16.0
 pytest
 pytest-xdist
