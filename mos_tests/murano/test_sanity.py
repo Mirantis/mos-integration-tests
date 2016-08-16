@@ -37,7 +37,9 @@ from six.moves import configparser
 from six.moves.urllib import request
 from xvfbwrapper import Xvfb
 
+from mos_tests.conftest import is_glare
 from mos_tests.functions import common
+from mos_tests.murano import actions
 from mos_tests.murano import consts as mc
 from mos_tests import settings
 
@@ -58,9 +60,13 @@ def screen():
 
 
 @pytest.fixture
-def clean_packages(murano):
+def clean_packages(os_conn):
+    murano = actions.MuranoActions(os_conn,
+                                   with_glare=is_glare(os_conn.env))
     for pkg in murano.murano.packages.list():
-        if pkg.name != 'Core library':
+        if pkg.name not in ['Core library',
+                            'HotExample', 'MockApp', 'PostgreSQL']:
+            # last 3 packages are uploaded by murano-dashboard modules
             murano.murano.packages.delete(pkg.id)
 
 
@@ -352,8 +358,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # but this method is meaningless here because it waits for
         # CSS selector "div#sidebar li.active" which is always present
 
-        # wait for disappearing the success info window
-        locator = (by.By.CSS_SELECTOR, 'div.alert-success')
+        # wait for disappearing modal windows (if still exist)
+        locator = (by.By.XPATH, mc.ModalWindow)
         ui.WebDriverWait(self.driver, 10).until_not(
             EC.visibility_of_element_located(locator))
 
@@ -451,9 +457,9 @@ class TestSuitePackageCategory(base.PackageTestCase):
             if i != len(pages_itself):
                 self.driver.find_element_by_xpath(c.PrevBtn).click()
 
-    @pytest.mark.skip(reason="Disabled for Murano+Glare configuration")
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836687')
+    @pytest.mark.check_env_('is_without_glare')
+    @pytest.mark.usefixtures('clean_packages')
     def test_add_delete_package_to_category(self):
         """Test package importing with new category and deleting the package
         from the category.
@@ -475,6 +481,12 @@ class TestSuitePackageCategory(base.PackageTestCase):
         """
         # add new package to the created category
         self._import_package_with_category(self.archive, self.category)
+
+        # Check that package count = 1 for created category
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(
+            by.By.XPATH, c.CategoryPackageCount.format(self.category, 1))
+
         # Modify imported earlier package by changing its category
         self.go_to_submenu('Packages')
         package = self.driver.find_element_by_xpath(c.AppPackages.format(
@@ -491,8 +503,14 @@ class TestSuitePackageCategory(base.PackageTestCase):
 
         self.wait_for_alert_message()
 
-    @pytest.mark.usefixtures('clean_packages')
+        # Check that package count = 0 for created category
+        self.go_to_submenu('Categories')
+        self.check_element_on_page(
+            by.By.XPATH, c.CategoryPackageCount.format(self.category, 0))
+
     @pytest.mark.testrail_id('836693')
+    @pytest.mark.check_env_('is_without_glare')
+    @pytest.mark.usefixtures('clean_packages')
     def test_delete_category_with_package(self):
         """Deletion of category with package in it
 
@@ -512,14 +530,13 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # Check that package count = 1 for created category
         self.navigate_to('Manage')
         self.go_to_submenu('Categories')
-        delete_category_btn = c.DeleteCategory.format(self.category)
-        self.driver.find_element_by_xpath(delete_category_btn).click()
-        self.driver.find_element_by_xpath(c.ConfirmDeletion).click()
-        self.wait_for_alert_message()
-        self.check_element_not_on_page(by.By.XPATH, delete_category_btn)
+        self.check_element_on_page(
+            by.By.XPATH, c.CategoryPackageCount.format(self.category, 1))
+        self.check_element_not_on_page(
+            by.By.XPATH, c.DeleteCategory.format(self.category))
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836688')
+    @pytest.mark.usefixtures('clean_packages')
     def test_filter_by_new_category(self):
         """Filter by new category from Applications page
 
@@ -545,8 +562,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.check_element_on_page(by.By.XPATH,
                                    c.App.format(self.archive_name))
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836689')
+    @pytest.mark.usefixtures('clean_packages')
     def test_filter_by_category_from_env_components(self):
         """Filter by new category from Environment Components page
 
@@ -593,8 +610,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.check_element_not_on_page(
             by.By.XPATH, c.EnvAppsCategory.format(self.archive_name))
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836690')
+    @pytest.mark.usefixtures('clean_packages')
     def test_add_pkg_to_category_non_admin(self):
         """Test package addition to category as non admin user
 
@@ -639,8 +656,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.wait_for_alert_message()
         self.log_out()
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836640')
+    @pytest.mark.usefixtures('clean_packages')
     def test_check_toggle_non_public_package(self):
         """Test check ability to make package non public
 
@@ -691,8 +708,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
         self.select_action_for_package(pkg_id, 'toggle_enabled')
         self.delete_user(user_name)
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836675')
+    @pytest.mark.usefixtures('clean_packages')
     def test_package_share(self):
         """Test that admin is able to share Murano Apps
 
@@ -730,8 +747,8 @@ class TestSuitePackageCategory(base.PackageTestCase):
             self.archive_name))
         self.delete_user(user_name)
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836679')
+    @pytest.mark.usefixtures('clean_packages')
     def test_sharing_app_without_permission(self):
         """Tests sharing Murano App without permission
 
@@ -840,8 +857,8 @@ class TestPackageSizeLimit(base.PackageTestCase):
         shutil.rmtree((os.path.split(self.zips[0])[0]), ignore_errors=True)
         super(TestPackageSizeLimit, self).tearDown()
 
-    @pytest.mark.skip(reason="Disabled for Murano+Glare configuration")
     @pytest.mark.testrail_id('836646')
+    @pytest.mark.check_env_('is_without_glare')
     @pytest.mark.usefixtures('package_size_limit')
     def test_package_size_limit(self):
         self.navigate_to('Manage')
@@ -970,7 +987,9 @@ class TestDeployEnvInNetwork(base.ApplicationTestCase):
         cls.glance.images.delete(image.id)
 
     @pytest.yield_fixture
-    def apache_package(self, apache_image, murano):
+    def apache_package(self, os_conn, apache_image):
+        murano = actions.MuranoActions(os_conn,
+                                       with_glare=is_glare(os_conn.env))
         app_name = 'ApacheHTTPServer'
         data = {"categories": ["Web"], "tags": ["tag"]}
         tmp_dir = tempfile.mkdtemp()
@@ -1304,7 +1323,7 @@ class TestPackageRepository(base.PackageTestCase):
 
     @pytest.mark.testrail_id('836652')
     def test_import_non_zip_file(self):
-        """"Negative test import regualr file instead of zip package."""
+        """Negative test import regular file instead of zip package."""
         # Create dummy package with zip file replaced by text one
         pkg_name = self.gen_random_resource_name('pkg')
         self._compose_app(pkg_name)
@@ -1328,7 +1347,7 @@ class TestPackageRepository(base.PackageTestCase):
 
     @pytest.mark.testrail_id('836653')
     def test_import_invalid_zip_file(self):
-        """"Negative test import zip file which is not a murano package."""
+        """Negative test import zip file which is not a murano package."""
         # At first create dummy package with zip file replaced by text one
         pkg_name = self.gen_random_resource_name('pkg')
         self._compose_app(pkg_name)
@@ -1390,7 +1409,7 @@ class TestPackageRepository(base.PackageTestCase):
 @murano_test_patch
 class TestSuiteApplications(base.ApplicationTestCase):
     def _import_package(self, package_name):
-        self.go_to_submenu('Manage')
+        self.navigate_to('Manage')
         self.go_to_submenu('Packages')
         self.driver.find_element_by_id(c.UploadPackage).click()
         sel = self.driver.find_element_by_css_selector(
@@ -1406,7 +1425,15 @@ class TestSuiteApplications(base.ApplicationTestCase):
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
         self.wait_for_alert_message()
-        self.wait_for_sidebar_is_loaded()
+
+        # NOTE: original muranodashboard calls wait_for_sidebar_is_loaded,
+        # but this method is meaningless here because it waits for
+        # CSS selector "div#sidebar li.active" which is always present
+
+        # wait for disappearing modal windows (if still exist)
+        locator = (by.By.XPATH, mc.ModalWindow)
+        ui.WebDriverWait(self.driver, 10).until_not(
+            EC.visibility_of_element_located(locator))
 
     def _import_bundle(self, bundle_name):
         self.driver.find_element_by_id(c.ImportBundle).click()
@@ -1431,8 +1458,8 @@ class TestSuiteApplications(base.ApplicationTestCase):
             EC.presence_of_element_located(locator))
         el.click()
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836639')
+    @pytest.mark.usefixtures('clean_packages')
     def test_check_list_of_applications(self):
         """Test check list application
 
@@ -1451,8 +1478,8 @@ class TestSuiteApplications(base.ApplicationTestCase):
         for app_name in apps:
             self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836641')
+    @pytest.mark.usefixtures('clean_packages')
     def test_check_app_quick_deploy(self):
         """Test check 'Quick Deploy' action for application
 
@@ -1491,8 +1518,8 @@ class TestSuiteApplications(base.ApplicationTestCase):
         self.check_element_on_page(by.By.XPATH, c.Status.format('Ready'),
                                    sec=900)
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836651')
+    @pytest.mark.usefixtures('clean_packages')
     def test_import_bundle_when_dependencies_installed(self):
         """Test bundle import if some dependencies are installed.
 
@@ -1516,8 +1543,8 @@ class TestSuiteApplications(base.ApplicationTestCase):
         for app_name in apps:
             self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
 
-    @pytest.mark.usefixtures('clean_packages')
     @pytest.mark.testrail_id('836645')
+    @pytest.mark.usefixtures('clean_packages')
     def test_deploy_several_apps(self):
         """Checks that app works after another app is deployed
 
@@ -1531,7 +1558,7 @@ class TestSuiteApplications(base.ApplicationTestCase):
             7. Repeat steps 3-6 to add two other application.
         """
         # import packages
-        pkgs = {'io.murano.apps.docker.DockerInfluxDB': 'Docker InfluxDB',
+        pkgs = {'com.example.docker.DockerInfluxDB': 'Docker InfluxDB',
                 'com.example.docker.DockerCrate': 'Docker Crate',
                 'com.example.docker.DockerRedis': 'Docker Redis'}
         pkg_ids = {}
@@ -1543,11 +1570,10 @@ class TestSuiteApplications(base.ApplicationTestCase):
             package = self.driver.find_element_by_xpath(
                 c.AppPackages.format(pkg_name))
             pkg_ids[pkg_name] = package.get_attribute("data-object-id")
-            self.go_to_submenu('Manage')
 
         # create environment
         env_name = str(uuid.uuid4())
-        self.go_to_submenu('Catalog')
+        self.navigate_to('Catalog')
         self.go_to_submenu('Environments')
         self.create_environment(env_name)
         self.go_to_submenu('Environments')
@@ -1559,11 +1585,13 @@ class TestSuiteApplications(base.ApplicationTestCase):
         pkg_id = pkg_ids.pop('Docker InfluxDB')
         self.select_and_click_action_for_app('add', '{0}/{1}'.format(pkg_id,
                                                                      env_id))
+        # Add Docker Standalone Host and set its parameters
         self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
         self.driver.find_element_by_xpath(mc.AddDockerStandaloneHost).click()
         self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
             pkg_id)).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
+        # Continue main package
         self.driver.find_element_by_xpath(mc.ButtonNext).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
 
@@ -1587,13 +1615,14 @@ class TestSuiteApplications(base.ApplicationTestCase):
                 elm.send_keys(Keys.HOME)
                 self.select_and_click_action_for_app('add', '{0}/{1}'.format(
                     pkg_id, env_id))
+            # Add Docker Standalone Host and set its parameters
             self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
             self.driver.find_element_by_xpath(
                 mc.AddDockerStandaloneHost).click()
             self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
                 pkg_id)).click()
-            self._select_from_list('1-image', 'Ubuntu')
             self.driver.find_element_by_xpath(c.InputSubmit).click()
+            # Continue main package
             self.driver.find_element_by_xpath(mc.ButtonNext).click()
             self.driver.find_element_by_xpath(c.InputSubmit).click()
 

@@ -33,24 +33,32 @@ availability_zone = 'nova'
 class MuranoActions(object):
     """Murano-specific actions"""
 
-    def __init__(self, os_conn, linux_image='debian-8-m-agent.qcow2'):
+    def __init__(self, os_conn, linux_image='debian-8-m-agent.qcow2',
+                 with_glare=True):
         self.os_conn = os_conn
         self.linux_image = linux_image
         self.murano_endpoint = os_conn.session.get_endpoint(
             service_type='application-catalog', endpoint_type='publicURL')
-        self.glare_endpoint = os_conn.session.get_endpoint(
-            service_type='artifact', endpoint_type='publicURL')
-        self.glare = glare_client.Client(endpoint=self.glare_endpoint,
-                                         token=os_conn.session.
-                                         get_auth_headers()['X-Auth-Token'],
-                                         cacert=os_conn.path_to_cert,
-                                         type_name='murano',
-                                         type_version=1)
-        self.murano = MuranoClient(endpoint=self.murano_endpoint,
-                                   token=os_conn.session.
-                                   get_auth_headers()['X-Auth-Token'],
-                                   cacert=os_conn.path_to_cert,
-                                   artifacts_client=self.glare)
+        token = os_conn.session.get_auth_headers()['X-Auth-Token']
+        if with_glare:
+            self.glare_endpoint = os_conn.session.get_endpoint(
+                service_type='artifact', endpoint_type='publicURL')
+            self.glare = glare_client.Client(endpoint=self.glare_endpoint,
+                                             token=token,
+                                             cacert=os_conn.path_to_cert,
+                                             type_name='murano',
+                                             type_version=1)
+            self.murano = MuranoClient(endpoint=self.murano_endpoint,
+                                       token=token,
+                                       cacert=os_conn.path_to_cert,
+                                       artifacts_client=self.glare)
+        else:
+            self.glare_endpoint = None
+            self.glare = None
+            self.murano = MuranoClient(endpoint=self.murano_endpoint,
+                                       token=token,
+                                       cacert=os_conn.path_to_cert)
+
         self.heat = os_conn.heat
         self.postgres_passwd = self.rand_name("O5t@")
 
