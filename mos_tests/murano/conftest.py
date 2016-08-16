@@ -127,9 +127,9 @@ def package(murano_cli, os_conn, request):
     package_names = getattr(request, 'param', ('DockerGrafana',))
     for name in package_names:
         if 'Docker' in name:
-            name = '.docker.{}'.format(name)
+            name = 'docker.{}'.format(name)
         elif 'Apache' in name:
-            name = '.apache.{}'.format(name)
+            name = 'apache.{}'.format(name)
         murano_cli('package-import',
                    params='com.example.{} --exists-action s'.format(name),
                    flags='--murano-repo-url=http://storage.apps.openstack.'
