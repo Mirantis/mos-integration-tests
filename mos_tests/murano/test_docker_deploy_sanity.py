@@ -22,7 +22,6 @@ def test_deploy_docker_influx(environment, murano, session, docker):
 
     murano.create_service(environment, session, murano.influxdb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8083, 8086])
 
 
@@ -34,7 +33,6 @@ def test_deploy_docker_grafana(environment, murano, session, docker):
     murano.create_service(environment, session,
                           murano.grafana(docker, influx_service))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8083, 8086, 80])
 
 
@@ -44,7 +42,6 @@ def test_deploy_docker_mongodb(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.mongodb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 27017])
 
 
@@ -54,7 +51,6 @@ def test_deploy_docker_nginx(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.nginx(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
 
 
@@ -66,7 +62,6 @@ def test_deploy_docker_glassfish(environment, murano, session, docker,
 
     murano.create_service(environment, session, murano.glassfish(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4848, 8080, 8181])
 
 
@@ -76,7 +71,6 @@ def test_deploy_docker_mariadb(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.mariadb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306])
 
 
@@ -86,7 +80,6 @@ def test_deploy_docker_mysql(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.mysql(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306])
 
 
@@ -96,7 +89,6 @@ def test_deploy_docker_jenkins(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.jenkins(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8080])
 
 
@@ -107,7 +99,6 @@ def test_deploy_docker_postgres(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.postgres(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 5432])
 
 
@@ -117,7 +108,6 @@ def test_deploy_docker_crate(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.crate(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4200, 4300])
 
 
@@ -127,7 +117,6 @@ def test_deploy_docker_redis(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.redis(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 6379])
 
 
@@ -137,7 +126,6 @@ def test_deploy_docker_tomcat(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.tomcat(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8080])
 
 
@@ -147,7 +135,6 @@ def test_deploy_docker_httpd(environment, murano, session, docker, package):
 
     murano.create_service(environment, session, murano.httpd(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
 
 
@@ -159,7 +146,6 @@ def test_deploy_docker_httpd_site(environment, murano, session, docker,
 
     murano.create_service(environment, session, murano.httpd_site(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
 
 
@@ -171,5 +157,4 @@ def test_deploy_docker_nginx_site(environment, murano, session, docker,
 
     murano.create_service(environment, session, murano.nginx_site(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
