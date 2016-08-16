@@ -27,7 +27,6 @@ def test_deploy_docker_crate_nginxsite_glassfish(environment, murano, session,
     murano.create_service(environment, session, murano.nginx_site(docker))
     murano.create_service(environment, session, murano.glassfish(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4200, 4300, 80,
                                                         4848, 8080, 8181])
 
@@ -41,7 +40,6 @@ def test_deploy_docker_crate_nginx_mongodb(environment, murano, session,
     murano.create_service(environment, session, murano.nginx(docker))
     murano.create_service(environment, session, murano.mongodb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4200, 4300, 80,
                                                         27017])
 
@@ -56,7 +54,6 @@ def test_deploy_docker_mariadb_postgresql_mongodb(environment, murano, session,
     murano.create_service(environment, session, murano.postgres(docker))
     murano.create_service(environment, session, murano.mongodb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306, 5432, 27017])
 
 
@@ -70,7 +67,6 @@ def test_deploy_docker_redis_tomcat_influxdb(environment, murano, session,
     murano.create_service(environment, session, murano.tomcat(docker))
     murano.create_service(environment, session, murano.influxdb(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 6379, 8080, 8083,
                                                         8086])
 
@@ -85,7 +81,6 @@ def test_deploy_docker_mysql_nginxsite_redis(environment, murano, session,
     murano.create_service(environment, session, murano.mysql(docker))
     murano.create_service(environment, session, murano.redis(docker))
     murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306, 80, 6379])
 
 
@@ -97,13 +92,11 @@ def test_deploy_docker_nginx_wait_deploy_httpd(environment, murano, session,
 
     murano.create_service(environment, session, murano.nginx(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.httpd(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80, 1025])
 
 
@@ -115,13 +108,11 @@ def test_deploy_docker_mysql_wait_deploy_tomcat(environment, murano, session,
 
     murano.create_service(environment, session, murano.mysql(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.tomcat(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 3306, 8080])
 
 
@@ -133,13 +124,11 @@ def test_deploy_docker_tomcat_wait_deploy_mariadb(environment, murano, session,
 
     murano.create_service(environment, session, murano.tomcat(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8080])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.mariadb(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 8080, 3306])
 
 
@@ -151,13 +140,11 @@ def test_deploy_docker_glassfish_wait_deploy_jenkins(environment, murano,
 
     murano.create_service(environment, session, murano.glassfish(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4848, 8080, 8181])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.jenkins(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 4848, 8080, 8181,
                                                         1025])
 
@@ -170,13 +157,11 @@ def test_deploy_docker_nginx_wait_deploy_crate(environment, murano, session,
 
     murano.create_service(environment, session, murano.nginx_site(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.crate(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 80, 4200, 4300])
 
 
@@ -188,13 +173,11 @@ def test_deploy_docker_postgresql_wait_deploy_influxdb(murano, session, docker,
 
     murano.create_service(environment, session, murano.postgres(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 5432])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.influxdb(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 5432, 8083, 8086])
 
 
@@ -206,11 +189,9 @@ def test_deploy_docker_mongodb_wait_deploy_nginx(environment, murano, session,
 
     murano.create_service(environment, session, murano.mongodb(docker))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 27017])
     session = murano.create_session(deployed_environment)
 
     murano.create_service(environment, session, murano.nginx(docker))
     murano.deploy_environment(deployed_environment, session)
-    murano.check_instances(docker_count=1)
     murano.deployment_success_check(environment, ports=[22, 27017, 80])

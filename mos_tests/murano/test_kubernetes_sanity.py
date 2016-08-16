@@ -24,7 +24,6 @@ def test_deploy_k8s_influxdb(environment, murano, session, cluster, pod):
 
     murano.create_service(environment, session, murano.influxdb(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083, 8086],
@@ -42,7 +41,6 @@ def test_deploy_k8s_grafana(environment, murano, session, cluster, pod):
     murano.create_service(environment, session,
                           murano.grafana(pod, influx_service))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8083, 8086, 80],
@@ -59,7 +57,6 @@ def test_deploy_k8s_mongodb(environment, murano,
 
     murano.create_service(environment, session, murano.mongodb(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 27017],
@@ -75,7 +72,6 @@ def test_deploy_k8s_nginx(environment, murano, session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.nginx(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 80],
@@ -93,7 +89,6 @@ def test_deploy_k8s_glassfish(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.glassfish(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 4848, 8080],
@@ -110,7 +105,6 @@ def test_deploy_k8s_mariadb(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.mariadb(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 3306],
@@ -126,7 +120,6 @@ def test_deploy_k8s_mysql(environment, murano, session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.mysql(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 3306],
@@ -143,7 +136,6 @@ def test_deploy_k8s_jenkins(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.jenkins(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8080],
@@ -161,7 +153,6 @@ def test_deploy_k8s_postgresql(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.postgres(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "minion-1", 4194]
@@ -177,7 +168,6 @@ def test_deploy_k8s_crate(environment, murano, session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.crate(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 4200],
@@ -193,7 +183,6 @@ def test_deploy_k8s_redis(environment, murano, session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.redis(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 6379],
@@ -210,7 +199,6 @@ def test_deploy_k8s_tomcat(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.tomcat(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 8080],
@@ -226,7 +214,6 @@ def test_deploy_k8s_httpd(environment, murano, session, cluster, pod, package):
 
     murano.create_service(environment, session, murano.httpd(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 80],
@@ -244,7 +231,6 @@ def test_deploy_k8s_httpd_site(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.httpd_site(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 80],
@@ -262,7 +248,6 @@ def test_deploy_k8s_nginx_site(environment, murano, session, cluster, pod,
 
     murano.create_service(environment, session, murano.nginx_site(pod))
     deployed_environment = murano.deploy_environment(environment, session)
-    murano.check_instances(gateways_count=1, nodes_count=1)
     murano.status_check(deployed_environment,
                         [[cluster['name'], "master-1", 8080],
                          [cluster['name'], "gateway-1", 80],
