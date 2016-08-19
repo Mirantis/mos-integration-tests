@@ -33,6 +33,10 @@ from novaclient import exceptions as nova_exceptions
 import paramiko
 import six
 
+from keystoneauth1.identity import v3
+from keystoneauth1 import session as sessionV3
+from keystoneclient.v3 import Client as KeystoneClientV3
+
 from mos_tests.environment.ssh import NetNsProxy
 from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_temp_file
@@ -55,8 +59,9 @@ class InstanceError(Exception):
 class OpenStackActions(object):
     """OpenStack base services clients and helper actions"""
 
-    def __init__(self, controller_ip, user='admin', password='admin',
-                 tenant='admin', cert=None, env=None, proxy_session=None):
+    def __init__(self, controller_ip, keystone_version=2, domain='Default',
+                 user='admin', password='admin', tenant='admin',
+                 cert=None, env=None, proxy_session=None):
         logger.debug('Init OpenStack clients on {0}'.format(controller_ip))
 
         self.controller_ip = controller_ip
@@ -65,32 +70,53 @@ class OpenStackActions(object):
         self.tenant = tenant
 
         if cert is None:
-            auth_url = 'http://{0}:5000/v2.0/'.format(self.controller_ip)
+            if keystone_version == 2:
+                auth_url = 'http://{0}:5000/v2.0/'.format(self.controller_ip)
+            else:
+                auth_url = 'http://{0}:5000/v3/'.format(self.controller_ip)
             self.path_to_cert = None
             self.insecure = True
         else:
-            auth_url = 'https://{0}:5000/v2.0/'.format(self.controller_ip)
+            if keystone_version == 2:
+                auth_url = 'https://{0}:5000/v2.0/'.format(self.controller_ip)
+            else:
+                auth_url = 'https://{0}:5000/v3/'.format(self.controller_ip)
             with gen_temp_file(prefix="fuel_cert_", suffix=".pem") as f:
                 f.write(cert)
             self.path_to_cert = f.name
             self.insecure = False
 
         logger.debug('Auth URL is {0}'.format(auth_url))
-        auth = KeystonePassword(username=user,
-                                password=password,
-                                auth_url=auth_url,
-                                tenant_name=tenant)
+        if keystone_version == 2:
+            auth = KeystonePassword(username=user,
+                                    password=password,
+                                    auth_url=auth_url,
+                                    tenant_name=tenant)
+            self.session = session.Session(auth=auth,
+                                           verify=self.path_to_cert)
+            self.keystone = KeystoneClient(session=self.session)
+        else:
+            auth = v3.Password(auth_url=auth_url,
+                               user_domain_name=domain,
+                               username=user,
+                               password=password,
+                               project_domain_name=domain,
+                               project_name=tenant)
+            self.session = sessionV3.Session(auth=auth,
+                                             verify=self.path_to_cert)
+            self.keystone = KeystoneClientV3(session=self.session)
 
-        self.session = session.Session(auth=auth, verify=self.path_to_cert)
-
-        self.keystone = KeystoneClient(session=self.session)
         self.keystone.management_url = auth_url
 
         self.nova = nova_client.Client(version=2, session=self.session)
 
         self.cinder = cinderclient.Client(version=2, session=self.session)
 
-        self.neutron = neutron_client.Client(session=self.session)
+        if keystone_version == 2:
+            self.neutron = neutron_client.Client(session=self.session)
+        else:
+            self.neutron = neutron_client.Client(session=self.session,
+                                                 project_name=tenant)
 
         self.glance = GlanceClient(session=self.session)
 

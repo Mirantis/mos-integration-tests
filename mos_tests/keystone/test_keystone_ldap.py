@@ -13,14 +13,18 @@
 #    under the License.
 
 import logging
+import random
 import re
 
+from keystoneauth1.exceptions.base import ClientException as KeyStoneException
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
+from neutronclient.common.exceptions import NeutronClientException
 import pytest
 from six.moves import configparser
 
+from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
 
 
@@ -37,12 +41,13 @@ def domain_projects(os_conn):
         old_projects[domain.name] = []
         for project in keystone_v3.projects.list(domain=domain):
             old_projects[domain.name].append(project.name)
-    yield old_projects
+    yield
     # Delete projects created during test execution
     # (it's supposed that domains are not created/deleted/renamed)
     for domain in domains:
         for project in keystone_v3.projects.list(domain=domain):
             if project.name not in old_projects[domain.name]:
+                clear_project(os_conn, domain, project)
                 keystone_v3.projects.delete(project=project)
 
 
@@ -82,6 +87,45 @@ def keystone_conf(env):
             remote.check_call('service apache2 reload')
             remote.check_call('rm /etc/keystone/keystone.conf.orig')
     wait_keystone_alive(env)
+
+
+def clear_project(os_conn, domain, project):
+    """Delete instances, keypairs, security groups, networks in a project"""
+    # NOTE: This function works for domain openldap1 (user01/1111)
+    controller_ip = os_conn.env.get_primary_controller_ip()
+    os_conn_v3 = OpenStackActions(controller_ip,
+                                  keystone_version=3,
+                                  domain=domain.name,
+                                  user="user01",
+                                  password="1111",
+                                  tenant=project.name,
+                                  env=os_conn.env)
+    try:
+        vms = os_conn_v3.get_servers()
+    except KeyStoneException:
+        # ex: user is not a member of this project
+        logger.info('cannot connect to project {0} under user01'.
+                    format(project.name))
+        return
+    if not vms:
+        return
+    for vm in vms:
+        os_conn_v3.nova.servers.delete(vm)
+        common.wait(lambda: os_conn_v3.is_server_deleted(vm.id),
+                    timeout_seconds=60,
+                    waiting_for='instances to be deleted')
+    os_conn_v3.delete_keypairs()
+    os_conn_v3.delete_security_groups()
+    for network in [net for net in
+                    os_conn_v3.neutron.list_networks()['networks']]:
+        if network['name'].startswith('admin'):
+            continue
+        try:
+            os_conn_v3.delete_net_subnet_smart(network['id'])
+        except NeutronClientException:
+            logger.info('the net {} is not deletable'.
+                        format(network['name']))
+        # see similar examples in os_actions.py
 
 
 def restart_slapd(controller):
@@ -276,7 +320,7 @@ def test_create_project_by_user(os_conn, domain_projects):
     keystone_v3 = KeystoneClientV3(session=sess)
 
     new_project_name = "project_1616778"
-    logger.info("Creating project {0} in domain {0}".
+    logger.info("Creating project {0} in domain {1}".
                 format(new_project_name, test_domain_name))
     keystone_v3.projects.create(name=new_project_name, domain=test_domain,
                                 description="New project")
@@ -478,3 +522,79 @@ def test_check_support_active_directory(os_conn):
         assert len(keystone_v3.users.list(domain=domain)) > 0
         logger.debug("Checking groups for domain {0}".format(domain.name))
         assert len(keystone_v3.groups.list(domain=domain)) > 0
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1668066')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_create_instance_by_user(os_conn, domain_projects):
+    """Launch an instance by LDAP user
+
+    Steps to reproduce:
+    1. Check that LDAP plugin is installed
+    2. Login as admin/admin, domain: default
+    3. Create a new project
+    4. Set role 'admin' to 'user01' in domain openldap1 and project
+    5. Relogin as user01/1111, domain: openldap1
+    6. Create a network and subnetwork for the new project
+    7. Create an instance
+    """
+
+    test_domain_name = "openldap1"
+    test_user_name = 'user01'
+    test_user_pass = '1111'
+    id = random.randint(1, 10000)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    test_domain = keystone_v3.domains.find(name=test_domain_name)
+    new_project_name = "project-{}".format(id)
+    logger.info("Creating project {0} in domain {1}".
+                format(new_project_name, test_domain_name))
+    new_project = keystone_v3.projects.create(name=new_project_name,
+                                              domain=test_domain,
+                                              description="New project")
+
+    logger.info("Setting role 'admin' to user {0}".format(test_user_name))
+    test_user = keystone_v3.users.find(domain=test_domain,
+                                       name=test_user_name)
+    role_admin = keystone_v3.roles.find(name="admin")
+    keystone_v3.roles.grant(role=role_admin, user=test_user,
+                            domain=test_domain)
+    keystone_v3.roles.grant(role=role_admin, user=test_user,
+                            project=new_project)
+
+    controller_ip = os_conn.env.get_primary_controller_ip()
+
+    os_conn_v3 = OpenStackActions(controller_ip,
+                                  keystone_version=3,
+                                  domain=test_domain_name,
+                                  user=test_user_name,
+                                  password=test_user_pass,
+                                  tenant=new_project_name,
+                                  env=os_conn.env)
+
+    logger.info("Creating network, subnetwork, keypair and security_group "
+                "in project {0}".format(new_project_name))
+    network_name = "net-{}".format(id)
+    network = os_conn_v3.create_network(name=network_name,
+                                        tenant_id=new_project.id)
+    subnet_name = "subnet-{}".format(id)
+    os_conn_v3.create_subnet(network_id=network['network']['id'],
+                             name=subnet_name,
+                             cidr="192.168.2.0/24",
+                             tenant_id=new_project.id)
+    keypair_name = "key-{}".format(id)
+    instance_keypair = os_conn_v3.create_key(key_name=keypair_name)
+    security_group = os_conn_v3.create_sec_group_for_ssh()
+
+    new_instance_name = "inst-{}".format(id)
+    logger.info("Creating instance {0}".format(new_instance_name))
+    vm = os_conn_v3.create_server(name=new_instance_name,
+                                  availability_zone='nova',
+                                  key_name=instance_keypair.name,
+                                  nics=[{'net-id': network['network']['id']}],
+                                  security_groups=[security_group.id],
+                                  wait_for_avaliable=False)
+
+    assert os_conn_v3.server_status_is(vm, 'ACTIVE')
