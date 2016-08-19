@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 class CLIRabbitFunctions(TestBase):
 
+    @pytest.fixture(autouse=True)
+    def tools(self, rabbitmq):
+        self.rabbitmq = rabbitmq
+
     cmd = BashCommand
     timeout = 300
 
@@ -58,19 +62,13 @@ class CLIRabbitFunctions(TestBase):
         ' | grep -i conductor')
     bash_grep_running_nodes = (
         ' |& grep -A1 running_nodes | grep -v cluster_name')
-    bash_grep_role_fqdn = (
-        ' | grep "rabbitmq-server.*{role}" | grep -o "node-.*" | head -1')
 
     def rabbit_nodes(self, fqdn_only=False):
         """Returns list of rabbit nodes or list of FQDNs of rabbit nodes.
         :param fqdn_only: Put True if you need only FQDNs of rabbit nodes.
-        :return: List of rabbit nodes or list of FQDNs of nodes
+        :return: List of rabbit nodes OR list of FQDNs of nodes
         """
-        detached_rabbit = self.env.get_nodes_by_role('standalone-rabbitmq')
-        if len(detached_rabbit) > 0:
-            nodes = detached_rabbit
-        else:
-            nodes = self.env.get_nodes_by_role('controller')
+        nodes = self.rabbitmq.all_nodes()
 
         if fqdn_only:
             return [x.data['fqdn'] for x in nodes]
@@ -105,40 +103,19 @@ class CLIRabbitFunctions(TestBase):
         """Returns string with one FQDN of master node.
         :return: Str like 'node-1.test.domain.local' OR None
         """
-        node = self.rabbit_nodes()[0]
-        with node.ssh() as remote:
-            out = remote.execute(
-                self.cmd.pacemaker.full_status +
-                self.bash_grep_role_fqdn.format(role='Master'))
-        if out.is_ok:
-            return out.stdout_string
-        else:
-            return None
+        return self.rabbitmq.nodes_list()['master'][0]
 
     def slave_fqdn(self):
         """Returns string with one FQDN of slave node.
         :return: Str like 'node-1.test.domain.local' OR None
         """
-        node = self.rabbit_nodes()[0]
-        with node.ssh() as remote:
-            out = remote.execute(
-                self.cmd.pacemaker.full_status +
-                self.bash_grep_role_fqdn.format(role='Started'))
-        if out.is_ok:
-            return out.stdout_string
-        else:
-            return None
+        return self.rabbitmq.nodes_list()['slave'][0]
 
     def rabbit_cluster_is_ok(self):
         """Performs execution of 'rabbitmqctl cluster_status' on all nodes.
         If exit_code was 0 on all hosts - return True.
         """
-        self.execute_on_all_rabbit_nodes(
-            cmd=(self.cmd.rabbitmqctl.cluster_status + ' && ' +
-                 self.cmd.rabbitmqctl.status))
-        # if cmd execution was ok- return True.
-        # otherwise the will be an exception
-        return True
+        return self.rabbitmq.rabbit_cluster_is_ok()
 
     def rabbit_cluster_disabled(self):
         """Check that in output of 'rabbitmqctl cluster_status' from each node

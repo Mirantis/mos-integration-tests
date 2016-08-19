@@ -1,14 +1,19 @@
 ---
   pacemaker:
     full_status: "pcs status --full"
-    rabbit_slave_name:  "p_rabbitmq-server"
-    rabbit_master_name: "master_p_rabbitmq-server"
+    rabbit_slave_name:   "p_rabbitmq-server"
+    rabbit_master_name:  "master_p_rabbitmq-server"
+    rabbit_process_name: "beam.smp"
     show:    "pcs resource show {service} --wait={timeout} {fqdn}"
     enable:  "pcs resource enable {service} --wait={timeout} {fqdn}"
     disable: "pcs resource disable {service} --wait={timeout} {fqdn}"
     restart: "pcs resource restart {service} --wait={timeout} {fqdn}"
     clear:   "pcs resource clear {service} --wait={timeout} {fqdn}"
     ban:     "pcs resource ban {service} --wait={timeout} {fqdn}"
+    num_of_running_nodes:    "pcs status --full | grep {service} | grep ocf | grep -c -E '{status}'"
+    grep_rabbit_in_resource: "pcs resource | grep rabbit"
+    grep_rabbit_in_ps:       "ps aux | grep {rabbit_process_name} | grep -v grep"
+    grep_rabbit_in_status:   "pcs status --full | grep rabbitmq-server"
 
   rabbitmqctl:
     status:         "rabbitmqctl status"
@@ -20,3 +25,62 @@
     list_consumers:   "rabbitmqctl list_consumers"
     list_exchanges:   "rabbitmqctl list_exchanges"
     list_connections: "rabbitmqctl list_connections"
+    grep_segfault:    "rabbitmqctl status |& grep -i segfault"
+    grep_diagnostics: "rabbitmqctl status |& grep DIAGNOSTICS"
+    get_pid:          "rabbitmqctl status | grep pid | grep -o '[0-9]*'"
+
+  rabbit_srv_service:
+    status: "service rabbitmq-server status"
+    start:  "service rabbitmq-server start"
+    stop:   "service rabbitmq-server stop"
+    grep_active: 'service rabbitmq-server status |& grep "Active: active (running)"'
+    grep_exited: 'service rabbitmq-server status |& grep "Status: .Exited.."'
+
+  detach_rabbitmq:
+    plugin_name: "detach-rabbitmq"
+    grep_plugin_version: "fuel plugins --list | grep {plugin_name} | awk '{{print $5}}'"
+    grep_plugin:         "fuel plugins --list | grep '{plugin_name}'"
+    del_plugin:          "fuel plugins --remove {full_name}"        ## plugin name with version
+    install_plugin:      "fuel plugins --install {plugin_path}"
+
+  system:
+    cpu_count: "grep -c ^processor /proc/cpuinfo"
+    background: "<&- >/dev/null 2>&1 &"
+    halt: "halt"
+    kill_by_name: "for pid in $(pgrep '{process_name}'); do kill -9 $pid; done"
+    kill_by_pid: "kill -9 {pid}"
+    check_run_process_by_name: "ps uax | grep '{process_name}' | grep -vc grep"
+    get_http_code: "curl -I --stderr /dev/null {url} --silent --max-time {timeout} | head -1
+                   | cut -d' ' -f2"
+    thread_pool_size: "ps ax | perl -nE '/beam.*-sname rabbit/ && /^\\s*(\\d+).*?-A (\\d+)/ && say $2'"
+    hipe_files_count: "ls -la $(for i in $(ps aux | grep rabbitmq); do echo $i | grep native; done) | grep -c '.beam'"
+
+  oslo_messaging_check_tool:
+    install: "apt-get update 2> /tmp/keymissing ;
+              for key in $(grep 'NO_PUBKEY' /tmp/keymissing | sed 's/.*NO_PUBKEY //') ;
+                do echo -e '\nProcessing key: $key' ;
+                apt-key adv --keyserver keyserver.ubuntu.com --recv-keys $key ;
+              done ;
+              apt-get install git dpkg-dev debhelper dh-systemd openstack-pkg-tools
+              po-debconf python-all python-pbr python-setuptools python-sphinx python-babel
+              python-eventlet python-flask python-oslo.config python-oslo.log
+              python-oslo.messaging python-oslosphinx -y
+              && rm -rf {repo_path}
+              && git clone {repo} {repo_path} ;
+              dpkg -r oslo.messaging-check-tool
+              || echo 'Trying to remove package' ;
+              cd {repo_path};
+              dpkg -i oslo.messaging-check-tool*.deb || apt-get -f install -y"
+    messages_single_load:    "oslo_msg_load_generator --config-file {config}
+                                  --messages_to_send {count} --nodebug"
+    messages_single_consume: "oslo_msg_load_consumer --config-file {config} --nodebug"
+    messages_loop_load:      "oslo_msg_load_generator --config-file {config}
+                                  --infinite_loop True --nodebug"
+    messages_loop_consume:   "oslo_msg_load_consumer --config-file {config}
+                                  --infinite_loop True --nodebug"
+    rpc_server: "oslo_msg_check_server --nodebug --config-file {config}"
+    rpc_client: "oslo_msg_check_client --nodebug --config-file {config}"
+    curl_get_status: 'curl --max-time 15 --write-out "%{{http_code}}" --silent
+                      --output /dev/null "http://{host}:{port}"'
+    is_installed: "which oslo_msg_load_generator && which oslo_msg_load_consumer &&
+                   which oslo_msg_check_server && which oslo_msg_check_client"
