@@ -377,6 +377,23 @@ def is_tls_use(env):
     return value
 
 
+def is_glare(env):
+    """Env deployed with murano + glare"""
+    data = env.get_settings_data()['editable']
+    value = False
+    try:
+        value = \
+            data['murano_settings']['murano_glance_artifacts_plugin']['value']
+    except KeyError as e:
+        logger.info(e)
+    return value
+
+
+def is_without_glare(env):
+    """Env deployed with murano without glare"""
+    return not is_glare(env)
+
+
 def is_vlan(env):
     """Env deployed with vlan segmentation"""
     return env.network_segmentation_type == 'vlan'
