@@ -139,6 +139,11 @@ def reinit_fixtures(request):
         fixturedef.cached_result = None
 
 
+def _max_fail_exceed(request):
+    max_fail = request.config.option.maxfail
+    return max_fail > 0 and request.session.testsfailed >= max_fail
+
+
 @pytest.yield_fixture(autouse=True)
 def revert_destructive(request, env_name, snapshot_name):
     yield
@@ -148,7 +153,8 @@ def revert_destructive(request, env_name, snapshot_name):
     test_results = [getattr(item, 'rep_{}'.format(name), None)
                     for name in ("setup", "call", "teardown")]
     failed = any(x for x in test_results if x is not None and x.failed)
-    if request.config.option.exitfirst and failed:
+
+    if _max_fail_exceed(request) and failed:
         return
     skipped = any(x for x in test_results if x is not None and x.skipped)
     destructive = 'undestructive' not in item.keywords
