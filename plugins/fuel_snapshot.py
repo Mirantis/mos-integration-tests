@@ -20,6 +20,7 @@ from fuelclient.objects import SnapshotTask
 from fuelclient.client import APIClient
 import pytest
 import requests
+import waiting
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +55,17 @@ def make_snapshot(request, fuel, env):
 
         config = SnapshotTask.get_default_config()
         task = SnapshotTask.start_snapshot_task(config)
-        task.wait()
+        waiting.wait(lambda: task.is_finished,
+                     timeout_seconds=10 * 60,
+                     sleep_seconds=5,
+                     waiting_for='dump to be finished')
         if task.status != 'ready':
             raise Exception(
                 "Snapshot generating task ended with error. Task message: {0}"
                 .format(task.data["message"]))
 
         url = 'http://{fuel.admin_ip}:8000{task.data[message]}'.format(
-            fuel=fuel,
-            task=task)
+            fuel=fuel, task=task)
         response = requests.get(url,
                                 stream=True,
                                 headers={'x-auth-token': APIClient.auth_token})
