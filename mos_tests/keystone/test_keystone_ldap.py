@@ -93,14 +93,14 @@ def clear_project(os_conn, domain, project):
     """Delete instances, keypairs, security groups, networks in a project"""
     # NOTE: This function works for domain openldap1 (user01/1111)
     controller_ip = os_conn.env.get_primary_controller_ip()
-    os_conn_v3 = OpenStackActions(controller_ip,
-                                  keystone_version=3,
-                                  domain=domain.name,
-                                  user="user01",
-                                  password="1111",
-                                  tenant=project.name,
-                                  env=os_conn.env)
     try:
+        os_conn_v3 = OpenStackActions(controller_ip,
+                                      keystone_version=3,
+                                      domain=domain.name,
+                                      user="user01",
+                                      password="1111",
+                                      tenant=project.name,
+                                      env=os_conn.env)
         vms = os_conn_v3.get_servers()
     except KeyStoneException:
         # ex: user is not a member of this project
@@ -250,30 +250,36 @@ def test_ldap_basic_functions(os_conn):
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1665419')
+@pytest.mark.testrail_id('1665419', domain_name='AD2')
+@pytest.mark.testrail_id('1680675', domain_name='openldap2')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_ldap_get_group_members(os_conn):
+@pytest.mark.parametrize('domain_name', ['AD2', 'openldap2'])
+def test_ldap_get_group_members(os_conn, domain_name):
     """Test to check user list for a group
 
     Steps to reproduce:
     1. Check that LDAP plugin is installed
     2. Login as admin/admin, domain: default
     3. Checks list of users for domain AD2 and group Administrators
+       (similar for openldap2/group01)
     """
-
-    test_domain_name = 'AD2'
-    test_group_name = 'Administrators'
-
+    if domain_name == 'AD2':
+        group_name = 'Administrators'
+    else:
+        group_name = 'group01'
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    test_domain = keystone_v3.domains.find(name=test_domain_name)
-    test_groups = keystone_v3.groups.list(domain=test_domain)
-    assert len(test_groups) > 0, ("no groups in domain {0}".
-                                  format(test_domain_name))
-    test_group = next(g for g in test_groups if g.name == test_group_name)
-    users = keystone_v3.users.list(domain=test_domain, group=test_group)
+    domain = keystone_v3.domains.find(name=domain_name)
+    try:
+        group = keystone_v3.groups.find(domain=domain, name=group_name)
+    except KeyStoneException:
+        pytest.skip("Group {0} is not found in domain {1}".
+                    format(group_name, domain_name))
+    users = keystone_v3.users.list(domain=domain)
+    assert len(users) > 0, ("no users in domain {0}".format(domain_name))
+    users = keystone_v3.users.list(domain=domain, group=group)
     assert len(users) > 0, ("no users in domain {0} and group {1}".
-                            format(test_domain_name, test_group_name))
+                            format(domain_name, group_name))
 
 
 @pytest.mark.undestructive
