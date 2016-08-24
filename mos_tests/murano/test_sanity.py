@@ -350,17 +350,13 @@ class TestSuitePackageCategory(base.PackageTestCase):
         # choose the required category
         self.driver.find_element_by_xpath(
             c.PackageCategory.format(category)).click()
+        # Wait for disappearing "Success: package uploaded"
+        locator = (by.By.CSS_SELECTOR, 'div.alert-success')
+        ui.WebDriverWait(self.driver, 10).until(
+            EC.invisibility_of_element_located(locator))
         self.driver.find_element_by_xpath(c.InputSubmit).click()
-
-        self.wait_for_alert_message()
-
-        # NOTE: original muranodashboard calls wait_for_sidebar_is_loaded,
-        # but this method is meaningless here because it waits for
-        # CSS selector "div#sidebar li.active" which is always present
-
-        # wait for disappearing modal windows (if still exist)
-        locator = (by.By.XPATH, mc.ModalWindow)
-        ui.WebDriverWait(self.driver, 10).until_not(
+        # Wait for "Success: package imported/updated"
+        ui.WebDriverWait(self.driver, 30).until(
             EC.visibility_of_element_located(locator))
 
     def _create_new_user_in_new_project(self):
@@ -1422,17 +1418,14 @@ class TestSuiteApplications(base.ApplicationTestCase):
         el.send_keys(package_name)
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(c.InputSubmit).click()
+        # Wait for disappearing "Success: package uploaded"
+        locator = (by.By.CSS_SELECTOR, 'div.alert-success')
+        ui.WebDriverWait(self.driver, 10).until(
+            EC.invisibility_of_element_located(locator))
         self.driver.find_element_by_xpath(c.InputSubmit).click()
-
-        self.wait_for_alert_message()
-
-        # NOTE: original muranodashboard calls wait_for_sidebar_is_loaded,
-        # but this method is meaningless here because it waits for
-        # CSS selector "div#sidebar li.active" which is always present
-
-        # wait for disappearing modal windows (if still exist)
-        locator = (by.By.XPATH, mc.ModalWindow)
-        ui.WebDriverWait(self.driver, 10).until_not(
+        # Wait for "Success: package imported/updated"
+        locator = (by.By.CSS_SELECTOR, 'div.alert-success')
+        ui.WebDriverWait(self.driver, 30).until(
             EC.visibility_of_element_located(locator))
 
     def _import_bundle(self, bundle_name):
@@ -1505,6 +1498,8 @@ class TestSuiteApplications(base.ApplicationTestCase):
         self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
         self.driver.find_element_by_xpath(mc.AddDockerStandaloneHost).click()
         self.driver.find_element_by_xpath(mc.ButtonNext).click()
+        if self.driver.find_elements_by_xpath(mc.SelectImage):
+            self._select_from_list('1-image', 'Ubuntu')
         self.driver.find_element_by_xpath(c.InputSubmit).click()
         self.driver.find_element_by_xpath(mc.ButtonCreate).click()
 
@@ -1543,6 +1538,132 @@ class TestSuiteApplications(base.ApplicationTestCase):
         for app_name in apps:
             self.check_element_on_page(by.By.XPATH, c.App.format(app_name))
 
+    @pytest.mark.testrail_id('836642')
+    @pytest.mark.usefixtures('clean_packages')
+    def test_filter_by_name(self):
+        """Test filtering by name
+        Test checks ability to filter applications by name in Catalog page
+        Scenario:
+            1. Import a package
+            2. Navigate to 'Catalog'>'Browse' panel
+            3. Set filter = string (from a package name)
+            4. Verify that package list is not empty and all its packages
+               contains the filter string in names or details
+            5. Set filter = string (from a package description)
+            6. Verify that package list is not empty and all its packages
+               contains the filter string in names or details
+        """
+        pkg = 'com.example.docker.DockerInfluxDB'
+        self._import_package(pkg)
+
+        self.navigate_to('Catalog')
+        self.go_to_submenu('Browse')
+        elems = self.driver.find_elements_by_xpath(mc.PackageNames)
+        total_packages_number = len(elems)
+
+        for filter_str in ['InfluxDB', 'applications']:
+            filter_elem = self.driver.find_element_by_xpath(mc.FilterSelector)
+            filter_elem.clear()
+            filter_elem.send_keys(filter_str)
+            self.driver.find_element_by_xpath(mc.ButtonFilter).click()
+            names = [e.text for e in
+                     self.driver.find_elements_by_xpath(mc.PackageNames)]
+            assert 0 < len(names) < total_packages_number
+            for name in names:
+                if filter_str not in name:
+                    # open the Application details window
+                    self.driver.find_element_by_xpath(mc.PackageDetails.
+                                                      format(name)).click()
+                    elems = self.driver.find_elements_by_xpath(
+                        mc.TextSearch.format(filter_str))
+                    assert len(elems) > 0, ("{0} is not found in app details".
+                                            format(filter_str))
+                    # go to the previous page
+                    self.driver.back()
+                    self.driver.implicitly_wait(30)
+
+    @pytest.mark.testrail_id('836644')
+    @pytest.mark.usefixtures('clean_packages')
+    def test_deploy_app_remove_it_and_deploy_another_app(self):
+        """Checks that app is not available after remove and new app deployment
+        Scenario:
+            1. Navigate to Environments
+            2. Create new environment
+            3. Navigate to Catalog>Environment and add the first app to env
+            4. Fill the form use environment and click submit
+            5. Click deploy environment
+            6. Wait 'Ready' status
+            7. Click Delete Application in row actions.
+            8. Navigate to Catalog>Environment and add the second app to env
+            9. Fill the form use environment and click submit
+            10. Click deploy environment
+            11. Check that the first application created in step 5
+                is not in the list
+            12. Click Delete Application in row actions.
+        """
+        pkgs = {'com.example.docker.DockerInfluxDB': 'Docker InfluxDB',
+                'com.example.docker.DockerCrate': 'Docker Crate'}
+
+        pkg_ids = {}
+        for pkg in pkgs:
+            self._import_package(pkg)
+            for wrn in self.driver.find_elements_by_xpath(mc.WarningClose):
+                wrn.click()
+            pkg_name = pkgs[pkg]
+            package = self.driver.find_element_by_xpath(
+                c.AppPackages.format(pkg_name))
+            pkg_ids[pkg_name] = package.get_attribute("data-object-id")
+
+        # Create environment
+        env_name = str(uuid.uuid4())
+        self.navigate_to('Catalog')
+        self.go_to_submenu('Environments')
+        self.create_environment(env_name)
+        self.go_to_submenu('Environments')
+        self.check_element_on_page(by.By.LINK_TEXT, env_name)
+        env_id = self.get_element_id(env_name)
+
+        deleted_package_names = []
+        for pkg_name, pkg_id in pkg_ids.items():
+            self.go_to_submenu('Browse')
+            self.select_and_click_action_for_app('add', '{0}/{1}'.format(
+                pkg_id, env_id))
+            # Add Docker Standalone Host and set its parameters
+            self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
+            self.driver.find_element_by_xpath(
+                mc.AddDockerStandaloneHost).click()
+            self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
+                pkg_id)).click()
+            if self.driver.find_elements_by_xpath(mc.SelectImage):
+                self._select_from_list('1-image', 'Ubuntu')
+            self.driver.find_element_by_xpath(c.InputSubmit).click()
+            # Continue main package
+            self.driver.find_element_by_xpath(mc.ButtonNext).click()
+            self.driver.find_element_by_xpath(c.InputSubmit).click()
+
+            self.check_element_on_page(by.By.XPATH,
+                                       c.Status.format('Ready to deploy'))
+            self.driver.find_element_by_id(
+                'services__action_deploy_env').click()
+            self.check_element_on_page(by.By.XPATH, c.Status.format(
+                'Deploying'))
+            common.wait(
+                lambda: len(self.driver.find_elements_by_xpath(
+                    c.Status.format('Ready'))) == 2, timeout_seconds=900)
+
+            for _ in range(2):
+                self.driver.find_element_by_xpath(mc.ButtonDeleteComp).click()
+                self.driver.find_element_by_xpath(mc.ButtonConfDeleteComp). \
+                    click()
+                # Wait for disappearing modal window
+                locator = (by.By.XPATH, mc.ModalWindow)
+                ui.WebDriverWait(self.driver, 20).until_not(
+                    EC.visibility_of_element_located(locator))
+            deleted_package_names.append(pkg_name)
+
+            for p_name in deleted_package_names:
+                self.check_element_not_on_page(by.By.LINK_TEXT, p_name)
+
     @pytest.mark.testrail_id('836645')
     @pytest.mark.usefixtures('clean_packages')
     def test_deploy_several_apps(self):
@@ -1557,21 +1678,7 @@ class TestSuiteApplications(base.ApplicationTestCase):
             6. Wait 'Ready' status
             7. Repeat steps 3-6 to add two other application.
         """
-        # import packages
-        pkgs = {'com.example.docker.DockerInfluxDB': 'Docker InfluxDB',
-                'com.example.docker.DockerCrate': 'Docker Crate',
-                'com.example.docker.DockerRedis': 'Docker Redis'}
-        pkg_ids = {}
-        for pkg in pkgs:
-            self._import_package(pkg)
-            for wrn in self.driver.find_elements_by_xpath(mc.WarningClose):
-                wrn.click()
-            pkg_name = pkgs[pkg]
-            package = self.driver.find_element_by_xpath(
-                c.AppPackages.format(pkg_name))
-            pkg_ids[pkg_name] = package.get_attribute("data-object-id")
-
-        # create environment
+        # Create environment
         env_name = str(uuid.uuid4())
         self.navigate_to('Catalog')
         self.go_to_submenu('Environments')
@@ -1580,52 +1687,39 @@ class TestSuiteApplications(base.ApplicationTestCase):
         self.check_element_on_page(by.By.LINK_TEXT, env_name)
         env_id = self.get_element_id(env_name)
 
-        # Deploy applications
-        self.go_to_submenu('Browse')
-        pkg_id = pkg_ids.pop('Docker InfluxDB')
-        self.select_and_click_action_for_app('add', '{0}/{1}'.format(pkg_id,
-                                                                     env_id))
-        # Add Docker Standalone Host and set its parameters
-        self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
-        self.driver.find_element_by_xpath(mc.AddDockerStandaloneHost).click()
-        self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
-            pkg_id)).click()
-        self.driver.find_element_by_xpath(c.InputSubmit).click()
-        # Continue main package
-        self.driver.find_element_by_xpath(mc.ButtonNext).click()
-        self.driver.find_element_by_xpath(c.InputSubmit).click()
+        pkgs = {'com.example.docker.DockerInfluxDB': 'Docker InfluxDB',
+                'com.example.docker.DockerCrate': 'Docker Crate',
+                'com.example.docker.DockerRedis': 'Docker Redis'}
+        i = 1
+        for pkg in pkgs:
 
-        self.check_element_on_page(by.By.XPATH,
-                                   c.Status.format('Ready to deploy'))
-        self.driver.find_element_by_id('services__action_deploy_env').click()
-        self.check_element_on_page(by.By.XPATH, c.Status.format('Deploying'))
-        self.check_element_on_page(by.By.XPATH, c.Status.format('Ready'),
-                                   sec=900)
-        common.wait(
-            lambda: len(self.driver.find_elements_by_xpath(
-                c.Status.format('Ready'))) == 2, timeout_seconds=900)
-        i = 2
-        for pkg_id in pkg_ids.values():
+            # Import a package and get its id
+            self._import_package(pkg)
+            pkg_name = pkgs[pkg]
+            package = self.driver.find_element_by_xpath(
+                c.AppPackages.format(pkg_name))
+            pkg_id = package.get_attribute("data-object-id")
+
+            # Select a package to add to env
+            # (it should be the first one in the list of Recent Activity)
+            self.navigate_to('Catalog')
             self.go_to_submenu('Browse')
-            try:
-                self.select_and_click_action_for_app('add', '{0}/{1}'.format(
-                    pkg_id, env_id))
-            except Exception:
-                elm = self.driver.find_element_by_tag_name('html')
-                elm.send_keys(Keys.HOME)
-                self.select_and_click_action_for_app('add', '{0}/{1}'.format(
-                    pkg_id, env_id))
+            self.select_and_click_action_for_app('add', '{0}/{1}'.format(
+                pkg_id, env_id))
             # Add Docker Standalone Host and set its parameters
             self.driver.find_element_by_xpath(mc.AddApplicationHost).click()
             self.driver.find_element_by_xpath(
                 mc.AddDockerStandaloneHost).click()
             self.driver.find_element_by_xpath(mc.ButtonNextOnAddForm.format(
                 pkg_id)).click()
+            if self.driver.find_elements_by_xpath(mc.SelectImage):
+                self._select_from_list('1-image', 'Ubuntu')
             self.driver.find_element_by_xpath(c.InputSubmit).click()
             # Continue main package
             self.driver.find_element_by_xpath(mc.ButtonNext).click()
             self.driver.find_element_by_xpath(c.InputSubmit).click()
 
+            # Deploy
             self.check_element_on_page(by.By.XPATH,
                                        c.Status.format('Ready to deploy'))
             self.driver.find_element_by_id(
@@ -1636,3 +1730,60 @@ class TestSuiteApplications(base.ApplicationTestCase):
                 lambda: len(self.driver.find_elements_by_xpath(
                     c.Status.format('Ready'))) == i * 2, timeout_seconds=900)
             i += 1
+
+
+@pytest.mark.requires_('firefox', 'xvfb-run')
+@pytest.mark.undestructive
+@pytest.mark.usefixtures('screen', 'clean_packages')
+@murano_test_patch
+class TestSuiteAppsPagination(base.UITestCase):
+    def setUp(self):
+        super(TestSuiteAppsPagination, self).setUp()
+        self.apps = []
+        # Create 30 additional packages with applications
+        for i in range(30):
+            app_name = self.gen_random_resource_name('app', 4)
+            tag = self.gen_random_resource_name('tag', 8)
+            metadata = {"categories": ["Web"], "tags": [tag]}
+            app_id = utils.upload_app_package(self.murano_client, app_name,
+                                              metadata)
+            self.apps.append(app_id)
+
+    def tearDown(self):
+        super(TestSuiteAppsPagination, self).tearDown()
+        for app_id in self.apps:
+            self.murano_client.packages.delete(app_id)
+
+    @pytest.mark.testrail_id('836643')
+    @pytest.mark.check_env_('is_without_glare')
+    def test_apps_pagination(self):
+        """Test check pagination in case of many applications installed."""
+        self.navigate_to('Catalog')
+        self.go_to_submenu('Browse')
+        packages_list = [elem.name for elem in
+                         self.murano_client.packages.list()]
+        # No list of apps available in the client only packages are.
+        # Need to remove 'Core library' from it since it is not visible in
+        # application's list.
+        packages_list.remove('Core library')
+
+        apps_per_page = 6
+        pages_itself = [packages_list[i:i + apps_per_page] for i in
+                        range(0, len(packages_list), apps_per_page)]
+        for i, names in enumerate(pages_itself, 1):
+            for name in names:
+                self.check_element_on_page(by.By.XPATH, c.App.format(name))
+            if i != len(pages_itself):
+                self.driver.find_element_by_link_text('Next Page').click()
+
+        # Wait till the Next button disappear
+        # Otherwise 'Prev' buttion from previous page might be used
+        self.check_element_not_on_page(by.By.LINK_TEXT, 'Next Page')
+
+        # Now go back to the first page
+        pages_itself.reverse()
+        for i, names in enumerate(pages_itself, 1):
+            for name in names:
+                self.check_element_on_page(by.By.XPATH, c.App.format(name))
+            if i != len(pages_itself):
+                self.driver.find_element_by_link_text('Previous Page').click()
