@@ -52,8 +52,8 @@ def ironic_cli(controller_remote):
 def config(ironic_drivers_params):
     config = ironic_drivers_params[0]
     if config['driver'] != 'fuel_libvirt':
-        pytest.skip('Required config with `fuel_libvirt` driver for this test '
-                    'actually {config} passed'.format(config))
+        pytest.skip('Required config with `fuel_libvirt` driver '
+                    'for this test, actually {driver} passed'.format(**config))
     return config
 
 

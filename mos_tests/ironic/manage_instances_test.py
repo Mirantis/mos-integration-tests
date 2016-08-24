@@ -339,10 +339,6 @@ def test_boot_instances_on_different_tenants(env, os_conn, make_image,
         network
     """
 
-    common.wait(ironic.all_nodes_provisioned,
-                timeout_seconds=3 * 60,
-                sleep_seconds=15,
-                waiting_for='ironic nodes to be provisioned')
     instances, keypairs, ips = [], [], []
 
     distribution = zip(flavors, ironic_nodes, tenants_clients)
@@ -351,6 +347,10 @@ def test_boot_instances_on_different_tenants(env, os_conn, make_image,
         image = make_image(node_driver=ironic_node.driver)
         tenant_keypair = tenant_conn.create_key(key_name='ironic-key')
         brm_net = tenant_conn.nova.networks.find(label='baremetal')
+        common.wait(lambda: ironic.has_node_for_flavor(flavor),
+                    timeout_seconds=3 * 60,
+                    sleep_seconds=15,
+                    waiting_for='ironic node to be provisioned')
         instance = tenant_conn.create_server('ironic-server_{}'.format(i),
                                              image_id=image.id,
                                              flavor=flavor.id,
@@ -362,6 +362,8 @@ def test_boot_instances_on_different_tenants(env, os_conn, make_image,
         keypairs.append(tenant_keypair)
         instances.append(instance)
         ips.append(tenant_conn.get_nova_instance_ips(instance)['fixed'])
+
+    os_conn.wait_servers_ssh_ready(instances)
 
     for instance, tenant_keypair, ip in zip(instances, keypairs, ips[::-1]):
         with os_conn.ssh_to_instance(env,
