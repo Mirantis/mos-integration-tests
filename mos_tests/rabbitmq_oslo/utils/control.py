@@ -184,10 +184,12 @@ class MessagingCheckTool(object):
             notif_topic_name = " --notif_topic_name '%s'" % notif_topic_name
 
         # Clean if some messages were left after previous failed tests
+        logger.debug("Clean generated messages if any on %s" % remote.host)
         remote.check_call(
             self.cmd.oslo_messaging_check_tool.messages_single_consume.format(
                 config=cfg_file_path))
 
+        logger.debug("Generate messages on %s" % remote.host)
         if num_of_msg_to_gen >= 0:
             remote.check_call(
                 self.cmd.oslo_messaging_check_tool.messages_single_load.format(
@@ -207,6 +209,7 @@ class MessagingCheckTool(object):
         remote = remote or self.remote
         cfg_file_path = cfg_file_path or self.config_vars['cfg_file_path']
         infinite_loop = infinite or False
+        logger.debug("Consume messages on %s" % remote.host)
 
         notif_topic_name = topic or ''
         if notif_topic_name:
@@ -229,16 +232,21 @@ class MessagingCheckTool(object):
             num_of_msg_consumed = int(re.findall('\d+', out_consume)[0])
             return num_of_msg_consumed
 
-    def rpc_server_start(self, remote=None, cfg_file_path=None):
+    def rpc_server_start(self, remote=None, cfg_file_path=None, topic=None):
         """Starts [oslo_msg_check_server] on remote"""
         remote = remote or self.remote
         logger.debug(
             "Start RPC server [oslo_msg_check_server] on %s" % remote.host)
         cfg_file_path = cfg_file_path or self.config_vars['cfg_file_path']
 
-        cmd = '{0} {1}'.format(
+        topic = topic or ''
+        if topic:
+            topic = "--rpc_topic_name '%s'" % topic
+
+        cmd = '{0} {1} {2}'.format(
             self.cmd.oslo_messaging_check_tool.rpc_server.format(
                 config=cfg_file_path),
+            topic,
             self.cmd.system.background)
         remote.execute(cmd)
 
@@ -251,7 +259,7 @@ class MessagingCheckTool(object):
         remote.execute(self.cmd.system.kill_by_name.format(
             process_name="oslo_msg_check_server"))
 
-    def rpc_client_start(self, remote=None, cfg_file_path=None):
+    def rpc_client_start(self, remote=None, cfg_file_path=None, topic=None):
         """Starts [oslo_msg_check_client] on remote"""
         remote = remote or self.remote
         logger.debug(
@@ -259,9 +267,14 @@ class MessagingCheckTool(object):
 
         cfg_file_path = cfg_file_path or self.config_vars['cfg_file_path']
 
-        cmd = '{0} {1}'.format(
+        topic = topic or ''
+        if topic:
+            topic = "--rpc_topic_name '%s'" % topic
+
+        cmd = '{0} {1} {2}'.format(
             self.cmd.oslo_messaging_check_tool.rpc_client.format(
                 config=cfg_file_path),
+            topic,
             self.cmd.system.background)
         remote.execute(cmd)
 
@@ -292,18 +305,20 @@ class MessagingCheckTool(object):
             return 000
 
     def wait_oslomessagingchecktool_is_ok(
-            self, remote, host="127.0.0.1", port=80):
+            self, remote, host="127.0.0.1", port=12400, timeout=None):
         """Wait till curl response from tool will be not 000
         :param remote: SSH connection point to controller.
         :param host: IP of host where tool launched.
         :param port: Port where send curl requests.
+        :param timeout: Timeout for waiting.
         """
-        wait(
+        timeout = timeout or self.TIMEOUT_LONG
+        return wait(
             lambda: self.get_http_code(
                 remote,
                 host=host,
                 port=port) != 000,
-            timeout_seconds=self.TIMEOUT_LONG,
+            timeout_seconds=timeout,
             sleep_seconds=30,
             waiting_for='start of "oslo.messaging-check-tool" '
                         'RPC server/client app on %s' % remote.host)
@@ -594,12 +609,25 @@ class RabbitMQWrapper(object):
             self.stop_rabbitmq_cluster()
             self.start_rabbitmq_cluster()
 
-    def rabbit_cluster_is_ok(self, node=None):
+    def rabbit_cluster_is_ok(self, node=None, exclude_node=None):
         """Execute on all nodes cluster status command.
         :param node: Provide node if you want to perform check on this certain
         node.
+        :param exclude_node: Exclude this one node from cluster status check.
         :returns: Boolean
         """
+
+        def check_cluster_is_ok(nodes):
+            for one in nodes:
+                with one.ssh() as remote:
+                    logger.debug("%s" % '-' * 10)
+                    for cmd in commands:
+                        result = remote.execute(cmd, verbose=False)
+                        logger.debug("{0}: [{1}] is OK: {2} ".format(
+                            one.data['fqdn'], cmd, result.is_ok))
+                        all_results.append(result.is_ok)
+                    return all(all_results)
+
         commands = [self.cmd.rabbitmqctl.cluster_status,
                     self.cmd.rabbitmqctl.status,
                     self.cmd.pacemaker.show.format(
@@ -612,28 +640,26 @@ class RabbitMQWrapper(object):
             # check on one certain node
             logger.debug(
                 "Check Rabbit cluster status on %s" % node.data['fqdn'])
-            with node.ssh() as remote:
-                for cmd in commands:
-                    result = remote.execute(cmd, verbose=False)
-                    all_results.append(result.is_ok)
+            return check_cluster_is_ok([node])
+
+        if exclude_node:
+            logger.debug("--- Check cluster status from all rabbit nodes "
+                         "EXCEPT %s ---" % exclude_node.data['fqdn'])
+            rabbit_hosts = [x for x in self.all_alive_nodes()
+                            if x.data['fqdn'] != exclude_node.data['fqdn']]
+            return check_cluster_is_ok(rabbit_hosts)
+
         else:
             logger.debug("--- Check cluster status from all rabbit nodes ---")
             rabbit_hosts = self.all_alive_nodes()
-            for one in rabbit_hosts:
-                with one.ssh() as remote:
-                    logger.debug("%s" % '-' * 10)
-                    for cmd in commands:
-                        result = remote.execute(cmd, verbose=False)
-                        logger.debug("{0}: [{1}] is OK: {2} ".format(
-                            one.data['fqdn'], cmd, result.is_ok))
-                        all_results.append(result.is_ok)
+            return check_cluster_is_ok(rabbit_hosts)
 
-        return all(all_results)
-
-    def wait_rabbit_cluster_is_ok(self, node=None, timeout=None):
+    def wait_rabbit_cluster_is_ok(
+            self, node=None, timeout=None, exclude_node=None):
         timeout = timeout or self.TIMEOUT_SHORT
         return wait(
-            lambda: self.rabbit_cluster_is_ok(node=node),
+            lambda: self.rabbit_cluster_is_ok(
+                node=node, exclude_node=exclude_node),
             timeout_seconds=timeout,
             sleep_seconds=60,
             waiting_for='RabbitMQ cluster will be ok')

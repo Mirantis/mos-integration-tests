@@ -75,9 +75,9 @@
                                   --messages_to_send {count} --nodebug"
     messages_single_consume: "oslo_msg_load_consumer --config-file {config} --nodebug"
     messages_loop_load:      "oslo_msg_load_generator --config-file {config}
-                                  --infinite_loop True --nodebug"
+                                  --infinite_loop --nodebug"
     messages_loop_consume:   "oslo_msg_load_consumer --config-file {config}
-                                  --infinite_loop True --nodebug"
+                                  --infinite_loop --nodebug"
     rpc_server: "oslo_msg_check_server --nodebug --config-file {config}"
     rpc_client: "oslo_msg_check_client --nodebug --config-file {config}"
     curl_get_status: 'curl --max-time 15 --write-out "%{{http_code}}" --silent
