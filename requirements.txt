@@ -20,3 +20,4 @@ dpath
 tempest
 
 contextlib2
+python-ldap

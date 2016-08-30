@@ -16,13 +16,16 @@ import logging
 import random
 import re
 
+import ldap
+import ldap.modlist as modlist
+import pytest
+from six.moves import configparser
+
 from keystoneauth1.exceptions.base import ClientException as KeyStoneException
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
 from neutronclient.common.exceptions import NeutronClientException
-import pytest
-from six.moves import configparser
 
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
@@ -87,6 +90,96 @@ def keystone_conf(env):
             remote.check_call('service apache2 reload')
             remote.check_call('rm /etc/keystone/keystone.conf.orig')
     wait_keystone_alive(env)
+
+
+@pytest.yield_fixture
+def ldap_server(env):
+    """Connect to LDAP server"""
+
+    # Get LDAP data
+    data = env.get_settings_data()['editable']
+    ldap_data = data['ldap']['metadata']['versions'][0]
+    ldap_domain_name = ldap_data['domain']['value']
+    ldap_url = ldap_data['url']['value']
+    ldap_cacert = ldap_data['ca_chain']['value']
+    ldap_user = ldap_data['user']['value']
+    ldap_password = ldap_data['password']['value']
+    ldap_user_tree_dn = ldap_data['user_tree_dn']['value']
+    ldap_name_attr = ldap_data['user_name_attribute']['value']
+
+    if ldap_cacert:
+        cacert_file = "/tmp/cert.pem"
+        with open(cacert_file, 'w') as f:
+            f.write(ldap_cacert)
+        ldap.set_option(ldap.OPT_X_TLS_CACERTFILE, cacert_file)
+
+    logger.info("Connecting to LDAP server {} ({})".
+                format(ldap_domain_name, ldap_url))
+    ld = ldap.initialize(ldap_url)
+    ld.start_tls_s()
+    ld.simple_bind_s(ldap_user, ldap_password)
+
+    ldap_server = (ld, ldap_domain_name, ldap_user_tree_dn, ldap_name_attr)
+
+    yield ldap_server
+
+    ld.unbind_s()
+
+
+@pytest.yield_fixture
+def new_ldap_user(ldap_server):
+    """Create a user on LDAP server"""
+
+    ld, ldap_domain_name, ldap_user_tree_dn, ldap_name_attr = ldap_server
+
+    logger.debug("Getting list of users for domain {0} from LDAP server".
+                 format(ldap_domain_name))
+    search_filter = "{0}=*".format(ldap_name_attr)  # sn=*
+    search_attrs = ['{0}'.format(ldap_name_attr)]
+    ldap_results = ld.search_s(ldap_user_tree_dn, ldap.SCOPE_SUBTREE,
+                               search_filter, search_attrs)
+    dn, res = ldap_results[0]
+    # ex: 'sn=user01,ou=Users,dc=openldap1,dc=tld', {'sn': ['user01']}
+    old_user_name = res[ldap_name_attr][0]
+    new_user_name = "test-" + old_user_name
+    new_user_dn = dn.replace(old_user_name, new_user_name)
+    # ex: 'sn=test-user01,ou=Users,dc=openldap1,dc=tld'
+
+    logger.debug("Getting data for user {0} from LDAP server".
+                 format(old_user_name))
+    search_filter = "{0}={1}".format(ldap_name_attr, old_user_name)
+    ldap_result = ld.search_s(ldap_user_tree_dn, ldap.SCOPE_SUBTREE,
+                              search_filter)[0][1]
+    # ex:
+    # {'cn': ['user01'],
+    #  'description': ['description for user01'],
+    #  'mail': ['user01@gmail.com'],
+    #  'objectClass': ['inetOrgPerson'],
+    #  'sn': ['user01'],
+    #  'title': ['title01'],
+    #  'userPassword': ['1111']}
+
+    logger.info("Adding new user {0} on LDAP server".format(new_user_name))
+    # data are copied from old user except some fields
+    attrs = {}
+    for key in ldap_result:
+        if key in ["cn", "sn"]:
+            attrs[key] = [new_user_name]
+        else:
+            attrs[key] = ldap_result[key]
+    ldif = modlist.addModlist(attrs)
+    ld.add_s(new_user_dn, ldif)
+
+    new_ldap_user = (new_user_name, new_user_dn)
+
+    yield new_ldap_user
+
+    # Delete test user(s) if still exist
+    search_filter = "{0}=test*".format(ldap_name_attr)  # sn=test**
+    ldap_results = ld.search_s(ldap_user_tree_dn, ldap.SCOPE_SUBTREE,
+                               search_filter)
+    for dn, res in ldap_results:
+        ld.delete_s(dn)
 
 
 def clear_project(os_conn, domain, project):
@@ -604,3 +697,67 @@ def test_create_instance_by_user(os_conn, domain_projects):
                                   wait_for_avaliable=False)
 
     assert os_conn_v3.server_status_is(vm, 'ACTIVE')
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1681394')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_mapping_user_parameters(os_conn, ldap_server, new_ldap_user):
+    """Test to check mapping between LDAP server and keystone
+
+    Steps to reproduce:
+    1. Create a new user on LDAP server
+    2. Check that this user is shown on keystone and its description and mail
+       are equal to LDAP values
+    3. Change description and mail on LDAP servers
+    4. Check that new values are equal on LDAP and keystone sides
+    5. Delete the user on LDAP server
+    6. Check that the user is not present on keystone
+    """
+
+    ld, ldap_domain_name, ldap_user_tree_dn, ldap_name_attr = ldap_server
+    user_name, user_dn = new_ldap_user
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domain = keystone_v3.domains.find(name=ldap_domain_name)
+
+    def get_user_data():
+        logger.debug("Getting data for user {0} from LDAP server".
+                     format(user_name))
+        search_filter = "{0}={1}".format(ldap_name_attr, user_name)
+        # ex: sn=test-user01
+        search_attrs = ["description", "mail"]
+        ldap_result = ld.search_s(ldap_user_tree_dn, ldap.SCOPE_SUBTREE,
+                                  search_filter, search_attrs)[0][1]
+        ldap_descr = ldap_result['description'][0]
+        ldap_email = ldap_result['mail'][0]
+        return ldap_descr, ldap_email
+
+    ldap_descr, ldap_email = get_user_data()
+
+    logger.debug("Getting data for user {0} from keystone".format(user_name))
+    user = keystone_v3.users.find(domain=domain, name=user_name)
+
+    assert user.description == ldap_descr
+    assert user.email == ldap_email
+
+    logger.info("Updating data for user {0}".format(user_name))
+    old = {'description': ldap_descr, 'mail': ldap_email}
+    new = {'description': 'titi', 'mail': 'toto-' + ldap_email}
+    ldif = modlist.modifyModlist(old, new)
+    ld.modify_s(user_dn, ldif)
+
+    ldap_descr, ldap_email = get_user_data()
+
+    logger.info("Getting data for user {0} from keystone".format(user_name))
+    user = keystone_v3.users.find(domain=domain, name=user_name)
+
+    assert user.description == ldap_descr
+    assert user.email == ldap_email
+
+    logger.info("Deleting user {0} on LDAP server".format(user_name))
+    ld.delete_s(user_dn)
+
+    with pytest.raises(KeyStoneException):
+        keystone_v3.users.find(domain=domain, name=user_name)
