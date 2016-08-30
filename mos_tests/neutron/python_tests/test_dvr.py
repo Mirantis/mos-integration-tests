@@ -1288,6 +1288,24 @@ class TestDVRRegression(TestDVRBase):
         else:
             yield
 
+    def get_updated_floating_rules(self, compute, router, ip1, ip2, count):
+        router_namespace = "qrouter-{0}".format(router['router']['id'])
+        cmd = 'ip netns exec {0} ip rule s'.format(router_namespace)
+
+        def get_floating_rules():
+            with compute.ssh() as remote:
+                out = remote.check_call(cmd).stdout_string.split('\n')
+                all_rules = [i.split(':\t') for i in out]
+                floating_rules = [i for i in all_rules for ip in [ip1, ip2]
+                                  if ip in i[1]]
+                return floating_rules
+
+        wait(lambda: len(get_floating_rules()) == count,
+             timeout_seconds=15,
+             waiting_for='floatings rules will be updated on compute node')
+
+        return get_floating_rules()
+
     @pytest.mark.testrail_id('843828')
     def test_add_router_interface_with_port_id(self):
         """Add router interface with port_id parameter
@@ -1534,3 +1552,78 @@ class TestDVRRegression(TestDVRBase):
                 remote.check_call("service neutron-l3-agent restart")
                 network_checks.check_ping_from_vm(
                     self.env, self.os_conn, srv, ip_to_ping="8.8.8.8")
+
+    @pytest.mark.testrail_id('1681396')
+    def test_floating_ip_rules_after_l3_agent_restart(self):
+        """Check that floating ip rules priority association works correctly
+        after restarting of l3 agent.
+
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01, connect to external network
+            3. Boot VM1, associate floating ip to it
+            4. Restart l3 agent on appropriate compute node
+            5. Boot VM2, associate floating ip to it
+            6. Check uniqueness of floatings rules priorities
+            7. Disassociate the floating ip
+            8. Check that correct floating's rule was deleted after step 7
+
+        [Bug] - https://bugs.launchpad.net/mos/+bug/1577985
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        server1 = self.os_conn.create_server(
+            name='server01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        self.os_conn.assign_floating_ip(server1, use_neutron=True)
+
+        compute_hostname = getattr(server1, 'OS-EXT-SRV-ATTR:host')
+        compute = self.env.find_node_by_fqdn(compute_hostname)
+        l3_agents = self.os_conn.list_l3_agents()
+        vm_l3_agents = [x['id'] for x in l3_agents
+                        if x['host'] == compute_hostname]
+
+        with compute.ssh() as remote:
+            logger.info('disable l3 agent')
+            remote.check_call('service neutron-l3-agent stop')
+            self.os_conn.wait_agents_down(vm_l3_agents)
+            logger.info('enable l3 agent')
+            remote.check_call('service neutron-l3-agent start')
+            self.os_conn.wait_agents_alive(vm_l3_agents)
+
+        server2 = self.os_conn.create_server(
+            name='server02',
+            availability_zone='nova:{}'.format(compute_hostname),
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        fip = self.os_conn.assign_floating_ip(server2, use_neutron=True)
+
+        fixed_ip1 = server1.networks['net01'][0]
+        fixed_ip2 = server2.networks['net01'][0]
+
+        logger.debug("Verify there is no duplicated floating ip's priorities")
+        rules = self.get_updated_floating_rules(compute, router,
+                                                fixed_ip1, fixed_ip2, 2)
+        err_msg = "Floating's rules have the same priorities"
+        assert not rules[0][0] == rules[1][0], err_msg
+
+        self.os_conn.disassociate_floating_ip(server2, fip, use_neutron=True)
+
+        logger.debug("Verify correct floating ip's rule was deleted")
+        rules = self.get_updated_floating_rules(compute, router,
+                                                fixed_ip1, fixed_ip2, 1)
+        err_msg = "Incorrect floating ip rule was deleted"
+        assert fixed_ip1 in rules[0][1], err_msg
