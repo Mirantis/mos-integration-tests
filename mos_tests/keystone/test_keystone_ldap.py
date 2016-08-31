@@ -14,7 +14,6 @@
 
 import logging
 import random
-import re
 
 import ldap
 import ldap.modlist as modlist
@@ -27,6 +26,7 @@ from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
 from neutronclient.common.exceptions import NeutronClientException
 
+from mos_tests import conftest
 from mos_tests.environment.os_actions import OpenStackActions
 from mos_tests.functions import common
 
@@ -311,33 +311,36 @@ def provide_slapd_state(env, status):
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1295439')
+@pytest.mark.testrail_id('1295439', with_proxy=True)
+@pytest.mark.testrail_id('1681468', with_proxy=False)
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_ldap_basic_functions(os_conn):
+@pytest.mark.parametrize('with_proxy', [True, False])
+def test_ldap_basic_functions(os_conn, with_proxy):
     """Test to cover basic functionality for multi domain
 
     Steps to reproduce:
     1. Check that LDAP plugin is installed
     2. Login as admin/admin, domain: default
-    3. Find LDAP domain(s)
+    3. Find LDAP domains
     4. For each domain, checks lists of users and groups
     """
 
+    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+        enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
+        pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
+
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     ldap_domains = [domain for domain in keystone_v3.domains.list() if
-                    re.search("^(openldap|AD)", domain.name)]
-    # Limitation: only domains like openldap1, openldap.tld, AD2 are checked
-    assert len(ldap_domains) > 0, "no LDAP test domains are found"
+                    domain.name.startswith('openldap')]
+    assert len(ldap_domains) > 0, "no LDAP domains are found"
     for ldap_domain in ldap_domains:
+        logger.info("Checking users of domain {0}".format(ldap_domain.name))
         users = keystone_v3.users.list(domain=ldap_domain)
-        logger.debug("domain: {0}, users: {1}".
-                     format(ldap_domain.name, [u.name for u in users]))
         assert len(users) > 0, ("no users in domain {0}".
                                 format(ldap_domain.name))
+        logger.info("Checking groups of domain {0}".format(ldap_domain.name))
         groups = keystone_v3.groups.list(domain=ldap_domain)
-        logger.debug("domain: {0}, groups: {1}".
-                     format(ldap_domain.name, [g.name for g in groups]))
         assert len(groups) > 0, ("no groups in domain {0}".
                                  format(ldap_domain.name))
 
