@@ -35,7 +35,8 @@ PUBLIC_TEST_IP = os.environ.get('PUBLIC_TEST_IP', '8.8.8.8')
 
 # Path to folder with required images
 TEST_IMAGE_PATH = os.environ.get("TEST_IMAGE_PATH", os.path.expanduser('~/images'))  # noqa
-UBUNTU_QCOW2_URL = 'https://cloud-images.ubuntu.com/xenial/current/xenial-server-cloudimg-amd64-disk1.img'  # noqa
+UBUNTU_QCOW2_URL = os.environ.get('UBUNTU_QCOW2_URL',
+                                  'https://cloud-images.ubuntu.com/xenial/current/xenial-server-cloudimg-amd64-disk1.img')  # noqa
 FEDORA_QCOW2_URL = 'https://download.fedoraproject.org/pub/fedora/linux/releases/23/Cloud/x86_64/Images/Fedora-Cloud-Base-23-20151030.x86_64.qcow2'  # noqa
 WIN_SERVER_QCOW2 = 'windows_server_2012_r2_standard_eval_kvm_20140607.qcow2'
 UBUNTU_URL = 'http://archive.ubuntu.com/ubuntu/dists/trusty/main/installer-amd64/current/images/netboot/mini.iso'  # noqa
