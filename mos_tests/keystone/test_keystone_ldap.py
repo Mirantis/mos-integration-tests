@@ -46,7 +46,6 @@ def domain_projects(os_conn):
             old_projects[domain.name].append(project.name)
     yield
     # Delete projects created during test execution
-    # (it's supposed that domains are not created/deleted/renamed)
     for domain in domains:
         for project in keystone_v3.projects.list(domain=domain):
             if project.name not in old_projects[domain.name]:
@@ -56,6 +55,7 @@ def domain_projects(os_conn):
 
 @pytest.yield_fixture
 def slapd_running(os_conn):
+    """Check/start the slapd service on all controllers"""
     provide_slapd_state(os_conn.env, "running")
     yield
     provide_slapd_state(os_conn.env, "running")
@@ -63,6 +63,7 @@ def slapd_running(os_conn):
 
 @pytest.yield_fixture
 def controllers(env):
+    """Move certificate files on all controllers and restart slapd"""
     controllers = env.get_nodes_by_role('controller')
     for controller in controllers:
         if move_cert(controller, to_original=True):
@@ -764,3 +765,35 @@ def test_mapping_user_parameters(os_conn, ldap_server, new_ldap_user):
 
     with pytest.raises(KeyStoneException):
         keystone_v3.users.find(domain=domain, name=user_name)
+
+
+@pytest.mark.testrail_id('1680673')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_recovery_after_controller_shutdown(os_conn, devops_env):
+    """Check recovery after shutdown of a controller
+
+    Steps to reproduce:
+    1. Check list of LDAP domains
+    2. Shutdown the primary controller
+    3. Check list of users and groups for LDAP domains
+    """
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domains = [d for d in keystone_v3.domains.list()
+               if d.name.startswith('openldap')]
+    assert len(domains) > 0, "no LDAP domains are found"
+
+    primary_controller = \
+        devops_env.get_node_by_fuel_node(os_conn.env.primary_controller)
+    os_conn.env.warm_shutdown_nodes([primary_controller])
+
+    domains = [d for d in keystone_v3.domains.list()
+               if d.name.startswith('openldap')]
+    assert len(domains) > 0, "no LDAP domains are found"
+    for domain in domains:
+        logger.debug("Checking users for domain {0}".format(domain.name))
+        assert len(keystone_v3.users.list(domain=domain)) > 0
+        logger.debug("Checking groups for domain {0}".format(domain.name))
+        assert len(keystone_v3.groups.list(domain=domain)) > 0
+
+    # controller is not started, all nodes are restored from snapshot
