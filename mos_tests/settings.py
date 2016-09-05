@@ -55,6 +55,10 @@ GLANCE_IMAGE_URL = os.environ.get(
     'GLANCE_IMAGE_URL',
     'http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img')
 
+#########################
+# Murano tests settings #
+#########################
+
 MURANO_PACKAGE_WITH_DEPS_URL = "http://storage.apps.openstack.org/apps/io.murano.apps.docker.DockerApp.zip"  # noqa
 MURANO_PACKAGE_WITH_DEPS_FQN = "io.murano.apps.docker.DockerApp"
 MURANO_PACKAGE_DEPS_NAMES = (
@@ -64,9 +68,18 @@ MURANO_PACKAGE_DEPS_NAMES = (
     'Kubernetes Cluster',
     'Kubernetes Pod',
 )
-MURANO_IMAGE_URL = 'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'  # noqa
-MURANO_DOCKER_IMAGE_URL = 'http://storage.apps.openstack.org/images/ubuntu14.04-x64-docker.qcow2'  # noqa
-MURANO_KUBERNETES_IMAGE_URL = 'http://storage.apps.openstack.org/images/ubuntu14.04-x64-kubernetes.qcow2'  # noqa
+MURANO_IMAGE_URL = os.environ.get(
+    'MURANO_IMAGE_URL',
+    'http://storage.apps.openstack.org/images/debian-8-m-agent.qcow2'
+)
+MURANO_DOCKER_IMAGE_URL = os.environ.get(
+    'MURANO_DOCKER_IMAGE_URL',
+    'http://storage.apps.openstack.org/images/ubuntu14.04-x64-docker.qcow2'
+)
+MURANO_KUBERNETES_IMAGE_URL = os.environ.get(
+    'MURANO_KUBERNETES_IMAGE_URL',
+    'http://storage.apps.openstack.org/images/ubuntu14.04-x64-kubernetes.qcow2'
+)
 MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
 MURANO_BUNDLE_URL = 'http://storage.apps.openstack.org/bundles/docker-n-kubernetes.bundle'  # noqa
 MURANO_PACKAGE_BUNDLE_NAMES = (
