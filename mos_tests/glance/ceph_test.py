@@ -169,6 +169,13 @@ def test_sync_type_on_ceph(devops_env, env, os_conn, controller_remote):
 
     size = 6 * 1024**3  # 6GB
 
+    # Wait till time will be synchronized and Ceph be ok
+    common.wait(lambda: is_ceph_time_sync(controller_remote),
+                timeout_seconds=10 * 60,
+                sleep_seconds=60,
+                waiting_for='ceph monitors to detect clock sync '
+                            'BEFORE any actions')
+
     f1 = FakeFile(size=size)
     f2 = FakeFile(size=size)
 
