@@ -29,13 +29,13 @@ class IronicActions(object):
     def _get_image(self, name):
         return self.os_conn.nova.images.find(name=name)
 
-    def has_node_for_flavor(self, flavor):
-        """Check if any ironic nodes provisioned and suitable for flavor"""
+    def all_nodes_provisioned(self):
+        """Check if all ironic nodes provisioned"""
         for hypervisor in self.os_conn.nova.hypervisors.findall(
                 hypervisor_type='ironic'):
-            if self.os_conn.get_hypervisor_capacity(hypervisor, flavor) > 0:
-                return True
-        return False
+            if hypervisor.vcpus + hypervisor.vcpus_used == 0:
+                return False
+        return True
 
     def boot_instance(self,
                       image,
@@ -56,10 +56,10 @@ class IronicActions(object):
         :return: created instance
         :rtype: novaclient.v2.servers.Server
         """
-        common.wait(lambda: self.has_node_for_flavor(flavor),
+        common.wait(self.all_nodes_provisioned,
                     timeout_seconds=3 * 60,
                     sleep_seconds=15,
-                    waiting_for='ironic node to be provisioned')
+                    waiting_for='ironic nodes to be provisioned')
         baremetal_net = self.os_conn.nova.networks.find(label='baremetal')
         return self.os_conn.create_server(name,
                                           image_id=image.id,

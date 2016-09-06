@@ -26,10 +26,10 @@ def make_image(os_conn):
 
     def get_or_create_image(node_driver='fuel_libvirt'):
         if node_driver == 'fuel_ipmitool':
-            image_name = 'ironic_trusty_baremetal'
+            image_name = 'ironic_ubuntu_baremetal'
             disk_info = settings.IRONIC_GLANCE_DISK_INFO_BAREMETAL
         else:
-            image_name = 'ironic_trusty_virtual'
+            image_name = 'ironic_ubuntu_virtual'
             disk_info = settings.IRONIC_GLANCE_DISK_INFO_VIRTUAL
 
         try:
