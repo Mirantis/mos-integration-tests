@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture
+def admin_remote(fuel):
+    with fuel.ssh_admin() as remote:
+        yield remote
+
+
+@pytest.yield_fixture
 def domain_projects(os_conn):
     # Get current projects for all domains
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
@@ -380,10 +386,12 @@ def test_ldap_get_group_members(os_conn, domain_name):
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1616778')
+@pytest.mark.testrail_id('1616778', with_proxy=True)
+@pytest.mark.testrail_id('1617216', with_proxy=False)
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_create_project_by_user(os_conn, domain_projects):
+@pytest.mark.parametrize('with_proxy', [True, False])
+def test_create_project_by_user(os_conn, domain_projects, with_proxy):
     """Create a project by LDAP user
 
     Steps to reproduce:
@@ -393,6 +401,10 @@ def test_create_project_by_user(os_conn, domain_projects):
     4. Relogin as user01/1111, domain: openldap1
     5. Create a new project
     """
+
+    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+        enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
+        pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
     test_domain_name = "openldap1"
     test_user_name = 'user01'
@@ -437,8 +449,7 @@ def test_create_project_by_user(os_conn, domain_projects):
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1618359')
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ldap_proxy",
-                        "has_3_or_more_controllers")
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_ldap_proxy")
 def test_support_ldap_proxy(os_conn, slapd_running):
     """Check that getUsers results for domains configured with LDAP proxy
     depend on slapd state (stopped or running)
@@ -505,8 +516,8 @@ def test_support_ldap_proxy(os_conn, slapd_running):
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1663412')
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed", "is_tls_use",
-                        "is_ldap_proxy", "has_3_or_more_controllers")
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_ldap_proxy",
+                        "is_tls_use")
 def test_check_tls_option(os_conn, controllers, env):
     """Check that tls option works correctly
 
@@ -569,8 +580,7 @@ def test_check_tls_option(os_conn, controllers, env):
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1640557')
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed",
-                        "has_3_or_more_controllers")
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha")
 def test_check_list_limit(os_conn, env, keystone_conf):
     """Check that list_limit option works correctly
 
@@ -628,10 +638,12 @@ def test_check_support_active_directory(os_conn):
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1668066')
+@pytest.mark.testrail_id('1668066', with_proxy=True)
+@pytest.mark.testrail_id('1681494', with_proxy=False)
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_create_instance_by_user(os_conn, domain_projects):
+@pytest.mark.check_env_("is_ldap_plugin_installed", "has_1_or_more_computes")
+@pytest.mark.parametrize('with_proxy', [True, False])
+def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
     """Launch an instance by LDAP user
 
     Steps to reproduce:
@@ -643,6 +655,10 @@ def test_create_instance_by_user(os_conn, domain_projects):
     6. Create a network and subnetwork for the new project
     7. Create an instance
     """
+
+    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+        enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
+        pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
     test_domain_name = "openldap1"
     test_user_name = 'user01'
@@ -767,9 +783,81 @@ def test_mapping_user_parameters(os_conn, ldap_server, new_ldap_user):
         keystone_v3.users.find(domain=domain, name=user_name)
 
 
-@pytest.mark.testrail_id('1680673')
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1681395')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha")
+def test_check_admin_privileges(os_conn):
+    """Check the admin privileges for a domain user
+
+    Steps to reproduce:
+    1. Login as admin/admin, domain: default
+    2. Set role 'admin' to 'user1' in domain openldap2
+    3. Relogin as user1/1111, domain: openldap2
+    4. Check list of users in domain openldap1
+    """
+
+    domain_name = "openldap2"
+    user_name = 'user1'
+    user_pass = '1111'
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    domain = keystone_v3.domains.find(name=domain_name)
+    user = keystone_v3.users.find(domain=domain, name=user_name)
+
+    logger.info("Setting role 'admin' to user {0}".format(user_name))
+    role_admin = keystone_v3.roles.find(name="admin")
+    keystone_v3.roles.grant(role=role_admin, user=user, domain=domain)
+
+    role_assignments = keystone_v3.role_assignments.list(domain=domain)
+    domain_users_ids = [du.user["id"] for du in role_assignments]
+    assert user.id in domain_users_ids
+
+    logger.info("Login as {0}".format(user_name))
+    controller_ip = os_conn.env.get_primary_controller_ip()
+    auth_url = 'http://{0}:5000/v3'.format(controller_ip)
+    auth = v3.Password(auth_url=auth_url,
+                       username=user_name,
+                       password=user_pass,
+                       domain_name=domain_name,
+                       user_domain_name=domain_name)
+    sess = session.Session(auth=auth)
+    keystone_v3 = KeystoneClientV3(session=sess)
+
+    another_domain_name = "openldap1"
+    another_domain = keystone_v3.domains.find(name=another_domain_name)
+    logger.info("Checking users for domain {0}".format(another_domain_name))
+    assert len(keystone_v3.users.list(domain=another_domain)) > 0
+    logger.info("Checking groups for domain {0}".format(another_domain_name))
+    assert len(keystone_v3.groups.list(domain=another_domain)) > 0
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1680670')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_plugin_uninstall_for_deployed_env(os_conn, admin_remote):
+    """Check that the LDAP plugin cannot be uninstalled in the deployed
+    environment
+
+    Steps to reproduce:
+    1. Execute the command to remove LDAP plugin
+    2. Check that this command is failed with expected error message
+    """
+
+    data = os_conn.env.get_settings_data()['editable']
+    plugin_version = \
+        data['ldap']['metadata']['versions'][0]['metadata']['plugin_version']
+    result = admin_remote.execute("fuel plugins --remove ldap=={0}".
+                                  format(plugin_version))
+    exp_msg = "Can't delete plugin which is enabled for some environment"
+    assert exp_msg in result['stderr'][0]
+
+
+# destructive
+@pytest.mark.testrail_id('1680673')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha")
 def test_recovery_after_controller_shutdown(os_conn, devops_env):
     """Check recovery after shutdown of a controller
 
