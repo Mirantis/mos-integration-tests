@@ -59,11 +59,11 @@ def image_factory(name, url):
 
     return image
 
-linux_image = image_factory('debian-8-m-agent.qcow2',
+linux_image = image_factory('murano_image',
                             settings.MURANO_IMAGE_URL)
-docker_image = image_factory('ubuntu14.04-x64-docker',
+docker_image = image_factory('murano_docker_image',
                              settings.MURANO_DOCKER_IMAGE_URL)
-kubernetes_image = image_factory('ubuntu14.04-x64-kubernetes',
+kubernetes_image = image_factory('murano_kubernetes_image',
                                  settings.MURANO_KUBERNETES_IMAGE_URL)
 
 
