@@ -42,11 +42,16 @@ class TestDVRBase(base.TestBase):
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
         self.hosts = self.zone.hosts.keys()
 
+    def sync_fs(self, node):
+        with node.ssh() as remote:
+            remote.check_call('sync')
+
     def reset_computes(self, hostnames, devops_env):
 
         logger.info('Resetting computes {}'.format(hostnames))
         for hostname in hostnames:
             node = self.env.find_node_by_fqdn(hostname)
+            self.sync_fs(node)
             devops_node = devops_env.get_node_by_fuel_node(node)
             devops_node.destroy()
             devops_node.start()
