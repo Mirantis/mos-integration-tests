@@ -21,7 +21,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from mos_tests.functions import common
+from mos_tests.functions.common import is_ceph_time_sync
+from mos_tests.functions.common import wait
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +86,6 @@ def get_glance_image_md5(os_conn, image):
     return md5.hexdigest()
 
 
-def get_ceph_status(remote):
-    output = remote.check_call('ceph status -f json-pretty',
-                               verbose=False).stdout_string
-    return json.loads(output)
-
-
-def is_ceph_time_sync(remote):
-    health = get_ceph_status(remote)['health']
-    mons = health['timechecks']['mons']
-    ok = all([x['health'] == 'HEALTH_OK' for x in mons])
-    if not ok:
-        logger.info('ceph healt detail:\n'
-                    '{0}'.format('\n'.join(health['detail'])))
-    return ok
-
-
 def up_down_nodes(controller):
     with controller.ssh() as remote:
         output = remote.check_call(
@@ -116,7 +101,7 @@ def ceph_nodes_down(controller, devops_nodes, osd_count):
     down_number = up_down_nodes(controller)['down']
     for devops_node in devops_nodes:
         devops_node.destroy()
-    common.wait(
+    wait(
         lambda: up_down_nodes(
             controller)['down'] == down_number + osd_count,
         timeout_seconds=600,
@@ -128,7 +113,7 @@ def ceph_nodes_up(controller, devops_nodes, osd_count):
     up_number = up_down_nodes(controller)['up']
     for devops_node in devops_nodes:
         devops_node.start()
-    common.wait(
+    wait(
         lambda: up_down_nodes(
             controller)['up'] == up_number + osd_count,
         timeout_seconds=600,
@@ -191,10 +176,10 @@ def test_sync_type_on_ceph(devops_env, env, os_conn, controller_remote):
             time.sleep(5)
             remote.check_call('date -u -s "{0}"'.format(date))
 
-    common.wait(lambda: not is_ceph_time_sync(controller_remote),
-                timeout_seconds=10 * 60,
-                sleep_seconds=30,
-                waiting_for='ceph monitors to detect clock skew')
+    wait(lambda: not is_ceph_time_sync(controller_remote),
+         timeout_seconds=10 * 60,
+         sleep_seconds=30,
+         waiting_for='ceph monitors to detect clock skew')
 
     image2 = os_conn.glance.images.create(name='image1',
                                           disk_format='raw',
@@ -212,10 +197,10 @@ def test_sync_type_on_ceph(devops_env, env, os_conn, controller_remote):
     controller_remote.check_call('pcs resource enable p_ntp')
 
     # Ceph clock sync time take up to 300 seconds, according documentation
-    common.wait(lambda: is_ceph_time_sync(controller_remote),
-                timeout_seconds=10 * 60,
-                sleep_seconds=60,
-                waiting_for='ceph monitors to detect clock sync')
+    wait(lambda: is_ceph_time_sync(controller_remote),
+         timeout_seconds=10 * 60,
+         sleep_seconds=60,
+         waiting_for='ceph monitors to detect clock sync')
 
     assert f1.digest == get_glance_image_md5(os_conn, image1)
     assert f2.digest == get_glance_image_md5(os_conn, image2)
@@ -265,10 +250,10 @@ def test_data_replication_with_factor_2(
                   ceph_nodes_osds[ceph_nodes[0]])
 
     # Wait for data replication
-    common.wait(lambda: is_replication_finished(controller),
-                timeout_seconds=1500,
-                waiting_for='replication',
-                sleep_seconds=60)
+    wait(lambda: is_replication_finished(controller),
+         timeout_seconds=1500,
+         waiting_for='replication',
+         sleep_seconds=60)
 
     logger.info("Shutdown another ceph node")
     ceph_nodes_down(controller, [devops_nodes[1]],
@@ -327,10 +312,10 @@ def test_data_replication_with_factor_3(
         ceph_nodes_osds[ceph_nodes[1]] + ceph_nodes_osds[ceph_nodes[2]])
 
     # Wait for data replication
-    common.wait(lambda: is_replication_finished(controller),
-                timeout_seconds=1500,
-                waiting_for='replication',
-                sleep_seconds=60)
+    wait(lambda: is_replication_finished(controller),
+         timeout_seconds=1500,
+         waiting_for='replication',
+         sleep_seconds=60)
 
     logger.info("Shutdown ceph nodes 1 and 3")
     ceph_nodes_down(

@@ -13,6 +13,7 @@
 #    under the License.
 
 import inspect
+import json
 import logging
 import os
 import socket
@@ -51,6 +52,22 @@ def get_stack_id(heat_client, stack_name):
     if is_stack_exists(stack_name, heat_client):
         return heat_client.stacks.list(filter={'name': stack_name}).id
     raise Exception("ERROR: Stack {} is not defined".format(stack_name))
+
+
+def get_ceph_status(remote):
+    output = remote.check_call('ceph status -f json-pretty',
+                               verbose=False).stdout_string
+    return json.loads(output)
+
+
+def is_ceph_time_sync(remote):
+    health = get_ceph_status(remote)['health']
+    mons = health['timechecks']['mons']
+    ok = all([x['health'] == 'HEALTH_OK' for x in mons])
+    if not ok:
+        logger.info('ceph healt detail:\n'
+                    '{0}'.format('\n'.join(health['detail'])))
+    return ok
 
 
 def check_stack_status(stack_name, heat, status, timeout=60):
