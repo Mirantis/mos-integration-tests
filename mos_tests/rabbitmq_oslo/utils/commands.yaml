@@ -64,11 +64,10 @@
               apt-get install git dpkg-dev debhelper dh-systemd openstack-pkg-tools
               po-debconf python-all python-pbr python-setuptools python-sphinx python-babel
               python-eventlet python-flask python-oslo.config python-oslo.log
-              python-oslo.messaging python-oslosphinx -y
+              python-oslo.messaging python-oslosphinx -y --force-yes
               && rm -rf {repo_path}
               && git clone {repo} {repo_path} ;
-              dpkg -r oslo.messaging-check-tool
-              || echo 'Trying to remove package' ;
+              dpkg -r oslo.messaging-check-tool || echo 'Trying to remove package' ;
               cd {repo_path};
               dpkg -i oslo.messaging-check-tool*.deb || apt-get -f install -y"
     messages_single_load:    "oslo_msg_load_generator --config-file {config}
