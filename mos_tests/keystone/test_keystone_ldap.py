@@ -317,6 +317,53 @@ def provide_slapd_state(env, status):
                 waiting_for='status is {}'.format(status_commands[status][2]))
 
 
+def map_interfaces(devops_env, fuel_node):
+    """Return pairs of fuel_node interfaces and devops interfaces"""
+    pairs = []
+    devops_node = devops_env.get_node_by_fuel_node(fuel_node)
+    for fuel_interface in fuel_node.get_attribute('interfaces'):
+        for devops_interface in devops_node.interfaces:
+            if fuel_interface['mac'] == devops_interface.mac_address:
+                pairs.append((fuel_interface, devops_interface))
+                continue
+    return pairs
+
+
+def map_devops_to_fuel_net(env, devops_env, fuel_node):
+    """Make devops network.id -> fuel networks mapping"""
+    interfaces_map = {}
+    for fuel_if, devop_if in map_interfaces(devops_env,
+                                            env.primary_controller):
+        interfaces_map[devop_if.network_id] = fuel_if['assigned_networks']
+
+    # Assign fuel networks to corresponding interfaces
+    interfaces = []
+    for fuel_if, devop_if in map_interfaces(devops_env, fuel_node):
+        fuel_if['assigned_networks'] = interfaces_map[devop_if.network_id]
+        interfaces.append(fuel_if)
+    return interfaces
+
+
+def basic_check(keystone_v3, domain_name=None):
+    """Check list of users and groups for LDAP domains"""
+    if domain_name:
+        ldap_domains = [keystone_v3.domains.find(name=domain_name)]
+    else:
+        ldap_domains = [domain for domain in keystone_v3.domains.list() if
+                        domain.name.startswith("openldap")]
+        assert len(ldap_domains) > 0, "no LDAP domains are found"
+
+    for ldap_domain in ldap_domains:
+        logger.info("Checking users of domain {0}".format(ldap_domain.name))
+        users = keystone_v3.users.list(domain=ldap_domain)
+        assert len(users) > 0, ("no users in domain {0}".
+                                format(ldap_domain.name))
+        logger.info("Checking groups of domain {0}".format(ldap_domain.name))
+        groups = keystone_v3.groups.list(domain=ldap_domain)
+        assert len(groups) > 0, ("no groups in domain {0}".
+                                 format(ldap_domain.name))
+
+
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1295439', with_proxy=True)
 @pytest.mark.testrail_id('1681468', with_proxy=False)
@@ -338,18 +385,7 @@ def test_ldap_basic_functions(os_conn, with_proxy):
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    ldap_domains = [domain for domain in keystone_v3.domains.list() if
-                    domain.name.startswith('openldap')]
-    assert len(ldap_domains) > 0, "no LDAP domains are found"
-    for ldap_domain in ldap_domains:
-        logger.info("Checking users of domain {0}".format(ldap_domain.name))
-        users = keystone_v3.users.list(domain=ldap_domain)
-        assert len(users) > 0, ("no users in domain {0}".
-                                format(ldap_domain.name))
-        logger.info("Checking groups of domain {0}".format(ldap_domain.name))
-        groups = keystone_v3.groups.list(domain=ldap_domain)
-        assert len(groups) > 0, ("no groups in domain {0}".
-                                 format(ldap_domain.name))
+    basic_check(keystone_v3)
 
 
 @pytest.mark.undestructive
@@ -505,7 +541,7 @@ def test_support_ldap_proxy(os_conn, slapd_running):
 
     logger.info("Starting slapd service on all controllers")
     provide_slapd_state(os_conn.env, "running")
-    common.wait(is_proxy_up, timeout_seconds=180,
+    common.wait(is_proxy_up, timeout_seconds=180, sleep_seconds=10,
                 waiting_for='proxy is up')
 
     for domain in domains:
@@ -824,19 +860,14 @@ def test_check_admin_privileges(os_conn):
     sess = session.Session(auth=auth)
     keystone_v3 = KeystoneClientV3(session=sess)
 
-    another_domain_name = "openldap1"
-    another_domain = keystone_v3.domains.find(name=another_domain_name)
-    logger.info("Checking users for domain {0}".format(another_domain_name))
-    assert len(keystone_v3.users.list(domain=another_domain)) > 0
-    logger.info("Checking groups for domain {0}".format(another_domain_name))
-    assert len(keystone_v3.groups.list(domain=another_domain)) > 0
+    basic_check(keystone_v3, domain_name="openldap1")
 
 
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1680670')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_plugin_uninstall_for_deployed_env(os_conn, admin_remote):
+def test_plugin_uninstall_for_deployed_env(env, admin_remote):
     """Check that the LDAP plugin cannot be uninstalled in the deployed
     environment
 
@@ -845,13 +876,50 @@ def test_plugin_uninstall_for_deployed_env(os_conn, admin_remote):
     2. Check that this command is failed with expected error message
     """
 
-    data = os_conn.env.get_settings_data()['editable']
+    data = env.get_settings_data()['editable']
     plugin_version = \
         data['ldap']['metadata']['versions'][0]['metadata']['plugin_version']
     result = admin_remote.execute("fuel plugins --remove ldap=={0}".
                                   format(plugin_version))
     exp_msg = "Can't delete plugin which is enabled for some environment"
     assert exp_msg in result['stderr'][0]
+
+
+# destructive
+@pytest.mark.testrail_id('1680671')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_plugin_uninstall_for_non_deployed_env(env, admin_remote):
+    """Check uninstallation of the LDAP plugin when an environment is
+    non-deployed and the plugin is disabled for it
+
+    Steps to reproduce:
+    1. Reset environment
+    2. Disable the LDAP plugin
+    3. Execute the command to remove LDAP plugin
+    4. Check that this command is finished successfully
+    """
+
+    logger.info("Reset environment")
+    env.reset()
+    common.wait(lambda: env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Disable the LDAP plugin for environment")
+    data = env.get_settings_data()
+    data['editable']['ldap']['metadata']['enabled'] = False
+    env.set_settings_data(data)
+
+    logger.info("Uninstall the LDAP plugin")
+    plugin_data = data['editable']['ldap']['metadata']['versions'][0]
+    plugin_version = plugin_data['metadata']['plugin_version']
+    result = admin_remote.execute("fuel plugins --remove ldap=={0}".
+                                  format(plugin_version))
+    exp_msg = "Plugin ldap=={0} was successfully removed".\
+        format(plugin_version)
+    assert exp_msg in result['stdout'][-1]
 
 
 # destructive
@@ -862,26 +930,106 @@ def test_recovery_after_controller_shutdown(os_conn, devops_env):
     """Check recovery after shutdown of a controller
 
     Steps to reproduce:
-    1. Check list of LDAP domains
+    1. Check list of users and groups for LDAP domains
     2. Shutdown the primary controller
     3. Check list of users and groups for LDAP domains
     """
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    domains = [d for d in keystone_v3.domains.list()
-               if d.name.startswith('openldap')]
-    assert len(domains) > 0, "no LDAP domains are found"
+    basic_check(keystone_v3)
 
     primary_controller = \
         devops_env.get_node_by_fuel_node(os_conn.env.primary_controller)
     os_conn.env.warm_shutdown_nodes([primary_controller])
 
-    domains = [d for d in keystone_v3.domains.list()
-               if d.name.startswith('openldap')]
-    assert len(domains) > 0, "no LDAP domains are found"
-    for domain in domains:
-        logger.debug("Checking users for domain {0}".format(domain.name))
-        assert len(keystone_v3.users.list(domain=domain)) > 0
-        logger.debug("Checking groups for domain {0}".format(domain.name))
-        assert len(keystone_v3.groups.list(domain=domain)) > 0
+    basic_check(keystone_v3)
 
-    # controller is not started, all nodes are restored from snapshot
+
+# destructive
+@pytest.mark.testrail_id('1663416', node_role='controller')
+@pytest.mark.testrail_id('1663415', node_role='compute')
+@pytest.mark.ldap
+@pytest.mark.parametrize('node_role', ['controller', 'compute'])
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha",
+                        "has_1_or_more_computes")
+def test_remove_add_node_to_env(os_conn, devops_env, node_role):
+    """Check basic LDAP functionalities after removing/adding the primary
+    controller or compute
+
+    Steps to reproduce:
+    1. Check list of users and groups for LDAP domains
+    2. Delete the primary controller/compute
+    3. Deploy the environment
+    4. Check that env is OK
+    5. Check list of users and groups for LDAP domains
+    6. Add the controller/compute deleted before
+    7. Deploy the environment
+    8. Check that env is OK
+    9. Check list of users and groups for LDAP domains
+
+    Duration ~ 90 minutes for every node
+
+    See similar test_remove_add_compute_controller_nodes_to_env
+    in rabbitmq_oslo/test_detached_rabbit
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    if node_role == 'controller':
+        node = os_conn.env.primary_controller
+    else:
+        node = os_conn.env.get_nodes_by_role('compute')[0]
+    node_dev = devops_env.get_node_by_fuel_node(node)
+    node_name = node.data['name']
+    node_roles = node.data['roles']
+
+    logger.info("Unassign node {0} ({1})".format(node_name, node_roles))
+    os_conn.env.unassign([node.id])
+
+    logger.debug("Run network verification")
+    assert os_conn.env.wait_network_verification().status == 'ready'
+
+    logger.info("Deploy changes")
+    deploy_task = os_conn.env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert os_conn.env.status == 'operational'
+    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    logger.info("Assign back node {0} ({1})".format(node_name, node_roles))
+    node = os_conn.env.get_node_by_devops_node(node_dev)
+    node.set({'name': node_name + '_new'})
+    os_conn.env.assign([node], node_roles)
+
+    logger.debug("Restore network interfaces")
+    interfaces = map_devops_to_fuel_net(os_conn.env, devops_env, node)
+    node.upload_node_attribute('interfaces', interfaces)
+
+    logger.debug("Run network verification")
+    assert os_conn.env.wait_network_verification().status == 'ready'
+
+    logger.info("Reset environment")
+    os_conn.env.reset()
+    common.wait(lambda: os_conn.env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Deploy environment")
+    deploy_task = os_conn.env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert os_conn.env.status == 'operational'
+    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
