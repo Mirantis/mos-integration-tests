@@ -25,6 +25,7 @@ from mos_tests.environment.devops_client import DevopsClient
 from mos_tests.environment.fuel_client import FuelClient
 from mos_tests.functions.common import gen_temp_file
 from mos_tests.functions.common import get_os_conn
+from mos_tests.functions.common import is_ceph_time_sync
 from mos_tests.functions.common import wait
 from mos_tests.functions import file_cache
 from mos_tests.functions import os_cli
@@ -213,12 +214,17 @@ def fuel(fuel_master_ip):
 
 def restart_ceph(env):
     ceph_nodes = env.get_nodes_by_role('ceph-osd')
-    if len(ceph_nodes) == 0:
-        return
-    controllers = env.get_nodes_by_role('controller')
-    for node in set(ceph_nodes) | set(controllers):
-        with node.ssh() as remote:
-            remote.execute('restart ceph-all')
+    if ceph_nodes:
+        controllers = env.get_nodes_by_role('controller')
+        for node in set(controllers):
+            with node.ssh() as remote:
+                wait(lambda: is_ceph_time_sync(remote),
+                     timeout_seconds=3 * 60,
+                     sleep_seconds=5,
+                     waiting_for='ceph services are up')
+        for node in set(ceph_nodes) | set(controllers):
+            with node.ssh() as remote:
+                remote.execute('restart ceph-all')
 
 
 @pytest.fixture(scope='session')
