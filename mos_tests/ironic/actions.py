@@ -31,9 +31,16 @@ class IronicActions(object):
 
     def all_nodes_provisioned(self):
         """Check if all ironic nodes provisioned"""
-        for hypervisor in self.os_conn.nova.hypervisors.findall(
-                hypervisor_type='ironic'):
+        ironic_hypervisors = self.os_conn.nova.hypervisors.findall(
+            hypervisor_type='ironic')
+        if len(ironic_hypervisors) == 0:
+            return False
+        for hypervisor in ironic_hypervisors:
             if hypervisor.vcpus + hypervisor.vcpus_used == 0:
+                return False
+            if hypervisor.memory_mb + hypervisor.memory_mb_used == 0:
+                return False
+            if hypervisor.local_gb + hypervisor.local_gb_used == 0:
                 return False
         return True
 

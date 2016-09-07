@@ -160,7 +160,7 @@ class TestScale(object):
         task = env.deploy_changes()
 
         common.wait(lambda: common.is_task_ready(task),
-                    timeout_seconds=120 * 60,
+                    timeout_seconds=180 * 60,
                     sleep_seconds=60,
                     waiting_for='changes to be deployed')
 
