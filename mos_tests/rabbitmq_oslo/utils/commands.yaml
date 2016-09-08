@@ -28,6 +28,7 @@
     grep_segfault:    "rabbitmqctl status |& grep -i segfault"
     grep_diagnostics: "rabbitmqctl status |& grep DIAGNOSTICS"
     get_pid:          "rabbitmqctl status | grep pid | grep -o '[0-9]*'"
+    get_queue: "rabbitmqadmin --username={usr} --password={pwd} get queue=conductor requeue=true count=1"
 
   rabbit_srv_service:
     status: "service rabbitmq-server status"
@@ -45,6 +46,7 @@
 
   system:
     cpu_count: "grep -c ^processor /proc/cpuinfo"
+    cpu_count2: "nproc"
     background: "<&- >/dev/null 2>&1 &"
     halt: "halt"
     kill_by_name: "for pid in $(pgrep '{process_name}'); do kill -9 $pid; done"
@@ -52,7 +54,9 @@
     check_run_process_by_name: "ps uax | grep '{process_name}' | grep -vc grep"
     get_http_code: "curl -I --stderr /dev/null {url} --silent --max-time {timeout} | head -1
                    | cut -d' ' -f2"
-    thread_pool_size: "ps ax | perl -nE '/beam.*-sname rabbit/ && /^\\s*(\\d+).*?-A (\\d+)/ && say $2'"
+    thread_pool_size:        "ps ax | perl -nE '/beam.*-sname rabbit/ && /^\\s*(\\d+).*?-A (\\d+)/ && say $2'"
+    master_thread_pool_size: "ps ax | perl -nE '/-s rabbit boot/ && /^\\s*(\\d+).*?-A (\\d+)/ && say $2'"
+
     hipe_files_count: "ls -la $(for i in $(ps aux | grep rabbitmq); do echo $i | grep native; done) | grep -c '.beam'"
 
   oslo_messaging_check_tool:
