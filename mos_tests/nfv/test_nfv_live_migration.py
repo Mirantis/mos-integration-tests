@@ -45,10 +45,11 @@ def nova_ceph(env):
 
 
 @pytest.yield_fixture(scope='module', autouse=True)
-def disable_nova_config_drive(env):
+def disable_nova_config_drive(get_env):
     # WA for bug https://bugs.launchpad.net/mos/+bug/1589460/
     # This should be removed in MOS 10.0
     config = [('DEFAULT', 'force_config_drive', False)]
+    env = get_env()
     for step in service.nova_patch(env, config):
         yield step
 

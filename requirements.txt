@@ -1,7 +1,7 @@
 git+git://github.com/openstack/fuel-devops.git@2.9.23
 git+git://github.com/openstack/python-fuelclient@9.0.1
 paramiko>=1.16.0
-pytest
+pytest>=3.0.0
 pytest-xdist
 python-glanceclient>=2.0.0
 python-keystoneclient>=2.3.0

@@ -981,8 +981,9 @@ class TestTrafficRestrictionWithSRIoV(TestQoSBase):
 
     @classmethod
     @pytest.fixture(scope='class')
-    def sriov_hosts(cls, env):
+    def sriov_hosts(cls, get_env):
         """Find computes with SR-IOV enabled"""
+        env = get_env()
         computes_list = []
         for compute in env.get_nodes_by_role('compute'):
             with compute.ssh() as remote:

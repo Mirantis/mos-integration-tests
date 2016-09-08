@@ -132,7 +132,7 @@ def setup_session(request, env_name, snapshot_name):
 def reinit_fixtures(request):
     """Refresh some session fixtures (after revert, for example)"""
     logger.info('refresh clients fixtures')
-    for fixture in ('fuel', 'env', 'os_conn'):
+    for fixture in ('os_conn',):
         try:
             fixturedef = request._get_active_fixturedef(fixture)
         except Exception:
@@ -207,9 +207,19 @@ def credentials(setup_session, fuel_master_ip):
 
 
 @pytest.fixture(scope='session')
-def fuel(fuel_master_ip):
-    """Initialized fuel client"""
-    return get_fuel_client(fuel_master_ip)
+def get_fuel(fuel_master_ip):
+    """Returns callable to construct fuel client"""
+
+    def _get_client():
+        return get_fuel_client(fuel_master_ip)
+
+    return _get_client
+
+
+@pytest.fixture
+def fuel(get_fuel, revert_destructive):
+    """Function-scoped initialized fuel client"""
+    return get_fuel()
 
 
 def restart_ceph(env):
@@ -232,26 +242,36 @@ def restart_ceph(env):
 
 
 @pytest.fixture(scope='session')
-def env(request, fuel):
-    """Environment instance"""
-    names = request.config.getoption('--cluster')
-    if not names:
-        env = fuel.get_last_created_cluster()
-    else:
-        envs = fuel.get_clustres_by_names(names)
-        if len(envs) == 0:
-            raise Exception(
-                "Can't find fuel cluster with name in {}".format(names))
-        env = envs[0]
-    assert env.is_operational
-    if getattr(request.session, 'reverted', True):
-        restart_ceph(env)
-        env.wait_for_ostf_pass()
-        wait(env.os_conn.is_nova_ready,
-             timeout_seconds=60 * 5,
-             expected_exceptions=Exception,
-             waiting_for="OpenStack nova computes is ready")
-    return env
+def get_env(request, get_fuel):
+    """Returns callable to construct Environment instance"""
+    def _get_env():
+        fuel = get_fuel()
+        names = request.config.getoption('--cluster')
+        if not names:
+            env = fuel.get_last_created_cluster()
+        else:
+            envs = fuel.get_clustres_by_names(names)
+            if len(envs) == 0:
+                raise Exception(
+                    "Can't find fuel cluster with name in {}".format(names))
+            env = envs[0]
+        assert env.is_operational
+        if getattr(request.session, 'reverted', True):
+            restart_ceph(env)
+            env.wait_for_ostf_pass()
+            wait(env.os_conn.is_nova_ready,
+                 timeout_seconds=60 * 5,
+                 expected_exceptions=Exception,
+                 waiting_for="OpenStack nova computes is ready")
+        return env
+
+    return _get_env
+
+
+@pytest.fixture
+def env(get_env, fuel):
+    """Function-scoped initialized Environment instance"""
+    return get_env()
 
 
 @pytest.fixture(scope="session")
@@ -282,9 +302,9 @@ def os_conn_for_unittests(request, fuel_master_ip):
 
 
 @pytest.fixture(scope='session')
-def os_conn(env):
+def os_conn(get_env):
     """Openstack common actions"""
-    return env.os_conn
+    return get_env().os_conn
 
 
 @pytest.fixture

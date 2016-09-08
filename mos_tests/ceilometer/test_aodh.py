@@ -29,10 +29,11 @@ class TestAlarms(object):
 
     @classmethod
     @pytest.yield_fixture(scope='class', autouse=True)
-    def cleanup(cls, env):
+    def cleanup(cls, get_env):
         yield
         if cls.alarm_id is None:
             return
+        env = get_env()
         controller = env.get_nodes_by_role('controller')[0]
         with controller.ssh() as remote:
             aodh = os_cli.Aodh(remote)

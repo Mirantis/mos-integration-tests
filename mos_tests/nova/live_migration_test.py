@@ -44,9 +44,10 @@ def is_migrated(os_conn, instances, target=None, source=None):
 
 
 @pytest.yield_fixture(scope='module', autouse=True)
-def disable_nova_config_drive(env):
+def disable_nova_config_drive(get_env):
     # WA for bug https://bugs.launchpad.net/mos/+bug/1589460/
     # This should be removed in MOS 10.0
+    env = get_env()
     config = [('DEFAULT', 'force_config_drive', False)]
     for step in service.nova_patch(env, config):
         yield step
