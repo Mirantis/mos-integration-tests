@@ -213,14 +213,22 @@ def fuel(fuel_master_ip):
 
 
 def restart_ceph(env):
+    """Restart ceph monitors to prevent time skew"""
+    ceph_nodes = env.get_nodes_by_role('ceph-osd')
+    if len(ceph_nodes) == 0:
+        return
     controllers = env.get_nodes_by_role('controller')
-    if controllers:
-        with controllers[0].ssh() as remote:
+    with controllers[0].ssh() as remote:
+        if is_ceph_time_sync(remote):
+            return
+    for controller in controllers:
+        with controller.ssh() as remote:
             remote.execute('restart ceph-mon-all')
-            wait(lambda: is_ceph_time_sync(remote),
-                 timeout_seconds=3 * 60,
-                 sleep_seconds=5,
-                 waiting_for='ceph services are up')
+    with controllers[0].ssh() as remote:
+        wait(lambda: is_ceph_time_sync(remote),
+             timeout_seconds=3 * 60,
+             sleep_seconds=5,
+             waiting_for='ceph services are up')
 
 
 @pytest.fixture(scope='session')
