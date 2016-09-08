@@ -51,9 +51,11 @@ class InstanceError(Exception):
         self.instance = instance
 
     def __str__(self):
+        message = self.instance.fault.get('message')
+        details = self.instance.fault.get('details')
         return ('Instance {0.name} is in ERROR status\n'
-                '{0.fault[message]}\n'
-                '{0.fault[details]}'.format(self.instance))
+                '{1}\n'
+                '{2}'.format(self.instance, message, details))
 
 
 class OpenStackActions(object):

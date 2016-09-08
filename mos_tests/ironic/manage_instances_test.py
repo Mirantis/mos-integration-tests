@@ -343,14 +343,14 @@ def test_boot_instances_on_different_tenants(env, os_conn, make_image,
 
     distribution = zip(flavors, ironic_nodes, tenants_clients)
 
+    common.wait(ironic.all_nodes_provisioned,
+                timeout_seconds=3 * 60,
+                sleep_seconds=15,
+                waiting_for='ironic nodes to be provisioned')
     for i, (flavor, ironic_node, tenant_conn) in enumerate(distribution):
         image = make_image(node_driver=ironic_node.driver)
         tenant_keypair = tenant_conn.create_key(key_name='ironic-key')
         brm_net = tenant_conn.nova.networks.find(label='baremetal')
-        common.wait(lambda: ironic.has_node_for_flavor(flavor),
-                    timeout_seconds=3 * 60,
-                    sleep_seconds=15,
-                    waiting_for='ironic node to be provisioned')
         instance = tenant_conn.create_server('ironic-server_{}'.format(i),
                                              image_id=image.id,
                                              flavor=flavor.id,
