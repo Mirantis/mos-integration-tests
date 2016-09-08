@@ -60,9 +60,19 @@ def get_ceph_status(remote):
     return json.loads(output)
 
 
+def get_ceph_health(remote):
+    output = remote.check_call('ceph health -f json-pretty',
+                               verbose=False).stdout_string
+    return json.loads(output)
+
+
 def is_ceph_time_sync(remote):
-    health = get_ceph_status(remote)['health']
-    mons = health['timechecks']['mons']
+    health = get_ceph_health(remote)['health']['health_services']
+    mons = []
+    for item in health:
+        if isinstance(item, dict) and 'mons' in item:
+            mons = item['mons']
+            break
     ok = all([x['health'] == 'HEALTH_OK' for x in mons])
     if not ok:
         logger.info('ceph healt detail:\n'
