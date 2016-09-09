@@ -28,7 +28,8 @@ def nova_client(controller_remote):
 
 
 @pytest.fixture(scope='session')
-def block_migration(env):
+def block_migration(get_env):
+    env = get_env()
     data = env.get_settings_data()
     if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value'):
         pytest.skip('Block migration requires Nova Ceph RBD to be disabled')

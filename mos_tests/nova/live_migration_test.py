@@ -75,7 +75,8 @@ def cleanup_virsh_domains(env, os_conn):
 
 
 @pytest.yield_fixture(scope='module')
-def unlimited_live_migrations(env):
+def unlimited_live_migrations(get_env):
+    env = get_env()
     config = [('DEFAULT', 'max_concurrent_live_migrations', 0)]
     for step in service.nova_patch(env, config):
         yield step
@@ -110,7 +111,8 @@ def big_port_quota(os_conn):
 
 
 @pytest.fixture(scope='session')
-def block_migration(env, request):
+def block_migration(get_env, request):
+    env = get_env()
     value = request.param
     data = env.get_settings_data()
     if dpath.util.get(data, '*/storage/**/ephemeral_ceph/value') and value:
@@ -215,7 +217,8 @@ class TestLiveMigrationBase(object):
                 self.os_conn.wait_hypervisor_be_free(hypervisor)
 
     @pytest.fixture(scope='session')
-    def nova_ceph(self, env, request):
+    def nova_ceph(self, get_env, request):
+        env = get_env()
         data = env.get_settings_data()
         return dpath.util.get(data, '*/storage/**/ephemeral_ceph/value')
 
@@ -623,7 +626,7 @@ class TestLiveMigrationUnderWorkload(TestLiveMigrationBase):
     done"""
 
     @pytest.fixture(scope='session')
-    def block_migration(self, env, request, nova_ceph):
+    def block_migration(self, request, nova_ceph):
         value = request.param
         if nova_ceph and value:
             pytest.skip('Block migration requires Nova CephRBD to be disabled')
@@ -1189,7 +1192,7 @@ class TestLiveMigrationWithUserContent(TestLiveMigrationBase):
     userdata = '\n'.join(["#!/bin/bash -v", "echo 'Hello world!'"])
 
     @pytest.fixture(scope='class')
-    def block_migration(self, env, request, nova_ceph):
+    def block_migration(self, request, nova_ceph):
         value = request.param
         if nova_ceph and value:
             pytest.skip('Block migration requires Nova CephRBD to be disabled')
