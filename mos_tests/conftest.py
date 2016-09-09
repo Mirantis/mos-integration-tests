@@ -38,16 +38,13 @@ logger = logging.getLogger(__name__)
 # Define pytest plugins to use
 pytest_plugins = ("plugins.incremental",
                   "plugins.testrail_id",
-                  "plugins.fuel_snapshot")
+                  "plugins.fuel_snapshot",
+                  "plugins.devops")
 
 
 def pytest_addoption(parser):
     parser.addoption("--fuel-ip", '-I', action="store",
                      help="Fuel master server ip address")
-    parser.addoption("--env", '-E', action="store",
-                     help="Fuel devops env name")
-    parser.addoption("--snapshot", '-S', action="store",
-                     help="Fuel devops snapshot name")
     parser.addoption("--cluster", '-C', action="append",
                      help="Fuel cluster name to test on it")
 
@@ -57,27 +54,12 @@ def pytest_configure(config):
     config.addinivalue_line("markers",
                             "check_env_(check1, check2): mark test "
                             "to run only on env, which pass all checks")
-    config.addinivalue_line("markers",
-                            "need_devops: mark test wich need devops to run")
     config.addinivalue_line("markers", "neeed_tshark: mark test wich "
                                        "need tshark to be installed to run")
-    config.addinivalue_line("markers",
-                            "undestructive: mark test wich has teardown")
     config.addinivalue_line("markers",
                             "testrail_id(id, params={'name': value,...}): "
                             "add suffix to test name. If defined, `params` "
                             "apply case_id only if it matches test params.")
-
-
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    # execute all other hooks to obtain the report object
-    outcome = yield
-    rep = outcome.get_result()
-
-    # set an report attribute for each phase of a call, which can
-    # be "setup", "call", "teardown"
-    setattr(item, "rep_" + rep.when, rep)
 
 
 def pytest_runtest_teardown(item, nextitem):
@@ -140,36 +122,6 @@ def reinit_fixtures(request):
         fixturedef.cached_result = None
 
 
-def _max_fail_exceed(request):
-    max_fail = request.config.option.maxfail
-    return max_fail > 0 and request.session.testsfailed >= max_fail
-
-
-@pytest.yield_fixture(autouse=True)
-def revert_destructive(request, env_name, snapshot_name):
-    yield
-    item = request.node
-    if hasattr(item.session, 'nextitem') and item.session.nextitem is None:
-        return
-    test_results = [getattr(item, 'rep_{}'.format(name), None)
-                    for name in ("setup", "call", "teardown")]
-    failed = any(x for x in test_results if x is not None and x.failed)
-
-    if _max_fail_exceed(request) and failed:
-        return
-    skipped = any(x for x in test_results if x is not None and x.skipped)
-    destructive = 'undestructive' not in item.keywords
-    reverted = False
-    if destructive and not skipped:
-        if all([env_name, snapshot_name]):
-            revert_snapshot(env_name, snapshot_name)
-            reverted = True
-    setattr(request.session, 'reverted', reverted)
-
-    # reinitialize fixtures
-    reinit_fixtures(request)
-
-
 def get_fuel_client(fuel_ip):
     return FuelClient(ip=fuel_ip,
                       login=settings.KEYSTONE_USER,
@@ -217,7 +169,7 @@ def get_fuel(fuel_master_ip):
 
 
 @pytest.fixture
-def fuel(get_fuel, revert_destructive):
+def fuel(get_fuel):
     """Function-scoped initialized fuel client"""
     return get_fuel()
 
@@ -554,15 +506,6 @@ def env_requirements(request, env):
     if not eval(marker_str_evalued):
         pytest.skip('Requires criteria: {}, computed instead: {}'.format(
             marker_str, marker_str_evalued))
-
-
-@pytest.fixture(autouse=True)
-def devops_requirements(request, env_name):
-    if request.node.get_marker('need_devops'):
-        try:
-            DevopsClient.get_env(env_name=env_name)
-        except Exception:
-            pytest.skip('requires devops env to be defined')
 
 
 @pytest.yield_fixture
