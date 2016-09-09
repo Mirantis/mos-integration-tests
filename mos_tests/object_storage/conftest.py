@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.yield_fixture(scope='module')
-def ctrl_remote(env):
+def ctrl_remote(get_env):
     """SSH remote to random controller"""
+    env = get_env()
     controller = env.get_nodes_by_role('controller')[0]
     with controller.ssh() as remote:
         yield remote
@@ -214,7 +215,7 @@ def s3cmd_install_configure(env, ctrl_remote, openstack_client):
 
 
 @pytest.yield_fixture(scope='class')
-def s3cmd_cleanup(ctrl_remote, env):
+def s3cmd_cleanup(ctrl_remote, get_env):
     yield
     ceph_config_file = '/etc/ceph/ceph.conf'         # cfg file on controller
     restart_radosgw = "/etc/init.d/radosgw restart"  # restart command
@@ -240,6 +241,7 @@ def s3cmd_cleanup(ctrl_remote, env):
         # restart radosgw
         node.check_call(restart_radosgw)
 
+    env = get_env()
     for controller in env.get_nodes_by_role('controller'):
         with controller.ssh() as node:
             parser_set_value()
