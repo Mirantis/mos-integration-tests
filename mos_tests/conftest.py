@@ -180,12 +180,9 @@ def restart_ceph(env):
     if len(ceph_nodes) == 0:
         return
     controllers = env.get_nodes_by_role('controller')
-    with controllers[0].ssh() as remote:
-        if is_ceph_time_sync(remote):
-            return
-    for controller in controllers:
-        with controller.ssh() as remote:
-            remote.execute('restart ceph-mon-all')
+    for node in set(controllers) | set(ceph_nodes):
+        with node.ssh() as remote:
+            remote.execute('restart ceph-all')
     with controllers[0].ssh() as remote:
         wait(lambda: is_ceph_time_sync(remote),
              timeout_seconds=3 * 60,
