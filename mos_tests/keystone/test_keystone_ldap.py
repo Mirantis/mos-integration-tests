@@ -14,12 +14,14 @@
 
 import logging
 import random
+import re
 
 import ldap
 import ldap.modlist as modlist
 import pytest
 from six.moves import configparser
 
+from fuelclient.objects import Plugins as FuelPlugins
 from keystoneauth1.exceptions.base import ClientException as KeyStoneException
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
@@ -32,6 +34,12 @@ from mos_tests.functions import common
 
 
 logger = logging.getLogger(__name__)
+
+AUTH_DATA = {
+    'openldap1': ('user01', '1111'),
+    'openldap2': ('user1', '1111'),
+    'AD2': ('user01', 'qwerty123!')
+}
 
 
 @pytest.yield_fixture
@@ -191,21 +199,21 @@ def new_ldap_user(ldap_server):
 
 def clear_project(os_conn, domain, project):
     """Delete instances, keypairs, security groups, networks in a project"""
-    # NOTE: This function works for domain openldap1 (user01/1111)
     controller_ip = os_conn.env.get_primary_controller_ip()
+    user_name, user_pass = AUTH_DATA[domain.name]
     try:
         os_conn_v3 = OpenStackActions(controller_ip,
                                       keystone_version=3,
                                       domain=domain.name,
-                                      user="user01",
-                                      password="1111",
+                                      user=user_name,
+                                      password=user_pass,
                                       tenant=project.name,
                                       env=os_conn.env)
         vms = os_conn_v3.get_servers()
     except KeyStoneException:
         # ex: user is not a member of this project
-        logger.info('cannot connect to project {0} under user01'.
-                    format(project.name))
+        logger.info("cannot connect to project {0} under {1}".
+                    format(project.name, user_name))
         return
     if not vms:
         return
@@ -350,7 +358,7 @@ def basic_check(keystone_v3, domain_name=None):
         ldap_domains = [keystone_v3.domains.find(name=domain_name)]
     else:
         ldap_domains = [domain for domain in keystone_v3.domains.list() if
-                        domain.name.startswith("openldap")]
+                        re.search("^(openldap|AD)", domain.name)]
         assert len(ldap_domains) > 0, "no LDAP domains are found"
 
     for ldap_domain in ldap_domains:
@@ -442,41 +450,38 @@ def test_create_project_by_user(os_conn, domain_projects, with_proxy):
         enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
-    test_domain_name = "openldap1"
-    test_user_name = 'user01'
-    test_user_pass = '1111'
+    domain_name = "openldap1"
+    user_name, user_pass = AUTH_DATA[domain_name]
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    test_domain = keystone_v3.domains.find(name=test_domain_name)
-    test_user = keystone_v3.users.find(domain=test_domain,
-                                       name=test_user_name)
+    domain = keystone_v3.domains.find(name=domain_name)
+    user = keystone_v3.users.find(domain=domain, name=user_name)
 
     role_admin = keystone_v3.roles.find(name="admin")
-    logger.info("Setting role 'admin' to user {0}".format(test_user_name))
-    keystone_v3.roles.grant(role=role_admin, user=test_user,
-                            domain=test_domain)
+    logger.info("Setting role 'admin' to user {0}".format(user_name))
+    keystone_v3.roles.grant(role=role_admin, user=user, domain=domain)
 
-    role_assignments = keystone_v3.role_assignments.list(domain=test_domain)
+    role_assignments = keystone_v3.role_assignments.list(domain=domain)
     domain_users_ids = [du.user["id"] for du in role_assignments]
-    assert test_user.id in domain_users_ids
+    assert user.id in domain_users_ids
 
     controller_ip = os_conn.env.get_primary_controller_ip()
     auth_url = 'http://{0}:5000/v3'.format(controller_ip)
     auth = v3.Password(auth_url=auth_url,
-                       username=test_user_name,
-                       password=test_user_pass,
-                       domain_name=test_domain_name,
-                       user_domain_name=test_domain_name)
+                       username=user_name,
+                       password=user_pass,
+                       domain_name=domain_name,
+                       user_domain_name=domain_name)
     sess = session.Session(auth=auth)
     keystone_v3 = KeystoneClientV3(session=sess)
 
     new_project_name = "project_1616778"
     logger.info("Creating project {0} in domain {1}".
-                format(new_project_name, test_domain_name))
-    keystone_v3.projects.create(name=new_project_name, domain=test_domain,
+                format(new_project_name, domain_name))
+    keystone_v3.projects.create(name=new_project_name, domain=domain,
                                 description="New project")
 
-    projects = keystone_v3.projects.list(domain=test_domain)
+    projects = keystone_v3.projects.list(domain=domain)
     projects_names = [p.name for p in projects]
     assert new_project_name in projects_names, ("Project {0} is not created".
                                                 format(new_project_name))
@@ -554,7 +559,7 @@ def test_support_ldap_proxy(os_conn, slapd_running):
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_ldap_proxy",
                         "is_tls_use")
-def test_check_tls_option(os_conn, controllers, env):
+def test_check_tls_option(os_conn, controllers):
     """Check that tls option works correctly
 
     Steps to reproduce:
@@ -666,11 +671,7 @@ def test_check_support_active_directory(os_conn):
     domains = [d for d in keystone_v3.domains.list() if 'AD' in d.name]
     if len(domains) == 0:
         pytest.skip('Domain with active directory is required')
-    for domain in domains:
-        logger.debug("Checking users for domain {0}".format(domain.name))
-        assert len(keystone_v3.users.list(domain=domain)) > 0
-        logger.debug("Checking groups for domain {0}".format(domain.name))
-        assert len(keystone_v3.groups.list(domain=domain)) > 0
+    basic_check(keystone_v3, domain_name=domains[0].name)
 
 
 @pytest.mark.undestructive
@@ -690,69 +691,70 @@ def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
     5. Relogin as user01/1111, domain: openldap1
     6. Create a network and subnetwork for the new project
     7. Create an instance
+    8. Repeat steps 2-7 for domain AD2
     """
 
     if with_proxy != conftest.is_ldap_proxy(os_conn.env):
         enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
-    test_domain_name = "openldap1"
-    test_user_name = 'user01'
-    test_user_pass = '1111'
-    id = random.randint(1, 10000)
+    for domain_name in ['openldap1', 'AD2']:
 
-    keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    test_domain = keystone_v3.domains.find(name=test_domain_name)
-    new_project_name = "project-{}".format(id)
-    logger.info("Creating project {0} in domain {1}".
-                format(new_project_name, test_domain_name))
-    new_project = keystone_v3.projects.create(name=new_project_name,
-                                              domain=test_domain,
-                                              description="New project")
+        user_name, user_pass = AUTH_DATA[domain_name]
+        id = random.randint(1, 10000)
 
-    logger.info("Setting role 'admin' to user {0}".format(test_user_name))
-    test_user = keystone_v3.users.find(domain=test_domain,
-                                       name=test_user_name)
-    role_admin = keystone_v3.roles.find(name="admin")
-    keystone_v3.roles.grant(role=role_admin, user=test_user,
-                            domain=test_domain)
-    keystone_v3.roles.grant(role=role_admin, user=test_user,
-                            project=new_project)
+        keystone_v3 = KeystoneClientV3(session=os_conn.session)
+        domain = keystone_v3.domains.find(name=domain_name)
+        new_project_name = "project-{}".format(id)
+        logger.info("Creating project {0} in domain {1}".
+                    format(new_project_name, domain_name))
+        new_project = keystone_v3.projects.create(name=new_project_name,
+                                                  domain=domain,
+                                                  description="New project")
 
-    controller_ip = os_conn.env.get_primary_controller_ip()
+        logger.info("Setting role 'admin' to user {0}".format(user_name))
+        user = keystone_v3.users.find(domain=domain, name=user_name)
+        role_admin = keystone_v3.roles.find(name="admin")
+        keystone_v3.roles.grant(role=role_admin, user=user, domain=domain)
+        keystone_v3.roles.grant(role=role_admin, user=user,
+                                project=new_project)
 
-    os_conn_v3 = OpenStackActions(controller_ip,
-                                  keystone_version=3,
-                                  domain=test_domain_name,
-                                  user=test_user_name,
-                                  password=test_user_pass,
-                                  tenant=new_project_name,
-                                  env=os_conn.env)
+        controller_ip = os_conn.env.get_primary_controller_ip()
 
-    logger.info("Creating network, subnetwork, keypair and security_group "
-                "in project {0}".format(new_project_name))
-    network_name = "net-{}".format(id)
-    network = os_conn_v3.create_network(name=network_name,
-                                        tenant_id=new_project.id)
-    subnet_name = "subnet-{}".format(id)
-    os_conn_v3.create_subnet(network_id=network['network']['id'],
-                             name=subnet_name,
-                             cidr="192.168.2.0/24",
-                             tenant_id=new_project.id)
-    keypair_name = "key-{}".format(id)
-    instance_keypair = os_conn_v3.create_key(key_name=keypair_name)
-    security_group = os_conn_v3.create_sec_group_for_ssh()
+        os_conn_v3 = OpenStackActions(controller_ip,
+                                      keystone_version=3,
+                                      domain=domain_name,
+                                      user=user_name,
+                                      password=user_pass,
+                                      tenant=new_project_name,
+                                      env=os_conn.env)
 
-    new_instance_name = "inst-{}".format(id)
-    logger.info("Creating instance {0}".format(new_instance_name))
-    vm = os_conn_v3.create_server(name=new_instance_name,
-                                  availability_zone='nova',
-                                  key_name=instance_keypair.name,
-                                  nics=[{'net-id': network['network']['id']}],
-                                  security_groups=[security_group.id],
-                                  wait_for_avaliable=False)
+        logger.info("Creating network, subnetwork, keypair and "
+                    "security_group in project {0}".format(new_project_name))
+        network_name = "net-{}".format(id)
+        network = os_conn_v3.create_network(name=network_name,
+                                            tenant_id=new_project.id)
+        subnet_name = "subnet-{}".format(id)
+        os_conn_v3.create_subnet(network_id=network['network']['id'],
+                                 name=subnet_name,
+                                 cidr="192.168.2.0/24",
+                                 tenant_id=new_project.id)
+        keypair_name = "key-{}".format(id)
+        instance_keypair = os_conn_v3.create_key(key_name=keypair_name)
+        security_group = os_conn_v3.create_sec_group_for_ssh()
 
-    assert os_conn_v3.server_status_is(vm, 'ACTIVE')
+        new_instance_name = "inst-{}".format(id)
+        logger.info("Creating instance {0}".format(new_instance_name))
+        vm = os_conn_v3.create_server(name=new_instance_name,
+                                      availability_zone='nova',
+                                      key_name=instance_keypair.name,
+                                      nics=[{
+                                          'net-id': network['network']['id']
+                                      }],
+                                      security_groups=[security_group.id],
+                                      wait_for_avaliable=False)
+
+        assert os_conn_v3.server_status_is(vm, 'ACTIVE')
 
 
 @pytest.mark.undestructive
@@ -834,8 +836,7 @@ def test_check_admin_privileges(os_conn):
     """
 
     domain_name = "openldap2"
-    user_name = 'user1'
-    user_pass = '1111'
+    user_name, user_pass = AUTH_DATA[domain_name]
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     domain = keystone_v3.domains.find(name=domain_name)
@@ -920,6 +921,76 @@ def test_plugin_uninstall_for_non_deployed_env(env, admin_remote):
     exp_msg = "Plugin ldap=={0} was successfully removed".\
         format(plugin_version)
     assert exp_msg in result['stdout'][-1]
+
+
+# destructive
+@pytest.mark.testrail_id('1680674')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_plugin_update(os_conn, admin_remote):
+    """Check update of the LDAP plugin in the deployed environment
+
+    Steps to reproduce:
+    1. Check list of users and groups for LDAP domains
+    2. Get the current plugin version
+    3. Download file for new version of the LDAP plugin
+    4. Update the plugin
+    5. Check that plugin version is changed
+    6. Reset and re-deploy env
+    7. Checks users and groups for LDAP domains
+
+    Duration ~ 1 hour
+
+    NOTE: RPM file for new plugin version must be available via
+    http://<ip_addr>/ldap.rpm
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    old_plugin_version = next(p['version'] for p in FuelPlugins.get_all_data()
+                              if p['name'] == 'ldap')
+
+    logger.info("Download the RPM file")
+    # RPM file is located on the LDAP server
+    data = os_conn.env.get_settings_data()['editable']
+    ldap_url = data['ldap']['metadata']['versions'][0]['url']['value']
+    # ldap://176.74.22.8 -> http://176.74.22.8:8080/ldap.rpm
+    rpm_file = "ldap.rpm"
+    url = ldap_url.replace("ldap", "http") + ":8080/" + rpm_file
+    admin_remote.check_call("wget {}".format(url))
+
+    logger.info("Update the LDAP plugin")
+    # NOTE: cannot use FuelPlugins.update because it executes the rpm command
+    # on local machine (which is not installed)
+    result = admin_remote.execute("fuel plugins --update {0}".
+                                  format(rpm_file))
+    exp_msg = "Plugin {0} was successfully updated".format(rpm_file)
+    assert exp_msg in result['stdout'][-1]
+
+    new_plugin_version = next(p['version'] for p in FuelPlugins.get_all_data()
+                              if p['name'] == 'ldap')
+    assert new_plugin_version != old_plugin_version
+
+    logger.info("Reset environment")
+    os_conn.env.reset()
+    common.wait(lambda: os_conn.env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Deploy changes")
+    deploy_task = os_conn.env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert os_conn.env.status == 'operational'
+    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
 
 
 # destructive
