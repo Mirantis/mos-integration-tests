@@ -271,7 +271,7 @@ def test_kub_nodes_down_if_one_present(murano, environment, session, cluster,
 @pytest.mark.parametrize('package', [('DockerHTTPd',)], indirect=['package'])
 @pytest.mark.testrail_id('836661')
 def test_pod_replication(env, os_conn, keypair, murano, environment, session,
-                         cluster, pod, package):
+                         cluster, pod, package, murano_k8s_image_username):
     """Check that replication controller works correctly
     Scenario:
         1. Create Murano environment
@@ -294,8 +294,9 @@ def test_pod_replication(env, os_conn, keypair, murano, environment, session,
                          [cluster['name'], "gateway-1", 80],
                          [cluster['name'], "minion-1", 4194]], kubernetes=True)
     srv = [i for i in os_conn.nova.servers.list() if 'minion' in i.name][0]
-    with os_conn.ssh_to_instance(env, srv, vm_keypair=keypair,
-                                 username='ubuntu') as remote:
+    with os_conn.ssh_to_instance(
+            env, srv, vm_keypair=keypair,
+            username=murano_k8s_image_username) as remote:
         def get_pods():
             return remote.check_call('sudo docker ps | grep httpd')['stdout']
         res = get_pods()
@@ -316,7 +317,8 @@ def test_pod_replication(env, os_conn, keypair, murano, environment, session,
 @pytest.mark.testrail_id('836663', params={'action': 'Up'})
 @pytest.mark.testrail_id('836664', params={'action': 'Down'})
 def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
-                            session, cluster, pod, package, exp_count):
+                            session, cluster, pod, package, exp_count,
+                            murano_k8s_image_username):
     """Check "scalePodUp" & "scalePodDown" actions
     Scenario:
         1. Create Murano environment
@@ -341,8 +343,9 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
                          [cluster['name'], "minion-1", 4194]], kubernetes=True)
 
     srv = [i for i in os_conn.nova.servers.list() if 'minion' in i.name][0]
-    with os_conn.ssh_to_instance(env, srv, vm_keypair=keypair,
-                                 username='ubuntu') as remote:
+    with os_conn.ssh_to_instance(
+            env, srv, vm_keypair=keypair,
+            username=murano_k8s_image_username) as remote:
         res = remote.check_call('sudo docker ps | grep httpd')['stdout']
         assert len(res) == 2, "{0} replicas instead of {1}".format(len(res), 2)
 
@@ -350,8 +353,9 @@ def test_pod_action_up_down(env, action, os_conn, keypair, murano, environment,
                                      'scalePod{0}'.format(action), 1)
     murano.run_action(deployed_environment, action_id)
 
-    with os_conn.ssh_to_instance(env, srv, vm_keypair=keypair,
-                                 username='ubuntu') as remote:
+    with os_conn.ssh_to_instance(
+            env, srv, vm_keypair=keypair,
+            username=murano_k8s_image_username) as remote:
         res = remote.check_call('sudo docker ps | grep httpd')['stdout']
         assert len(res) == exp_count, "{0} replicas instead of {1}".format(
             len(res), exp_count)

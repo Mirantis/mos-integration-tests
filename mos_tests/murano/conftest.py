@@ -30,10 +30,12 @@ flavor = 'm1.medium'
 labels = "testkey=testvalue"
 
 
-def image_factory(name, url):
+def image_factory(url):
 
     @pytest.yield_fixture(scope='session')
     def image(os_conn):
+
+        name = url.split('/')[-1]
 
         exists = [x for x in os_conn.glance.images.list() if x.name == name]
 
@@ -41,6 +43,7 @@ def image_factory(name, url):
             image = exists[0]
         else:
             logger.info('Creating {0} image'.format(name))
+            logger.info('Image source {0}'.format(url))
             image = os_conn.glance.images.create(
                 name=name,
                 disk_format='qcow2',
@@ -59,12 +62,9 @@ def image_factory(name, url):
 
     return image
 
-linux_image = image_factory('murano_image',
-                            settings.MURANO_IMAGE_URL)
-docker_image = image_factory('murano_docker_image',
-                             settings.MURANO_DOCKER_IMAGE_URL)
-kubernetes_image = image_factory('murano_kubernetes_image',
-                                 settings.MURANO_KUBERNETES_IMAGE_URL)
+linux_image = image_factory(settings.MURANO_IMAGE_URL)
+docker_image = image_factory(settings.MURANO_DOCKER_IMAGE_URL)
+kubernetes_image = image_factory(settings.MURANO_KUBERNETES_IMAGE_URL)
 
 
 @pytest.fixture
@@ -76,6 +76,11 @@ def murano(os_conn, linux_image):
 def controller_remote(env):
     with env.get_nodes_by_role('controller')[0].ssh() as remote:
         yield remote
+
+
+@pytest.fixture
+def murano_k8s_image_username():
+    return settings.MURANO_KUBERNETES_IMAGE_USER
 
 
 @pytest.fixture

@@ -80,6 +80,10 @@ MURANO_KUBERNETES_IMAGE_URL = os.environ.get(
     'MURANO_KUBERNETES_IMAGE_URL',
     'http://storage.apps.openstack.org/images/ubuntu14.04-x64-kubernetes.qcow2'
 )
+MURANO_KUBERNETES_IMAGE_USER = os.environ.get(
+    'MURANO_KUBERNETES_IMAGE_USER',
+    'ubuntu'
+)
 MURANO_PACKAGE_URL = 'http://storage.apps.openstack.org/apps/io.murano.apps.apache.ApacheHttpServer.zip'  # noqa
 MURANO_BUNDLE_URL = 'http://storage.apps.openstack.org/bundles/docker-n-kubernetes.bundle'  # noqa
 MURANO_PACKAGE_BUNDLE_NAMES = (
