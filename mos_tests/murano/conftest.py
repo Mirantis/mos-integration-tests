@@ -52,6 +52,10 @@ def image_factory(name, url):
 
             logger.info('Creating {0} image ... done'.format(name))
 
+        os_conn.glance.images.update(
+            image.id,
+            murano_image_info='{"type": "linux.kubernetes", '
+                              '"title": "%s"}' % name)
         yield image
 
         if len(exists) == 0:
