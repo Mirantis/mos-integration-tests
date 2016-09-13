@@ -101,9 +101,10 @@ def create_file_on_node(ctrl_remote, request):
 
 
 @pytest.yield_fixture(scope='class')
-def s3cmd_install_configure(env, ctrl_remote, openstack_client):
+def s3cmd_install_configure(get_env, ctrl_remote, openstack_client):
     """Install and configure s3cmd on controller"""
 
+    env = get_env()
     ceph_config_file = '/etc/ceph/ceph.conf'         # cfg file on controller
     restart_radosgw = "/etc/init.d/radosgw restart"  # restart command
     remote_cfg_file = '/root/.s3cfg'                 # s3cmd cfg file on node
