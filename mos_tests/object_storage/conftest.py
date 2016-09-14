@@ -176,7 +176,8 @@ def s3cmd_install_configure(get_env, ctrl_remote, openstack_client):
             logger.debug('s3cmd already installed on %s' % remote.host)
             return
         # If s3cmd not installed on node
-        cmd = ('apt-get update && apt-get install python-pip -y && '
+        cmd = ('apt-get update && '
+               'apt-get install python-pip -y --force-yes && '
                'pip install setuptools --upgrade && '
                'pip install wheel && pip install s3cmd ;')
         remote.check_call(cmd)
