@@ -18,6 +18,8 @@ from contextlib2 import ExitStack
 import pytest
 
 from keystoneclient.v3 import Client as KeystoneClientV3
+
+from mos_tests.functions import common
 from mos_tests.functions.service import patch_conf
 
 
@@ -28,41 +30,6 @@ logger = logging.getLogger(__name__)
 def admin_remote(fuel):
     with fuel.ssh_admin() as remote:
         yield remote
-
-
-@pytest.yield_fixture
-def rename_role(os_conn):
-    """Rename the role 'SwiftOperator'"""
-    role_name_old = "SwiftOperator"
-    role_name_new = role_name_old + "-new"
-    logger.info("Rename role {0} -> {1}".format(role_name_old, role_name_new))
-    keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    role = keystone_v3.roles.find(name=role_name_old)
-    keystone_v3.roles.update(role=role, name=role_name_new)
-    yield
-    keystone_v3.roles.update(role=role, name=role_name_old)
-
-
-@pytest.yield_fixture
-def disable_user(os_conn):
-    """Disable/enable the user 'glare'"""
-    user_name = "glare"
-    logger.info("Disable user {0}".format(user_name))
-    keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    user = keystone_v3.users.find(name=user_name)
-    keystone_v3.users.update(user=user, enabled=False)
-    yield
-    keystone_v3.users.update(user=user, enabled=True)
-
-
-@pytest.fixture
-def delete_project(os_conn):
-    """Delete/create the project 'services'"""
-    project_name = "services"
-    logger.info("Delete project {0}".format(project_name))
-    keystone_v3 = KeystoneClientV3(session=os_conn.session)
-    project = keystone_v3.projects.find(name=project_name)
-    keystone_v3.projects.delete(project=project)
 
 
 def config_patch(env, config_path, config, role=None):
@@ -151,6 +118,78 @@ def puppet_file_new_owner(env):
     with controller.ssh() as remote:
         remote.check_call('chown {0}:root {1}'.format(owner, puppet_file))
         remote.check_call('userdel {0}'.format(new_owner))
+
+
+@pytest.yield_fixture
+def stop_service(os_conn):
+    """Stop/start the service 'neutron-metadata-agent'"""
+    service_name = "neutron-metadata-agent"
+    node = os_conn.env.primary_controller
+    with node.ssh() as remote:
+        remote.check_call("pcs resource disable {0}".format(service_name))
+        yield
+        remote.check_call("pcs resource enable {0}".format(service_name))
+
+
+@pytest.fixture
+def remove_service(os_conn):
+    """Stop/start the service 'p_heat-engine'"""
+    service_name = "p_heat-engine"
+    node = os_conn.env.primary_controller
+    with node.ssh() as remote:
+        remote.check_call("pcs resource delete {0}".format(service_name))
+
+
+@pytest.yield_fixture
+def rename_role(os_conn):
+    """Rename the role 'SwiftOperator'"""
+    role_name_old = "SwiftOperator"
+    role_name_new = role_name_old + "-new"
+    logger.info("Rename role {0} -> {1}".format(role_name_old, role_name_new))
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    role = keystone_v3.roles.find(name=role_name_old)
+    keystone_v3.roles.update(role=role, name=role_name_new)
+    yield
+    keystone_v3.roles.update(role=role, name=role_name_old)
+
+
+@pytest.yield_fixture
+def disable_user(os_conn):
+    """Disable/enable the user 'glare'"""
+    user_name = "glare"
+    logger.info("Disable user {0}".format(user_name))
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    user = keystone_v3.users.find(name=user_name)
+    keystone_v3.users.update(user=user, enabled=False)
+    yield
+    keystone_v3.users.update(user=user, enabled=True)
+
+
+@pytest.fixture
+def delete_project(os_conn):
+    """Delete/create the project 'services'"""
+    project_name = "services"
+    logger.info("Delete project {0}".format(project_name))
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    project = keystone_v3.projects.find(name=project_name)
+    keystone_v3.projects.delete(project=project)
+
+
+@pytest.fixture
+def delete_micro_flavor(os_conn):
+    """Delete the m1.micro flavor"""
+    flavor_id = common.get_flavor_id_by_name(os_conn.nova, "m1.micro")
+    common.delete_flavor(os_conn.nova, flavor_id)
+
+
+@pytest.fixture
+def delete_cirros_image(os_conn):
+    """Delete the cirros image"""
+    logger.info("Delete the cirros image")
+    image = os_conn._get_cirros_image()
+    common.delete_image(os_conn.glance, image.id)
+    # NOTE: Restoration of cirros image is possible, but it's difficult to
+    # create image which is identical to original one
 
 
 @pytest.fixture

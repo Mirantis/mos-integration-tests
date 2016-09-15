@@ -101,6 +101,9 @@ def are_messages_in_summary_results(admin_remote, task_id, expected_messages):
     admin_remote.check_call("rm {0}".format(tmp_file))
 
     logger.debug("Checking expected messages in results of noop run")
+    for node_id, expected_message in expected_messages:
+        logger.debug("node {0}, expected message:\n{1}".
+                     format(node_id, expected_message))
     found = dict.fromkeys(expected_messages, False)
     with open(tmp_file, 'r') as f:
         for line in f:
