@@ -834,3 +834,22 @@ class MuranoActions(object):
             "name": self.rand_name("KubeCluster")
         }
         return post_body
+
+    def docker_app(
+            self, host, image_location, port=3000, app_name='DockerAppName'):
+        post_body = {
+            "env": '',
+            "host": host,
+            "image": image_location,
+            "name": app_name,
+            "ports": port,
+            "publish": True,
+            "?": {
+                "_{id}".format(id=uuid.uuid4().hex): {
+                    "name": "Docker Container"
+                },
+                "type": "com.example.docker.DockerApp",
+                "id": str(uuid.uuid4())
+            }
+        }
+        return post_body
