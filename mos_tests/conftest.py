@@ -463,6 +463,16 @@ def is_sahara_enabled(env):
     return data['additional_components']['sahara']['value']
 
 
+def is_murano_enabled(env):
+    data = env.get_settings_data()['editable']
+    return data['additional_components']['murano']['value']
+
+
+def is_ceilometer_enabled(env):
+    data = env.get_settings_data()['editable']
+    return data['additional_components']['ceilometer']['value']
+
+
 @pytest.fixture(autouse=True)
 def executable_requirements(request, env_name):
     marker = request.node.get_marker('requires_')

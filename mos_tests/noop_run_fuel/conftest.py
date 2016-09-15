@@ -32,6 +32,13 @@ def admin_remote(fuel):
         yield remote
 
 
+@pytest.fixture
+def new_env(env):
+    env.reset()
+    common.wait(lambda: env.status == 'new', timeout_seconds=60 * 10,
+                sleep_seconds=20, waiting_for="Env reset finish")
+
+
 def config_patch(env, config_path, config, role=None):
     role = role or 'controller'
     node = env.get_nodes_by_role(role)[0]
@@ -85,10 +92,39 @@ neutron_conf = change_config_factory(
     config_path="/etc/neutron/neutron.conf",
     config=[('DEFAULT', 'auth_strategy', 'nova')])
 
+swift_conf = change_config_factory(
+    config_path="/etc/swift/swift.conf",
+    config=[('swift-hash', 'swift_hash_path_suffix', 'NEW_VALUE')])
+
+murano_conf = change_config_factory(
+    config_path="/etc/murano/murano.conf",
+    config=[('DEFAULT', 'debug', 'False')])
+
+ceilometer_conf = change_config_factory(
+    config_path="/etc/ceilometer/ceilometer.conf",
+    config=[('DEFAULT', 'log_dir', '/some_dir')],
+    role='compute')
+
+sahara_conf = change_config_factory(
+    config_path="/etc/sahara/sahara.conf",
+    config=[('oslo_messaging_rabbit', 'rabbit_userid', 'rabbit')])
+
+aodh_conf = change_config_factory(
+    config_path="/etc/aodh/aodh.conf",
+    config=[('DEFAULT', 'verbose', 'custom_value')])
+
+ironic_conf = change_config_factory(
+    config_path="/etc/ironic/ironic.conf",
+    config=[('DEFAULT', 'debug', False)])
+
 
 @pytest.yield_fixture
 def puppet_file_new_mod(env):
-    controller = env.get_nodes_by_role('controller')[0]
+    """Change and restore puppet file access mod"""
+    controller = env.primary_controller
+    non_primary_cntrls = env.non_primary_controllers
+    if non_primary_cntrls:
+        controller = non_primary_cntrls[0]
     puppet_file = "/etc/logrotate.d/apache2"
     new_mod = '0777'
     with controller.ssh() as remote:
@@ -104,6 +140,7 @@ def puppet_file_new_mod(env):
 
 @pytest.yield_fixture
 def puppet_file_new_owner(env):
+    """Change and restore puppet file owner"""
     controller = env.get_nodes_by_role('controller')[0]
     puppet_file = "/etc/logrotate.d/apache2"
     new_owner = 'test_user'
@@ -194,5 +231,6 @@ def delete_cirros_image(os_conn):
 
 @pytest.fixture
 def without_router(os_conn):
+    """Delete the default router"""
     router = os_conn.neutron.list_routers(name='router04')['routers'][0]
     os_conn.delete_router(router['id'])
