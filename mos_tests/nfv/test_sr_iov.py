@@ -106,6 +106,31 @@ class TestSRIOV(TestBaseNFV):
         os_conn.delete_router(router['id'])
         os_conn.delete_network(net)
 
+    @staticmethod
+    def add_interface_to_vm(os_conn, env, vm, keypair):
+        """Add and activate eth1 interface for vm when we use 2 ips"""
+        cmd = (r'echo -e "auto eth1\niface eth1 inet dhcp" | '
+               r'sudo dd of={file} && '
+               r'sudo ifup eth1 ;').format(
+                   file='/etc/network/interfaces.d/eth1.cfg')
+        vm.get()
+        vm_ips = [ip['addr'] for n, ips in vm.addresses.items()
+                  for ip in ips]
+        for vm_ip in vm_ips:
+            try:
+                with os_conn.ssh_to_instance(
+                        env, vm, vm_keypair=keypair, username='ubuntu',
+                        password='ubuntu', vm_ip=vm_ip) as remote:
+                    remote.check_call(cmd)
+            except Exception:
+                logger.info(("Ip {0} is not active for {1}. "
+                             "Try next ip...").format(vm_ip, vm.name))
+                continue
+            logger.info("Ip {0} is active for {1}.".format(vm_ip, vm.name))
+            break
+        else:
+            raise Exception("No active ips for {}.".format(vm.name))
+
     @pytest.mark.testrail_id('838341')
     def test_connectivity_on_vf_ports(
             self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
@@ -140,53 +165,8 @@ class TestSRIOV(TestBaseNFV):
 
         floating_ip = os_conn.nova.floating_ips.create()
         vms[0].add_floating_ip(floating_ip)
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
-
-    @pytest.mark.testrail_id('838342')
-    def test_connectivity_on_vf_and_ovs_ports_one_time(
-            self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
-        """This test checks vms connectivity for vms launched on vf ports
-        and on ovs ports one time
-            Steps:
-            1. Create net1 with subnet, net2 with subnet
-            and router1 with interfaces to both nets
-            2. Create vf ports on net1 and net2
-            3. Create ovs ports on net1 and net2
-            4. Launch instances vm1 and vm2 on compute-1 on vf and ovs ports in
-            net1 with m1.small flavor and ubuntu image
-            5. Launch instance vm3 and vm4 on compute-2 on vf and ovs ports in
-            net2 with m1.small flavor and ubuntu image
-            6. Add a floating ip to the vm1
-            7. Check vms connectivity
-        """
-        networks = ports.keys()
-        flavor = os_conn.nova.flavors.find(name='m1.small')
-        ips = []
-        vms = []
-        vm_distribution = [
-            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][0],
-                ports[networks[0]]['ovs_ports'][0]),
-            (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][1],
-                ports[networks[0]]['ovs_ports'][1]),
-            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][0],
-                ports[networks[1]]['ovs_ports'][0]),
-            (sriov_hosts[1], ports[networks[1]]['vf_ports']['direct'][1],
-                ports[networks[1]]['ovs_ports'][1])]
-        for i, (host, vf_port, ovs_port) in enumerate(vm_distribution, 1):
-
-            vm = os_conn.create_server(
-                name='vm{}'.format(i), image_id=ubuntu_image_id,
-                key_name=keypair.name, flavor=flavor.id,
-                availability_zone='nova:{}'.format(host),
-                nics=[{'port-id': vf_port}, {'port-id': ovs_port}],
-                wait_for_avaliable=False)
-            vms.append(vm)
-            ip_vf = self.get_port_ips(os_conn, vf_port)[0]
-            ips.append(ip_vf)
-        floating_ip = os_conn.nova.floating_ips.create()
-        vms[0].add_floating_ip(floating_ip)
-        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms,
-                                          inactive_ips=ips)
 
     @pytest.mark.testrail_id('838343')
     def test_connectivity_on_vf_or_ovs_ports(
@@ -229,6 +209,7 @@ class TestSRIOV(TestBaseNFV):
 
         floating_ip = os_conn.nova.floating_ips.create()
         vms[0].add_floating_ip(floating_ip)
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.testrail_id('838344')
@@ -260,7 +241,9 @@ class TestSRIOV(TestBaseNFV):
             nics=[{'port-id': ports[networks[0]]['vf_ports']['direct'][0]},
                   {'port-id': ports[networks[0]]['ovs_ports'][0]}],
             wait_for_avaliable=False)
+        self.add_interface_to_vm(os_conn, env, vm_1, keypair)
         vms = [vm_1]
+
         vm_distribution = [
             (sriov_hosts[0], ports[networks[0]]['vf_ports']['direct'][1]),
             (sriov_hosts[0], ports[networks[1]]['vf_ports']['direct'][0]),
@@ -272,10 +255,9 @@ class TestSRIOV(TestBaseNFV):
                 availability_zone='nova:{}'.format(host),
                 nics=[{'port-id': vf_port}], wait_for_avaliable=False)
             vms.append(vm)
-        ip_vf_1 = self.get_port_ips(
-            os_conn, ports[networks[0]]['vf_ports']['direct'][0])[0]
-        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms,
-                                          inactive_ips=[ip_vf_1])
+
+        os_conn.wait_servers_ssh_ready(vms)
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.check_env_('is_dvr')
     @pytest.mark.testrail_id('838345')
@@ -308,6 +290,8 @@ class TestSRIOV(TestBaseNFV):
                 nics=[{'port-id': vf_port}],
                 wait_for_avaliable=False)
             vms.append(vm)
+
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.check_env_('is_dvr')
@@ -332,7 +316,7 @@ class TestSRIOV(TestBaseNFV):
             name='vm1', image_id=ubuntu_image_id,
             key_name=keypair.name, flavor=flavor.id,
             availability_zone='nova:{}'.format(sriov_hosts[0]),
-            nics=[{'port-id': vf_port}], wait_for_avaliable=False)
+            nics=[{'port-id': vf_port}])
         floating_ip = os_conn.nova.floating_ips.create()
         vm.add_floating_ip(floating_ip)
 
@@ -369,8 +353,11 @@ class TestSRIOV(TestBaseNFV):
                 nics=[{'port-id': vf_port}],
                 wait_for_avaliable=False)
             vms.append(vm)
+
         floating_ip = os_conn.nova.floating_ips.create()
         vms[0].add_floating_ip(floating_ip)
+
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
         router_id = os_conn.neutron.list_routers(
             name='router01')['routers'][0]['id']
@@ -393,6 +380,8 @@ class TestSRIOV(TestBaseNFV):
             waiting_for='router is rescheduled')
         assert old_host != os_conn.neutron.list_l3_agent_hosting_routers(
             router_id)['agents'][0]['host']
+
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.check_env_('is_ceph_enabled')
@@ -420,7 +409,7 @@ class TestSRIOV(TestBaseNFV):
             name='vm1', image_id=ubuntu_image_id,
             key_name=keypair.name, flavor=flavor.id,
             availability_zone='nova:{}'.format(sriov_hosts[0]),
-            nics=[{'port-id': vf_port}], wait_for_avaliable=False)
+            nics=[{'port-id': vf_port}])
 
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm])
         old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
@@ -430,8 +419,7 @@ class TestSRIOV(TestBaseNFV):
         self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
                                   state='down')
         try:
-            vm_new = self.evacuate(os_conn, devops_env, vm,
-                                   on_shared_storage=True)
+            vm_new = self.evacuate(os_conn, devops_env, vm)
             assert sriov_hosts[1] == getattr(vm_new, "OS-EXT-SRV-ATTR:host")
             self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
         except Exception as exc:
@@ -439,6 +427,8 @@ class TestSRIOV(TestBaseNFV):
         finally:
             self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
                                       state='up')
+
+        os_conn.wait_hypervisor_be_free(old_hypervisor)
         old_hypervisor.get()
         assert old_hypervisor.vcpus_used == 0
         assert old_hypervisor.local_gb_used == 0
@@ -465,7 +455,7 @@ class TestSRIOV(TestBaseNFV):
             name='vm1', image_id=ubuntu_image_id,
             key_name=keypair.name, flavor=flavor.id,
             availability_zone='nova:{}'.format(sriov_hosts[0]),
-            nics=[{'port-id': vf_port}], wait_for_avaliable=False)
+            nics=[{'port-id': vf_port}])
 
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm])
         old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
@@ -473,11 +463,13 @@ class TestSRIOV(TestBaseNFV):
         assert old_hypervisor.vcpus_used == flavor.vcpus
         assert old_hypervisor.local_gb_used == flavor.disk
         vm_new = self.migrate(os_conn, vm)
-        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
-        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
+
+        os_conn.wait_hypervisor_be_free(old_hypervisor)
         old_hypervisor.get()
         assert old_hypervisor.vcpus_used == 0
         assert old_hypervisor.local_gb_used == 0
+        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
 
     @pytest.mark.testrail_id('857354')
     def test_connectivity_on_ports_with_vnic_macvtap(
@@ -527,6 +519,8 @@ class TestSRIOV(TestBaseNFV):
 
         floating_ip = os_conn.nova.floating_ips.create()
         vms_macvtap[0].add_floating_ip(floating_ip.ip)
+
+        os_conn.wait_servers_ssh_ready(vms_macvtap)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms_macvtap)
 
         # create 2 VMs on 2 diff computes and 2 diff networks with
@@ -549,21 +543,28 @@ class TestSRIOV(TestBaseNFV):
         os_conn.wait_servers_active(vms_direct)
 
         vms_to_ping = [vms_macvtap[0]] + vms_direct
+
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms_to_ping)
 
-    @pytest.mark.testrail_id('857355')
-    def test_connectivity_on_ports_with_vnic_macvtap_and_ovs(
-            self, os_conn, env, ubuntu_image_id, keypair, ports, sriov_hosts):
+    @pytest.mark.testrail_id('857355', port_type='macvtap')
+    @pytest.mark.testrail_id('838342', port_type='direct')
+    @pytest.mark.parametrize('port_type', ['macvtap', 'direct'])
+    def test_connectivity_on_ports_with_vnic_vf_and_ovs(
+            self, os_conn, env, ubuntu_image_id, keypair, ports,
+            sriov_hosts, port_type):
         """Check connectivity between VMs launched on ports
         with vnic-type macvtap and ovs.
+
         Steps:
         1. Create net1 with subnet, net2 with subnet and router1 with
         interfaces to both nets;
-        2. Create vf ports=macvtap and ovs on net1 and net2;
-        3. Launch instances vm1 and vm2 on compute-1 with vf ports=macvtap
-        and ovs in net1, m1.small flavor and ubuntu image;
-        4. Launch instance vm3 and vm4 on compute-2 with vf ports=macvtap
-        and ovs in net2, m1.small flavor and ubuntu image;
+        2. Create vf ports=macvtap/direct and ovs on net1 and net2;
+        3. Launch instances vm1 and vm2 on compute-1 with
+        vf ports=macvtap/direct and ovs in net1, m1.small flavor and
+        ubuntu image;
+        4. Launch instance vm3 and vm4 on compute-2 with
+        vf ports=macvtap/direct and ovs in net2, m1.small flavor and
+        ubuntu image;
         5. Add a floating ip to vms;
         6. Check vms connectivity;
         """
@@ -571,45 +572,31 @@ class TestSRIOV(TestBaseNFV):
         flavor = os_conn.nova.flavors.find(name='m1.small')
 
         # create 4 VMs on 2 diff computes and 2 diff networks with
-        # port 'binding:vnic_type' = 'macvtap' and ovs_ports ports
+        # port 'binding:vnic_type' = 'macvtap'/'direct' and ovs ports
         vm_distribution = [
-            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][0],
-                ports[nets_id[0]]['ovs_ports'][0]),
-            (sriov_hosts[0], ports[nets_id[0]]['vf_ports']['macvtap'][1],
-                ports[nets_id[0]]['ovs_ports'][1]),
-            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][0],
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports'][port_type][0],
                 ports[nets_id[1]]['ovs_ports'][0]),
-            (sriov_hosts[1], ports[nets_id[1]]['vf_ports']['macvtap'][1],
-                ports[nets_id[1]]['ovs_ports'][1])]
+            (sriov_hosts[0], ports[nets_id[0]]['vf_ports'][port_type][1],
+                ports[nets_id[1]]['ovs_ports'][1]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports'][port_type][0],
+                ports[nets_id[0]]['ovs_ports'][0]),
+            (sriov_hosts[1], ports[nets_id[1]]['vf_ports'][port_type][1],
+                ports[nets_id[0]]['ovs_ports'][1])]
 
         vms = []
         for i, (host, vf_port, ovs_port) in enumerate(vm_distribution, 1):
             vm = os_conn.create_server(
-                name='vm_macvtap_ovs{}'.format(i),
+                name='vm_{0}_ovs{1}'.format(port_type, i),
                 image_id=ubuntu_image_id,
-                key_name=keypair.id,
+                key_name=keypair.name,
                 flavor=flavor.id,
                 availability_zone='nova:{}'.format(host),
                 nics=[{'port-id': vf_port}, {'port-id': ovs_port}],
-                wait_for_active=True,
                 wait_for_avaliable=False)
+            self.add_interface_to_vm(os_conn, env, vm, keypair)
             vms.append(vm)
-        os_conn.wait_servers_active(vms)
 
-        # add and activate eth1 interface
-        cmd = (r'echo -e "auto eth1\niface eth1 inet dhcp" | '
-               r'sudo dd of={file} && '
-               r'sudo ifup eth1 ;').format(
-                   file='/etc/network/interfaces.d/eth1.cfg')
-        for vm in vms:
-            vm.get()
-            floating_ip = os_conn.nova.floating_ips.create()
-            vm.add_floating_ip(floating_ip)
-            with os_conn.ssh_to_instance(
-                    env, vm, vm_keypair=keypair, username='ubuntu',
-                    password='ubuntu', vm_ip=floating_ip.ip) as remote:
-                remote.check_call(cmd)
-
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
     @pytest.mark.testrail_id('857356')
@@ -642,17 +629,24 @@ class TestSRIOV(TestBaseNFV):
                 availability_zone='nova:{}'.format(host),
                 nics=[{'port-id': port}], wait_for_avaliable=False)
             vms.append(vm)
+        os_conn.wait_servers_ssh_ready(vms)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
         old_hypervisor = [hpr for hpr in os_conn.nova.hypervisors.list() if
                           hpr.hypervisor_hostname == sriov_hosts[0]][0]
         assert old_hypervisor.vcpus_used == 2 * flavor.vcpus
         assert old_hypervisor.local_gb_used == 2 * flavor.disk
         vm_new = self.migrate(os_conn, vms[0])
-        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
-        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
+
+        wait(lambda: old_hypervisor.get() or old_hypervisor.running_vms == 1,
+             timeout_seconds=2 * 60,
+             waiting_for='hypervisor {0} to have 1 vm'.format(
+                 old_hypervisor.hypervisor_hostname))
+
         old_hypervisor.get()
         assert old_hypervisor.vcpus_used == flavor.vcpus
         assert old_hypervisor.local_gb_used == flavor.disk
+        assert sriov_hosts[0] != getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+        self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms)
 
 
 class TestNegativeSRIOV(TestBaseNFV):

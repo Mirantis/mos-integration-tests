@@ -222,8 +222,7 @@ class TestDpdk(TestBaseNFV):
         network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair)
 
         self.compute_change_state(os_conn, devops_env, hosts[1], state='down')
-        vm_new = self.evacuate(os_conn, devops_env, vms[2],
-                               on_shared_storage=False)
+        vm_new = self.evacuate(os_conn, devops_env, vms[2])
         vm_new_host = getattr(os_conn.nova.servers.get(vm_new),
                               "OS-EXT-SRV-ATTR:host")
         assert vm_new_host in hosts

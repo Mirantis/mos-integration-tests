@@ -512,7 +512,7 @@ class TestLiveMigrationMixedFeatures(TestBaseNFV):
                 nics=[{'net-id': networks[1]}], key_name=keypair.name,
                 availability_zone='nova:{}'.format(hosts_to_use[1]),
                 security_groups=[security_group.id])
-            volume_vm2 = self.create_volume_from_vm(os_conn, vm2)
+            volume_vm2 = self.create_volume_from_vm(os_conn, vm2, size=3)
             vm3 = os_conn.create_server(
                 name='vm3', flavor=flavor.id,
                 nics=[{'net-id': networks[1]}], key_name=keypair.name,
