@@ -234,3 +234,24 @@ def without_router(os_conn):
     """Delete the default router"""
     router = os_conn.neutron.list_routers(name='router04')['routers'][0]
     os_conn.delete_router(router['id'])
+
+
+@pytest.fixture
+def clear_router_gateway(os_conn):
+    """Clear gateway of router04"""
+    router = os_conn.neutron.list_routers(name='router04')['routers'][0]
+    os_conn.neutron.remove_gateway_router(router['id'])
+
+
+@pytest.yield_fixture
+def rename_network(os_conn):
+    """Rename network admin_floating_net"""
+    old_name = 'admin_floating_net'
+    new_name = 'admin_floating_net-new'
+    network = next(n for n in os_conn.neutron.list_networks()['networks']
+                   if n['name'] == old_name)
+    os_conn.neutron.update_network(network['id'],
+                                   {'network': {'name': new_name}})
+    yield
+    os_conn.neutron.update_network(network['id'],
+                                   {'network': {'name': old_name}})

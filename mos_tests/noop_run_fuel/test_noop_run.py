@@ -95,6 +95,42 @@ def test_change_puppet_file_owner(env, admin_remote, puppet_file_new_owner):
 
 
 @pytest.mark.undestructive
+@pytest.mark.testrail_id('1681278')
+def test_redeploy_whole_env(env, admin_remote, stop_service,
+                            nova_conf_on_cmpt, disable_user):
+    """Test to check the noop run feature for changes in whole env
+
+    Steps to reproduce:
+    1. Stop the service neutron-metadata-agent on controller
+    2. Modify nova config on compute
+    3. Disable user 'glare'
+    4. Execute 'fuel2 env redeploy --noop'
+    5. Wait for task finishing
+    6. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    7. Check that result contains the expected data
+    """
+
+    task = noop_common.run_noop_env_deploy(admin_remote, env,
+                                           command='redeploy')
+
+    expected_messages = []
+    msg1 = ("/Service[neutron-metadata]/ensure', u'message': "
+            "u'current_value stopped, should be running (noop)")
+    for node in env.get_nodes_by_role('controller'):
+        expected_messages.append((node.id, msg1))
+    node2, changes = nova_conf_on_cmpt
+    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
+            "should be False (noop)").format(*changes[0])
+    expected_messages.append((node2.id, msg2))
+    node3 = env.primary_controller
+    msg3 = ("/Keystone_user[glare]/enabled', u'message': "
+            "u'current_value false, should be true (noop)'")
+    expected_messages.append((node3.id, msg3))
+    assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
+                                                       expected_messages)
+
+
+@pytest.mark.undestructive
 @pytest.mark.testrail_id('1681376')
 def test_change_cinder_conf(env, admin_remote, cinder_conf):
     """Test to check the noop run feature for os config file
@@ -248,13 +284,15 @@ def test_stop_service(env, admin_remote, stop_service):
     5. Check that result contains the expected data
     """
 
-    node = env.primary_controller
-    task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Service[neutron-metadata]/ensure', u'message': "
-                        "u'current_value stopped, should be running (noop)")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    nodes = env.get_nodes_by_role('controller')
+    task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=nodes)
+    msg = ("/Service[neutron-metadata]/ensure', u'message': "
+           "u'current_value stopped, should be running (noop)")
+    expected_messages = []
+    for node in nodes:
+        expected_messages.append((node.id, msg))
+    assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
+                                                       expected_messages)
 
 
 # destructive
@@ -272,11 +310,10 @@ def test_remove_service(env, admin_remote, remove_service):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Pcmk_resource[p_heat-engine]/ensure', u'message': "
-                        "u'current_value absent, should be present (noop)'")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Pcmk_resource[p_heat-engine]/ensure', u'message': "
+           "u'current_value absent, should be present (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 @pytest.mark.undestructive
@@ -294,11 +331,10 @@ def test_rename_role(env, admin_remote, rename_role):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Keystone_role[SwiftOperator]/ensure', u'message': "
-                        "u'current_value absent, should be present (noop)'")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Keystone_role[SwiftOperator]/ensure', u'message': "
+           "u'current_value absent, should be present (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 @pytest.mark.undestructive
@@ -316,11 +352,10 @@ def test_disable_user(env, admin_remote, disable_user):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Keystone_user[glare]/enabled', u'message': "
-                        "u'current_value false, should be true (noop)'")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Keystone_user[glare]/enabled', u'message': "
+           "u'current_value false, should be true (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 # destructive
@@ -338,11 +373,10 @@ def test_delete_project(env, admin_remote, delete_project):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Keystone_tenant[services]/ensure', u'message': "
-                        "u'current_value absent, should be present (noop)'")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Keystone_tenant[services]/ensure', u'message': "
+           "u'current_value absent, should be present (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 # destructive
@@ -352,6 +386,39 @@ def test_remove_default_router(env, admin_remote, without_router):
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
     msg = ("Routers/Neutron_router[router04]/ensure', "
            "u'message': u'current_value absent, should be present (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
+
+
+# destructive
+@pytest.mark.testrail_id('1681391')
+def test_clear_router_gateway(env, admin_remote, clear_router_gateway):
+    node = env.primary_controller
+    task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
+    msg = ("Routers/Neutron_router[router04]/gateway_network_name', "
+           "u'message': u'current_value , should be admin_floating_net "
+           "(noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1681392')
+def test_rename_network(env, admin_remote, rename_network):
+    """Test to check the noop run feature for renamed network
+
+    Steps to reproduce:
+    1. Rename admin_floating_net network
+    2. Execute 'deploy noop'
+    3. Wait for task finishing
+    4. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    5. Check that result contains the expected data
+    """
+
+    node = env.primary_controller
+    task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
+    msg = ("/Neutron_network[admin_floating_net]/ensure', u'message': "
+           "u'current_value absent, should be present (noop)'")
     assert noop_common.is_message_in_summary_results(admin_remote, task.id,
                                                      node.id, msg)
 
@@ -461,6 +528,45 @@ def test_change_puppet_file_mod(env, admin_remote, puppet_file_new_mod):
                                                      node.id, msg)
 
 
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1681469')
+def test_custom_graph(env, admin_remote, puppet_file_new_owner):
+    """Test to check the noop run feature for custom graph
+
+    Steps to reproduce:
+    1. Change owner of /etc/logrotate.d/apache2 on controller
+    2. Create a custom graph by copying the default graph and upload it
+    3. Execute 'fuel2 graph execute -t custom'
+    4. Wait for task finishing
+    5. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    6. Check that result contains the expected data
+    7. Delete data for apache from custom graph
+    8. Execute 'fuel2 graph execute -t custom'
+    9. Wait for task finishing
+    10. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    11. Check that result does not contains data
+    """
+
+    node = puppet_file_new_owner['node']
+    # Custom graph = default
+    noop_common.create_and_upload_custom_graph(admin_remote, env)
+    task = noop_common.run_noop_graph_execute(admin_remote, env, nodes=[node],
+                                              g_type='custom')
+    msg = ("u'message': u'current_value {0}, "
+           "should be root (noop)'".format(puppet_file_new_owner['new_owner']))
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
+
+    # Custom graph = default without data related to apache
+    noop_common.create_and_upload_custom_graph(admin_remote, env,
+                                               modify='delete_apache')
+    task = noop_common.run_noop_graph_execute(admin_remote, env, nodes=[node],
+                                              g_type='custom')
+    assert not noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                         node.id, msg,
+                                                         is_expected=False)
+
+
 # destructive
 @pytest.mark.testrail_id('1681480')
 def test_delete_micro_flavor(env, admin_remote, delete_micro_flavor):
@@ -476,11 +582,10 @@ def test_delete_micro_flavor(env, admin_remote, delete_micro_flavor):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Exec[create-m1.micro-flavor]/returns', u'message': "
-                        "u'current_value notrun, should be 0 (noop)'")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Exec[create-m1.micro-flavor]/returns', u'message': "
+           "u'current_value notrun, should be 0 (noop)'")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 # destructive
@@ -498,11 +603,10 @@ def test_delete_cirros_image(env, admin_remote, delete_cirros_image):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    expected_message = ("/Exec[upload_cirros_shell]/returns', u'message': "
-                        "u'current_value notrun, should be 0 (noop)")
-    assert noop_common.is_message_in_summary_results(admin_remote,
-                                                     task.id, node.id,
-                                                     expected_message)
+    msg = ("/Exec[upload_cirros_shell]/returns', u'message': "
+           "u'current_value notrun, should be 0 (noop)")
+    assert noop_common.is_message_in_summary_results(admin_remote, task.id,
+                                                     node.id, msg)
 
 
 @pytest.mark.undestructive
@@ -572,3 +676,86 @@ def test_changes_for_several_nodes(env, admin_remote, nova_conf_on_cmpt,
     exp_messages = [(node1.id, msg1), (node2.id, msg2), (node3.id, msg3)]
     assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
                                                        exp_messages)
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1682241')
+def test_deploy_whole_env(env, admin_remote, stop_service,
+                          nova_conf_on_cmpt, rename_network):
+    """Test to check the noop run feature for changes in whole env
+
+    Steps to reproduce:
+    1. Stop the service neutron-metadata-agent on controller
+    2. Modify nova config on compute
+    3. Rename admin_floating_net network
+    4. Execute 'fuel2 env deploy --noop'
+    5. Wait for task finishing
+    6. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    7. Check that result contains the expected data
+
+    BUG: https://bugs.launchpad.net/fuel/+bug/1624315
+    Flag --force is not available for "fuel2 env deploy" command
+    """
+
+    task = noop_common.run_noop_env_deploy(admin_remote, env,
+                                           command='deploy')
+
+    expected_messages = []
+    msg1 = ("/Service[neutron-metadata]/ensure', u'message': "
+            "u'current_value stopped, should be running (noop)")
+    for node in env.get_nodes_by_role('controller'):
+        expected_messages.append((node.id, msg1))
+    node2, changes = nova_conf_on_cmpt
+    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
+            "should be False (noop)").format(*changes[0])
+    expected_messages.append((node2.id, msg2))
+    node3 = env.primary_controller
+    msg3 = ("/Neutron_network[admin_floating_net]/ensure', u'message': "
+            "u'current_value absent, should be present (noop)'")
+    expected_messages.append((node3.id, msg3))
+    assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
+                                                       expected_messages)
+
+
+@pytest.mark.undestructive
+@pytest.mark.testrail_id('1682405')
+def test_default_graph(env, admin_remote, glance_api_conf, nova_conf_on_cmpt,
+                       puppet_file_new_owner):
+    """Test to check the noop run feature for changes in whole env
+
+    Steps to reproduce:
+    1. Modify glance config on controller
+    2. Modify nova config on compute
+    3. Change owner of /etc/logrotate.d/apache2 on controller
+    4. Execute 'fuel2 graph execute -t custom'
+    5. Wait for task finishing
+    6. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
+    7. Check that result contains the expected data
+    """
+
+    nodes = []
+    expected_messages = []
+
+    node1, changes = glance_api_conf
+    msg1 = ("Glance_api_config[{0}/{1}]/value', u'message': "
+            "u'current_value {2}, should be False".format(*changes[0]))
+    nodes.append(node1)
+    expected_messages.append((node1.id, msg1))
+
+    node2, changes = nova_conf_on_cmpt
+    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
+            "should be False (noop)").format(*changes[0])
+    nodes.append(node2)
+    expected_messages.append((node2.id, msg2))
+
+    node3 = puppet_file_new_owner['node']
+    msg4 = ("u'message': u'current_value {0}, should be root (noop)'".
+            format(puppet_file_new_owner['new_owner']))
+    nodes.append(node3)
+    expected_messages.append((node3.id, msg4))
+
+    task = noop_common.run_noop_graph_execute(admin_remote, env,
+                                              nodes=nodes,
+                                              g_type='default')
+    assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
+                                                       expected_messages)
