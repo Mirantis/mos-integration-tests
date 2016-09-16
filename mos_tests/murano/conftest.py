@@ -110,7 +110,8 @@ def session(murano, environment):
 
 @pytest.yield_fixture
 def keypair(os_conn):
-    keypair = os_conn.create_key(key_name='murano-key')
+    keypair = os_conn.create_key(
+        common.gen_random_resource_name(prefix='murano-key'))
     yield keypair
     os_conn.delete_key(key_name=keypair.name)
 
