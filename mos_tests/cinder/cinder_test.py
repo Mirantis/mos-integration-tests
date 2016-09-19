@@ -180,7 +180,8 @@ def is_snapshot_deleted(os_conn, snapshot):
 def check_volume_status(os_conn, volume, status='available', positive=True):
     volume_status = os_conn.cinder.volumes.get(volume.id).status
     if positive:
-        assert volume_status != 'error'
+        assert volume_status.lower() != 'error', (
+            'Volume "{0.name}" [id:{0.id}] is in "error" state'.format(volume))
     return volume_status == status
 
 
@@ -577,7 +578,7 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
                                security_groups=[security_group.id],
                                nics=[{'net-id': internal_net['id']}])
 
-    # Create 1 volume
+    # Create #1 volume
     logger.info("Create volume 'test_volume_1' with size 10Gb")
     vlm_1 = os_conn.cinder.volumes.create(size=10, name='test_volume_1')
     common.wait(
@@ -602,7 +603,7 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
             for service in output.splitlines():
                 remote.check_call('service {0} restart'.format(service))
 
-    # Create 2 volume
+    # Create #2 volume
     logger.info("Create volume 'test_volume_2' with size 10Gb")
     vlm_2 = os_conn.cinder.volumes.create(size=10, name='test_volume_2')
     volumes = [vlm_1, vlm_2]
@@ -610,6 +611,9 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
         lambda: check_volume_status(os_conn, vlm_2),
         timeout_seconds=300,
         waiting_for='volume to become in available status')
+
+    # Check volumes not in 'error' state
+    check_all_volumes_statuses(os_conn, volumes, positive=True)
 
     file_2 = mount_volume(os_conn, env, vm, vlm_2, keypair) + '/file_test'
     with os_conn.ssh_to_instance(
@@ -619,11 +623,11 @@ def test_restart_all_cinder_services(os_conn, env, ubuntu_image_id, keypair):
         result = remote.check_call('md5sum {}'.format(file_2))['stdout'][0]
     md5_2 = result.split('  /')[0]
 
-    err_msg = 'File is changed'
-    assert md5_1 == md5_2, err_msg
+    assert md5_1 == md5_2, 'File is changed'
 
     # Detach volumes from vm
     for vlm in volumes:
+        vlm.get()
         vlm.detach()
     common.wait(
         lambda: check_all_volumes_statuses(os_conn, volumes),
