@@ -263,13 +263,6 @@ class Test_k8s_DockerRegistry(object):
     docker_mirror_port = 5005
 
     @pytest.yield_fixture
-    def keypair(self, os_conn):
-        """Create ssh key"""
-        keypair = os_conn.create_key(key_name='muranokey')
-        yield keypair
-        os_conn.delete_key(key_name=keypair.name)
-
-    @pytest.yield_fixture
     def security_group(self, os_conn):
         """Add security groups"""
         sec_group = os_conn.create_sec_group_for_ssh()
