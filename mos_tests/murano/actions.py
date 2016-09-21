@@ -87,6 +87,7 @@ class MuranoActions(object):
             return environment.status == 'ready'
 
         wait(lambda: is_murano_env_deployed(environment),
+             sleep_seconds=60,
              timeout_seconds=3600,
              waiting_for='environment is ready')
 
