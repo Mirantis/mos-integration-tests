@@ -16,6 +16,7 @@ import logging
 import os
 from random import randint
 import re
+from shutil import copyfile
 import time
 
 import pytest
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 class HeatIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Heat verification."""
 
+    heat_tmp_file_dir = '/tmp/'
+    heat_tmp_file_mask = 'heat_'
+
     def setUp(self):
         super(self.__class__, self).setUp()
         # Get path on node to 'templates' dir
@@ -51,6 +55,9 @@ class HeatIntegrationTests(OpenStackTestCase):
         for stack_uid in self.uid_list:
             common_functions.delete_stack(self.heat, stack_uid)
         self.uid_list = []
+        # clean tmp files
+        os.system("rm -rf {0}{1}*".format(self.heat_tmp_file_dir,
+                                          self.heat_tmp_file_mask))
 
     @pytest.mark.testrail_id('631860')
     def test_heat_resource_type_list(self):
@@ -682,30 +689,37 @@ class HeatIntegrationTests(OpenStackTestCase):
         stack_name = 'image_stack'
         template_name = 'cirros_image_tmpl.yaml'
         template_path = os.path.join(self.templates_dir, template_name)
-        try:
-            create_template = common_functions.read_template(
-                self.templates_dir, template_name)
-            sid = common_functions.create_stack(
-                self.heat, stack_name, create_template)
-            self.uid_list.append(sid)
-            first_resource_id = common_functions.get_resource_id(
-                self.heat, sid)
-            format_change = {'disk_format': 'ami', 'container_format': 'ami'}
-            common_functions.update_template_file(
-                template_path, 'format', **format_change)
-            update_template = common_functions.read_template(
-                self.templates_dir, template_name)
-            common_functions.update_stack(self.heat, sid, update_template)
-            second_resource_id = common_functions.get_resource_id(
-                self.heat, sid)
-            self.assertNotEqual(first_resource_id, second_resource_id,
-                                msg='Resource id should be changed'
-                                    ' after modifying stack')
-        finally:
-            back_format_change = {'disk_format': 'qcow2',
-                                  'container_format': 'bare'}
-            common_functions.update_template_file(
-                template_path, 'format', **back_format_change)
+
+        tmp_template_dir = self.heat_tmp_file_dir
+        tmp_template_name = self.heat_tmp_file_mask + template_name
+        tmp_template_path = os.path.join(tmp_template_dir, tmp_template_name)
+
+        # copy template to be able to modify it
+        copyfile(template_path, tmp_template_path)
+
+        # create stack
+        create_template = common_functions.read_template(
+            tmp_template_dir, tmp_template_name)
+        sid = common_functions.create_stack(
+            self.heat, stack_name, create_template)
+        self.uid_list.append(sid)
+
+        # update stack template
+        first_resource_id = common_functions.get_resource_id(
+            self.heat, sid)
+        format_change = {'disk_format': 'ami', 'container_format': 'ami'}
+        common_functions.update_template_file(
+            tmp_template_path, 'format', **format_change)
+        update_template = common_functions.read_template(
+            tmp_template_dir, tmp_template_name)
+
+        # update stack
+        common_functions.update_stack(self.heat, sid, update_template)
+        second_resource_id = common_functions.get_resource_id(
+            self.heat, sid)
+        self.assertNotEqual(first_resource_id, second_resource_id,
+                            msg='Resource id should be changed '
+                                'after modifying stack')
 
     @pytest.mark.testrail_id('631883')
     def test_heat_stack_update_in_place(self):
