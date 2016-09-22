@@ -39,7 +39,7 @@ class MuranoActions(object):
         self.linux_image = linux_image
         self.murano_endpoint = os_conn.session.get_endpoint(
             service_type='application-catalog', endpoint_type='publicURL')
-        token = os_conn.session.get_auth_headers()['X-Auth-Token']
+        token = os_conn.get_auth_token()
         if with_glare:
             self.glare_endpoint = os_conn.session.get_endpoint(
                 service_type='artifact', endpoint_type='publicURL')
@@ -59,6 +59,7 @@ class MuranoActions(object):
                                        token=token,
                                        cacert=os_conn.path_to_cert)
 
+        os_conn.reinit_heat_client()
         self.heat = os_conn.heat
         self.postgres_passwd = self.rand_name("O5t@")
 

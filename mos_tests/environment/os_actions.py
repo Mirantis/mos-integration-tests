@@ -90,21 +90,21 @@ class OpenStackActions(object):
 
         logger.debug('Auth URL is {0}'.format(auth_url))
         if keystone_version == 2:
-            auth = KeystonePassword(username=user,
-                                    password=password,
-                                    auth_url=auth_url,
-                                    tenant_name=tenant)
-            self.session = session.Session(auth=auth,
+            self.auth = KeystonePassword(username=user,
+                                        password=password,
+                                        auth_url=auth_url,
+                                        tenant_name=tenant)
+            self.session = session.Session(auth=self.auth,
                                            verify=self.path_to_cert)
             self.keystone = KeystoneClient(session=self.session)
         else:
-            auth = v3.Password(auth_url=auth_url,
-                               user_domain_name=domain,
-                               username=user,
-                               password=password,
-                               project_domain_name=domain,
-                               project_name=tenant)
-            self.session = sessionV3.Session(auth=auth,
+            self.auth = v3.Password(auth_url=auth_url,
+                                   user_domain_name=domain,
+                                   username=user,
+                                   password=password,
+                                   project_domain_name=domain,
+                                   project_name=tenant)
+            self.session = sessionV3.Session(auth=self.auth,
                                              verify=self.path_to_cert)
             self.keystone = KeystoneClientV3(session=self.session)
 
@@ -122,12 +122,23 @@ class OpenStackActions(object):
 
         self.glance = GlanceClient(session=self.session)
 
-        endpoint_url = self.session.get_endpoint(service_type='orchestration',
-                                                 endpoint_type='publicURL')
+        #TODO: Need to refactor initialization of heatclient
+
+        self.endpoint_url = self.session.get_endpoint(
+            service_type='orchestration',
+            endpoint_type='publicURL'
+        )
         token = self.session.get_token()
-        self.heat = HeatClient(endpoint=endpoint_url, token=token)
+        self.heat = HeatClient(endpoint=self.endpoint_url, token=token)
 
         self.env = env
+
+    def get_auth_token(self):
+        return self.auth.get_auth_ref(self.session).auth_token
+
+    def reinit_heat_client(self):
+        token = self.get_auth_token()
+        self.heat = HeatClient(endpoint=self.endpoint_url, token=token)
 
     def _get_cirros_image(self):
         for image in self.glance.images.list():
