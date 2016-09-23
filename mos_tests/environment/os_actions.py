@@ -91,19 +91,19 @@ class OpenStackActions(object):
         logger.debug('Auth URL is {0}'.format(auth_url))
         if keystone_version == 2:
             self.auth = KeystonePassword(username=user,
-                                        password=password,
-                                        auth_url=auth_url,
-                                        tenant_name=tenant)
+                                         password=password,
+                                         auth_url=auth_url,
+                                         tenant_name=tenant)
             self.session = session.Session(auth=self.auth,
                                            verify=self.path_to_cert)
             self.keystone = KeystoneClient(session=self.session)
         else:
             self.auth = v3.Password(auth_url=auth_url,
-                                   user_domain_name=domain,
-                                   username=user,
-                                   password=password,
-                                   project_domain_name=domain,
-                                   project_name=tenant)
+                                    user_domain_name=domain,
+                                    username=user,
+                                    password=password,
+                                    project_domain_name=domain,
+                                    project_name=tenant)
             self.session = sessionV3.Session(auth=self.auth,
                                              verify=self.path_to_cert)
             self.keystone = KeystoneClientV3(session=self.session)
@@ -122,7 +122,7 @@ class OpenStackActions(object):
 
         self.glance = GlanceClient(session=self.session)
 
-        #TODO: Need to refactor initialization of heatclient
+        # TODO(akuznetsova): Need to refactor initialization of heatclient
 
         self.endpoint_url = self.session.get_endpoint(
             service_type='orchestration',
