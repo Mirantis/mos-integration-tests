@@ -101,6 +101,8 @@ def pytest_runtest_teardown(item, nextitem):
 
     outcome = yield
 
+    setattr(item._request.session, 'reverted', False)
+
     # No revert after last test
     if nextitem is None or item.session.shouldstop:
         return
