@@ -377,7 +377,7 @@ class Test_k8s_DockerRegistry(object):
         'role', ['custom_registry', 'registry_mirr', 'both'])
     def test_k8s_docker_registry_local_and_mirror(
             self, os_conn, env, configure_docker, environment, murano, session,
-            cluster, pod, package, role):
+            cluster, pod, package, role, murano_k8s_image_username):
         """Deploy "Kubernetes Cluster (package)" with setting
         "Custom Docker registry URL" and "Docker registry mirror URL".
 
@@ -451,7 +451,8 @@ class Test_k8s_DockerRegistry(object):
         vms = os_conn.nova.servers.list()
         minion_vm = [x for x in vms if 'minion' in x.to_dict()['name']][0]
         minion_vm_ssh = os_conn.ssh_to_instance(
-            env, minion_vm, vm_keypair=keypair, username='ubuntu')
+            env, minion_vm, vm_keypair=keypair,
+            username=murano_k8s_image_username)
         vm_ssh = os_conn.ssh_to_instance(
             env, vm, vm_keypair=keypair, username='ubuntu')
 
