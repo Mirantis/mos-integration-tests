@@ -397,7 +397,7 @@ def test_k8s_deploy_without_cadvisor(
 
 
 @pytest.mark.check_env_("is_any_compute_suitable_for_max_flavor")
-@pytest.mark.parametrize('package', [('DockerMySQL', 'DockerNginxSite')],
+@pytest.mark.parametrize('package', [('DockerMySQL', 'DockerNginx')],
                          indirect=['package'])
 @pytest.mark.testrail_id('543020')
 def test_k8s_deploy_multiple_clusters_in_one_environment(
@@ -410,7 +410,7 @@ def test_k8s_deploy_multiple_clusters_in_one_environment(
         4. Add DockerMySQL application to the environment
         5. Add another one Kubernetes Cluster application to the environment
         6. Add another one Kubernetes Pod to the environment
-        7. Add DockerNginxSite application to the environment with second pod
+        7. Add DockerNginx application to the environment with second pod
         as host
         8. Deploy environment
         9. Check deployment status and make sure that all nodes are active
@@ -428,7 +428,7 @@ def test_k8s_deploy_multiple_clusters_in_one_environment(
         murano.cluster(keypair, 2, kubernetes_image.name))
     pod_two = murano.create_service(environment, session,
                                     murano.pod(cluster_two, 1))
-    murano.create_service(environment, session, murano.nginx_site(pod_two))
+    murano.create_service(environment, session, murano.nginx(pod_two))
     deployed_environment = murano.deploy_environment(environment, session)
     murano.status_check(deployed_environment,
                         [[cluster_one['name'], "master-1", 8080],
