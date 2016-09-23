@@ -25,23 +25,46 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.testrail_id('1681266')
 def test_non_operational_env(env, new_env, admin_remote):
-    """Test to check negative case: noop run while env is not operational
+    """Test to check noop run while env is not operational
 
     Steps to reproduce:
     1. Reset env and wait for 'new' state of it
     2. Execute 'deploy noop'
-    3. Check that command was not successful
-    4. Check error message
+    3. Check that command is successfully launched
     """
     nodes = ' '.join([str(node.id) for node in env.get_all_nodes()])
     cmd = "fuel2 env nodes deploy -e {0} -n {1} -f --noop"
     cmd_res = admin_remote.execute(cmd.format(env.id, nodes))
-    assert not cmd_res.is_ok, (
-        'Noop run of fuel tasks should be failed for non operational env')
-    assert "400 Client Error: Bad Request for url: " in cmd_res.stderr_string
-    assert re.findall(
-        r"Deployment operation cannot be started. Nodes with uids (.*) "
-        r"are not provisioned yet.", cmd_res.stderr_string)
+    assert cmd_res.is_ok, (
+        "It should be possible to run noop task for non operational env")
+    assert re.search(
+        r"Deployment task with id \d+ for the nodes .* "
+        r"within the environment {0} has been started".format(env.id),
+        cmd_res.stdout_string)
+
+
+@pytest.mark.testrail_id('1683908')
+def test_noop_run_second_time(env, admin_remote):
+    """Test to check that it's not possible to run 2nd task
+
+    Steps to reproduce:
+    1. Run 'fuel2 env nodes deploy' task with --noop
+    2. Run 'fuel2 env redeploy' without waiting for finish of 1st run
+    3. Check error status of 2nd run
+    """
+    nodes_ids = ' '.join([str(node.id) for node in env.get_all_nodes()])
+    cmd1 = "fuel2 env nodes deploy -e {0} -n {1} -f --noop"
+    cmd2 = "fuel2 env redeploy --noop {0}"
+    cmd_res1 = admin_remote.execute(cmd1.format(env.id, nodes_ids))
+    assert cmd_res1.is_ok, "1st run of noop run should be OK"
+    cmd_res2 = admin_remote.execute(cmd2.format(env.id))
+    assert not cmd_res2.is_ok, (
+        "It shouldn't be possible run task if at least on task is in progress")
+    error_messages = [
+        "400 Client Error: Bad Request for url: ",
+        "Cannot perform the actions because there are another running tasks"]
+    for error_message in error_messages:
+        assert error_message in cmd_res2.stderr_string
 
 
 @pytest.mark.testrail_id('1681268')
