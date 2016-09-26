@@ -26,6 +26,8 @@ from keystoneauth1.exceptions.base import ClientException as KeyStoneException
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
+from muranoclient.glance import client as glare_client
+from muranoclient.v1.client import Client as MuranoClient
 from neutronclient.common.exceptions import NeutronClientException
 
 from mos_tests import conftest
@@ -197,6 +199,13 @@ def new_ldap_user(ldap_server):
         ld.delete_s(dn)
 
 
+@pytest.fixture
+def no_murano_plugin(env, admin_remote):
+    """Check/uninstall the Murano plugin"""
+    if "detach-murano" in env.get_plugins():
+        uninstall_plugin(env, admin_remote, "detach-murano")
+
+
 def clear_project(os_conn, domain, project):
     """Delete instances, keypairs, security groups, networks in a project"""
     controller_ip = os_conn.env.get_primary_controller_ip()
@@ -352,8 +361,33 @@ def map_devops_to_fuel_net(env, devops_env, fuel_node):
     return interfaces
 
 
+# TODO(ssokolov) remove later
+def check_504_error(keystone_v3):
+    # This function is used for investigation of error 504 (Gateway Timeout)
+    proxy_domain = [d for d in keystone_v3.domains.list()
+                    if d.name == 'openldap1'][0]
+
+    def is_proxy_up():
+        try:
+            keystone_v3.users.list(domain=proxy_domain)
+            return True
+        except Exception:
+            return False
+
+    for i in range(5):
+        if is_proxy_up():
+            break
+        # gateway timeout = 1 min, no need to sleep
+    if i > 0:
+        logger.debug("check_504_error, errors: {0}".format(i))
+
+
 def basic_check(keystone_v3, domain_name=None):
     """Check list of users and groups for LDAP domains"""
+
+    # TODO(ssokolov) remove later
+    check_504_error(keystone_v3)
+
     if domain_name:
         ldap_domains = [keystone_v3.domains.find(name=domain_name)]
     else:
@@ -370,6 +404,48 @@ def basic_check(keystone_v3, domain_name=None):
         groups = keystone_v3.groups.list(domain=ldap_domain)
         assert len(groups) > 0, ("no groups in domain {0}".
                                  format(ldap_domain.name))
+
+
+def install_plugin(admin_remote, url):
+    """Plugin installation"""
+    logger.info("Downloading the RPM file")
+    rpm_file = re.sub("^.*/", "", url)
+    admin_remote.check_call("wget -O {0} {1}".format(rpm_file, url))
+
+    logger.info("Installing the plugin {0}".format(rpm_file))
+    output = admin_remote.check_call("fuel plugins --install {0}".
+                                     format(rpm_file)).stdout_string
+    # NOTE: cannot use FuelPlugins.install because it executes the rpm command
+    # on local machine instead of master node
+    exp_msg = "Plugin {0} was successfully installed".format(rpm_file)
+    assert exp_msg in output
+
+
+def uninstall_plugin(env, admin_remote, plugin_name):
+    """Plugin uninstallation"""
+    logger.info("Uninstalling the plugin {0}".format(plugin_name))
+    data = env.get_settings_data()
+    data['editable'][plugin_name]['metadata']['enabled'] = False
+    env.set_settings_data(data)
+    plugin_data = data['editable'][plugin_name]['metadata']['versions'][0]
+    plugin_version = plugin_data['metadata']['plugin_version']
+    admin_remote.execute("fuel plugins --remove {0}=={1}".
+                         format(plugin_name, plugin_version))
+    # NOTE: cannot use FuelPlugins.remove because it executes the rpm command
+    # on local machine instead of master node
+
+
+def get_murano_plugin_url(env):
+    """Finds plugin URL"""
+    # NOTE. This function should be deleted when Murano plugin will be put to
+    # the official Mirantis plugin repository
+    # Now its RPM file is located on the LDAP server
+    data = env.get_settings_data()['editable']
+    ldap_url = data['ldap']['metadata']['versions'][0]['url']['value']
+    # ldap://176.74.22.8 -> http://176.74.22.8:8080/ldap.rpm
+    rpm_file = "detach-murano-1.0-1.0.0.noarch.rpm"
+    url = ldap_url.replace("ldap", "http") + ":8080/" + rpm_file
+    return url
 
 
 @pytest.mark.undestructive
@@ -1101,6 +1177,81 @@ def test_remove_add_node_to_env(os_conn, devops_env, node_role):
 
     assert os_conn.env.status == 'operational'
     os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+
+# destructive
+@pytest.mark.testrail_id('1680672')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_plugin_interoperability_murano(os_conn, admin_remote,
+                                        no_murano_plugin):
+    """Check the LDAP plugin together with Murano plugin
+
+    Steps to reproduce:
+    1. Checks users and groups for LDAP domains
+    2. Download and install Murano plugin
+    3. Reset and re-deploy env
+    4. Check list of Murano packages
+    5. Checks users and groups for LDAP domains
+
+    Duration ~ 90 minutes
+
+    NOTE: RPM file for Murano plugin must be available via
+    http://<ip_addr>/detach-murano-1.0-1.0.0.noarch.rpm
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    # Download and install Murano plugin
+    url = get_murano_plugin_url(os_conn.env)
+    install_plugin(admin_remote, url)
+
+    logger.info("Enable plugin")
+    data = os_conn.env.get_settings_data()
+    data['editable']['detach-murano']['metadata']['enabled'] = True
+    os_conn.env.set_settings_data(data)
+
+    logger.info("Reset environment")
+    os_conn.env.reset()
+    common.wait(lambda: os_conn.env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Deploy changes")
+    deploy_task = os_conn.env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert os_conn.env.status == 'operational'
+    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    logger.info("Getting Murano package list")
+    # See MuranoActions in murano.actions.py
+    # Murano is installed with Glare (Enable glance artifact repository)
+    murano_endpoint = os_conn.session.get_endpoint(
+        service_type='application-catalog', endpoint_type='publicURL')
+    token = os_conn.session.get_auth_headers()['X-Auth-Token']
+    glare_endpoint = os_conn.session.get_endpoint(
+        service_type='artifact', endpoint_type='publicURL')
+    glare = glare_client.Client(endpoint=glare_endpoint,
+                                token=token,
+                                cacert=os_conn.path_to_cert,
+                                type_name='murano',
+                                type_version=1)
+    murano = MuranoClient(endpoint=murano_endpoint,
+                          token=token,
+                          cacert=os_conn.path_to_cert,
+                          artifacts_client=glare)
+
+    package_names = [p.name for p in murano.packages.list()]
+    assert "Core library" in package_names
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     basic_check(keystone_v3)
