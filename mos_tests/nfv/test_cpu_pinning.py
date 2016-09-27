@@ -132,8 +132,8 @@ class TestCpuPinningOneNuma(TestBaseNFV):
 
     @pytest.mark.testrail_id('838340')
     @pytest.mark.usefixtures('disable_nova_config_drive')
-    def test_vms_connectivity_after_evacuation(self, env, os_conn, nova_ceph,
-                                               networks, flavors, aggregate,
+    def test_vms_connectivity_after_evacuation(self, env, os_conn, networks,
+                                               flavors, aggregate,
                                                security_group, devops_env):
         """This test checks vms connectivity for vms with cpu pinning with 1
         NUMA after evacuation
@@ -170,7 +170,8 @@ class TestCpuPinningOneNuma(TestBaseNFV):
         vm0_new.get()
         new_host = getattr(vm0_new, "OS-EXT-SRV-ATTR:host")
         assert new_host in hosts, "Unexpected host after evacuation"
-        assert new_host != hosts[0], "No host changed after evacuation"
+        assert new_host != hosts[0], "Host didn't change after evacuation"
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
         self.check_cpu_for_vm(os_conn, vm0_new, 1, cpus[new_host])
 
@@ -306,7 +307,7 @@ class TestCpuPinningResize(TestBaseNFV):
                   'hw:cpu_policy': 'dedicated',
                   'hw:numa_nodes': 2}},
         {'name': 'm1.small.perfomance-3',
-         'params': {'ram': 2000, 'vcpus': 3, 'disk': 1},
+         'params': {'ram': 2000, 'vcpus': 4, 'disk': 1},
          'keys': {'aggregate_instance_extra_specs:pinned': 'true',
                   'hw:cpu_policy': 'dedicated',
                   'hw:numa_nodes': 2}},
@@ -357,14 +358,13 @@ class TestCpuPinningResize(TestBaseNFV):
                 nics=[{'net-id': networks[i]}],
                 availability_zone='nova:{}'.format(hosts[i]),
                 security_groups=[security_group.id]))
-
         vm = vms[0]
 
         for flavor in flavors_for_resize:
             numas = 2
             for object_flavor in flavors:
                 if object_flavor.name == flavor:
-                    self.resize(os_conn, vm, object_flavor.id)
+                    vm = self.resize(os_conn, vm, object_flavor.id)
                     break
             if flavor is not 'm1.small.old':
                 if flavor in ['m1.small.perfomance-4',
@@ -375,6 +375,7 @@ class TestCpuPinningResize(TestBaseNFV):
                 self.check_cpu_for_vm(os_conn,
                                       os_conn.get_instance_detail(vm),
                                       numas, cpus[host])
+            os_conn.wait_servers_ssh_ready(vms)
             network_checks.check_vm_connectivity(env, os_conn)
 
 
@@ -429,6 +430,7 @@ class TestCpuPinningMigration(TestBaseNFV):
                                       os_conn.get_instance_detail(vm), 2,
                                       cpus[host])
 
+            os_conn.wait_servers_ssh_ready(vms)
             network_checks.check_vm_connectivity(env, os_conn)
 
 
@@ -676,7 +678,13 @@ class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
         {'name': 'm1.small.isolate', 'params': params,
          'keys': dict(keys + [('hw:cpu_thread_policy', 'isolate')])},
         {'name': 'm1.small.require', 'params': params,
-         'keys': dict(keys + [('hw:cpu_thread_policy', 'require')])}]
+         'keys': dict(keys + [('hw:cpu_thread_policy', 'require')])},
+        {'name': 'm1.small.prefer_1_vcpu',
+         'params': {
+             'ram': 1024,
+             'vcpu': 1,
+             'disk': 1},
+         'keys': dict(keys + [('hw:cpu_thread_policy', 'prefer')])}]
 
     @pytest.mark.testrail_id('864074')
     def test_vms_with_isolate_cpu_thread_policy_less_resources(
@@ -745,6 +753,15 @@ class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
             2. Create cpu pinning flavor with hw:numa_nodes=1 and required
             cpu_thread_policy
             3. Boot vms to have no ability to create vm on one core
+                Steps are:
+                1) boot M + N - 1 vms with flavor_require
+                    N = count of thread siblings list is on numa0
+                    M = count of thread siblings list is on numa0
+                    As result 1 core is free
+                2) create 2 vms with 1 vcpu and 'prefer' policy
+                3) delete 1 vm with 2 vcpu from step 1 or 2
+                4) create 1 vm with 1 vcpu and 'prefer' policy
+                5) delete 1 vm with 1 vpcu from step 3
             4. Boot vm with cpu pinning flavor with required cpu_thread_policy
             5. For 'require' policy check that vm is in error state, for
             policy 'prefer' vm should be active and available
@@ -753,7 +770,7 @@ class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
         host = hosts_hyper_threading[0]
         cpus = get_cpu_distribition_per_numa_node(env)[host]
         zone = 'nova:{}'.format(host)
-        flv_prefer, flv_isolate, flv_require = flavors
+        flv_prefer, _, flv_require, flv_prefer_1_vcpu = flavors
 
         numa_count = len(cpus.keys())
         ts_lists = [list(set(self.get_thread_siblings_lists(os_conn, host, i)))
@@ -761,50 +778,32 @@ class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
         if ts_lists[0] <= 1 and ts_lists[1] <= 1:
             pytest.skip("Configuration is NOK since instance should be on the "
                         "one numa node and use cpus from the different cores")
-        # Vms boot order depends on current environment
-        #
-        # If only 1 thread siblings list is on numa0 => we're not able to boot
-        # vm on different cores anyway. Steps are:
-        # 1) allocate whole numa0 by vm with flavor_require => numa0 is busy
-        # 2) boot N-2 vms with the same flavor (N=count of thread siblings list
-        #  is on numa1) => 2 cores are free
-        # 3) Boot 1 vm with flavor_isolate => 2 vcpus from different cores to
-        #  be allocated => 2 vcpus from different cores are free
-        #
-        # If 2 thread siblings list is on numa0 steps are:
-        # 1) Boot 1 vm with flavor_isolate => 2 vcpus from different cores to
-        #  be allocated => 2 vcpus from different cores are free
-        # 2) Boot N vms with flavor_require (N=count of thread siblings list
-        #  is on numa1)
-        #
-        # If more than 2 thread siblings list is on numa0 steps are:
-        # 1) boot N-2 vms with flavor_require (N=count of thread siblings list
-        #  is on numa0) => 2 cores are free
-        # 2) boot vm with flavor_isolate => 2 vcpus from different cores are
-        #  free
-        # 3) Boot N vms with flavor_require (N=count of thread siblings list
-        #  is on numa1)
-        if len(ts_lists[0]) == 1:
-            boot_order = [(flv_require, 1),
-                          (flv_require, len(ts_lists[1]) - 2),
-                          (flv_isolate, 1)]
-        elif len(ts_lists[0]) == 2:
-            boot_order = [(flv_isolate, 1),
-                          (flv_require, len(ts_lists[1]))]
-        else:
-            boot_order = [(flv_require, len(ts_lists[0]) - 2),
-                          (flv_isolate, 1),
-                          (flv_require, len(ts_lists[1]))]
 
-        for (flavor, count) in boot_order:
-            for i in range(count):
-                os_conn.create_server(name='vm{0}_{1}'.format(i, flavor.name),
-                                      flavor=flavor.id,
-                                      key_name=keypair.name,
-                                      nics=[{'net-id': networks[0]}],
-                                      security_groups=[security_group.id],
-                                      wait_for_avaliable=False,
-                                      availability_zone=zone)
+        def create_server_with_flavor(prefix, flavor):
+            return os_conn.create_server(
+                name='vm{0}_{1}'.format(prefix, flavor.name),
+                flavor=flavor.id,
+                key_name=keypair.name,
+                nics=[{'net-id': networks[0]}],
+                security_groups=[security_group.id],
+                wait_for_avaliable=False,
+                availability_zone=zone)
+
+        # Boot vms to have no ability to create vm on one core
+        for i in range(len(ts_lists[0]) + len(ts_lists[1]) - 1):
+            vm_2_vcpu = create_server_with_flavor(prefix=i, flavor=flv_require)
+
+        for i in range(2):
+            vm_1_vcpu = create_server_with_flavor(prefix="{0}_vcpu1".format(i),
+                                                  flavor=flv_prefer_1_vcpu)
+        vm_2_vcpu.delete()
+        os_conn.wait_servers_deleted([vm_2_vcpu])
+        create_server_with_flavor(prefix="_vcpu1_prefer",
+                                  flavor=flv_prefer_1_vcpu)
+        vm_1_vcpu.delete()
+        os_conn.wait_servers_deleted([vm_1_vcpu])
+
+        # Boot vm with cpu pinning flavor with required cpu_thread_policy
         if policy == 'prefer':
             vm = os_conn.create_server(name='vm_{0}'.format(flv_prefer.name),
                                        flavor=flv_prefer.id,
@@ -813,6 +812,7 @@ class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
                                        security_groups=[security_group.id],
                                        wait_for_avaliable=False,
                                        availability_zone=zone)
+            os_conn.wait_servers_ssh_ready(os_conn.get_servers())
             network_checks.check_ping_from_vm(env, os_conn, vm,
                                               vm_keypair=keypair)
         else:

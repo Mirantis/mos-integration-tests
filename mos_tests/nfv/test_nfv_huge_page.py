@@ -95,6 +95,8 @@ class TestHugePages(TestBaseNFV):
 
         for vm in vms:
             assert self.get_instance_page_size(os_conn, vm) == page_2mb
+
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
 
         vm_0_new = self.migrate(os_conn, vms[0])
@@ -111,7 +113,9 @@ class TestHugePages(TestBaseNFV):
             exp_free_2m = (initial_conf[host][page_2mb]['total'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
-        self.check_instance_page_size(os_conn, vm_0_new, size=page_2mb)
+
+        assert self.get_instance_page_size(os_conn, vm_0_new) == page_2mb
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838297')
@@ -164,6 +168,7 @@ class TestHugePages(TestBaseNFV):
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
         os_conn.assign_floating_ip(vms[0])
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838313')
@@ -216,6 +221,7 @@ class TestHugePages(TestBaseNFV):
             assert exp_free_1g == final_conf[host][page_1gb]['free']
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
+        os_conn.wait_servers_ssh_ready(vms.keys())
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.testrail_id('838316')
@@ -262,6 +268,7 @@ class TestHugePages(TestBaseNFV):
         for (flavor, size) in params:
             self.resize(os_conn, vms.keys()[0], flavor_to_resize=flavor)
             assert self.get_instance_page_size(os_conn, vms.keys()[0]) == size
+            os_conn.wait_servers_ssh_ready(vms.keys())
             network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.check_env_('has_3_or_more_computes')
@@ -314,6 +321,7 @@ class TestHugePages(TestBaseNFV):
 
         for vm in vms:
             assert self.get_instance_page_size(os_conn, vm) == page_1gb
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
 
         vm_0_new = self.migrate(os_conn, vms[0])
@@ -331,6 +339,7 @@ class TestHugePages(TestBaseNFV):
                            nr_1gb * count_to_allocate_1gb)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
         assert self.get_instance_page_size(os_conn, vm) == page_1gb
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.parametrize('computes_without_hp', [1],
@@ -380,6 +389,7 @@ class TestHugePages(TestBaseNFV):
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
+        os_conn.wait_servers_ssh_ready(vms.keys())
         network_checks.check_vm_connectivity(env, os_conn)
 
     @pytest.mark.check_env_('is_ceph_enabled')
@@ -409,13 +419,20 @@ class TestHugePages(TestBaseNFV):
         initial_conf = computes_configuration(env)
         hosts = computes_with_hp_2mb
         vms = []
-        for i in range(2):
-            vm = os_conn.create_server(
-                name='vm{}'.format(i), flavor=small_nfv_flavor.id,
-                availability_zone='nova:{}'.format(hosts[i]),
-                security_groups=[security_group.id],
-                nics=[{'net-id': networks[i]}])
-            vms.append(vm)
+
+        vm0_to_evacuate = os_conn.create_server(
+            name='vm0_to_evacuate', flavor=small_nfv_flavor.id,
+            availability_zone='nova:{}'.format(hosts[0]),
+            security_groups=[security_group.id],
+            nics=[{'net-id': networks[0]}])
+        vms.append(vm0_to_evacuate)
+
+        vm1 = os_conn.create_server(
+            name='vm1', flavor=small_nfv_flavor.id,
+            availability_zone='nova:{}'.format(hosts[1]),
+            security_groups=[security_group.id],
+            nics=[{'net-id': networks[1]}])
+        vms.append(vm1)
 
         vms_distribution = [(hosts[0], 1), (hosts[1], 1)]
         current_conf = computes_configuration(env)
@@ -429,14 +446,18 @@ class TestHugePages(TestBaseNFV):
 
         for vm in vms:
             assert self.get_instance_page_size(os_conn, vm) == page_2mb
+
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
         self.compute_change_state(os_conn, devops_env, hosts[0], state='down')
 
-        vm_0_new = self.evacuate(os_conn, devops_env, vms[0])
+        vm_0_new = self.evacuate(os_conn, devops_env, vm0_to_evacuate,
+                                 host=hosts[1])
 
         assert hosts[1] == getattr(vm_0_new, "OS-EXT-SRV-ATTR:host"), (
             "Wrong host found for {0} after evacuation. Expected host is {1}".
             format(vm_0_new, hosts[1]))
+        os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
         for vm in vms:
             assert self.get_instance_page_size(os_conn, vm) == page_2mb
@@ -590,6 +611,7 @@ class TestHugePagesScheduler(TestBaseNFV):
         """
         host = computes_with_mixed_hp[0]
         zone = 'nova:{}'.format(host)
+
         self.boot_vms_to_allocate_hp(os_conn, env, host, page_2mb, networks[0])
         self.boot_vms_to_allocate_hp(os_conn, env, host, page_1gb, networks[0])
 

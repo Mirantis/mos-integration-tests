@@ -95,8 +95,12 @@ class EnvProxy(object):
         """
         interfaces = fuel_node.data['meta']['interfaces']
         mac_addresses = [x['mac'] for x in interfaces]
-        return self.node_set.distinct('uuid').get(
-            interface__mac_address__in=mac_addresses)
+
+        devops_nodes = self.get_nodes(
+            interface__mac_address__in=mac_addresses).distinct('id')
+
+        assert len(devops_nodes) == 1
+        return devops_nodes[0]
 
     def get_interface_by_fuel_name(self, fuel_name, fuel_env):
         """Return devops network name for fuel network name

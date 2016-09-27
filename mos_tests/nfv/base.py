@@ -155,9 +155,10 @@ class TestBaseNFV(object):
                     timeout_seconds=20 * 60,
                     waiting_for='compute is {}'.format(state))
 
-    def evacuate(self, os_conn, devops_env, vm, on_shared_storage=True,
-                 password=None):
-        os_conn.nova.servers.evacuate(vm, on_shared_storage=on_shared_storage)
+    def evacuate(self, os_conn, devops_env, vm, host=None,
+                 on_shared_storage=False):
+        os_conn.nova.servers.evacuate(vm, host=host,
+                                      on_shared_storage=on_shared_storage)
         try:
             common.wait(
                 lambda: os_conn.is_server_active(vm), timeout_seconds=10 * 60,
