@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import defaultdict
 import time
 
 import pytest
@@ -220,17 +221,19 @@ def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
     Scenario:
         1. Launch baremetal instance 'test1'
         2. Check that 'test1' instance ACTIVE and operable
-        3. Restart all ironic-<name> services on each controllers and ironic
+        3. Stop all ironic-<name> services on each controllers and ironic
             nodes:
             service ironic-<name of service> restart
-        4. Launch baremetal instance 'test2'
-        5. Check that 'test1' instance ACTIVE and operable
-        6. Delete created instances
+        4. Check that 'test1' instance are accesible with SSH
+        5. Launch all ironic services
+        6. Launch baremetal instance 'test2'
+        7. Check that 'test1' instance ACTIVE and operable
+        8. Delete created instances
     """
-    image1 = make_image(node_driver=ironic_nodes[0].driver)
+    image = make_image(node_driver=ironic_nodes[0].driver)
 
     instance1 = ironic.boot_instance(name='test1',
-                                     image=image1,
+                                     image=image,
                                      flavor=flavors[0],
                                      keypair=keypair)
 
@@ -238,16 +241,24 @@ def test_restart_all_ironic_services(env, os_conn, ironic_nodes, ironic,
              set(env.get_nodes_by_role('ironic')))
     ironic_services_cmd = ("service --status-all 2>&1 | grep '+' | "
                            "grep ironic | awk '{ print $4 }'")
+
+    stopped_services = defaultdict(set)
     for node in nodes:
         with node.ssh() as remote:
             output = remote.check_call(ironic_services_cmd).stdout_string
             for service in output.splitlines():
-                remote.check_call('service {0} restart'.format(service))
+                remote.check_call('service {0} stop'.format(service))
+                stopped_services[node].add(service)
 
-    image2 = make_image(node_driver=ironic_nodes[1].driver)
+    assert os_conn.is_server_ssh_ready(instance1)
+
+    for node, services in stopped_services.items():
+        with node.ssh() as remote:
+            for service in services:
+                remote.check_call('service {0} start'.format(service))
 
     instance2 = ironic.boot_instance(name='test2',
-                                     image=image2,
+                                     image=image,
                                      flavor=flavors[1],
                                      keypair=keypair)
 
