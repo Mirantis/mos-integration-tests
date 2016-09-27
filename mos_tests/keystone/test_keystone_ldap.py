@@ -20,9 +20,13 @@ import ldap
 import ldap.modlist as modlist
 import pytest
 from six.moves import configparser
+from six.moves.html_parser import HTMLParser
+from six.moves.urllib.request import urlopen
 
 from fuelclient.objects import Plugins as FuelPlugins
 from keystoneauth1.exceptions.base import ClientException as KeyStoneException
+from keystoneauth1.exceptions.http import GatewayTimeout
+from keystoneauth1.exceptions.http import InternalServerError
 from keystoneauth1.identity import v3
 from keystoneauth1 import session
 from keystoneclient.v3 import Client as KeystoneClientV3
@@ -43,6 +47,13 @@ AUTH_DATA = {
     'AD2': ('user01', 'qwerty123!')
 }
 
+MAIN_PLUGIN_URL = ("https://www.mirantis.com/validated-solution-integrations/"
+                   "fuel-plugins/")
+STACKLIGHT_PLUGIN_NAMES = ['influxdb_grafana',
+                           'lma_collector',
+                           'lma_infrastructure_alerting',
+                           'elasticsearch_kibana']
+
 
 @pytest.yield_fixture
 def admin_remote(fuel):
@@ -51,7 +62,7 @@ def admin_remote(fuel):
 
 
 @pytest.yield_fixture
-def domain_projects(os_conn):
+def domain_projects(os_conn, env):
     # Get current projects for all domains
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     domains = [d for d in keystone_v3.domains.list()]
@@ -65,29 +76,32 @@ def domain_projects(os_conn):
     for domain in domains:
         for project in keystone_v3.projects.list(domain=domain):
             if project.name not in old_projects[domain.name]:
-                clear_project(os_conn, domain, project)
+                clear_project(env, domain, project)
                 keystone_v3.projects.delete(project=project)
 
 
 @pytest.yield_fixture
-def slapd_running(os_conn):
+def slapd_running(env):
     """Check/start the slapd service on all controllers"""
-    provide_slapd_state(os_conn.env, "running")
+    provide_slapd_state(env, "running")
     yield
-    provide_slapd_state(os_conn.env, "running")
+    provide_slapd_state(env, "running")
 
 
 @pytest.yield_fixture
 def controllers(env):
-    """Move certificate files on all controllers and restart slapd"""
+    """Move certificate files on all controllers and restart slapd/apache2"""
+    proxy = get_plugin_config_value(env, 'ldap', 'ldap_proxy')
+    service_name = 'slapd' if proxy else 'apache2'
+
     controllers = env.get_nodes_by_role('controller')
     for controller in controllers:
         if move_cert(controller, to_original=True):
-            restart_slapd(controller)
+            restart_service(controller, service_name)
     yield controllers
     for controller in controllers:
         if move_cert(controller, to_original=True):
-            restart_slapd(controller)
+            restart_service(controller, service_name)
 
 
 @pytest.yield_fixture
@@ -199,6 +213,19 @@ def new_ldap_user(ldap_server):
         ld.delete_s(dn)
 
 
+@pytest.fixture(scope='module')
+def get_plugin_url():
+    """Finds URL of plugins in Mirantis repository"""
+    logger.info("Parsing {0}".format(MAIN_PLUGIN_URL))
+    parser = PluginHtmlParser()
+    parser.feed(urlopen(MAIN_PLUGIN_URL).read())
+
+    def _get_url(plugin_name):
+        return parser.get_url(plugin_name)
+
+    return _get_url
+
+
 @pytest.fixture
 def no_murano_plugin(env, admin_remote):
     """Check/uninstall the Murano plugin"""
@@ -206,9 +233,17 @@ def no_murano_plugin(env, admin_remote):
         uninstall_plugin(env, admin_remote, "detach-murano")
 
 
-def clear_project(os_conn, domain, project):
+@pytest.fixture
+def no_stacklight_plugins(env, admin_remote):
+    """Check/uninstall the StackLight plugins"""
+    for plugin_name in STACKLIGHT_PLUGIN_NAMES:
+        if plugin_name in env.get_plugins():
+            uninstall_plugin(env, admin_remote, plugin_name)
+
+
+def clear_project(env, domain, project):
     """Delete instances, keypairs, security groups, networks in a project"""
-    controller_ip = os_conn.env.get_primary_controller_ip()
+    controller_ip = env.get_primary_controller_ip()
     user_name, user_pass = AUTH_DATA[domain.name]
     try:
         os_conn_v3 = OpenStackActions(controller_ip,
@@ -217,7 +252,7 @@ def clear_project(os_conn, domain, project):
                                       user=user_name,
                                       password=user_pass,
                                       tenant=project.name,
-                                      env=os_conn.env)
+                                      env=env)
         vms = os_conn_v3.get_servers()
     except KeyStoneException:
         # ex: user is not a member of this project
@@ -245,15 +280,16 @@ def clear_project(os_conn, domain, project):
         # see similar examples in os_actions.py
 
 
-def restart_slapd(controller):
-    """Restart slapd service on a controller"""
+def restart_service(controller, service_name):
+    """Restart slapd/apache2 service on a controller"""
     with controller.ssh() as remote:
-        remote.check_call('service slapd restart')
+        remote.check_call('service {0} restart'.format(service_name))
+        status = "start/running" if service_name == "slapd" else "is running"
         common.wait(
-            lambda: 'start/running' in remote.check_call(
-                'service slapd status').stdout_string,
+            lambda: status in remote.check_call(
+                "service {0} status".format(service_name)).stdout_string,
             timeout_seconds=60,
-            waiting_for='status is start/running')
+            waiting_for="status is '{0}'".format(status))
 
 
 def move_cert(controller, to_original=True):
@@ -367,15 +403,18 @@ def check_504_error(keystone_v3):
     proxy_domain = [d for d in keystone_v3.domains.list()
                     if d.name == 'openldap1'][0]
 
-    def is_proxy_up():
+    def no_504_error():
         try:
             keystone_v3.users.list(domain=proxy_domain)
-            return True
-        except Exception:
+        except GatewayTimeout:
             return False
+        except InternalServerError:
+            # ignore
+            pass
+        return True
 
     for i in range(5):
-        if is_proxy_up():
+        if no_504_error():
             break
         # gateway timeout = 1 min, no need to sleep
     if i > 0:
@@ -424,28 +463,75 @@ def install_plugin(admin_remote, url):
 def uninstall_plugin(env, admin_remote, plugin_name):
     """Plugin uninstallation"""
     logger.info("Uninstalling the plugin {0}".format(plugin_name))
-    data = env.get_settings_data()
-    data['editable'][plugin_name]['metadata']['enabled'] = False
-    env.set_settings_data(data)
-    plugin_data = data['editable'][plugin_name]['metadata']['versions'][0]
-    plugin_version = plugin_data['metadata']['plugin_version']
+    configure_plugin(env, plugin_name, enabled=False)
+    plugin_version = get_plugin_version(env, plugin_name)
     admin_remote.execute("fuel plugins --remove {0}=={1}".
                          format(plugin_name, plugin_version))
     # NOTE: cannot use FuelPlugins.remove because it executes the rpm command
     # on local machine instead of master node
 
 
-def get_murano_plugin_url(env):
-    """Finds plugin URL"""
-    # NOTE. This function should be deleted when Murano plugin will be put to
-    # the official Mirantis plugin repository
-    # Now its RPM file is located on the LDAP server
-    data = env.get_settings_data()['editable']
-    ldap_url = data['ldap']['metadata']['versions'][0]['url']['value']
-    # ldap://176.74.22.8 -> http://176.74.22.8:8080/ldap.rpm
-    rpm_file = "detach-murano-1.0-1.0.0.noarch.rpm"
-    url = ldap_url.replace("ldap", "http") + ":8080/" + rpm_file
-    return url
+def configure_plugin(env, plugin_name, enabled):
+    """Disable/enable a plugin and configure some values (if necesary)"""
+    if enabled:
+        logger.info("Enable plugin {0}".format(plugin_name))
+    else:
+        logger.info("Disable plugin {0}".format(plugin_name))
+    data = env.get_settings_data()
+    data['editable'][plugin_name]['metadata']['enabled'] = enabled
+    if enabled and plugin_name == 'lma_infrastructure_alerting':
+        # cannot use set_plugin_config_value because all data must be set
+        # by one command env.set_settings_data(data)
+        metadata = data['editable'][plugin_name]['metadata']
+        metadata['versions'][0]['send_from']['value'] = 'nagios@localhost'
+        metadata['versions'][0]['send_to']['value'] = 'root@localhost'
+        data['editable'][plugin_name]['metadata'] = metadata
+    env.set_settings_data(data)
+
+
+def get_plugin_config_value(env, plugin_name, attr):
+    """Get value of plugin config data"""
+    data = env.get_settings_data()
+    plugin_data = data['editable'][plugin_name]['metadata']['versions'][0]
+    return plugin_data[attr]['value']
+
+
+def set_plugin_config_value(env, plugin_name, attr, value):
+    """Set value of plugin config data"""
+    data = env.get_settings_data()
+    plugin_data = data['editable'][plugin_name]['metadata']['versions'][0]
+    plugin_data[attr]['value'] = value
+    data['editable'][plugin_name]['metadata']['versions'][0] = plugin_data
+    logger.debug("Plugin {0}: {1} = {2}".format(plugin_name, attr, value))
+    env.set_settings_data(data)
+
+
+def get_plugin_version(env, plugin_name):
+    """Get plugin version"""
+    data = env.get_settings_data()
+    plugin_data = data['editable'][plugin_name]['metadata']['versions'][0]
+    return plugin_data['metadata']['plugin_version']
+
+
+class PluginHtmlParser(HTMLParser):
+    """Parser of Mirantis plugin main page to find plugin URLs"""
+
+    is_parsed = False
+    rpm_urls = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            # ex: attrs = [('class', 'plugin-file-download'),
+            # ('id', 'fuel-plugin-nsxv-3.0-3.0.0-1.noarch.rpm'),
+            # ('href', 'http://plugins.mirantis.com/repository/f/u/
+            # fuel-plugin-nsxv/fuel-plugin-nsxv-3.0-3.0.0-1.noarch.rpm')]
+            attrs_dict = dict(attrs)
+            if attrs_dict.get('href', '').endswith('rpm'):
+                PluginHtmlParser.rpm_urls.append(attrs_dict['href'])
+
+    def get_url(self, plugin_name):
+        return next(url for url in PluginHtmlParser.rpm_urls
+                    if ("/" + plugin_name) in url)
 
 
 @pytest.mark.undestructive
@@ -454,7 +540,7 @@ def get_murano_plugin_url(env):
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
 @pytest.mark.parametrize('with_proxy', [True, False])
-def test_ldap_basic_functions(os_conn, with_proxy):
+def test_ldap_basic_functions(os_conn, env, with_proxy):
     """Test to cover basic functionality for multi domain
 
     Steps to reproduce:
@@ -464,7 +550,7 @@ def test_ldap_basic_functions(os_conn, with_proxy):
     4. For each domain, checks lists of users and groups
     """
 
-    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+    if with_proxy != conftest.is_ldap_proxy(env):
         enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
@@ -511,7 +597,7 @@ def test_ldap_get_group_members(os_conn, domain_name):
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
 @pytest.mark.parametrize('with_proxy', [True, False])
-def test_create_project_by_user(os_conn, domain_projects, with_proxy):
+def test_create_project_by_user(os_conn, env, domain_projects, with_proxy):
     """Create a project by LDAP user
 
     Steps to reproduce:
@@ -522,7 +608,7 @@ def test_create_project_by_user(os_conn, domain_projects, with_proxy):
     5. Create a new project
     """
 
-    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+    if with_proxy != conftest.is_ldap_proxy(env):
         enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
@@ -541,7 +627,7 @@ def test_create_project_by_user(os_conn, domain_projects, with_proxy):
     domain_users_ids = [du.user["id"] for du in role_assignments]
     assert user.id in domain_users_ids
 
-    controller_ip = os_conn.env.get_primary_controller_ip()
+    controller_ip = env.get_primary_controller_ip()
     auth_url = 'http://{0}:5000/v3'.format(controller_ip)
     auth = v3.Password(auth_url=auth_url,
                        username=user_name,
@@ -567,7 +653,7 @@ def test_create_project_by_user(os_conn, domain_projects, with_proxy):
 @pytest.mark.testrail_id('1618359')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_ldap_proxy")
-def test_support_ldap_proxy(os_conn, slapd_running):
+def test_support_ldap_proxy(os_conn, env, slapd_running):
     """Check that getUsers results for domains configured with LDAP proxy
     depend on slapd state (stopped or running)
 
@@ -593,10 +679,7 @@ def test_support_ldap_proxy(os_conn, slapd_running):
         assert len(keystone_v3.users.list(domain=domain)) > 0
 
     logger.info("Stopping slapd service on all controllers")
-    provide_slapd_state(os_conn.env, "stopped")
-    exp_mess_1 = "An unexpected error prevented the server from fulfilling " \
-                 "your request"
-    exp_mess_2 = 'Gateway Timeout'
+    provide_slapd_state(env, "stopped")
 
     for domain in domains:
         logger.debug("Checking users for domain {0}".format(domain.name))
@@ -606,9 +689,8 @@ def test_support_ldap_proxy(os_conn, slapd_running):
             assert len(users) > 0
             logger.debug("domain {0} (without LDAP proxy), users list: OK".
                          format(domain.name))
-        except Exception as e:
+        except (GatewayTimeout, InternalServerError) as e:
             assert domain.name == domain_with_LDAP_proxy
-            assert exp_mess_1 in e.message or exp_mess_2 in e.message
             logger.debug("domain {0} (with LDAP proxy), get users list: {1}".
                          format(domain.name, e.message))
 
@@ -621,7 +703,7 @@ def test_support_ldap_proxy(os_conn, slapd_running):
             return False
 
     logger.info("Starting slapd service on all controllers")
-    provide_slapd_state(os_conn.env, "running")
+    provide_slapd_state(env, "running")
     common.wait(is_proxy_up, timeout_seconds=180, sleep_seconds=10,
                 waiting_for='proxy is up')
 
@@ -631,26 +713,33 @@ def test_support_ldap_proxy(os_conn, slapd_running):
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1663412')
+@pytest.mark.testrail_id('1663412', with_proxy=True)
+@pytest.mark.testrail_id('1682426', with_proxy=False)
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_ldap_proxy",
-                        "is_tls_use")
-def test_check_tls_option(os_conn, controllers):
+@pytest.mark.parametrize('with_proxy', [True, False])
+@pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha", "is_tls_use")
+def test_check_tls_option(os_conn, env, controllers, with_proxy):
     """Check that tls option works correctly
 
     Steps to reproduce:
     1. Check lists of users for domains openldap1 and openldap2 (no errors)
     2. Move ca-certificates.crt to tmp directory on all controllers
-    3. Restart slapd service on all controllers
+    3. Restart slapd/apache2 service on all controllers
     4. Check lists of users for domains openldap1 and openldap2
        (exception for openldap1)
     5. Move ca-certificates.crt in the original directory on all controllers
-    6. Check lists of users for domains openldap1 and openldap2 (no errors)
+    6. Restart slapd/apache2 service on all controllers
+    7. Check lists of users for domains openldap1 and openldap2 (no errors)
 
     """
 
+    if with_proxy != conftest.is_ldap_proxy(env):
+        enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
+        pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
+
     domain_with_tls = "openldap1"
     domain_without_tls = "openldap2"
+    service_name = "slapd" if with_proxy else "apache2"
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     domains = [d for d in keystone_v3.domains.list() if 'openldap' in d.name]
@@ -660,14 +749,12 @@ def test_check_tls_option(os_conn, controllers):
         logger.debug("Checking users for domain {0}".format(domain.name))
         assert len(keystone_v3.users.list(domain=domain)) > 0
 
-    logger.info("Moving certificates and restarting slapd service on all "
-                "controllers")
+    logger.info("Moving certificates and restarting {0} service on all "
+                "controllers".format(service_name))
     for controller in controllers:
         move_cert(controller, to_original=False)
-        restart_slapd(controller)
-
-    exp_mess = "An unexpected error prevented the server from fulfilling " \
-               "your request"
+        restart_service(controller, service_name)
+    check_504_error(keystone_v3)
 
     for domain in domains:
         logger.debug("Checking users for domain {0}".format(domain.name))
@@ -677,17 +764,22 @@ def test_check_tls_option(os_conn, controllers):
             assert len(users) > 0
             logger.debug("domain {0} (without LDAP proxy), users list: OK".
                          format(domain.name))
-        except Exception as e:
+        except InternalServerError as e:
+            # 500: An unexpected error prevented the server ...
             assert domain.name == domain_with_tls
-            assert exp_mess in e.message
             logger.debug("domain {0} (with LDAP proxy), get users list: {1}".
                          format(domain.name, e.message))
 
-    logger.info("Restoring certificates and restarting slapd service on all "
-                "controllers")
+    if with_proxy:
+        logger.info("Restoring certificates and restarting slapd service "
+                    "on all controllers")
+    else:
+        logger.info("Restoring certificates on all controllers")
     for controller in controllers:
         move_cert(controller)
-        restart_slapd(controller)
+        if service_name == "slapd":
+            restart_service(controller, service_name)
+    check_504_error(keystone_v3)
 
     for domain in domains:
         logger.debug("Checking users for domain {0}".format(domain.name))
@@ -756,7 +848,7 @@ def test_check_support_active_directory(os_conn):
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed", "has_1_or_more_computes")
 @pytest.mark.parametrize('with_proxy', [True, False])
-def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
+def test_create_instance_by_user(os_conn, env, domain_projects, with_proxy):
     """Launch an instance by LDAP user
 
     Steps to reproduce:
@@ -770,7 +862,7 @@ def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
     8. Repeat steps 2-7 for domain AD2
     """
 
-    if with_proxy != conftest.is_ldap_proxy(os_conn.env):
+    if with_proxy != conftest.is_ldap_proxy(env):
         enabled_or_disabled = 'enabled' if with_proxy else 'disabled'
         pytest.skip("LDAP proxy is not {}".format(enabled_or_disabled))
 
@@ -795,7 +887,7 @@ def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
         keystone_v3.roles.grant(role=role_admin, user=user,
                                 project=new_project)
 
-        controller_ip = os_conn.env.get_primary_controller_ip()
+        controller_ip = env.get_primary_controller_ip()
 
         os_conn_v3 = OpenStackActions(controller_ip,
                                       keystone_version=3,
@@ -803,7 +895,7 @@ def test_create_instance_by_user(os_conn, domain_projects, with_proxy):
                                       user=user_name,
                                       password=user_pass,
                                       tenant=new_project_name,
-                                      env=os_conn.env)
+                                      env=env)
 
         logger.info("Creating network, subnetwork, keypair and "
                     "security_group in project {0}".format(new_project_name))
@@ -901,7 +993,7 @@ def test_mapping_user_parameters(os_conn, ldap_server, new_ldap_user):
 @pytest.mark.testrail_id('1681395')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha")
-def test_check_admin_privileges(os_conn):
+def test_check_admin_privileges(os_conn, env):
     """Check the admin privileges for a domain user
 
     Steps to reproduce:
@@ -927,7 +1019,7 @@ def test_check_admin_privileges(os_conn):
     assert user.id in domain_users_ids
 
     logger.info("Login as {0}".format(user_name))
-    controller_ip = os_conn.env.get_primary_controller_ip()
+    controller_ip = env.get_primary_controller_ip()
     auth_url = 'http://{0}:5000/v3'.format(controller_ip)
     auth = v3.Password(auth_url=auth_url,
                        username=user_name,
@@ -953,9 +1045,7 @@ def test_plugin_uninstall_for_deployed_env(env, admin_remote):
     2. Check that this command is failed with expected error message
     """
 
-    data = env.get_settings_data()['editable']
-    plugin_version = \
-        data['ldap']['metadata']['versions'][0]['metadata']['plugin_version']
+    plugin_version = get_plugin_version(env, 'ldap')
     result = admin_remote.execute("fuel plugins --remove ldap=={0}".
                                   format(plugin_version))
     exp_msg = "Can't delete plugin which is enabled for some environment"
@@ -984,14 +1074,11 @@ def test_plugin_uninstall_for_non_deployed_env(env, admin_remote):
                 sleep_seconds=20,
                 waiting_for="Env reset finish")
 
-    logger.info("Disable the LDAP plugin for environment")
-    data = env.get_settings_data()
-    data['editable']['ldap']['metadata']['enabled'] = False
-    env.set_settings_data(data)
+    # Disable plugin
+    configure_plugin(env, 'ldap', enabled=False)
 
     logger.info("Uninstall the LDAP plugin")
-    plugin_data = data['editable']['ldap']['metadata']['versions'][0]
-    plugin_version = plugin_data['metadata']['plugin_version']
+    plugin_version = get_plugin_version(env, 'ldap')
     result = admin_remote.execute("fuel plugins --remove ldap=={0}".
                                   format(plugin_version))
     exp_msg = "Plugin ldap=={0} was successfully removed".\
@@ -1003,7 +1090,7 @@ def test_plugin_uninstall_for_non_deployed_env(env, admin_remote):
 @pytest.mark.testrail_id('1680674')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_plugin_update(os_conn, admin_remote):
+def test_plugin_update(os_conn, env, admin_remote):
     """Check update of the LDAP plugin in the deployed environment
 
     Steps to reproduce:
@@ -1029,8 +1116,7 @@ def test_plugin_update(os_conn, admin_remote):
 
     logger.info("Download the RPM file")
     # RPM file is located on the LDAP server
-    data = os_conn.env.get_settings_data()['editable']
-    ldap_url = data['ldap']['metadata']['versions'][0]['url']['value']
+    ldap_url = get_plugin_config_value(env, 'ldap', 'url')
     # ldap://176.74.22.8 -> http://176.74.22.8:8080/ldap.rpm
     rpm_file = "ldap.rpm"
     url = ldap_url.replace("ldap", "http") + ":8080/" + rpm_file
@@ -1049,21 +1135,21 @@ def test_plugin_update(os_conn, admin_remote):
     assert new_plugin_version != old_plugin_version
 
     logger.info("Reset environment")
-    os_conn.env.reset()
-    common.wait(lambda: os_conn.env.status == 'new',
+    env.reset()
+    common.wait(lambda: env.status == 'new',
                 timeout_seconds=120,
                 sleep_seconds=20,
                 waiting_for="Env reset finish")
 
     logger.info("Deploy changes")
-    deploy_task = os_conn.env.deploy_changes()
+    deploy_task = env.deploy_changes()
     common.wait(lambda: common.is_task_ready(deploy_task),
                 timeout_seconds=60 * 120,
                 sleep_seconds=60,
                 waiting_for="changes to be deployed")
 
-    assert os_conn.env.status == 'operational'
-    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     basic_check(keystone_v3)
@@ -1073,7 +1159,7 @@ def test_plugin_update(os_conn, admin_remote):
 @pytest.mark.testrail_id('1680673')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha")
-def test_recovery_after_controller_shutdown(os_conn, devops_env):
+def test_recovery_after_controller_shutdown(os_conn, env, devops_env):
     """Check recovery after shutdown of a controller
 
     Steps to reproduce:
@@ -1085,8 +1171,8 @@ def test_recovery_after_controller_shutdown(os_conn, devops_env):
     basic_check(keystone_v3)
 
     primary_controller = \
-        devops_env.get_node_by_fuel_node(os_conn.env.primary_controller)
-    os_conn.env.warm_shutdown_nodes([primary_controller])
+        devops_env.get_node_by_fuel_node(env.primary_controller)
+    env.warm_shutdown_nodes([primary_controller])
 
     basic_check(keystone_v3)
 
@@ -1098,7 +1184,7 @@ def test_recovery_after_controller_shutdown(os_conn, devops_env):
 @pytest.mark.parametrize('node_role', ['controller', 'compute'])
 @pytest.mark.check_env_("is_ldap_plugin_installed", "is_ha",
                         "has_1_or_more_computes")
-def test_remove_add_node_to_env(os_conn, devops_env, node_role):
+def test_remove_add_node_to_env(os_conn, env, devops_env, node_role):
     """Check basic LDAP functionalities after removing/adding the primary
     controller or compute
 
@@ -1123,71 +1209,72 @@ def test_remove_add_node_to_env(os_conn, devops_env, node_role):
     basic_check(keystone_v3)
 
     if node_role == 'controller':
-        node = os_conn.env.primary_controller
+        node = env.primary_controller
     else:
-        node = os_conn.env.get_nodes_by_role('compute')[0]
+        node = env.get_nodes_by_role('compute')[0]
     node_dev = devops_env.get_node_by_fuel_node(node)
     node_name = node.data['name']
     node_roles = node.data['roles']
 
     logger.info("Unassign node {0} ({1})".format(node_name, node_roles))
-    os_conn.env.unassign([node.id])
+    env.unassign([node.id])
 
     logger.debug("Run network verification")
-    assert os_conn.env.wait_network_verification().status == 'ready'
+    assert env.wait_network_verification().status == 'ready'
 
     logger.info("Deploy changes")
-    deploy_task = os_conn.env.deploy_changes()
+    deploy_task = env.deploy_changes()
     common.wait(lambda: common.is_task_ready(deploy_task),
                 timeout_seconds=60 * 120,
                 sleep_seconds=60,
                 waiting_for="changes to be deployed")
 
-    assert os_conn.env.status == 'operational'
-    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     basic_check(keystone_v3)
 
     logger.info("Assign back node {0} ({1})".format(node_name, node_roles))
-    node = os_conn.env.get_node_by_devops_node(node_dev)
+    node = env.get_node_by_devops_node(node_dev)
     node.set({'name': node_name + '_new'})
-    os_conn.env.assign([node], node_roles)
+    env.assign([node], node_roles)
 
     logger.debug("Restore network interfaces")
-    interfaces = map_devops_to_fuel_net(os_conn.env, devops_env, node)
+    interfaces = map_devops_to_fuel_net(env, devops_env, node)
     node.upload_node_attribute('interfaces', interfaces)
 
     logger.debug("Run network verification")
-    assert os_conn.env.wait_network_verification().status == 'ready'
+    assert env.wait_network_verification().status == 'ready'
 
     logger.info("Reset environment")
-    os_conn.env.reset()
-    common.wait(lambda: os_conn.env.status == 'new',
+    env.reset()
+    common.wait(lambda: env.status == 'new',
                 timeout_seconds=120,
                 sleep_seconds=20,
                 waiting_for="Env reset finish")
 
     logger.info("Deploy environment")
-    deploy_task = os_conn.env.deploy_changes()
+    deploy_task = env.deploy_changes()
     common.wait(lambda: common.is_task_ready(deploy_task),
                 timeout_seconds=60 * 120,
                 sleep_seconds=60,
                 waiting_for="changes to be deployed")
 
-    assert os_conn.env.status == 'operational'
-    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     basic_check(keystone_v3)
 
 
 # destructive
+@pytest.mark.skip(reason="Skip because of Murano plugin problems for 9.1")
 @pytest.mark.testrail_id('1680672')
 @pytest.mark.ldap
 @pytest.mark.check_env_("is_ldap_plugin_installed")
-def test_plugin_interoperability_murano(os_conn, admin_remote,
-                                        no_murano_plugin):
+def test_plugin_interoperability_murano(os_conn, env, devops_env, admin_remote,
+                                        no_murano_plugin, get_plugin_url):
     """Check the LDAP plugin together with Murano plugin
 
     Steps to reproduce:
@@ -1198,39 +1285,46 @@ def test_plugin_interoperability_murano(os_conn, admin_remote,
     5. Checks users and groups for LDAP domains
 
     Duration ~ 90 minutes
-
-    NOTE: RPM file for Murano plugin must be available via
-    http://<ip_addr>/detach-murano-1.0-1.0.0.noarch.rpm
     """
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
     basic_check(keystone_v3)
 
     # Download and install Murano plugin
-    url = get_murano_plugin_url(os_conn.env)
+    url = get_plugin_url('detach-murano')
     install_plugin(admin_remote, url)
 
-    logger.info("Enable plugin")
-    data = os_conn.env.get_settings_data()
-    data['editable']['detach-murano']['metadata']['enabled'] = True
-    os_conn.env.set_settings_data(data)
+    # Enable plugin
+    configure_plugin(env, 'detach-murano', enabled=True)
+
+    # Node for Murano roles
+    node = env.non_primary_controllers[0]
+    node_name = node.data['name']
+    interfaces = map_devops_to_fuel_net(env, devops_env, node)
 
     logger.info("Reset environment")
-    os_conn.env.reset()
-    common.wait(lambda: os_conn.env.status == 'new',
+    env.reset()
+    common.wait(lambda: env.status == 'new',
                 timeout_seconds=120,
                 sleep_seconds=20,
                 waiting_for="Env reset finish")
 
+    logger.info("Assign Murano roles to a non-primary controller")
+    # this is done via node recreation (cannot find more easily way)
+    env.unassign([node.id])
+    node.set({'name': node_name + '-murano'})
+    env.assign([node], ['murano-node'])
+    node.upload_node_attribute('interfaces', interfaces)
+
     logger.info("Deploy changes")
-    deploy_task = os_conn.env.deploy_changes()
+    deploy_task = env.deploy_changes()
     common.wait(lambda: common.is_task_ready(deploy_task),
                 timeout_seconds=60 * 120,
                 sleep_seconds=60,
                 waiting_for="changes to be deployed")
 
-    assert os_conn.env.status == 'operational'
-    os_conn.env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
 
     logger.info("Getting Murano package list")
     # See MuranoActions in murano.actions.py
@@ -1254,4 +1348,200 @@ def test_plugin_interoperability_murano(os_conn, admin_remote,
     assert "Core library" in package_names
 
     keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+
+# destructive
+@pytest.mark.testrail_id('1682427')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_plugin_interoperability_stacklight(os_conn, env, devops_env,
+                                            admin_remote,
+                                            no_stacklight_plugins,
+                                            get_plugin_url):
+    """Check the LDAP plugin together with StackLight plugins
+
+    Steps to reproduce:
+    1. Checks users and groups for LDAP domains
+    2. Download and install StackLight plugins
+    3. Reset and re-deploy env
+    4. Execute diagnostic command
+    5. Checks users and groups for LDAP domains
+
+    Duration ~ 90 minutes
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    # Install plugins
+    for plugin_name in STACKLIGHT_PLUGIN_NAMES:
+        url = get_plugin_url(plugin_name)
+        install_plugin(admin_remote, url)
+
+    # Enable plugins and set some values
+    for plugin_name in STACKLIGHT_PLUGIN_NAMES:
+        configure_plugin(env, plugin_name, enabled=True)
+
+    # Node for StackLite roles
+    node = env.non_primary_controllers[0]
+    node_name = node.data['name']
+    interfaces = map_devops_to_fuel_net(env, devops_env, node)
+
+    logger.info("Reset environment")
+    env.reset()
+    common.wait(lambda: env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Assign StackLight roles to a non-primary controller")
+    # this is done via node recreation (cannot find more easily way)
+    env.unassign([node.id])
+    node.set({'name': node_name + '-stacklight'})
+    stacklight_roles = ['infrastructure_alerting', 'elasticsearch_kibana',
+                        'influxdb_grafana']
+    env.assign([node], stacklight_roles)
+    node.upload_node_attribute('interfaces', interfaces)
+
+    logger.info("Deploy changes")
+    deploy_task = env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    logger.info("Launch diagnostic tool")
+    node = env.primary_controller
+    with node.ssh() as remote:
+        output = remote.check_call("lma_diagnostics").stdout_string
+        assert "ERROR" not in output
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+
+# destructive
+@pytest.mark.testrail_id('1682247')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_wrong_ldap_server(os_conn, env):
+    """Check the LDAP plugin when IP address of LDAP server is wrong
+
+    Steps to reproduce:
+    1. Checks users and groups for LDAP domains
+    2. Set wrong IP address of LDAP server
+    3. Redeploy
+    4. Check domains (OK)
+    5. Checks users and groups for LDAP domains (NOK)
+
+    Duration ~ 90 minutes
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    logger.info("Set wrong address of LDAP server")
+    node = env.get_nodes_by_role('compute')[0]
+    ip_address = node.ip_list[0]
+    set_plugin_config_value(os_conn, 'ldap', 'url',
+                            "ldap://{0}".format(ip_address))
+
+    logger.info("Reset environment")
+    env.reset()
+    common.wait(lambda: env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Deploy changes")
+    deploy_task = env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    logger.info("Checking domains")
+    main_domain = [d for d in keystone_v3.domains.list()
+                   if d.name == 'openldap1'][0]
+    logger.info("Checking users of domain {0}".format(main_domain.name))
+    with pytest.raises(KeyStoneException):
+        keystone_v3.users.list(domain=main_domain)
+    logger.info("Checking groups of domain {0}".format(main_domain.name))
+    with pytest.raises(KeyStoneException):
+        keystone_v3.groups.list(domain=main_domain)
+
+
+# destructive
+@pytest.mark.testrail_id('1683946')
+@pytest.mark.ldap
+@pytest.mark.check_env_("is_ldap_plugin_installed")
+def test_check_anonymous_user(os_conn, env):
+    """Check the LDAP plugin when IP address of LDAP server is wrong
+
+    Steps to reproduce:
+    1. Checks users and groups for LDAP domains
+    2. Configure LDAP plugin with empty LDAP user
+    3. Redeploy
+    4. Login as admin/admin, domain: default
+    5. Create the new user u123/1111 and set its role=admin
+    6. Login as u123/1111, domain: default
+    5. Checks users and groups for LDAP domains
+
+    Duration ~ 90 minutes
+    """
+
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    basic_check(keystone_v3)
+
+    logger.info("Configure LDAP plugin with empty LDAP user")
+    set_plugin_config_value(env, 'ldap', 'user', '')
+    set_plugin_config_value(env, 'ldap', 'password', '1111')
+
+    logger.info("Reset environment")
+    env.reset()
+    common.wait(lambda: env.status == 'new',
+                timeout_seconds=120,
+                sleep_seconds=20,
+                waiting_for="Env reset finish")
+
+    logger.info("Deploy changes")
+    deploy_task = env.deploy_changes()
+    common.wait(lambda: common.is_task_ready(deploy_task),
+                timeout_seconds=60 * 120,
+                sleep_seconds=60,
+                waiting_for="changes to be deployed")
+
+    assert env.status == 'operational'
+    env.wait_for_ostf_pass(['sanity'], timeout_seconds=60 * 5)
+
+    logger.info("Creating new user with role 'admin'")
+    keystone_v3 = KeystoneClientV3(session=os_conn.session)
+    user_name = 'u123'
+    user_pass = '1111'
+    domain_name = 'default'
+    domain = keystone_v3.domains.find(name=domain_name)
+    user = keystone_v3.users.create(name=user_name, domain=domain,
+                                    password=user_pass)
+    role_admin = keystone_v3.roles.find(name='admin')
+    keystone_v3.roles.grant(role=role_admin, user=user, domain=domain)
+
+    logger.info("Relogin as new user")
+    controller_ip = env.get_primary_controller_ip()
+    auth_url = 'http://{0}:5000/v3'.format(controller_ip)
+    auth = v3.Password(auth_url=auth_url,
+                       username=user_name,
+                       password=user_pass,
+                       domain_name=domain_name,
+                       user_domain_name=domain_name)
+    sess = session.Session(auth=auth)
+    keystone_v3 = KeystoneClientV3(session=sess)
+
     basic_check(keystone_v3)
