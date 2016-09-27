@@ -36,15 +36,14 @@ def run_noop_nodes_deploy(admin_remote, env, nodes):
     # ex: Deployment task with id 13 for the nodes 1 within the environment 1
     # has been started.
     task_id = int(re.findall(r'Deployment task with id (\d+) ', output)[0])
-    task = FuelTask(task_id)
+    child_task = get_child_task(admin_remote, task_id)
 
     # pending -> running
-    check_env_state_during_task(admin_remote, env, task=task,
-                                nodes=nodes, command='env nodes deploy')
+    check_env_state_during_task(env, task=child_task, nodes=nodes)
     # running -> ready
-    check_env_state_after_task(env, task)
+    check_env_state_after_task(env, task=child_task, nodes=nodes)
 
-    return task
+    return child_task
 
 
 def run_noop_env_deploy(admin_remote, env, command='deploy'):
@@ -57,14 +56,13 @@ def run_noop_env_deploy(admin_remote, env, command='deploy'):
     output = admin_remote.check_call(cmd)['stdout'][0]
     # ex: Deployment task with id 23 for the environment 1 has been started.
     task_id = int(re.findall(r'Deployment task with id (\d+) ', output)[0])
-    task = FuelTask(task_id)
+    child_task = get_child_task(admin_remote, task_id)
+    nodes = env.get_all_nodes()
 
     # pending -> running
-    child_task = check_env_state_during_task(admin_remote, env, task=task,
-                                             nodes=env.get_all_nodes(),
-                                             command='env deploy')
+    check_env_state_during_task(env, task=child_task)
     # running -> ready
-    check_env_state_after_task(env, task)
+    check_env_state_after_task(env, task=child_task, nodes=nodes)
 
     return child_task
 
@@ -72,29 +70,37 @@ def run_noop_env_deploy(admin_remote, env, command='deploy'):
 def run_noop_graph_execute(admin_remote, env, nodes=None, g_type='default'):
     """This function executes 'graph noop'"""
     # NOTE: API is not yet available
-    cmd = "fuel2 graph execute -t {0} -e {1} -f --noop".format(g_type, env.id)
+    cmd = "fuel2 graph execute -t {0} -e {1} --force --noop".format(
+        g_type, env.id)
     if nodes is not None:
         # duplicated ids are skipped
         node_ids = ' '.join(set(str(node.id) for node in nodes))
         cmd += " -n {0}".format(node_ids)
     output = admin_remote.check_call(cmd)['stdout'][0]
     task_id = int(re.findall(r'Deployment task with id (\d+) ', output)[0])
-    task = FuelTask(task_id)
+    child_task = get_child_task(admin_remote, task_id)
+    nodes = nodes or env.get_all_nodes()
 
-    child_task = get_child_task(admin_remote, 'deployment')
-    check_env_state_after_task(env, task)
+    # pending -> running
+    check_env_state_during_task(env, task=child_task, nodes=nodes)
+    # running -> ready
+    check_env_state_after_task(env, task=child_task, nodes=nodes)
 
     return child_task
 
 
-def get_child_task(admin_remote, child_task_name):
+def get_child_task(admin_remote, parent_task_id, child_task_name='deployment'):
     """This function finds ID of the child task"""
     # ID of the child task should be max
     cmd = "fuel task list | grep {0}".format(child_task_name)
     cmd += " | awk '{print $1}'"  # split into 2 lines because of $1
     output = admin_remote.check_call(cmd).stdout_string
     child_task_id = max(map(int, output.split()))
-    child_task = FuelTask(child_task_id)
+    if child_task_id > parent_task_id:
+        child_task = FuelTask(child_task_id)
+    else:
+        raise AssertionError("Unable to find child task for task id {0}"
+                             .format(parent_task_id))
     return child_task
 
 
@@ -146,30 +152,35 @@ def create_and_upload_custom_graph(admin_remote, env, modify=None):
     admin_remote.execute(cmd)
 
 
-def check_env_state_during_task(admin_remote, env, task, nodes, command):
+def are_nodes_in_state(env, nodes, expected_state):
+    return all(x.data['status'] == expected_state
+               for x in env.get_all_nodes() if x in nodes)
+
+
+def check_env_state_during_task(env, task, nodes=None):
     """This function checks state of env and nodes after task starting"""
     common.wait(lambda: task.status == 'running', timeout_seconds=60,
-                sleep_seconds=2, waiting_for='deploy task to be started')
-    if command == 'env deploy':
-        # Main task launches the child task
-        child_task = get_child_task(admin_remote, 'dry_run_deployment')
-        common.wait(lambda: child_task.status == 'running',
-                    timeout_seconds=10, sleep_seconds=1,
-                    waiting_for='child deploy task to be started')
-    else:
-        child_task = None
+                sleep_seconds=2, waiting_for='deployment task to be started')
+
+    if nodes is not None:
+        common.wait(lambda: are_nodes_in_state(env, nodes, 'deploying'),
+                    timeout_seconds=60, sleep_seconds=2,
+                    waiting_for='nodes in deploying state')
+
     assert env.status == 'operational', (
         "Env should be operational when noop run of fuel task is in progress, "
         "but current state is {0}".format(env.status))
-    for node in nodes:
-        assert node.data['status'] == 'ready'
-    return child_task
 
 
-def check_env_state_after_task(env, task):
+def check_env_state_after_task(env, task, nodes):
     """This function checks state of env after task finishing"""
     common.wait(lambda: common.is_task_ready(task), timeout_seconds=60 * 120,
-                sleep_seconds=30, waiting_for='deploy task to be finished')
+                sleep_seconds=30, waiting_for='deployment task to be finished')
+
+    common.wait(lambda: are_nodes_in_state(env, nodes, 'ready'),
+                timeout_seconds=60, sleep_seconds=2,
+                waiting_for='nodes in ready state')
+
     assert env.status == 'operational', (
         "Env should be operational after noop run of fuel task execution, "
         "but current state is {0}".format(env.status))
