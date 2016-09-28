@@ -32,45 +32,48 @@ def pytest_addoption(parser):
                      help="Generate fuel diagnostic snapshot on failues")
 
 
-@pytest.yield_fixture(autouse=True)
-def make_snapshot(request, fuel, env):
-    """Make fuel diagnostic snapshot after failed tests"""
-    yield
+@pytest.fixture(autouse=True)
+def set_fuel_ip(request, fuel):
+    setattr(request.node, 'fuel_ip', fuel.admin_ip)
 
-    try:
-        skip_snapshot = not request.config.getoption("--make-snapshots")
-        if skip_snapshot and os.environ.get('JOB_NAME') is None:
-            return
 
-        steps_rep = [getattr(request.node, 'rep_{}'.format(name), None)
-                     for name in ("setup", "call", "teardown")]
-        if not any(x for x in steps_rep if x is not None and x.failed):
-            return
+def pytest_runtest_makereport(item, call):
+    config = item.session.config
 
-        test_name = request.node.nodeid
-        logger.info('Making snapshot to test {}'.format(test_name))
-        filename = unicode(re.sub('[^\w\s-]', '_', test_name).strip().lower())
-        filename += '.tar.xz'
-        path = os.path.join('snapshots', filename)
+    fuel_ip = getattr(item, 'fuel_ip', None)
+    if fuel_ip is None:
+        return
 
-        config = SnapshotTask.get_default_config()
-        task = SnapshotTask.start_snapshot_task(config)
-        waiting.wait(lambda: task.is_finished,
-                     timeout_seconds=10 * 60,
-                     sleep_seconds=5,
-                     waiting_for='dump to be finished')
-        if task.status != 'ready':
-            raise Exception(
-                "Snapshot generating task ended with error. Task message: {0}"
-                .format(task.data["message"]))
+    make_snapshot = config.getoption("--make-snapshots")
+    is_ci = os.environ.get('JOB_NAME') is not None
+    test_failed = call.excinfo is not None
+    if test_failed and (make_snapshot or is_ci):
+        try:
+            task = SnapshotTask.start_snapshot_task({})
+            waiting.wait(lambda: task.is_finished,
+                         timeout_seconds=10 * 60,
+                         sleep_seconds=5,
+                         waiting_for='dump to be finished')
+            if task.status != 'ready':
+                raise Exception("Snapshot generating task ended with error. "
+                                "Task message: {message}".format(**task.data))
 
-        url = 'http://{fuel.admin_ip}:8000{task.data[message]}'.format(
-            fuel=fuel, task=task)
-        response = requests.get(url,
-                                stream=True,
-                                headers={'x-auth-token': APIClient.auth_token})
-        with open(path, 'wb') as f:
-            for chunk in response.iter_content(65536):
-                f.write(chunk)
-    except Exception as e:
-        logger.warning(e)
+            url = 'http://{fuel_ip}:8000{task.data[message]}'.format(
+                fuel_ip=fuel_ip, task=task)
+            response = requests.get(
+                url,
+                stream=True,
+                headers={'x-auth-token': APIClient.auth_token})
+
+            test_name = item.nodeid
+            logger.info('Making snapshot to test {}'.format(test_name))
+            filename = re.sub('[^\w\s-]', '_', test_name).strip().lower()
+            _, ext = os.path.splitext(task.data['message'])
+            ext = ext or '.tar'
+            path = os.path.join('snapshots', filename + ext)
+
+            with open(path, 'wb') as f:
+                for chunk in response.iter_content(65536):
+                    f.write(chunk)
+        except Exception as e:
+            logger.warning(e)
