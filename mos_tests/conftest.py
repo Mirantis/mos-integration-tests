@@ -15,6 +15,7 @@
 from collections import namedtuple
 from distutils.spawn import find_executable
 import logging
+from multiprocessing import dummy as dummy_mp
 import os
 import uuid
 
@@ -175,8 +176,16 @@ def fuel(get_fuel):
     return get_fuel()
 
 
+def _restart_radosgw(node):
+    with node.ssh() as remote:
+        remote.execute('service radosgw restart')
+
+
 def restart_ceph(env):
-    """Restart ceph monitors to prevent time skew"""
+    """Restart ceph monitors to prevent time skew
+
+    Also we restart radosgw to prevent OSTF Haproxy test fails
+    """
     ceph_nodes = env.get_nodes_by_role('ceph-osd')
     if len(ceph_nodes) == 0:
         return
@@ -189,6 +198,8 @@ def restart_ceph(env):
              timeout_seconds=3 * 60,
              sleep_seconds=5,
              waiting_for='ceph services are up')
+    pool = dummy_mp.Pool(processes=len(controllers))
+    pool.map(_restart_radosgw, controllers)
 
 
 @pytest.fixture(scope='session')
@@ -206,22 +217,23 @@ def get_env(request, get_fuel):
                     "Can't find fuel cluster with name in {}".format(names))
             env = envs[0]
         assert env.is_operational
-        if getattr(request.session, 'reverted', True):
-            restart_ceph(env)
-            env.wait_for_ostf_pass()
-            wait(env.os_conn.is_nova_ready,
-                 timeout_seconds=60 * 5,
-                 expected_exceptions=Exception,
-                 waiting_for="OpenStack nova computes is ready")
         return env
 
     return _get_env
 
 
 @pytest.fixture
-def env(get_env, fuel):
+def env(request, get_env, fuel):
     """Function-scoped initialized Environment instance"""
-    return get_env()
+    env = get_env()
+    if getattr(request.session, 'reverted', True):
+        restart_ceph(env)
+        env.wait_for_ostf_pass()
+        wait(env.os_conn.is_nova_ready,
+             timeout_seconds=60 * 5,
+             expected_exceptions=Exception,
+             waiting_for="OpenStack nova computes is ready")
+    return env
 
 
 @pytest.fixture(scope="session")

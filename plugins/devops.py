@@ -101,8 +101,6 @@ def pytest_runtest_teardown(item, nextitem):
 
     outcome = yield
 
-    setattr(item._request.session, 'reverted', False)
-
     # No revert after last test
     if nextitem is None or item.session.shouldstop:
         return
@@ -110,6 +108,8 @@ def pytest_runtest_teardown(item, nextitem):
     # No revert on KeyboardInterrupt
     if outcome.excinfo is not None and outcome.excinfo[0] is KeyboardInterrupt:
         return
+
+    reverted = False
 
     # Test fail or teardown fail
     failed = (item.failed_count_before != item.session.testsfailed or
@@ -138,5 +138,6 @@ def pytest_runtest_teardown(item, nextitem):
                 parent = parent.parent
             if item in item.session._setupstate._finalizers:
                 del item.session._setupstate._finalizers[item]
+            reverted = True
 
-            setattr(item._request.session, 'reverted', True)
+    setattr(nextitem._request.session, 'reverted', reverted)
