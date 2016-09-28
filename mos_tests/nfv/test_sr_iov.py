@@ -239,7 +239,7 @@ class TestSRIOV(TestBaseNFV):
             flavor=flavor.id,
             availability_zone='nova:{}'.format(sriov_hosts[0]),
             nics=[{'port-id': ports[networks[0]]['vf_ports']['direct'][0]},
-                  {'port-id': ports[networks[0]]['ovs_ports'][0]}],
+                  {'port-id': ports[networks[1]]['ovs_ports'][0]}],
             wait_for_avaliable=False)
         self.add_interface_to_vm(os_conn, env, vm_1, keypair)
         vms = [vm_1]
@@ -724,7 +724,11 @@ class TestNegativeSRIOV(TestBaseNFV):
         # (i.e. remove vm from numa0) allows to get numa with huge pages and
         # cpu pinning, but without sr-iov
         vms = {}
-        for numa, cpu_list in cpus.items():
+
+        # we need to order cpus so that numa with more cpus booted at first
+        sorted_cpus = sorted(cpus.items(), key=lambda x: len(x[1]),
+                             reverse=True)
+        for numa, cpu_list in sorted_cpus:
             free_2mb = hps[numa][page_2mb]['free']
             flv = os_conn.nova.flavors.create(name='flavor_{}'.format(numa),
                                               ram=free_2mb * 2, disk=5,

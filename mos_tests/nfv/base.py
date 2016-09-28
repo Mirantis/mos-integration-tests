@@ -222,9 +222,8 @@ class TestBaseNFV(object):
                     ips.extend(vm_ips[vm_1])
 
             network_checks.check_ping_from_vm(
-                env, os_conn, vm, vm_keypair=keypair, timeout=20,
-                ip_to_ping=ips, vm_login='ubuntu', vm_password='ubuntu',
-                vm_ip=vm_ips[vm][0])
+                env, os_conn, vm, vm_keypair=keypair, ip_to_ping=ips,
+                vm_login='ubuntu', vm_password='ubuntu', vm_ip=vm_ips[vm][0])
 
     def check_vif_type_for_vm(self, vm, os_conn):
         vm_ports = os_conn.neutron.list_ports(device_id=vm.id)['ports']
