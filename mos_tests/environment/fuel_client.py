@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import defaultdict
 import functools
 from itertools import groupby
 import logging
@@ -179,22 +180,34 @@ class Environment(environment.Environment):
         return testruns
 
     def is_last_test_result_ok(self):
-
         def tests_is_done():
             res = self.get_state_of_tests()
             if all([x['status'] == 'finished' for x in res]):
                 return res
 
-        results = wait(tests_is_done, timeout_seconds=10 * 60,
+        results = wait(tests_is_done,
+                       timeout_seconds=10 * 60,
                        waiting_for='OSTF tests to finish')
 
+        result_summary = defaultdict(list)
         for result in results:
             for test in result['tests']:
-                if test['status'] not in ('success', 'skipped', 'disabled'):
-                    logger.warning(
-                        'Test "{name}" status is {status}; {message}'.format(
-                            **test))
-                    return False
+                result_summary[test['status']].append(test)
+
+        if len(result_summary['success']) == 0:
+            logger.warning('All tests skipped or disabled at last run')
+            return False
+
+        unsuccess_statuses = set(result_summary.keys()) - set(
+            ['success', 'skipped', 'disabled'])
+        if len(unsuccess_statuses) > 0:
+            tests = (x for k, v in result_summary.items() for x in v
+                     if k in unsuccess_statuses)
+            for test in tests:
+                logger.warning('Test "{name}" status is {status}; '
+                               '{message}'.format(**test))
+            return False
+
         return True
 
     def wait_for_ostf_pass(self, test_groups=('ha',), timeout_seconds=20 * 60):
