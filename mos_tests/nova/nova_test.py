@@ -935,6 +935,7 @@ class TestBugVerification(TestBase):
                                              container_format='bare')
         with file_cache.get_file(settings.UBUNTU_QCOW2_URL) as f:
             os_conn.glance.images.upload(image.id, f)
+        os_conn.wait_images_active([image])
         logger.info('Ubuntu image created')
         yield image.id
         os_conn.glance.images.delete(image.id)

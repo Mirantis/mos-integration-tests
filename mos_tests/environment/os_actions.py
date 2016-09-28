@@ -182,14 +182,27 @@ class OpenStackActions(object):
             raise InstanceError(server)
         return server.status == status
 
+    def image_status_is(self, image, status):
+        image = self.glance.images.get(image.get('id'))
+        return image.get('status') == status
+
     def is_server_active(self, server):
         return self.server_status_is(server, 'ACTIVE')
+
+    def is_image_active(self, image):
+        return self.image_status_is(image, 'active')
 
     def wait_servers_active(self, servers, timeout=10 * 60):
         wait(lambda: all(self.is_server_active(x) for x in servers),
              timeout_seconds=timeout,
              sleep_seconds=10,
              waiting_for='instances to become at ACTIVE status')
+
+    def wait_images_active(self, images, timeout=10 * 60):
+        wait(lambda: all(self.is_image_active(x) for x in images),
+             timeout_seconds=timeout,
+             sleep_seconds=10,
+             waiting_for='images to become at ACTIVE status')
 
     def wait_servers_ssh_ready(self, servers, timeout=10 * 60):
         wait(lambda: all(self.is_server_ssh_ready(x) for x in servers),
