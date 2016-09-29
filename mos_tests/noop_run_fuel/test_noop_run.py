@@ -702,45 +702,6 @@ def test_changes_for_several_nodes(env, admin_remote, nova_conf_on_cmpt,
 
 
 @pytest.mark.undestructive
-@pytest.mark.testrail_id('1682241')
-def test_deploy_whole_env(env, admin_remote, stop_service,
-                          nova_conf_on_cmpt, rename_network):
-    """Test to check the noop run feature for changes in whole env
-
-    Steps to reproduce:
-    1. Stop the service neutron-metadata-agent on controller
-    2. Modify nova config on compute
-    3. Rename admin_floating_net network
-    4. Execute 'fuel2 env deploy --noop'
-    5. Wait for task finishing
-    6. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
-    7. Check that result contains the expected data
-
-    BUG: https://bugs.launchpad.net/fuel/+bug/1624315
-    Flag --force is not available for "fuel2 env deploy" command
-    """
-
-    task = noop_common.run_noop_env_deploy(admin_remote, env,
-                                           command='deploy')
-
-    expected_messages = []
-    msg1 = ("/Service[neutron-metadata]/ensure', u'message': "
-            "u'current_value stopped, should be running (noop)")
-    for node in env.get_nodes_by_role('controller'):
-        expected_messages.append((node.id, msg1))
-    node2, changes = nova_conf_on_cmpt
-    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
-            "should be False (noop)").format(*changes[0])
-    expected_messages.append((node2.id, msg2))
-    node3 = env.primary_controller
-    msg3 = ("/Neutron_network[admin_floating_net]/ensure', u'message': "
-            "u'current_value absent, should be present (noop)'")
-    expected_messages.append((node3.id, msg3))
-    assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
-                                                       expected_messages)
-
-
-@pytest.mark.undestructive
 @pytest.mark.testrail_id('1682405')
 def test_default_graph(env, admin_remote, glance_api_conf, nova_conf_on_cmpt,
                        puppet_file_new_owner):
