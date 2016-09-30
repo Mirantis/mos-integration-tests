@@ -12,9 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+
 from ironicclient import client
+from ironicclient import exc
 
 from mos_tests.functions import common
+
+logger = logging.getLogger(__name__)
 
 
 class IronicActions(object):
@@ -28,6 +33,25 @@ class IronicActions(object):
 
     def _get_image(self, name):
         return self.os_conn.nova.images.find(name=name)
+
+    def get_node_by_instance_id(self, instance_id):
+        try:
+            return self.client.node.get_by_instance_uuid(instance_id)
+        except exc.NotFound:
+            return
+
+    def get_node_provision_state(self, node_uuid):
+        node = self.client.node.get(node_uuid)
+        return node.provision_state
+
+    def wait_node_provision_state(self, node_uuid, state, timeout=5 * 10):
+        waiting_for = ('node {node_uuid} '
+                       'reach {state} provision state').format(
+                           node_uuid=node_uuid,
+                           state=state)
+        common.wait(lambda: self.get_node_provision_state(node_uuid) == state,
+                    timeout_seconds=timeout,
+                    waiting_for=waiting_for)
 
     def all_nodes_provisioned(self):
         """Check if all ironic nodes provisioned"""
@@ -49,6 +73,8 @@ class IronicActions(object):
                       flavor,
                       keypair,
                       name='ironic-server',
+                      wait_for_active=True,
+                      wait_for_avaliable=True,
                       **kwargs):
         """Boot and return ironic instance
 
@@ -68,13 +94,31 @@ class IronicActions(object):
                     sleep_seconds=15,
                     waiting_for='ironic nodes to be provisioned')
         baremetal_net = self.os_conn.nova.networks.find(label='baremetal')
-        return self.os_conn.create_server(name,
-                                          image_id=image.id,
-                                          flavor=flavor.id,
-                                          key_name=keypair.name,
-                                          nics=[{'net-id': baremetal_net.id}],
-                                          timeout=60 * 10,
-                                          **kwargs)
+        instance = self.os_conn.create_server(
+            name,
+            image_id=image.id,
+            flavor=flavor.id,
+            key_name=keypair.name,
+            nics=[{'net-id': baremetal_net.id}],
+            wait_for_active=False,
+            wait_for_avaliable=False,
+            **kwargs)
+
+        # wait node instance_uuid field filled
+        node = common.wait(lambda: self.get_node_by_instance_id(instance.id),
+                           timeout_seconds=60,
+                           waiting_for='node instance_uuid field filled')
+
+        # wait for instance_node get deploying provision state
+        self.wait_node_provision_state(node.uuid, state='deploying')
+
+        if wait_for_active:
+            self.os_conn.wait_servers_active([instance], timeout=60 * 10)
+
+        if wait_for_avaliable:
+            self.os_conn.wait_servers_ssh_ready([instance], timeout=60 * 10)
+
+        return instance
 
     def create_node(self, driver, driver_info, node_properties, mac_address):
         """Create ironic node with port
