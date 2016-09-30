@@ -101,27 +101,17 @@ def test_reboot_all_ironic_conductors(env, devops_env):
             drivers)
         2. Shutdown all ironic conductor nodes
         3. Turn on all ironic conductor nodes
-        4. SSH to every conductor and ensure conductor service works fine.
+        4. SSH to controller and ensure that "ironic driver-list" return same
+            result as for step 1
     """
-
     controller = env.get_nodes_by_role('controller')[0]
     with controller.ssh() as remote:
-        with remote.open('/root/openrc') as f:
-            openrc = f.read()
+        driver_hosts = os_cli.Ironic(remote).get_driver_hosts()
 
     conductors = env.get_nodes_by_role('ironic')
-    drivers = None
-    for conductor in conductors:
-        with conductor.ssh() as remote:
-            with remote.open('/root/openrc', 'w') as f:
-                f.write(openrc)
-            drivers_data = os_cli.Ironic(remote)('driver-list').listing()
-            assert len(drivers_data) > 0
-            if drivers is None:
-                drivers = drivers_data
-            else:
-                assert drivers == drivers_data
+    conductor_hosts = set(node.data['fqdn'] for node in conductors)
 
+    assert conductor_hosts == driver_hosts
     devops_nodes = [devops_env.get_node_by_fuel_node(x) for x in conductors]
 
     for node in devops_nodes:
@@ -134,12 +124,11 @@ def test_reboot_all_ironic_conductors(env, devops_env):
                 timeout_seconds=10 * 60,
                 waiting_for='conductor nodes to boot')
 
-    for conductor in conductors:
-        with conductor.ssh() as remote:
-            with remote.open('/root/openrc', 'w') as f:
-                f.write(openrc)
-            ironic_cli = os_cli.Ironic(remote)
-            assert ironic_cli('driver-list').listing() == drivers
+    with controller.ssh() as remote:
+        ironic_cli = os_cli.Ironic(remote)
+        common.wait(lambda: ironic_cli.get_driver_hosts() == conductor_hosts,
+                    timeout_seconds=60 * 2,
+                    waiting_for="ironic conductor to register their drivers")
 
 
 @pytest.mark.check_env_('has_2_or_more_ironic_conductors')

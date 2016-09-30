@@ -36,10 +36,9 @@ def os_execute(remote, command, fail_ok=False, merge_stderr=False):
     command = '. openrc && {}'.format(command.encode('utf-8'))
     result = remote.execute(command)
     if not fail_ok and not result.is_ok:
-        raise exceptions.CommandFailed(result['exit_code'],
-                                       command.decode('utf-8'),
-                                       result.stdout_string,
-                                       result.stderr_string)
+        raise exceptions.CommandFailed(
+            result['exit_code'], command.decode('utf-8'), result.stdout_string,
+            result.stderr_string)
     output = Result()
     if merge_stderr:
         output += result.stderr_string
@@ -57,10 +56,17 @@ class CLICLient(object):
     def build_command(self, action, flags='', params='', prefix=''):
         return u' '.join([prefix, self.command, flags, action, params])
 
-    def __call__(self, action, flags='', params='', prefix='', fail_ok=False,
+    def __call__(self,
+                 action,
+                 flags='',
+                 params='',
+                 prefix='',
+                 fail_ok=False,
                  merge_stderr=False):
         command = self.build_command(action, flags, params, prefix)
-        return os_execute(self.remote, command, fail_ok=fail_ok,
+        return os_execute(self.remote,
+                          command,
+                          fail_ok=fail_ok,
                           merge_stderr=merge_stderr)
 
 
@@ -131,7 +137,8 @@ class OpenStack(CLICLient):
         output = self(
             'role add',
             params='{name} --user {user} --project {project} -f json'.format(
-                name=role_name, user=user, project=project))
+                name=role_name, user=user,
+                project=project))
         return self.details(output)
 
     def ec2_cred_list(self):
@@ -148,13 +155,13 @@ class OpenStack(CLICLient):
         return self('ec2 credentials delete {0}'.format(access_key))
 
     def user_set_new_name(self, name, new_name):
-        params = '{name} --name {new_name}'.format(
-            name=name, new_name=new_name)
+        params = '{name} --name {new_name}'.format(name=name,
+                                                   new_name=new_name)
         return self('user set', params=params)
 
     def user_set_new_password(self, name, new_password):
-        params = '{name} --password {password}'.format(
-            name=name, password=new_password)
+        params = '{name} --password {password}'.format(name=name,
+                                                       password=new_password)
         return self('user set', params=params)
 
 
@@ -169,6 +176,13 @@ class Glance(CLICLient):
 
 class Ironic(CLICLient):
     command = 'ironic'
+
+    def get_driver_hosts(self):
+        """Return set of all hosts for all ironic drivers"""
+        drivers = self('driver-list').listing()
+        return set(host.strip()
+                   for driver in drivers
+                   for host in driver['Active host(s)'].split(','))
 
 
 class Murano(CLICLient):
@@ -284,7 +298,9 @@ class Swift(CLICLient):
 
     def download_object(self, container, filename, dest_filename):
         output = self('download {container} {filename} -o {dest_file}'.format(
-            container=container, filename=filename, dest_file=dest_filename))
+            container=container,
+            filename=filename,
+            dest_file=dest_filename))
         return output
 
     def object_list(self, container):

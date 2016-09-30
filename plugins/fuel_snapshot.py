@@ -39,7 +39,6 @@ def set_fuel_ip(request, fuel):
 
 def pytest_runtest_makereport(item, call):
     config = item.session.config
-
     fuel_ip = getattr(item, 'fuel_ip', None)
     if fuel_ip is None:
         return
@@ -48,6 +47,7 @@ def pytest_runtest_makereport(item, call):
     is_ci = os.environ.get('JOB_NAME') is not None
     test_failed = call.excinfo is not None
     if test_failed and (make_snapshot or is_ci):
+        logger.info('Start generate fuel snapshot')
         try:
             task = SnapshotTask.start_snapshot_task({})
             waiting.wait(lambda: task.is_finished,
