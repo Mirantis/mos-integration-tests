@@ -67,16 +67,14 @@ def get_ceph_health(remote):
 
 
 def is_ceph_time_sync(remote):
-    health = get_ceph_health(remote)['health']['health_services']
-    mons = []
-    for item in health:
-        if isinstance(item, dict) and 'mons' in item:
-            mons = item['mons']
-            break
-    ok = all([x['health'] == 'HEALTH_OK' for x in mons])
+    health = get_ceph_health(remote)
+    summary = health['summary']
+    ok = all('clock skew' not in x['summary'] for x in summary)
     if not ok:
-        logger.info('ceph healt detail:\n'
+        logger.info('ceph health detail:\n'
                     '{0}'.format('\n'.join(health['detail'])))
+        logger.info('ceph health summary:\n'
+                    '{0}'.format('\n'.join(health['summary'])))
     return ok
 
 
