@@ -1447,7 +1447,7 @@ def test_wrong_ldap_server(os_conn, env):
     logger.info("Set wrong address of LDAP server")
     node = env.get_nodes_by_role('compute')[0]
     ip_address = node.ip_list[0]
-    set_plugin_config_value(os_conn, 'ldap', 'url',
+    set_plugin_config_value(env, 'ldap', 'url',
                             "ldap://{0}".format(ip_address))
 
     logger.info("Reset environment")
@@ -1482,7 +1482,7 @@ def test_wrong_ldap_server(os_conn, env):
 # destructive
 @pytest.mark.testrail_id('1683946')
 @pytest.mark.ldap
-@pytest.mark.check_env_("is_ldap_plugin_installed")
+@pytest.mark.check_env_("is_ldap_plugin_installed", "not is_ldap_proxy")
 def test_check_anonymous_user(os_conn, env):
     """Check the LDAP plugin when IP address of LDAP server is wrong
 
