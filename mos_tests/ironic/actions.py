@@ -106,7 +106,7 @@ class IronicActions(object):
 
         # wait node instance_uuid field filled
         node = common.wait(lambda: self.get_node_by_instance_id(instance.id),
-                           timeout_seconds=60,
+                           timeout_seconds=2 * 60,
                            waiting_for='node instance_uuid field filled')
 
         # wait for instance_node get deploying provision state
