@@ -71,10 +71,10 @@ def is_ceph_time_sync(remote):
     summary = health['summary']
     ok = all('clock skew' not in x['summary'] for x in summary)
     if not ok:
-        logger.info('ceph health detail:\n'
-                    '{0}'.format('\n'.join(health['detail'])))
-        logger.info('ceph health summary:\n'
-                    '{0}'.format('\n'.join(health['summary'])))
+        logger.info('ceph health detail:')
+        logger.info(json.dumps(health['detail'], indent=2))
+        logger.info('ceph health summary:')
+        logger.info(json.dumps(health['summary'], indent=2))
     return ok
 
 
