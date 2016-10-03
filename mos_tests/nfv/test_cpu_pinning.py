@@ -165,17 +165,15 @@ class TestCpuPinningOneNuma(TestBaseNFV):
         network_checks.check_vm_connectivity(env, os_conn)
         self.check_cpu_for_vm(os_conn, vms[0], 1, cpus[hosts[0]])
 
-        self.compute_change_state(os_conn, devops_env, hosts[0], state='down')
-        vm0_new = self.evacuate(os_conn, devops_env, vms[0])
-        vm0_new.get()
-        new_host = getattr(vm0_new, "OS-EXT-SRV-ATTR:host")
-        assert new_host in hosts, "Unexpected host after evacuation"
-        assert new_host != hosts[0], "Host didn't change after evacuation"
-        os_conn.wait_servers_ssh_ready(vms)
-        network_checks.check_vm_connectivity(env, os_conn)
-        self.check_cpu_for_vm(os_conn, vm0_new, 1, cpus[new_host])
+        with self.change_compute_state_to_down(os_conn, devops_env, hosts[0]):
+            vm0_new = self.evacuate(os_conn, devops_env, vms[0])
+            new_host = getattr(vm0_new, "OS-EXT-SRV-ATTR:host")
+            assert new_host in hosts, "Unexpected host after evacuation"
+            assert new_host != hosts[0], "Host didn't change after evacuation"
+            os_conn.wait_servers_ssh_ready(vms)
+            network_checks.check_vm_connectivity(env, os_conn)
+            self.check_cpu_for_vm(os_conn, vm0_new, 1, cpus[new_host])
 
-        self.compute_change_state(os_conn, devops_env, hosts[0], state='up')
         old_hv = os_conn.nova.hypervisors.find(hypervisor_hostname=hosts[0])
         assert old_hv.running_vms == 0, (
             "Old hypervisor {0} shouldn't have running vms").format(hosts[0])

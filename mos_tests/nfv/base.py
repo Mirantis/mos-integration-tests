@@ -11,6 +11,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import contextlib
 import re
 import xml.etree.ElementTree as ElementTree
 
@@ -155,6 +156,14 @@ class TestBaseNFV(object):
                     timeout_seconds=20 * 60,
                     waiting_for='compute is {}'.format(state))
 
+    @contextlib.contextmanager
+    def change_compute_state_to_down(self, os_conn, devops_env, host):
+        try:
+            self.compute_change_state(os_conn, devops_env, host, state='down')
+            yield
+        finally:
+            self.compute_change_state(os_conn, devops_env, host, state='up')
+
     def evacuate(self, os_conn, devops_env, vm, host=None,
                  on_shared_storage=False):
         os_conn.nova.servers.evacuate(vm, host=host,
@@ -164,11 +173,17 @@ class TestBaseNFV(object):
                 lambda: os_conn.is_server_active(vm), timeout_seconds=10 * 60,
                 waiting_for='instance {} changes status to ACTIVE after '
                             'evacuation'.format(vm.name))
-            return os_conn.nova.servers.get(vm)
         except InstanceError:
             host = getattr(vm, "OS-EXT-SRV-ATTR:host")
             self.compute_change_state(os_conn, devops_env, host, state='up')
             raise
+
+        new_vm = os_conn.nova.servers.get(vm)
+        if host is not None:
+            assert host == getattr(new_vm, "OS-EXT-SRV-ATTR:host"), (
+                "Wrong host found for {0} after evacuation. "
+                "Expected host is {1}").format(new_vm, host)
+        return new_vm
 
     def cpu_load(self, env, os_conn, vm, vm_keypair=None, vm_login='ubuntu',
                  vm_password='ubuntu', action='start'):

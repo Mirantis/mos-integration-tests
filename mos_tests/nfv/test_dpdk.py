@@ -221,15 +221,15 @@ class TestDpdk(TestBaseNFV):
                               security_group, vms_param=vms_param)
         network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair)
 
-        self.compute_change_state(os_conn, devops_env, hosts[1], state='down')
-        vm_new = self.evacuate(os_conn, devops_env, vms[2])
-        vm_new_host = getattr(os_conn.nova.servers.get(vm_new),
-                              "OS-EXT-SRV-ATTR:host")
-        assert vm_new_host in hosts
-        assert vm_new_host != hosts[1]
-        network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair)
-
-        self.compute_change_state(os_conn, devops_env, hosts[1], state='up')
+        with self.change_compute_state_to_down(os_conn, devops_env, hosts[1]):
+            vm_new = self.evacuate(os_conn, devops_env, vms[2])
+            vm_new_host = getattr(os_conn.nova.servers.get(vm_new),
+                                  "OS-EXT-SRV-ATTR:host")
+            assert vm_new_host in hosts
+            assert vm_new_host != hosts[1]
+            os_conn.wait_servers_ssh_ready(vms)
+            network_checks.check_vm_connectivity(env, os_conn,
+                                                 vm_keypair=keypair)
 
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 0)]

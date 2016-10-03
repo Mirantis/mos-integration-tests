@@ -416,17 +416,13 @@ class TestSRIOV(TestBaseNFV):
                           hpr.hypervisor_hostname == sriov_hosts[0]][0]
         assert old_hypervisor.vcpus_used == flavor.vcpus
         assert old_hypervisor.local_gb_used == flavor.disk
-        self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
-                                  state='down')
-        try:
-            vm_new = self.evacuate(os_conn, devops_env, vm)
-            assert sriov_hosts[1] == getattr(vm_new, "OS-EXT-SRV-ATTR:host")
+
+        with self.change_compute_state_to_down(os_conn, devops_env,
+                                               sriov_hosts[0]):
+            vm_new = self.evacuate(os_conn, devops_env, vm,
+                                   host=sriov_hosts[1])
+            os_conn.wait_servers_ssh_ready([vm_new])
             self.check_vm_connectivity_ubuntu(env, os_conn, keypair, [vm_new])
-        except Exception as exc:
-            raise exc
-        finally:
-            self.compute_change_state(os_conn, devops_env, sriov_hosts[0],
-                                      state='up')
 
         os_conn.wait_hypervisor_be_free(old_hypervisor)
         old_hypervisor.get()
@@ -543,7 +539,7 @@ class TestSRIOV(TestBaseNFV):
         os_conn.wait_servers_active(vms_direct)
 
         vms_to_ping = [vms_macvtap[0]] + vms_direct
-
+        os_conn.wait_servers_ssh_ready(vms_to_ping)
         self.check_vm_connectivity_ubuntu(env, os_conn, keypair, vms_to_ping)
 
     @pytest.mark.testrail_id('857355', port_type='macvtap')
