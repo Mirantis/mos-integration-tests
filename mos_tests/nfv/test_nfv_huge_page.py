@@ -449,20 +449,14 @@ class TestHugePages(TestBaseNFV):
 
         os_conn.wait_servers_ssh_ready(vms)
         network_checks.check_vm_connectivity(env, os_conn)
-        self.compute_change_state(os_conn, devops_env, hosts[0], state='down')
 
-        vm_0_new = self.evacuate(os_conn, devops_env, vm0_to_evacuate,
-                                 host=hosts[1])
+        with self.change_compute_state_to_down(os_conn, devops_env, hosts[0]):
+            self.evacuate(os_conn, devops_env, vm0_to_evacuate, host=hosts[1])
 
-        assert hosts[1] == getattr(vm_0_new, "OS-EXT-SRV-ATTR:host"), (
-            "Wrong host found for {0} after evacuation. Expected host is {1}".
-            format(vm_0_new, hosts[1]))
-        os_conn.wait_servers_ssh_ready(vms)
-        network_checks.check_vm_connectivity(env, os_conn)
-        for vm in vms:
-            assert self.get_instance_page_size(os_conn, vm) == page_2mb
-
-        self.compute_change_state(os_conn, devops_env, hosts[0], state='up')
+            os_conn.wait_servers_ssh_ready(vms)
+            network_checks.check_vm_connectivity(env, os_conn)
+            for vm in vms:
+                assert self.get_instance_page_size(os_conn, vm) == page_2mb
 
         vms_distribution = [(hosts[0], 0), (hosts[1], 2)]
         current_conf = computes_configuration(env)
