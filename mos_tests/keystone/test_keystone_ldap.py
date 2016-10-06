@@ -400,10 +400,10 @@ def map_devops_to_fuel_net(env, devops_env, fuel_node):
 # TODO(ssokolov) remove later
 def check_504_error(keystone_v3):
     # This function is used for investigation of error 504 (Gateway Timeout)
-    proxy_domain = [d for d in keystone_v3.domains.list()
-                    if d.name == 'openldap1'][0]
+    proxy_domains = [d for d in keystone_v3.domains.list()
+                     if d.name.startswith('openldap')]
 
-    def no_504_error():
+    def no_504_error(proxy_domain):
         try:
             keystone_v3.users.list(domain=proxy_domain)
         except GatewayTimeout:
@@ -413,12 +413,13 @@ def check_504_error(keystone_v3):
             pass
         return True
 
-    for i in range(5):
-        if no_504_error():
-            break
-        # gateway timeout = 1 min, no need to sleep
-    if i > 0:
-        logger.debug("check_504_error, errors: {0}".format(i))
+    for proxy_domain in proxy_domains:
+        for i in range(5):
+            if no_504_error(proxy_domain):
+                break
+            # gateway timeout = 1 min, no need to sleep
+        logger.debug("check_504_error, domain {0}, errors: {1}".
+                     format(proxy_domain.name, i))
 
 
 def basic_check(keystone_v3, domain_name=None):
