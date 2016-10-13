@@ -25,6 +25,7 @@ from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.base import OpenStackTestCase
 from mos_tests.functions import common as common_functions
 from mos_tests.neutron.python_tests.base import TestBase
+from novaclient.exceptions import ClientException as NovaClientException
 
 
 logger = logging.getLogger(__name__)
@@ -655,6 +656,53 @@ class NovaIntegrationTests(OpenStackTestCase):
             port['id'] for port in self.os_conn.list_ports_for_network(
                 network_id=net_id, device_owner='')]
         assert precreated_port_id in ports_ids_for_network
+
+    @pytest.mark.testrail_id('1696116')
+    def test_check_floating_ip_after_quota_exceeded(self):
+        """Create floating IP after quota was exceeded and pool of IPs
+        was cleaned.
+
+        Steps:
+            1. Create 50 floating IPs
+            2. Create floating IP that exceed quota - unsuccessfully.
+            3. Delete all floating IPs
+            4. Create new floating IP
+            5. Boot vm, associate floating IP for vm
+            6. Go to vm with ssh and check traffic
+
+        Duration 5m
+
+        """
+        floating_quota = 50
+        for num in xrange(floating_quota):
+            floating_ip = self.nova.floating_ips.create()
+            self.floating_ips.append(floating_ip)
+        try:
+            self.nova.floating_ips.create()
+        except NovaClientException:
+            logger.info('IP allocation over quota')
+        for fip in self.floating_ips:
+            common_functions.delete_floating_ip(self.nova, fip)
+        self.assertNotIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                          self.nova.floating_ips.list()])
+        net = self.os_conn.int_networks[0]['id']
+        image_id = self.os_conn.nova.images.find(name='TestVM').id
+        flavor_id = self.os_conn.nova.flavors.find(name='m1.micro').id
+        floating_ip = self.nova.floating_ips.create()
+        self.floating_ips.append(floating_ip)
+        self.assertIn(floating_ip.ip, [fip_info.ip for fip_info in
+                                       self.nova.floating_ips.list()])
+        inst = common_functions.create_instance(self.nova, "inst_1696116",
+                                                flavor_id, net,
+                                                [self.sec_group.name],
+                                                image_id=image_id,
+                                                inst_list=self.instances)
+        inst.add_floating_ip(floating_ip.ip)
+        self.assertTrue(common_functions.check_ip(self.nova, inst.id,
+                                                  floating_ip.ip))
+        ping = common_functions.ping_command(floating_ip.ip)
+        common_functions.delete_instance(self.nova, inst.id)
+        self.assertTrue(ping, "Instance is not reachable")
 
 
 @pytest.mark.undestructive

@@ -34,10 +34,10 @@ class TestLiveMigration(TestBase):
         self.compute_hosts = self.zone.hosts.keys()
         self.instance_keypair = self.os_conn.create_key(key_name='instancekey')
 
-    @pytest.mark.testrail_id('')
+    @pytest.mark.testrail_id('1696117')
     @pytest.mark.check_env_('has_2_or_more_computes', 'not is_ceph_enabled')
     def test_check_rarp_during_live_migration(self):
-        """Test checks RARP packets isn't dropped during live migration of VM
+        """Test checks RARP packets aren't dropped during live migration of VM
 
         Steps:
             1. Create net01, net01__subnet, attach it to router.
@@ -56,9 +56,10 @@ class TestLiveMigration(TestBase):
             :param node: node on which start tcpdump
             """
             logger.info('Start tcpdump on {0}'.format(node.data['fqdn']))
-            cmd_for_tcpdump = ('tcpdump -i br-aux')
+            cmd_for_tcpdump = 'tcpdump -i br-aux'
             with node.ssh() as remote:
-                remote.background_call(cmd_for_tcpdump)
+                return remote.background_call(cmd_for_tcpdump,
+                                              stdout='/tmp/rarp.log')
 
         def get_rarp_packages(node):
             """Get rarp packages from tcpdump log on provided node
@@ -114,7 +115,7 @@ class TestLiveMigration(TestBase):
         vm1_host = getattr(vm1, 'OS-EXT-SRV-ATTR:host')
         vm1_hypervisor = getattr(vm1, "OS-EXT-SRV-ATTR:hypervisor_hostname")
         vm1_compute = self.env.find_node_by_fqdn(vm1_host)
-        start_tcpdump_in_background(vm1_compute)
+        pid = start_tcpdump_in_background(vm1_compute)
 
         self.os_conn.live_migration(vm2, floating_ip_vm2.ip,
                                     new_hyper=vm1_hypervisor)
@@ -122,6 +123,7 @@ class TestLiveMigration(TestBase):
         # Kill tcpdump on compute node
         logger.info('Killing tcpdump on {0}'.format(vm1_host))
         with vm1_compute.ssh() as remote:
-            remote.execute('cat /tmp/tcpdumpchild | xargs kill')
+            remote.execute('kill {}'.format(pid))
         err_msg = "No RARP packets in log"
         assert get_rarp_packages(vm1_compute)['exit_code'] == 0, err_msg
+
