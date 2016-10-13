@@ -14,7 +14,9 @@
 
 from datetime import datetime
 import logging
+import re
 import time
+import yaml
 
 from keystoneclient.auth.identity.v2 import Password as KeystonePassword
 from neutronclient.common.exceptions import NeutronClientException
@@ -22,6 +24,7 @@ import neutronclient.v2_0.client as neutronclient
 import pytest
 
 from mos_tests.environment.devops_client import DevopsClient
+from mos_tests.environment.ssh import SSHClient
 from mos_tests.functions.common import gen_random_resource_name
 from mos_tests.functions.common import wait
 from mos_tests.neutron.python_tests import base
@@ -1559,3 +1562,94 @@ class TestDVRRegression(TestDVRBase):
                                                 fixed_ip1, fixed_ip2, 1)
         err_msg = "Incorrect floating ip rule was deleted"
         assert fixed_ip1 in rules[0][1], err_msg
+
+    @pytest.mark.testrail_id('1696115')
+    @pytest.mark.check_env_('has_2_or_more_computes')
+    def test_check_floating_ip_after_live_migration(self):
+        """Check that floating ip works correctly after live migration.
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01, connect to external network
+            3. Boot VM, associate floating ip to it
+            4. Note floating ip's route from compute1
+            5. Initiate live migration for VM
+            6. Check that floating ip's route disappeared from compute1
+            7. Check that floating ip's route appears on compute2
+            8. Ssh to admin node and run arping to check that only one mac
+            address is answered to ARP queries
+
+        [Bug] - https://bugs.launchpad.net/mos/+bug/1620863
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        server1 = self.os_conn.create_server(
+            name='server01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        fip = self.os_conn.assign_floating_ip(server1, use_neutron=True)
+        fip_ip = fip.get('floating_ip_address')
+
+        compute_hostname1 = getattr(server1, 'OS-EXT-SRV-ATTR:host')
+        compute1 = self.env.find_node_by_fqdn(compute_hostname1)
+
+        with compute1.ssh() as remote:
+            logger.info('Getting floating ip namespace from compute1')
+            cmd = 'ip netns list | grep fip'
+            wait(lambda: remote.execute(cmd).is_ok,
+                 timeout_seconds=10,
+                 waiting_for='floating ip namespace appears on compute1')
+            fip_namespace = remote.check_call(cmd).stdout_string
+
+            logger.info('Getting floating ip route from compute1')
+            cmd = 'ip netns exec {0} ip route | grep {1}'.format(fip_namespace,
+                                                                 fip_ip)
+            wait(lambda: remote.execute(cmd).is_ok,
+                 timeout_seconds=15,
+                 waiting_for='floating ip route appears on compute1')
+            fip_route = remote.check_call(cmd).stdout_string
+
+        self.os_conn.live_migration(server1, fip_ip)
+
+        compute_hostname2 = getattr(server1, 'OS-EXT-SRV-ATTR:host')
+        compute2 = self.env.find_node_by_fqdn(compute_hostname2)
+
+        with compute1.ssh() as remote:
+            logger.info('Verify absence of floating ip route on compute1')
+            err_msg = 'Floating ip namespace route is still exist on compute1'
+            assert not remote.execute(cmd).is_ok, err_msg
+
+        with compute2.ssh() as remote:
+            logger.info('Verify presence of floating ip route on compute2')
+            err_msg = 'Floating ip route is absent on compute2'
+            assert remote.check_call(cmd).stdout_string == fip_route, err_msg
+
+        logger.info('Verify how many addresses are answered to ARP queries')
+        with SSHClient(host=self.fuel.admin_ip,
+                       username=self.fuel.ssh_login,
+                       password=self.fuel.ssh_password,
+                       private_keys=self.fuel.admin_keys) as remote:
+            mac = self.env.primary_controller.data['mac']
+            cmd = 'fuel node --node-id {0} --network --download'.format(mac)
+            interfaces = remote.check_call(cmd).stdout_string.split('\n')[1]
+            with remote.open(interfaces) as f:
+                data = yaml.load(f)
+            device = [data[i]['name'] for i in range(len(data))
+                      if data[i]['assigned_networks'][0]['name'] == 'public']
+            cmd = 'arping -I {0} -c 5 {1} | grep ms'.format(device[0], fip_ip)
+            reply_list = remote.check_call(cmd).stdout_string.split('\n')
+            mac_list = []
+            for reply in reply_list:
+                mac_list.append(re.findall('\[(.+?)\]', reply)[0])
+            err_msg = 'More than one mac address is answered on ARP queries'
+            assert len(set(mac_list)) == 1, err_msg
