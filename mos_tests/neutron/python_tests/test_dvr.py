@@ -1653,3 +1653,57 @@ class TestDVRRegression(TestDVRBase):
                 mac_list.append(re.findall('\[(.+?)\]', reply)[0])
             err_msg = 'More than one mac address is answered on ARP queries'
             assert len(set(mac_list)) == 1, err_msg
+
+    @pytest.mark.testrail_id('1696122')
+    def test_check_correctness_of_ip_address_in_ping_replies(self):
+        """Check that ping replies were received from floating ip address if
+        VMs are on the same network.
+        Steps:
+            1. Create net01, subnet net01__subnet for it
+            2. Create router01, connect to external network
+            3. Boot VM1, don't associate floating ip to it
+            4. Boot VM2 (the same compute node should be hosting), associate
+            floating ip to it
+            5. Ssh to VM1 and ping to VM2's floating ip
+            6. Check that ping replies were received from VM2's floating ip
+            (not from fixed ip)
+        [Bug] - https://bugs.launchpad.net/mos/+bug/1630242
+        """
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        net, subnet = self.create_internal_network_with_subnet(1)
+        router = self.os_conn.create_router(name='router01', distributed=True)
+        key = self.os_conn.nova.keypairs.create('key_1696122')
+
+        self.os_conn.router_interface_add(
+            router_id=router['router']['id'],
+            subnet_id=subnet['subnet']['id'])
+
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+
+        vm1 = self.os_conn.create_server(
+            name='vm01',
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id],
+            key_name=key.name)
+
+        compute_hostname = getattr(vm1, 'OS-EXT-SRV-ATTR:host')
+
+        vm2 = self.os_conn.create_server(
+            name='vm02',
+            availability_zone='nova:{}'.format(compute_hostname),
+            nics=[{'net-id': net['network']['id']}],
+            security_groups=[security_group.id])
+
+        fip = self.os_conn.assign_floating_ip(vm2, use_neutron=True)
+        vm2_fip_ip = fip.get('floating_ip_address')
+
+        logger.info("From VM1 ping to VM2's floating ip and verify that "
+                    "ping reply was received from VM2's floating ip")
+        result = self.check_ping_from_vm_helper(vm1, key, vm2_fip_ip, 15,
+                                                'cirros', 'cubswin:)')
+        ping_reply = result.stdout_string.split('\n')[1]
+        reply_ip = re.findall('\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}', ping_reply)
+        err_msg = "Ping reply was received from another ip address"
+        assert reply_ip == vm2_fip_ip, err_msg
