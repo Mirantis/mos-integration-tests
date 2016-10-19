@@ -213,6 +213,19 @@ class TestL3HA(TestBase):
                     waiting_for="router rescheduled from {}".format(
                         from_node))
 
+    def wait_router_scheduled(self, router_id, timeout_seconds=2 * 60):
+        """Wait until l3 agent become active for router
+        Returns active l3 agent for router
+        """
+        def new_active_agent():
+            new_agents = self.get_active_l3_agents_for_router(router_id)
+            if len(new_agents) == 1:
+                return new_agents[0]
+
+        return wait(new_active_agent, timeout_seconds=timeout_seconds,
+                    expected_exceptions=(InternalServerError,),
+                    waiting_for="router scheduled to l3 agent")
+
     @pytest.fixture
     def variables(self, init):
         """Init Openstack variables"""
@@ -224,6 +237,15 @@ class TestL3HA(TestBase):
     def router(self, variables):
         """Make router and connnect it to external network"""
         router = self.os_conn.create_router(name="router01")
+        self.os_conn.router_gateway_add(
+            router_id=router['router']['id'],
+            network_id=self.os_conn.ext_network['id'])
+        return router
+
+    @pytest.fixture
+    def non_ha_router(self, variables):
+        """Make non-ha router and connnect it to external network"""
+        router = self.os_conn.create_router(name="router01", ha=False)
         self.os_conn.router_gateway_add(
             router_id=router['router']['id'],
             network_id=self.os_conn.ext_network['id'])
@@ -844,3 +866,95 @@ class TestL3HA(TestBase):
                                 ip_to_ping=server2_ip)
 
         self.check_l3_ha_agent_states(router_id)
+
+    @pytest.mark.testrail_id('1977842')
+    def test_update_router_to_ha_and_backward(self, variables, non_ha_router):
+        """Update router to ha and backward
+
+         Steps:
+            1. Create 2 networks, subnets
+            2. Create non-ha router with gateway to external net and
+               interface with networks
+            3. Launch 2 instances and associate floating IP
+            4. Check that router is scheduled on one l3 agent
+            5. Update router to ha
+            6. Check that router scheduled on all controllers and one
+               of them is ACTIVE
+            7. Ban active l3 agent
+            8. Wait until router rescheduled
+            9. Stop ping
+            10. Check that ping lost less than 50 packets
+            11. Update router to non-ha
+            12. Check that router is scheduled on one l3 agent
+        """
+        agents = defaultdict(list)
+        router_id = non_ha_router['router']['id']
+        controller_ip = self.env.get_nodes_by_role('controller')[0].data['ip']
+        computes = self.zone.hosts.keys()[:2]
+
+        for i, hostname in enumerate(computes, 1):
+            net, subnet = self.create_internal_network_with_subnet(suffix=i)
+            self.os_conn.router_interface_add(
+                router_id=router_id,
+                subnet_id=subnet['subnet']['id'])
+            self.os_conn.create_server(
+                name='server0{}'.format(i),
+                availability_zone='{}:{}'.format(self.zone.zoneName, hostname),
+                key_name=self.instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[self.security_group.id])
+
+        server1 = self.os_conn.nova.servers.find(name="server01")
+        server2 = self.os_conn.nova.servers.find(name="server02")
+        self.os_conn.assign_floating_ip(server2)
+        server2_ip = self.os_conn.get_nova_instance_ips(server2)['floating']
+
+        agents_ha_disabled = self.os_conn.get_l3_for_router(router_id)
+        assert len(agents_ha_disabled) == 1
+
+        # Change admin_state_up to False and than set ha to True
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': False}})
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'ha': True}})
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': True}})
+        self.wait_router_scheduled(router_id=router_id)
+        agent_list = self.os_conn.get_l3_for_router(router_id)
+        for agent in agent_list['agents']:
+            agents[agent['ha_state']].append(agent)
+        # check agents state
+        assert len(agents['active']) == 1
+        assert len(agents['standby']) == 2
+
+        # Ban l3 agent
+        node_to_ban = agents['active'][0]['host']
+        with self.background_ping(
+                vm=server1,
+                vm_keypair=self.instance_keypair,
+                ip_to_ping=server2_ip) as ping_result:
+            with self.env.get_ssh_to_node(controller_ip) as remote:
+                logger.info("Ban L3 agent on node {0}".format(node_to_ban))
+                remote.check_call(
+                    "pcs resource ban p_neutron-l3-agent {0}".format(
+                        node_to_ban))
+                new_agent = self.wait_router_rescheduled(
+                    router_id=router_id,
+                    from_node=node_to_ban)
+        assert ping_result['sent'] - ping_result['received'] < 50
+
+        # Change admin_state_up to False and than set ha to False
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': False}})
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'ha': False}})
+        self.os_conn.neutron.update_router(router_id,
+                                           {'router': {
+                                            'admin_state_up': True}})
+        agents_ha_disabled = self.os_conn.get_l3_for_router(router_id)
+        assert len(agents_ha_disabled) == 1

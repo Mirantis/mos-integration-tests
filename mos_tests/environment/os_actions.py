@@ -405,8 +405,8 @@ class OpenStackActions(object):
                 logger.info('floating_ip {} is not deletable'
                             .format(floating_ip))
 
-    def create_router(self, name, tenant_id=None, distributed=False):
-        router = {'name': name, 'distributed': distributed}
+    def create_router(self, name, tenant_id=None, distributed=False, ha=False):
+        router = {'name': name, 'distributed': distributed, 'ha': ha}
         if tenant_id is not None:
             router['tenant_id'] = tenant_id
         return self.neutron.create_router({'router': router})
