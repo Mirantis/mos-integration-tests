@@ -593,7 +593,7 @@ def test_custom_graph(env, admin_remote, puppet_file_new_owner):
 # destructive
 @pytest.mark.testrail_id('1681480')
 def test_delete_micro_flavor(env, admin_remote, delete_micro_flavor):
-    """Test to check the noop run feature for deleted cirros image
+    """Test to check the noop run feature for deleted default flavor
 
     Steps to reproduce:
     1. Delete m1.micro-flavor
@@ -626,8 +626,8 @@ def test_delete_cirros_image(env, admin_remote, delete_cirros_image):
 
     node = env.primary_controller
     task = noop_common.run_noop_nodes_deploy(admin_remote, env, nodes=[node])
-    msg = ("/Exec[upload_cirros_shell]/returns', u'message': "
-           "u'current_value notrun, should be 0 (noop)")
+    msg = ("Upload_cirros/Glance_image[TestVM]/ensure', "
+           "u'message': u'current_value absent, should be present (noop)'")
     assert noop_common.is_message_in_summary_results(admin_remote, task.id,
                                                      node.id, msg)
 
