@@ -1707,3 +1707,101 @@ class TestDVRRegression(TestDVRBase):
         reply_ip = re.findall('\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}', ping_reply)
         err_msg = "Ping reply was received from another ip address"
         assert reply_ip == vm2_fip_ip, err_msg
+
+    @pytest.mark.testrail_id('2276953')
+    def test_check_snat_for_routers_when_ban_l3_agent(self):
+        """Checks that SNAT rescheduling on first router doesn't affect
+        SNAT of the second one when ban l3-agent.
+
+        Steps:
+            1. Create router01, router02 with router type Distributed
+            2. Add interfaces to the router01, router02
+            3. Set router gateway to external net
+            4. Create 2 networks with subnets
+            5. Boot VMs in created net01, net02
+            6. Check VMs connectivity
+            7. Find controller with SNAT-namespace for both routers.
+            If they are the same, reschedule
+            8. Ban l3-agent on node with SNAT for the first router
+            9. Check that SNAT for the second router didn't reschedule to
+            another node
+        """
+        zone = self.os_conn.nova.availability_zones.find(zoneName="nova")
+        security_group = self.os_conn.create_sec_group_for_ssh()
+        instance_keypair = self.os_conn.create_key(key_name='instancekey')
+        router_ids = []
+        for x in range(2):
+            net, subnet = self.create_internal_network_with_subnet(x)
+            router = self.os_conn.create_router(name='router0{}'.format(x),
+                                                distributed=True)
+            router_ids.append(router['router']['id'])
+
+            self.os_conn.router_interface_add(
+                router_id=router['router']['id'],
+                subnet_id=subnet['subnet']['id'])
+
+            self.os_conn.router_gateway_add(
+                router_id=router['router']['id'],
+                network_id=self.os_conn.ext_network['id'])
+
+            server = self.os_conn.create_server(
+                name='server0{}'.format(x),
+                availability_zone=zone.zoneName,
+                key_name=instance_keypair.name,
+                nics=[{'net-id': net['network']['id']}],
+                security_groups=[security_group.id])
+
+            floating_ip = self.os_conn.assign_floating_ip(server,
+                                                          use_neutron=True)
+            ip = floating_ip['floating_ip_address']
+            self.check_ping_from_vm_with_ip(ip, vm_keypair=instance_keypair,
+                                            ip_to_ping='8.8.8.8',
+                                            ping_count=10, vm_login='cirros')
+        # Check l3 agent with SNAT for both routers
+        r01_snat_controller = self.find_snat_controller(router_ids[0])
+        r02_snat_controller = self.find_snat_controller(router_ids[1])
+        controllers = self.env.get_nodes_by_role('controller')
+        if r01_snat_controller == r02_snat_controller:
+            logger.info('Moving router01 SNAT to another controller')
+            l3_agents = self.os_conn.list_l3_agents()
+            snat_agent = [x for x in l3_agents
+                          if x['host'] == r01_snat_controller.data['fqdn']][0]
+            l3_agents_on_controller = [x for x in l3_agents
+                                       for controller in controllers
+                                       if x['host'] == controller.data['fqdn']]
+            new_l3_agent = [x for x in l3_agents_on_controller
+                            if x['host'] !=
+                            r01_snat_controller.data['fqdn']][0]
+            self.os_conn.remove_router_from_l3_agent(router_id=router_ids[0],
+                l3_agent_id=snat_agent['id'])
+            self.os_conn.add_router_to_l3_agent(router_id=router_ids[0],
+                l3_agent_id=new_l3_agent['id'])
+
+            r01_snat_controller_new = wait(
+                lambda: self.find_snat_controller(
+                    router_ids[0],
+                    excluded=[r01_snat_controller.data['fqdn']]),
+                timeout_seconds=60 * 3,
+                sleep_seconds=(1, 60, 5),
+                waiting_for="snat is rescheduled")
+
+            assert (r01_snat_controller.data['fqdn'] !=
+                    r01_snat_controller_new.data['fqdn'])
+            r01_snat_controller = r01_snat_controller_new
+
+        with r01_snat_controller.ssh() as remote:
+            remote.check_call(
+                'pcs resource ban p_neutron-l3-agent {fqdn}'.format(
+                    **r01_snat_controller.data))
+
+        # Wait for SNAT reschedule
+        r01_snat_controller_resched = wait(
+            lambda: self.find_snat_controller(
+                router_ids[0],
+                excluded=[r01_snat_controller.data['fqdn']]),
+            timeout_seconds=60 * 3,
+            sleep_seconds=20,
+            waiting_for="snat is rescheduled")
+        assert r01_snat_controller_resched != r01_snat_controller
+        r02_snat_controller_new = self.find_snat_controller(router_ids[1])
+        assert r02_snat_controller_new == r02_snat_controller
