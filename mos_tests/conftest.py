@@ -342,6 +342,11 @@ def is_ceph_enabled(env):
     return data['volumes_ceph']['value']
 
 
+def is_images_ceph_enabled(env):
+    data = env.get_settings_data()['editable']['storage']
+    return data['images_ceph']['value']
+
+
 def is_ephemeral_ceph_enabled(env):
     data = env.get_settings_data()['editable']['storage']
     return data['ephemeral_ceph']['value']

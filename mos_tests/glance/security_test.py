@@ -478,3 +478,75 @@ class TestGlanceSecurity(TestBase):
         err_msg = "Glance user storage quota is exceeded"
         assert images_size_after < user_storage_quota, err_msg
         assert images_before == len(os_conn.nova.images.list())
+
+    @pytest.mark.testrail_id('2964188')
+    @pytest.mark.check_env_('is_images_ceph_enabled')
+    @pytest.mark.parametrize('image_file_remote', [5 * 1024],
+                             indirect=['image_file_remote'])
+    @pytest.mark.parametrize('glance_remote', [2], indirect=['glance_remote'])
+    def test_glance_check_residual_image_objects(self, glance_remote,
+                                                 image_file_remote, suffix,
+                                                 env, os_conn):
+        """Check that residual image objects are deleted from ceph and
+        ObjectNotFound error is not observed in glance-api log if uploading
+        a large image was failed due to some reasons.
+
+        Scenario:
+            1. Get initial number of image objects in ceph
+            2. Create image from `image_file` using cli
+            3. Terminate creating image process
+            4. Check absence of ObjectNotFound error in glance-api.log
+            5. Delete image whose creation was aborted
+            6. Check number of image objects in ceph again, it will be the same
+            as on step 1
+
+        [Bugs] - https://bugs.launchpad.net/mos/+bug/1591081
+                 https://bugs.launchpad.net/mos/+bug/1632307
+        """
+        logger.debug("Get initial number of objects in pool 'images'")
+        controllers = self.env.get_nodes_by_role('controller')
+        with controllers[0].ssh() as remote:
+            cmd = 'ceph df | grep image'
+            objects_before = remote.check_call(cmd).stdout_string.split()[-1]
+
+        logger.debug("Start to create the large image and then terminate "
+                     "this process after about 5 sec")
+        name = "Test_{0}".format(suffix[:6])
+        cmd = ("image-create --name {name} --container-format bare "
+               "--disk-format qcow2 --file {file} --progress".format(
+                name=name, file=image_file_remote))
+        p = Process(target=glance_remote, args=(cmd, ))
+        p.start()
+        for controller in controllers:
+            with controller.ssh() as remote:
+                cmd = 'ps axuf | grep "{0}" | grep python'.format(name)
+                result = remote.check_call(cmd).stdout_string.split('\n')
+                if len(result) > 1:
+                    pid = [i for i in result if 'grep' not in i][0].split()[1]
+                    time.sleep(5)
+                    remote.check_call('kill {0}'.format(pid))
+        p.join()
+
+        logger.debug("Check glance-api log after aborting of image's creation")
+        log_path = '/var/log/glance/glance-api.log'
+        log_msg = 'ObjectNotFound: error opening ioctx'
+        for controller in controllers:
+            with controller.ssh() as remote:
+                cmd = "grep -c '{0}' {1}".format(log_msg, log_path)
+                err_msg = "Image is not properly deleted if abort it creation"
+                assert not remote.execute(cmd).is_ok, err_msg
+
+        logger.debug("Delete of image whose creation was aborted")
+        image_list = parser.listing(glance_remote('image-list'))
+        image_id = [i['ID'] for i in image_list if i['Name'] == name][0]
+        self.os_conn.glance.images.delete(image_id)
+
+        logger.debug("Check number of objects in pool 'images' after deleting "
+                     "of image whose creation was aborted")
+        with controllers[0].ssh() as remote:
+            cmd = 'ceph df | grep image'
+            wait(lambda: remote.check_call(cmd).stdout_string.split()[-1] ==
+                 objects_before,
+                 timeout_seconds=60,
+                 sleep_seconds=5,
+                 waiting_for='residual objects were deleted from ceph')
