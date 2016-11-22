@@ -86,7 +86,7 @@ def check_vm_connectivity_cirros_ubuntu(env, os_conn, keypair, cirros, ubuntu):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan', 'is_ceph_enabled')
+@pytest.mark.check_env_('is_ceph_enabled')
 class TestLiveMigrationCeph(TestBaseNFV):
 
     flavors_to_create = [
@@ -265,7 +265,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan', 'not is_ceph_enabled')
+@pytest.mark.check_env_('not is_ceph_enabled')
 class TestLiveMigrationCinder(TestBaseNFV):
 
     flavors_to_create = [
@@ -440,7 +440,6 @@ class TestLiveMigrationCinder(TestBaseNFV):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestLiveMigrationMixedFeatures(TestBaseNFV):
 
     mixed_hp_computes = {'host_count': 2, 'count_2mb': 2048, 'count_1gb': 6}

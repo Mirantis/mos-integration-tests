@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestHugePages(TestBaseNFV):
 
     mixed_hp_computes = {'host_count': 2, 'count_2mb': 1024, 'count_1gb': 4}

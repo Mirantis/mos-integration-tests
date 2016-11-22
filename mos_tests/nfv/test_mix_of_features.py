@@ -63,7 +63,6 @@ def vf_ports(os_conn, security_group, networks):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestMixedHugePagesAndNuma(TestBaseNFV):
 
     flavors_to_create = [
@@ -162,7 +161,6 @@ class TestMixedHugePagesAndNuma(TestBaseNFV):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestMixedAllFeatures(TestBaseNFV):
 
     flavors_to_create = [
@@ -241,7 +239,6 @@ class TestMixedAllFeatures(TestBaseNFV):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestMixedSriovAndNuma(TestBaseNFV):
 
     flavors_to_create = [

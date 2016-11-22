@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan', 'has_2_or_more_computes')
+@pytest.mark.check_env_('has_2_or_more_computes')
 class TestSRIOV(TestBaseNFV):
 
     @pytest.yield_fixture()

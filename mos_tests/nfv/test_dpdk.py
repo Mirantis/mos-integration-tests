@@ -22,7 +22,7 @@ from mos_tests.nfv.base import TestBaseNFV
 from mos_tests.nfv.conftest import computes_configuration
 
 
-@pytest.mark.check_env_('is_vlan', 'is_kvm')
+@pytest.mark.check_env_('is_kvm')
 @pytest.mark.undestructive
 class TestDpdk(TestBaseNFV):
 
@@ -102,7 +102,7 @@ class TestDpdk(TestBaseNFV):
 
         for vm in vms:
             self.check_vif_type_for_vm(vm, os_conn)
-            act_size = self.get_instance_page_size(os_conn, env)
+            act_size = self.get_instance_page_size(os_conn, vm)
             assert act_size == page_2mb, (
                 "Unexpected package size. Should be {0} instead of {1}".format(
                     page_2mb, act_size))

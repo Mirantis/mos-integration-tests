@@ -81,7 +81,6 @@ def hosts_without_hyper_threading(aggregate, hosts_with_hyper_threading):
 
 
 @pytest.mark.undestructive
-@pytest.mark.check_env_('is_vlan')
 class TestCpuPinningOneNuma(TestBaseNFV):
 
     flavors_to_create = [
@@ -185,7 +184,6 @@ class TestCpuPinningOneNuma(TestBaseNFV):
             "Instance shouldn't be in the list of instances on the old host")
 
 
-@pytest.mark.check_env_('is_vlan')
 class TestCpuPinningTwoNumas(TestBaseNFV):
 
     flavors_to_create = [
@@ -233,7 +231,6 @@ class TestCpuPinningTwoNumas(TestBaseNFV):
         network_checks.check_vm_connectivity(env, os_conn)
 
 
-@pytest.mark.check_env_('is_vlan')
 class TestCpuPinningOldFlavor(TestBaseNFV):
 
     flavors_to_create = [
@@ -287,7 +284,6 @@ class TestCpuPinningOldFlavor(TestBaseNFV):
         network_checks.check_vm_connectivity(env, os_conn)
 
 
-@pytest.mark.check_env_('is_vlan')
 class TestCpuPinningResize(TestBaseNFV):
 
     flavors_to_create = [
@@ -377,7 +373,6 @@ class TestCpuPinningResize(TestBaseNFV):
             network_checks.check_vm_connectivity(env, os_conn)
 
 
-@pytest.mark.check_env_('is_vlan')
 class TestCpuPinningMigration(TestBaseNFV):
 
     flavors_to_create = [
@@ -432,7 +427,6 @@ class TestCpuPinningMigration(TestBaseNFV):
             network_checks.check_vm_connectivity(env, os_conn)
 
 
-@pytest.mark.check_env_('is_vlan')
 @pytest.mark.undestructive
 class TestResourceDistribution(TestBaseNFV):
     mem_numa0, mem_numa1 = 512, 1536
@@ -514,7 +508,6 @@ class TestResourceDistribution(TestBaseNFV):
                     "{0}".format(str(e.value)))
 
 
-@pytest.mark.check_env_('is_vlan')
 @pytest.mark.undestructive
 class TestResourceDistributionWithLessResources(TestBaseNFV):
 
@@ -602,7 +595,6 @@ class TestResourceDistributionWithLessResources(TestBaseNFV):
             "Unexpected reason of instance error")
 
 
-@pytest.mark.check_env_('is_vlan')
 @pytest.mark.undestructive
 class TestCpuPinningWithCpuThreadPolicy(TestBaseNFV):
 
@@ -661,7 +653,6 @@ class TestCpuPinningWithCpuThreadPolicy(TestBaseNFV):
         network_checks.check_ping_from_vm(env, os_conn, vm, vm_keypair=keypair)
 
 
-@pytest.mark.check_env_('is_vlan')
 @pytest.mark.undestructive
 class TestCpuPinningLessResourcesWithCpuThreadPolicy(TestBaseNFV):
 
