@@ -17,6 +17,7 @@ import pytest
 
 from mos_tests.functions import common
 from mos_tests.functions import network_checks
+from mos_tests.nfv.base import page_1gb
 from mos_tests.nfv.base import page_2mb
 from mos_tests.nfv.base import TestBaseNFV
 from mos_tests.nfv.conftest import computes_configuration
@@ -28,8 +29,23 @@ class TestDpdk(TestBaseNFV):
 
     flavors_to_create = [
         {'name': 'm1.small.hpgs',
-         'params': {'ram': 512, 'vcpu': 1, 'disk': 1},
-         'keys': {'hw:mem_page_size': 2048}}]
+         'params': {'ram': 2048, 'vcpu': 1, 'disk': 1}}]
+
+    def prepare_flavor(self, computes_conf, flavors, hosts):
+        """This method checks what HP ara enabled for DPDK and
+        sets the right key to the flavor
+        computes_conf - information about computes
+        flavors - list with flavors to edit
+        hosts - computes with dpdk
+        """
+        if (computes_conf[hosts[0]][page_1gb]['free'] > 0):
+            size = page_1gb
+        else:
+            size = page_2mb
+
+        flavors[0].set_keys({'hw:mem_page_size': size})
+
+        return size
 
     def create_vms(self, os_conn, hosts, networks, flavor, keypair,
                    security_group, vms_param):
@@ -91,6 +107,7 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
+        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
 
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[0], None),
@@ -103,16 +120,16 @@ class TestDpdk(TestBaseNFV):
         for vm in vms:
             self.check_vif_type_for_vm(vm, os_conn)
             act_size = self.get_instance_page_size(os_conn, vm)
-            assert act_size == page_2mb, (
+            assert act_size == size, (
                 "Unexpected package size. Should be {0} instead of {1}".format(
-                    page_2mb, act_size))
+                    size, act_size))
 
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 1)]
-        for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
-                           nr_2mb * flavors[0].ram * 1024 / page_2mb)
-            assert exp_free_2m == final_conf[host][page_2mb]['free']
+        for (host, nr_page) in exp_hosts_usage:
+            exp_free = (initial_conf[host][size]['free'] -
+                        nr_page * flavors[0].ram * 1024 / size)
+            assert exp_free == final_conf[host][size]['free']
 
     @pytest.mark.testrail_id('838335')
     def test_vms_connectivity_after_cold_migration(self, env, os_conn,
@@ -135,6 +152,7 @@ class TestDpdk(TestBaseNFV):
             7. Check vms connectivity
         """
         hosts = computes_with_dpdk_hp
+
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),
                      (hosts[1], networks[1], None)]
@@ -175,6 +193,8 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
+        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
+
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),
                      (hosts[1], networks[1], None)]
@@ -185,10 +205,10 @@ class TestDpdk(TestBaseNFV):
 
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 1), (hosts[1], 2)]
-        for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
-                           nr_2mb * flavors[0].ram * 1024 / page_2mb)
-            assert exp_free_2m == final_conf[host][page_2mb]['free']
+        for (host, nr_page) in exp_hosts_usage:
+            exp_free = (initial_conf[host][size]['free'] -
+                        nr_page * flavors[0].ram * 1024 / size)
+            assert exp_free == final_conf[host][size]['free']
 
     @pytest.mark.testrail_id('838336')
     def test_vms_connectivity_after_evacuation(self, env, os_conn, volume,
@@ -214,6 +234,8 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
+        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
+
         vms_param = [(hosts[0], networks[0], {'vda': volume.id}),
                      (hosts[0], networks[1], None),
                      (hosts[1], networks[1], None)]
@@ -233,10 +255,10 @@ class TestDpdk(TestBaseNFV):
 
         final_conf = computes_configuration(env)
         exp_hosts_usage = [(hosts[0], 3), (hosts[1], 0)]
-        for (host, nr_2mb) in exp_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
-                           nr_2mb * flavors[0].ram * 1024 / page_2mb)
-            assert exp_free_2m == final_conf[host][page_2mb]['free']
+        for (host, nr_page) in exp_hosts_usage:
+            exp_free = (initial_conf[host][size]['free'] -
+                        nr_page * flavors[0].ram * 1024 / size)
+            assert exp_free == final_conf[host][size]['free']
 
     @pytest.mark.testrail_id('838332')
     def test_vms_connectivity_after_ovs_restart_on_computes(

@@ -357,22 +357,18 @@ def sriov_hosts(os_conn):
 
 
 @pytest.fixture
-def computes_with_dpdk_hp(env, experimental_features):
+def computes_with_dpdk_hp(env):
     """This fixture checks hosts for dpdk pages count if experimental features
     are in ON state. Otherwise test will be skipped.
     Minimal configuration: at least 2 computes
     """
-    if experimental_features:
-        computes = env.get_nodes_by_role('compute')
-        hosts = set([compute.data['fqdn'] for compute in computes
-                     for interface in compute.get_attribute('interfaces') if
-                     interface['interface_properties']['dpdk']['available'] and
-                     interface['interface_properties']['dpdk']['enabled']])
-        if len(hosts) < 2:
-            pytest.skip("Insufficient count of compute with DPDK")
-        return list(hosts)
-    else:
-        pytest.skip("Experimental features should be ON for DPDK")
+    computes = env.get_nodes_by_role('compute')
+    hosts = set([compute.data['fqdn'] for compute in computes
+                 for interface in compute.get_attribute('interfaces') if
+                 interface['meta']['dpdk']['available']])
+    if len(hosts) < 2:
+        pytest.skip("Insufficient count of compute with DPDK")
+    return list(hosts)
 
 
 @pytest.fixture
