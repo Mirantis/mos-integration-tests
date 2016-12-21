@@ -89,13 +89,23 @@ def security_group(os_conn):
 
 
 @pytest.yield_fixture(scope="class")
-def networks(os_conn):
+def security_group_ipv6(os_conn):
+    security_group = os_conn.create_sec_group_for_ssh_ipv6()
+    yield security_group
+    os_conn.delete_security_groups()
+
+
+@pytest.yield_fixture(scope="class")
+def networks(request, os_conn):
     router = os_conn.create_router(name="router01")['router']
     ext_net = os_conn.ext_network
     os_conn.router_gateway_add(router_id=router['id'],
                                network_id=ext_net['id'])
-    net01 = os_conn.add_net(router['id'])
-    net02 = os_conn.add_net(router['id'])
+    subnet_params = getattr(request, 'param', {'ipv6_address_mode': None,
+                                               'ipv6_ra_mode': None})
+    net01 = os_conn.add_net(router['id'], **subnet_params)
+    net02 = os_conn.add_net(router['id'], **subnet_params)
+
     initial_floating_ips = os_conn.nova.floating_ips.list()
     yield [net01, net02]
     os_conn.delete_router(router['id'])

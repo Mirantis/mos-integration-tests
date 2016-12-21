@@ -395,6 +395,20 @@ class OpenStackActions(object):
             subnet['dns_nameservers'] = dns_nameservers
         return self.neutron.create_subnet({'subnet': subnet})
 
+    def create_subnet_ipv6(self, network_id, name, cidr, tenant_id=None,
+                           ra_mode='slaac', addr_mode='slaac'):
+        subnet = {
+            "network_id": network_id,
+            "ip_version": 6,
+            "cidr": cidr,
+            "name": name,
+            "ipv6_ra_mode": ra_mode,
+            "ipv6_address_mode": addr_mode
+        }
+        if tenant_id is not None:
+            subnet['tenant_id'] = tenant_id
+        return self.neutron.create_subnet({'subnet': subnet})
+
     def delete_subnet(self, id):
         return self.neutron.delete_subnet(id)
 
@@ -636,6 +650,57 @@ class OpenStackActions(object):
         for ruleset in rulesets:
             self.nova.security_group_rules.create(
                 secgroup.id, **ruleset)
+        return secgroup
+
+    def create_sec_group_for_ssh_ipv6(self):
+        """Create security group with ipv6 and ipv4 rules
+        for ping and ssh actions
+        """
+        name = "test-sg" + str(random.randint(1, 0x7fffffff))
+        secgroup = self.nova.security_groups.create(
+            name, "descr")
+        logger.debug("Create new security group '{name}'".format(name=name))
+        rulesets = [
+            {
+                # ssh ipv4
+                'protocol': 'tcp',
+                'port_range_min': 22,
+                'port_range_max': 22,
+                'security_group_id': secgroup.id,
+                'ethertype': 'ipv4',
+                'direction': 'ingress',
+                'remote_ip_prefix': '0.0.0.0/0',
+            },
+            {
+                # ping ipv4
+                'protocol': 'icmp',
+                'security_group_id': secgroup.id,
+                'ethertype': 'ipv4',
+                'direction': 'ingress',
+                'remote_ip_prefix': '0.0.0.0/0',
+            },
+            {
+                # ssh ipv6
+                'protocol': 'tcp',
+                'port_range_min': 22,
+                'port_range_max': 22,
+                'security_group_id': secgroup.id,
+                'ethertype': 'ipv6',
+                'direction': 'ingress',
+            },
+            {
+                # ping ipv6
+                'protocol': 'icmp',
+                'security_group_id': secgroup.id,
+                'ethertype': 'ipv6',
+                'direction': 'ingress',
+            }
+
+        ]
+
+        for ruleset in rulesets:
+            self.neutron.create_security_group_rule(
+                {'security_group_rule': ruleset})
         return secgroup
 
     def delete_security_group(self, sg):
@@ -982,14 +1047,22 @@ class OpenStackActions(object):
              timeout_seconds=5 * 60,
              waiting_for='agents go down')
 
-    def add_net(self, router_id):
+    def add_net(self, router_id, ipv6_address_mode=None, ipv6_ra_mode=None):
         i = len(self.neutron.list_networks()['networks']) + 1
         network = self.create_network(name='net%02d' % i)['network']
         logger.info('network {name}({id}) is created'.format(**network))
-        subnet = self.create_subnet(
-            network_id=network['id'],
-            name='net%02d__subnet' % i,
-            cidr="192.168.%d.0/24" % i)
+        if ipv6_address_mode is None and ipv6_ra_mode is None:
+            subnet = self.create_subnet(
+                network_id=network['id'],
+                name='net%02d__subnet' % i,
+                cidr="192.168.%d.0/24" % i)
+        else:
+            subnet = self.create_subnet_ipv6(
+                network_id=network['id'],
+                name='net%02d__subnet' % i,
+                cidr="2a00:11d8:1201:%d::/64" % i,
+                ra_mode=ipv6_ra_mode,
+                addr_mode=ipv6_address_mode)
         logger.info('subnet {name}({id}) is created'.format(
             **subnet['subnet']))
         self.router_interface_add(

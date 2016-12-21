@@ -107,7 +107,7 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
-        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
+        size = self.prepare_flavor(initial_conf, flavors, hosts)
 
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[0], None),
@@ -116,6 +116,63 @@ class TestDpdk(TestBaseNFV):
         vms = self.create_vms(os_conn, hosts, networks, flavors[0], keypair,
                               security_group, vms_param)
         network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair)
+
+        for vm in vms:
+            self.check_vif_type_for_vm(vm, os_conn)
+            act_size = self.get_instance_page_size(os_conn, vm)
+            assert act_size == size, (
+                "Unexpected package size. Should be {0} instead of {1}".format(
+                    size, act_size))
+
+        final_conf = computes_configuration(env)
+        exp_hosts_usage = [(hosts[0], 3), (hosts[1], 1)]
+        for (host, nr_page) in exp_hosts_usage:
+            exp_free = (initial_conf[host][size]['free'] -
+                        nr_page * flavors[0].ram * 1024 / size)
+            assert exp_free == final_conf[host][size]['free']
+
+    @pytest.mark.testrail_id('2984291',
+                             networks=dict(ipv6_ra_mode='slaac',
+                                           ipv6_addr_mode='slaac'))
+    @pytest.mark.testrail_id('2994580',
+                             networks=dict(ipv6_ra_mode='dhcpv6-stateless',
+                                           ipv6_addr_mode='dhcpv6-stateless'))
+    @pytest.mark.parametrize('networks',
+                             [dict(ipv6_ra_mode='slaac',
+                                   ipv6_addr_mode='slaac'),
+                              dict(ipv6_ra_mode='dhcpv6-stateless',
+                                   ipv6_addr_mode='dhcpv6-stateless')],
+                             indirect=True)
+    def test_ipv6_base_connectivity(self, env, os_conn, computes_with_dpdk_hp,
+                                    networks, keypair, flavors,
+                                    security_group_ipv6):
+        """This test checks base connectivity between VMs with DPDK. Please
+        note we're not able to count DPDK huge pages only, they're added to
+        count of 2Mb huge pages.
+            Steps:
+            1. Create net1 with subnet, net2 with subnet and  router1 with
+            interfaces to both nets
+            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
+            vm2 in net1, vm3 and vm4 in net2
+            4. Check vms connectivity
+            5. Check instance page size
+            6. Check that neutron port has binding:vif_type = vhostuser
+            7. Check that count of 2Mb huge pages is expected for each host
+        """
+        hosts = computes_with_dpdk_hp
+        initial_conf = computes_configuration(env)
+
+        size = self.prepare_flavor(initial_conf, flavors, hosts)
+
+        vms_param = [(hosts[0], networks[0], None),
+                     (hosts[0], networks[0], None),
+                     (hosts[0], networks[1], None),
+                     (hosts[1], networks[1], None)]
+        vms = self.create_vms(os_conn, hosts, networks, flavors[0], keypair,
+                              security_group_ipv6, vms_param)
+        network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair,
+                                             ipv6=True)
 
         for vm in vms:
             self.check_vif_type_for_vm(vm, os_conn)
@@ -193,7 +250,7 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
-        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
+        size = self.prepare_flavor(initial_conf, flavors, hosts)
 
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),
@@ -234,7 +291,7 @@ class TestDpdk(TestBaseNFV):
         """
         hosts = computes_with_dpdk_hp
         initial_conf = computes_configuration(env)
-        size = self.prepare_flavor(hosts, initial_conf, flavors, hosts)
+        size = self.prepare_flavor(initial_conf, flavors, hosts)
 
         vms_param = [(hosts[0], networks[0], {'vda': volume.id}),
                      (hosts[0], networks[1], None),

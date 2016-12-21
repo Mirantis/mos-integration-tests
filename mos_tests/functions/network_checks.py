@@ -58,21 +58,24 @@ def run_on_vm(env,
                              vm_ip=vm_ip)
 
 
-def _ping_ip_list(remote, ips):
+def _ping_ip_list(remote, ips, ipv6):
     results = []
     for ip in ips:
-        cmd = "ping -c1 {0}".format(ip)
+        if ipv6:
+            cmd = "ping6 -c1 {0}".format(ip)
+        else:
+            cmd = "ping -c1 {0}".format(ip)
         result = remote.execute(cmd, verbose=False)
         results.append(result)
     return results
 
 
-def _wait_success_ping(remote, ip_list, timeout=None):
+def _wait_success_ping(remote, ip_list, timeout=None, ipv6=False):
     results = []
     timeout = timeout or 0
 
     def predicate():
-        loop_result = _ping_ip_list(remote, ip_list)
+        loop_result = _ping_ip_list(remote, ip_list, ipv6)
         results.append(loop_result)
         return all([x.is_ok for x in loop_result])
 
@@ -93,7 +96,8 @@ def check_ping_from_vm(env,
                        timeout=3 * 60,
                        vm_login='cirros',
                        vm_password='cubswin:)',
-                       vm_ip=None):
+                       vm_ip=None,
+                       ipv6=False):
     logger.info('Expecting that ping from VM should pass')
     # Get ping results
 
@@ -107,7 +111,8 @@ def check_ping_from_vm(env,
                                  vm_keypair=vm_keypair,
                                  username=vm_login,
                                  password=vm_password) as remote:
-        result = _wait_success_ping(remote, ip_to_ping, timeout=timeout)
+        result = _wait_success_ping(remote, ip_to_ping, timeout=timeout,
+                                    ipv6=ipv6)
 
     error_msg = '\n'.join([repr(x) for x in result if not x.is_ok])
 
@@ -118,7 +123,8 @@ def check_ping_from_vm(env,
     assert all([x.is_ok for x in result]), error_msg
 
 
-def check_vm_connectivity(env, os_conn, vm_keypair=None, timeout=4 * 60):
+def check_vm_connectivity(env, os_conn, vm_keypair=None, timeout=4 * 60,
+                          ipv6=False):
     """Check that all vms can ping each other and public ip"""
     ping_plan = {}
     exc = []
@@ -127,13 +133,16 @@ def check_vm_connectivity(env, os_conn, vm_keypair=None, timeout=4 * 60):
         server, ips_to_ping = args
         try:
             check_ping_from_vm(env, os_conn, server, vm_keypair, ips_to_ping,
-                               timeout=timeout)
+                               timeout=timeout, ipv6=ipv6)
         except AssertionError as e:
             return e
 
     servers = os_conn.get_servers()
     for server1 in servers:
-        ips_to_ping = [settings.PUBLIC_TEST_IP]
+        if not ipv6:
+            ips_to_ping = [settings.PUBLIC_TEST_IP]
+        else:
+            ips_to_ping = []
         for server2 in servers:
             if server1 == server2:
                 continue
