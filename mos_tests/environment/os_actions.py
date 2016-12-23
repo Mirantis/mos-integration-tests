@@ -282,7 +282,7 @@ class OpenStackActions(object):
              waiting_for='hypervisor {0} to be free'.format(
                  hypervisor.hypervisor_hostname))
 
-    def get_nova_instance_ips(self, srv):
+    def get_nova_instance_ips(self, srv, version=None):
         """Return all nova instance ip addresses as dict
 
         Example return:
@@ -294,9 +294,15 @@ class OpenStackActions(object):
         :return: Dict with server ips
         """
         srv.get()
-        return {x['OS-EXT-IPS:type']: x['addr']
-                for y in srv.addresses.values()
-                for x in y}
+        if version is None:
+            return {x['OS-EXT-IPS:type']: x['addr']
+                    for y in srv.addresses.values()
+                    for x in y}
+        else:
+            return {x['OS-EXT-IPS:type']: x['addr']
+                    for y in srv.addresses.values()
+                    for x in y
+                    if x['version'] == version}
 
     def get_node_with_dhcp_for_network(self, net_id, filter_attr='host',
                                        is_alive=True):
@@ -396,7 +402,9 @@ class OpenStackActions(object):
         return self.neutron.create_subnet({'subnet': subnet})
 
     def create_subnet_ipv6(self, network_id, name, cidr, tenant_id=None,
-                           ra_mode='slaac', addr_mode='slaac'):
+                           **subnet_params):
+        addr_mode = subnet_params.get('ipv6_addr_mode')
+        ra_mode = subnet_params.get('ipv6_ra_mode')
         subnet = {
             "network_id": network_id,
             "ip_version": 6,
@@ -1047,28 +1055,33 @@ class OpenStackActions(object):
              timeout_seconds=5 * 60,
              waiting_for='agents go down')
 
-    def add_net(self, router_id, ipv6_address_mode=None, ipv6_ra_mode=None):
+    def add_net(self, router_id, **subnet_params):
         i = len(self.neutron.list_networks()['networks']) + 1
         network = self.create_network(name='net%02d' % i)['network']
         logger.info('network {name}({id}) is created'.format(**network))
-        if ipv6_address_mode is None and ipv6_ra_mode is None:
-            subnet = self.create_subnet(
-                network_id=network['id'],
-                name='net%02d__subnet' % i,
-                cidr="192.168.%d.0/24" % i)
-        else:
+        self.create_subnet_and_interface(router_id, network['id'], i,
+                                         **subnet_params)
+        return network['id']
+
+    def create_subnet_and_interface(self, router_id, net_id, num,
+                                    **subnet_params):
+        version = subnet_params.get('version')
+        if version == 6:
             subnet = self.create_subnet_ipv6(
-                network_id=network['id'],
-                name='net%02d__subnet' % i,
-                cidr="2a00:11d8:1201:%d::/64" % i,
-                ra_mode=ipv6_ra_mode,
-                addr_mode=ipv6_address_mode)
+                network_id=net_id,
+                name='netip6%02d__subnet' % num,
+                cidr="2a00:11d8:1201:%d::/64" % num,
+                **subnet_params)
+        else:
+            subnet = self.create_subnet(
+                network_id=net_id,
+                name='net%02d__subnet' % num,
+                cidr="192.168.%d.0/24" % num)
         logger.info('subnet {name}({id}) is created'.format(
             **subnet['subnet']))
         self.router_interface_add(
             router_id=router_id,
             subnet_id=subnet['subnet']['id'])
-        return network['id']
 
     def add_server(self, network_id, key_name, hostname, sg_id):
         i = len(self.nova.servers.list()) + 1

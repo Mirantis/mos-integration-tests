@@ -92,12 +92,12 @@ class TestDpdk(TestBaseNFV):
     def test_base_vms_connectivity(self, env, os_conn, computes_with_dpdk_hp,
                                    networks, keypair, flavors, security_group):
         """This test checks base connectivity between VMs with DPDK. Please
-        note we're not able to count DPDK huge pages only, they're added to
-        count of 2Mb huge pages.
+        note we're not able to count DPDK huge pages only.
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
             vm2 in net1, vm3 and vm4 in net2
             4. Check vms connectivity
@@ -133,26 +133,29 @@ class TestDpdk(TestBaseNFV):
 
     @pytest.mark.testrail_id('2984291',
                              networks=dict(ipv6_ra_mode='slaac',
-                                           ipv6_addr_mode='slaac'))
+                                           ipv6_addr_mode='slaac',
+                                           version=6))
     @pytest.mark.testrail_id('2994580',
                              networks=dict(ipv6_ra_mode='dhcpv6-stateless',
-                                           ipv6_addr_mode='dhcpv6-stateless'))
+                                           ipv6_addr_mode='dhcpv6-stateless',
+                                           version=6))
     @pytest.mark.parametrize('networks',
                              [dict(ipv6_ra_mode='slaac',
-                                   ipv6_addr_mode='slaac'),
+                                   ipv6_addr_mode='slaac', version=6),
                               dict(ipv6_ra_mode='dhcpv6-stateless',
-                                   ipv6_addr_mode='dhcpv6-stateless')],
+                                   ipv6_addr_mode='dhcpv6-stateless',
+                                   version=6)],
                              indirect=True)
     def test_ipv6_base_connectivity(self, env, os_conn, computes_with_dpdk_hp,
                                     networks, keypair, flavors,
                                     security_group_ipv6):
         """This test checks base connectivity between VMs with DPDK. Please
-        note we're not able to count DPDK huge pages only, they're added to
-        count of 2Mb huge pages.
+        note we're not able to count DPDK huge pages only.
             Steps:
-            1. Create net1 with subnet, net2 with subnet and  router1 with
-            interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            1. Create net1 with ipv6 subnet, net2 with ipv6 subnet and
+            router1 with interfaces to both nets
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
             vm2 in net1, vm3 and vm4 in net2
             4. Check vms connectivity
@@ -172,7 +175,69 @@ class TestDpdk(TestBaseNFV):
         vms = self.create_vms(os_conn, hosts, networks, flavors[0], keypair,
                               security_group_ipv6, vms_param)
         network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair,
-                                             ipv6=True)
+                                             version=6)
+
+        for vm in vms:
+            self.check_vif_type_for_vm(vm, os_conn)
+            act_size = self.get_instance_page_size(os_conn, vm)
+            assert act_size == size, (
+                "Unexpected package size. Should be {0} instead of {1}".format(
+                    size, act_size))
+
+        final_conf = computes_configuration(env)
+        exp_hosts_usage = [(hosts[0], 3), (hosts[1], 1)]
+        for (host, nr_page) in exp_hosts_usage:
+            exp_free = (initial_conf[host][size]['free'] -
+                        nr_page * flavors[0].ram * 1024 / size)
+            assert exp_free == final_conf[host][size]['free']
+
+    @pytest.mark.testrail_id('2984292',
+                             networks=dict(ipv6_ra_mode='slaac',
+                                           ipv6_addr_mode='slaac',
+                                           version=10))
+    @pytest.mark.testrail_id('2994582',
+                             networks=dict(ipv6_ra_mode='dhcpv6-stateless',
+                                           ipv6_addr_mode='dhcpv6-stateless',
+                                           version=10))
+    @pytest.mark.parametrize('networks',
+                             [dict(ipv6_ra_mode='slaac',
+                                   ipv6_addr_mode='slaac', version=10),
+                              dict(ipv6_ra_mode='dhcpv6-stateless',
+                                   ipv6_addr_mode='dhcpv6-stateless',
+                                   version=10)],
+                             indirect=True)
+    def test_ipv6_ipv4_connectivity(self, env, os_conn, computes_with_dpdk_hp,
+                                    networks, keypair, flavors,
+                                    security_group_ipv6):
+        """This test checks base connectivity between VMs with DPDK. Please
+        note we're not able to count DPDK huge pages only.
+            Steps:
+            1. Create net1 with ipv6 and ipv4 subnets, net2 with ipv6 and ipv4
+            subnets and  router1 with interfaces to both nets
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
+            3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
+            vm2 in net1, vm3 and vm4 in net2
+            4. Check vms connectivity
+            5. Check instance page size
+            6. Check that neutron port has binding:vif_type = vhostuser
+            7. Check that count of 2Mb huge pages is expected for each host
+        """
+        hosts = computes_with_dpdk_hp
+        initial_conf = computes_configuration(env)
+
+        size = self.prepare_flavor(initial_conf, flavors, hosts)
+
+        vms_param = [(hosts[0], networks[0], None),
+                     (hosts[0], networks[0], None),
+                     (hosts[0], networks[1], None),
+                     (hosts[1], networks[1], None)]
+        vms = self.create_vms(os_conn, hosts, networks, flavors[0], keypair,
+                              security_group_ipv6, vms_param)
+        network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair,
+                                             version=6)
+        network_checks.check_vm_connectivity(env, os_conn, vm_keypair=keypair,
+                                             version=4)
 
         for vm in vms:
             self.check_vif_type_for_vm(vm, os_conn)
@@ -194,12 +259,12 @@ class TestDpdk(TestBaseNFV):
                                                    flavors, networks, keypair,
                                                    security_group):
         """This test checks connectivity between VMs with DPDK after cold
-        migration. Please note we're not able to count DPDK huge pages only,
-        they're added to count of 2Mb huge pages.
+        migration. Please note we're not able to count DPDK huge pages only.
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2 on compute-1, vm3 - on compute-2, vm1 in net1,
             vm2 and vm3 in net2
             4. Migrate vm1 and check that vm moved to other compute with
@@ -209,6 +274,8 @@ class TestDpdk(TestBaseNFV):
             7. Check vms connectivity
         """
         hosts = computes_with_dpdk_hp
+        initial_conf = computes_configuration(env)
+        self.prepare_flavor(initial_conf, flavors, hosts)
 
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),
@@ -233,12 +300,12 @@ class TestDpdk(TestBaseNFV):
                                                    flavors, networks, keypair,
                                                    security_group):
         """This test checks connectivity between VMs with DPDK after live
-        migration. Please note we're not able to count DPDK huge pages only,
-        they're added to count of 2Mb huge pages.
+        migration. Please note we're not able to count DPDK huge pages only.
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2 on compute-1, vm3 - on compute-2, vm1 in net1,
             vm2 and vm3 in net2
             4. Live migrate vm1 to compute2
@@ -273,12 +340,12 @@ class TestDpdk(TestBaseNFV):
                                                networks, keypair, devops_env,
                                                security_group):
         """This test checks connectivity between VMs with DPDK after
-        evacuation. Please note we're not able to count DPDK huge pages only,
-        they're added to count of 2Mb huge pages.
+        evacuation. Please note we're not able to count DPDK huge pages only.
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1 (from not empty volume), vm2 on compute-1,
             vm3 - on compute-2, vm1 in net1, vm2 and vm3 in net2
             4. Kill compute2 and evacuate vm3
@@ -323,11 +390,12 @@ class TestDpdk(TestBaseNFV):
             keypair, security_group):
         """This test checks connectivity between VMs with DPDK after ovs
         restart on computes. Please note we're not able to count DPDK huge
-        pages only, they're added to count of 2Mb huge pages.
+        pages only.
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
             vm2 in net1, vm3 and vm4 in net2
             4. Check that neutron port has binding:vif_type = vhostuser
@@ -337,6 +405,8 @@ class TestDpdk(TestBaseNFV):
         """
 
         hosts = computes_with_dpdk_hp
+        initial_conf = computes_configuration(env)
+        self.prepare_flavor(initial_conf, flavors, hosts)
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),
@@ -362,7 +432,8 @@ class TestDpdk(TestBaseNFV):
             Steps:
             1. Create net1 with subnet, net2 with subnet and  router1 with
             interfaces to both nets
-            2. Create flavor for huge pages with 512Mb ram, 1 vcpu and 1Gb disk
+            2. Create flavor for huge pages with 2048Mb ram, 1 vcpu and 1Gb
+            disk
             3. Launch vm1, vm2, vm3 on compute-1 and vm4 on compute-2, vm1 and
             vm2 in net1, vm3 and vm4 in net2
             4. Check that neutron port has binding:vif_type = vhostuser
@@ -373,6 +444,8 @@ class TestDpdk(TestBaseNFV):
             9. Check vms connectivity
         """
         hosts = computes_with_dpdk_hp
+        initial_conf = computes_configuration(env)
+        self.prepare_flavor(initial_conf, flavors, hosts)
         vms_param = [(hosts[0], networks[0], None),
                      (hosts[0], networks[0], None),
                      (hosts[0], networks[1], None),

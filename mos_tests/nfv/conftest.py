@@ -101,10 +101,24 @@ def networks(request, os_conn):
     ext_net = os_conn.ext_network
     os_conn.router_gateway_add(router_id=router['id'],
                                network_id=ext_net['id'])
-    subnet_params = getattr(request, 'param', {'ipv6_address_mode': None,
-                                               'ipv6_ra_mode': None})
+    subnet_params = getattr(request, 'param', {'ipv6_addr_mode': None,
+                                               'ipv6_ra_mode': None,
+                                               'version': 4})
+    create_additional_subnet = False
+    if subnet_params['version'] != 4 and subnet_params['version'] != 6:
+        create_additional_subnet = True
+        subnet_params['version'] = 4
+
     net01 = os_conn.add_net(router['id'], **subnet_params)
     net02 = os_conn.add_net(router['id'], **subnet_params)
+
+    if create_additional_subnet:
+        i = len(os_conn.neutron.list_networks()['networks'])
+        subnet_params['version'] = 6
+        os_conn.create_subnet_and_interface(router['id'], net01, i - 1,
+                                            **subnet_params)
+        os_conn.create_subnet_and_interface(router['id'], net02, i,
+                                            **subnet_params)
 
     initial_floating_ips = os_conn.nova.floating_ips.list()
     yield [net01, net02]
