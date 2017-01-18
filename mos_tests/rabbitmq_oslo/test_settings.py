@@ -152,7 +152,7 @@ class TestRabbitSegfaultsAndInteraction(object):
         """Performs 'service rabbitmq-server {action}' on fuel admin node.
         And checks that output does not contains error words from 'err_words'
         """
-        err_words = ('segfault', 'error', 'failed')
+        err_words = ['segfault', 'error', 'failed']
         err_msg = ('Some of the err messages {0} are in service '
                    'rabbitmq-server {1} output.'.format(err_words, action))
 
@@ -165,6 +165,12 @@ class TestRabbitSegfaultsAndInteraction(object):
 
         # Check that there are no error words in cmd output
         combined_out = out.stdout_string + out.stderr_string
+
+        # Workaround for invalid stderr from dbus+systemd.
+        # More info: http://paste.openstack.org/show/594837
+        if 'error=n/a' in str(combined_out).lower():
+            err_words.remove("error")
+
         assert not any(
             i in str(combined_out).lower()
             for i in err_words), err_msg
