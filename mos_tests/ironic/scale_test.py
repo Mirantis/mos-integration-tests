@@ -96,15 +96,14 @@ class TestScale(object):
 
     @pytest.fixture(scope='class',
                     params=[['ironic'], ['ironic', 'controller'],
-                            ['ironic', 'controller', 'ceph-osd']],
+                            ['ironic', 'ceph-osd']],
                     ids=idfn)
     def roles(self, request):
         return request.param
 
     @pytest.mark.testrail_id('631895', roles=['ironic'])
     @pytest.mark.testrail_id('631897', roles=['ironic', 'controller'])
-    @pytest.mark.testrail_id('631899',
-                             roles=['ironic', 'controller', 'ceph-osd'])
+    @pytest.mark.testrail_id('631899', roles=['ironic', 'ceph-osd'])
     def test_add_node(self, env, env_name, suffix, os_conn, make_image,
                       flavors, keypair, ironic, ironic_nodes, roles):
         """Test ironic work after add new ironic-conductor node to cluster
@@ -189,8 +188,7 @@ class TestScale(object):
 
     @pytest.mark.testrail_id('631896', roles=['ironic'])
     @pytest.mark.testrail_id('631898', roles=['ironic', 'controller'])
-    @pytest.mark.testrail_id('631900',
-                             roles=['ironic', 'controller', 'ceph-osd'])
+    @pytest.mark.testrail_id('631900', roles=['ironic', 'ceph-osd'])
     def test_delete_node(self, env, roles, ironic, make_image, flavors,
                          keypair, os_conn, ironic_nodes):
         """Delete one of multiple ironic nodes.
