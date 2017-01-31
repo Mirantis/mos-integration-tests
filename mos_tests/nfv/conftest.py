@@ -217,7 +217,7 @@ def computes_with_hp_1gb(env, request):
     computes = computes_configuration(env)
     computes_with_1gb_hp = [
         host for host, attr in computes.items() if
-        attr[page_1gb]['total'] >= min_count['hp_count_per_host']]
+        attr[page_1gb]['free'] >= min_count['hp_count_per_host']]
     if len(computes_with_1gb_hp) < min_count['host_count']:
         pytest.skip("Insufficient count of compute nodes with 1Gb huge pages")
     return computes_with_1gb_hp
@@ -230,7 +230,7 @@ def computes_with_hp_2mb(env, request):
     computes = computes_configuration(env)
     computes_with_2mb_hp = [
         host for host, attr in computes.items() if
-        attr[page_2mb]['total'] >= min_count['hp_count_per_host']]
+        attr[page_2mb]['free'] >= min_count['hp_count_per_host']]
     if len(computes_with_2mb_hp) < min_count['host_count']:
         pytest.skip("Insufficient count of compute nodes with 2Mb huge pages")
     return computes_with_2mb_hp
@@ -241,8 +241,8 @@ def computes_with_mixed_hp(env, request):
     min_count = getattr(request.cls, 'mixed_hp_computes')
     computes = computes_configuration(env)
     mixed_computes = [host for host, attr in computes.items()
-                      if attr[page_2mb]['total'] >= min_count['count_2mb'] and
-                      attr[page_1gb]['total'] >= min_count['count_1gb']]
+                      if attr[page_2mb]['free'] >= min_count['count_2mb'] and
+                      attr[page_1gb]['free'] >= min_count['count_1gb']]
     if len(mixed_computes) < min_count['host_count']:
         pytest.skip(
             "Insufficient count of compute nodes with 2Mb & 1Gb huge pages")
@@ -389,7 +389,7 @@ def computes_with_dpdk_hp(env):
     computes = env.get_nodes_by_role('compute')
     hosts = set([compute.data['fqdn'] for compute in computes
                  for interface in compute.get_attribute('interfaces') if
-                 interface['meta']['dpdk']['available']])
+                 interface['attributes']['dpdk']['enabled']['value']])
     if len(hosts) < 2:
         pytest.skip("Insufficient count of compute with DPDK")
     return list(hosts)

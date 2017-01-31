@@ -162,7 +162,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
         vms_distribution = [(hosts[0], 1), (hosts[1], 2)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
@@ -174,7 +174,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
         vms_distribution = [(hosts[0], 0), (hosts[1], 3)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         network_checks.check_vm_connectivity(env, os_conn)
@@ -183,7 +183,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
         vms_distribution = [(hosts[0], 1), (hosts[1], 2)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         network_checks.check_vm_connectivity(env, os_conn)
@@ -192,7 +192,7 @@ class TestLiveMigrationCeph(TestBaseNFV):
         vms_distribution = [(hosts[0], 2), (hosts[1], 1)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
@@ -333,7 +333,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
         expected_hosts_usage = [(hosts[0], 1), (hosts[1], 1)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in expected_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
@@ -346,7 +346,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
         expected_hosts_usage = [(hosts[0], 0), (hosts[1], 2)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in expected_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
@@ -354,7 +354,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
         expected_hosts_usage = [(hosts[0], 1), (hosts[1], 1)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in expected_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
@@ -366,7 +366,7 @@ class TestLiveMigrationCinder(TestBaseNFV):
         expected_hosts_usage = [(hosts[0], 0), (hosts[1], 2)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in expected_hosts_usage:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
         for vm in vms:
@@ -540,7 +540,7 @@ class TestLiveMigrationMixedFeatures(TestBaseNFV):
             expected_hosts_usage = [(hosts_to_use[0], 2), (hosts_to_use[1], 1)]
             final_conf_hp = computes_configuration(env)
             for host, nr in expected_hosts_usage:
-                exp_free = (initial_conf_hp[host][page_size]['total'] -
+                exp_free = (initial_conf_hp[host][page_size]['free'] -
                             nr * (flavor.ram * 1024 / page_size))
                 act_free = final_conf_hp[host][page_size]['free']
                 assert exp_free == act_free, (
@@ -624,7 +624,7 @@ class TestLiveMigrationMixedFeatures(TestBaseNFV):
 
             final_conf_hp = computes_configuration(env)
             for host in hosts:
-                exp_free = (initial_conf_hp[host][page_size]['total'] -
+                exp_free = (initial_conf_hp[host][page_size]['free'] -
                             1 * (flavor.ram * 1024 / page_size))
                 act_free = final_conf_hp[host][page_size]['free']
                 assert exp_free == act_free, (

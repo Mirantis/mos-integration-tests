@@ -88,7 +88,7 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == current_conf[host][page_2mb]['free']
 
@@ -109,7 +109,7 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -162,7 +162,7 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 3), (hosts[1], 1), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -213,9 +213,9 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 1, 1), (hosts[1], 0, 1), ]
         final_conf = computes_configuration(env)
         for (host, nr_1gb, nr_2mb) in vms_distribution:
-            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+            exp_free_1g = (initial_conf[host][page_1gb]['free'] -
                            nr_1gb * count_to_allocate_1gb)
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
             assert exp_free_2m == final_conf[host][page_2mb]['free']
@@ -314,7 +314,7 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         current_conf = computes_configuration(env)
         for (host, nr_1gb) in vms_distribution:
-            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+            exp_free_1g = (initial_conf[host][page_1gb]['free'] -
                            nr_1gb * count_to_allocate_1gb)
             assert exp_free_1g == current_conf[host][page_1gb]['free']
 
@@ -334,7 +334,7 @@ class TestHugePages(TestBaseNFV):
                             (hosts[1], vm_hosts.count(hosts[1])), ]
         final_conf = computes_configuration(env)
         for (host, nr_1gb) in vms_distribution:
-            exp_free_1g = (initial_conf[host][page_1gb]['total'] -
+            exp_free_1g = (initial_conf[host][page_1gb]['free'] -
                            nr_1gb * count_to_allocate_1gb)
             assert exp_free_1g == final_conf[host][page_1gb]['free']
         assert self.get_instance_page_size(os_conn, vm) == page_1gb
@@ -384,7 +384,7 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts_hp[0], 1), (hosts_no_hp[0], 0), ]
         final_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             assert exp_free_2m == final_conf[host][page_2mb]['free']
 
@@ -436,7 +436,7 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 1), (hosts[1], 1)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             act_free_2m = current_conf[host][page_2mb]['free']
             assert exp_free_2m == act_free_2m, (
@@ -460,7 +460,7 @@ class TestHugePages(TestBaseNFV):
         vms_distribution = [(hosts[0], 0), (hosts[1], 2)]
         current_conf = computes_configuration(env)
         for (host, nr_2mb) in vms_distribution:
-            exp_free_2m = (initial_conf[host][page_2mb]['total'] -
+            exp_free_2m = (initial_conf[host][page_2mb]['free'] -
                            nr_2mb * count_to_allocate_2mb)
             act_free_2m = current_conf[host][page_2mb]['free']
             assert exp_free_2m == act_free_2m, (
