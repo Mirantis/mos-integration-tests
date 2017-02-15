@@ -47,6 +47,7 @@ def set_recl_inst_interv(env, request):
 
 
 @pytest.mark.undestructive
+@pytest.mark.check_env_("is_flavor_exist")
 class NovaIntegrationTests(OpenStackTestCase):
     """Basic automated tests for OpenStack Nova verification. """
 

@@ -483,6 +483,18 @@ def is_ceilometer_enabled(env):
     return data['additional_components']['ceilometer']['value']
 
 
+def is_flavor_exist(env):
+    os_connection = get_os_conn(env)
+    flavors = {'m1.tiny': {'vcpus': 1, 'disk': 1, 'ram': 512},
+               'm1.small': {'vcpus': 1, 'disk': 20, 'ram': 2048},
+               'm1.medium': {'vcpus': 2, 'disk': 40, 'ram': 4096},
+               'm1.large': {'vcpus': 4, 'disk': 80, 'ram': 8192},
+               'm1.xlarge': {'vcpus': 8, 'disk': 160, 'ram': 16384}}
+    [flavors.pop(x.name, None) for x in os_connection.nova.flavors.findall()]
+    for k, v in flavors.iteritems():
+        os_connection.nova.flavors.create(name=k, **v)
+
+
 @pytest.fixture(autouse=True)
 def executable_requirements(request, env_name):
     marker = request.node.get_marker('requires_')
