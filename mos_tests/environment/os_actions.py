@@ -220,15 +220,18 @@ class OpenStackActions(object):
              timeout_seconds=timeout,
              waiting_for='marker appears in all servers log')
 
-    def create_server(self, name, image_id=None, flavor=1, userdata=None,
+    def create_server(self, name, image_id=None, flavor=None, userdata=None,
                       files=None, key_name=None, timeout=600,
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
 
-        if image_id is None:
+        if not flavor:
+            flavor = self.nova.flavors.find(name='m1.small')
+
+        if not image_id:
             image_id = self._get_cirros_image().id
         srv = self.nova.servers.create(name=name,
                                        image=image_id,
-                                       flavor=flavor,
+                                       flavor=flavor.id,
                                        userdata=userdata,
                                        files=files,
                                        key_name=key_name,
