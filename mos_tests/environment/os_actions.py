@@ -225,13 +225,13 @@ class OpenStackActions(object):
                       wait_for_active=True, wait_for_avaliable=True, **kwargs):
 
         if not flavor:
-            flavor = self.nova.flavors.find(name='m1.small')
+            flavor = self.nova.flavors.find(name='m1.small').id
 
         if not image_id:
             image_id = self._get_cirros_image().id
         srv = self.nova.servers.create(name=name,
                                        image=image_id,
-                                       flavor=flavor.id,
+                                       flavor=flavor,
                                        userdata=userdata,
                                        files=files,
                                        key_name=key_name,
