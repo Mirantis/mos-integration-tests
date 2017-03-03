@@ -92,8 +92,8 @@ def run_noop_graph_execute(admin_remote, env, nodes=None, g_type='default'):
 def get_child_task(admin_remote, parent_task_id, child_task_name='deployment'):
     """This function finds ID of the child task"""
     # ID of the child task should be max
-    cmd = "fuel task list | grep {0}".format(child_task_name)
-    cmd += " | awk '{print $1}'"  # split into 2 lines because of $1
+    cmd = "fuel2 task list | grep {0}".format(child_task_name)
+    cmd += " | awk '{print $2}'"  # split into 2 lines because of $1
     output = admin_remote.check_call(cmd).stdout_string
     child_task_id = max(map(int, output.split()))
     if child_task_id > parent_task_id:
