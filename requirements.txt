@@ -18,5 +18,6 @@ tox
 waiting
 dpath
 tempest
+pika
 
 contextlib2

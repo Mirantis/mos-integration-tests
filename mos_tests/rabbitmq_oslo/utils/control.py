@@ -17,7 +17,9 @@ import logging
 import re
 import sys
 
+from pika import URLParameters
 from six.moves import configparser
+from six.moves.configparser import NoOptionError
 import xml.etree.ElementTree as ElementTree
 
 from mos_tests.functions.common import wait
@@ -56,12 +58,26 @@ class MessagingCheckTool(object):
         with remote.open(self.config_vars['nova_config']) as f:
             parser = configparser.RawConfigParser()
             parser.readfp(f)
-            self.config_vars['rabbit_userid'] = (
-                parser.get('oslo_messaging_rabbit', 'rabbit_userid'))
-            self.config_vars['rabbit_password'] = (
-                parser.get('oslo_messaging_rabbit', 'rabbit_password'))
-            self.config_vars['rabbit_hosts'] = (
-                parser.get('oslo_messaging_rabbit', 'rabbit_hosts'))
+            try:
+                ampq_URI = parser.get('oslo_messaging_rabbit', 'transport_url')
+                rabbit_hosts = []
+                for item in ampq_URI.replace('rabbit://', '').split(','):
+                    params = URLParameters('rabbit://{}'.format(item))
+                    rabbit_user = params.credentials.username
+                    rabbit_password = params.credentials.password.split('@')[0]
+                    rabbit_hosts.append(params.host)
+                self.config_vars['rabbit_userid'] = rabbit_user
+                self.config_vars['rabbit_password'] = rabbit_password
+                self.config_vars['rabbit_hosts'] = ', '.join(rabbit_hosts)
+            except NoOptionError:
+                # If no transport url will try to use deprecated parameters
+                # And in worst case the same exception NoOptionError happens
+                self.config_vars['rabbit_userid'] = (
+                    parser.get('oslo_messaging_rabbit', 'rabbit_userid'))
+                self.config_vars['rabbit_password'] = (
+                    parser.get('oslo_messaging_rabbit', 'rabbit_password'))
+                self.config_vars['rabbit_hosts'] = (
+                    parser.get('oslo_messaging_rabbit', 'rabbit_hosts'))
 
     def is_installed(self, remote):
         """Checks if 'oslo.messaging-check-tool' already installed on remote.
