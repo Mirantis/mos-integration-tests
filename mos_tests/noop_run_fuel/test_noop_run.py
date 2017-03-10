@@ -69,7 +69,7 @@ def test_noop_run_second_time(env, admin_remote):
 
 @pytest.mark.testrail_id('1681268')
 def test_all_tasks_run_after_error(env, admin_remote, remove_service,
-                                   rename_role, nova_conf_on_cmpt):
+                                   rename_role):
     """Test to check that all tasks are executed after 'error' state of one of them
 
     Steps to reproduce:
@@ -80,19 +80,16 @@ def test_all_tasks_run_after_error(env, admin_remote, remove_service,
     5. Check that all messages are in result
     """
     p_ctrl = env.primary_controller
-    node2, changes = nova_conf_on_cmpt
     msg1 = ("/Pcmk_resource[p_heat-engine]/ensure', u'message': "
             "u'current_value absent, should be present (noop)'")
-    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
-            "should be False (noop)").format(*changes[0])
     msg3 = ("/Keystone_role[SwiftOperator]/ensure', u'message': "
             "u'current_value absent, should be present (noop)'")
     task = noop_common.run_noop_nodes_deploy(admin_remote, env,
-                                             nodes=[p_ctrl, node2])
+                                             nodes=[p_ctrl])
     cmd_res_error = admin_remote.execute(
         "fuel deployment-tasks --tid {0} --status error".format(task.id))
     assert "primary-heat" in cmd_res_error.stdout_string
-    exp_messages = [(p_ctrl.id, msg1), (node2.id, msg2), (p_ctrl.id, msg3)]
+    exp_messages = [(p_ctrl.id, msg1), (p_ctrl.id, msg3)]
     assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
                                                        exp_messages)
 
@@ -120,7 +117,7 @@ def test_change_puppet_file_owner(env, admin_remote, puppet_file_new_owner):
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1681278')
 def test_redeploy_whole_env(env, admin_remote, stop_service,
-                            nova_conf_on_cmpt, disable_user):
+                            disable_user):
     """Test to check the noop run feature for changes in whole env
 
     Steps to reproduce:
@@ -141,10 +138,6 @@ def test_redeploy_whole_env(env, admin_remote, stop_service,
             "u'current_value stopped, should be running (noop)")
     for node in env.get_nodes_by_role('controller'):
         expected_messages.append((node.id, msg1))
-    node2, changes = nova_conf_on_cmpt
-    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
-            "should be False (noop)").format(*changes[0])
-    expected_messages.append((node2.id, msg2))
     node3 = env.primary_controller
     msg3 = ("/Keystone_user[glare]/enabled', u'message': "
             "u'current_value false, should be true (noop)'")
@@ -653,6 +646,7 @@ def test_change_aodh_config(env, admin_remote, aodh_conf):
                                                      node.id, msg)
 
 
+@pytest.mark.skip(reason='amqp_durable_queues is deprecated in newton')
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1681496')
 def test_change_nova_conf_on_compute(env, admin_remote, nova_conf_on_cmpt):
@@ -674,7 +668,7 @@ def test_change_nova_conf_on_compute(env, admin_remote, nova_conf_on_cmpt):
 
 
 @pytest.mark.testrail_id('1681730')
-def test_changes_for_several_nodes(env, admin_remote, nova_conf_on_cmpt,
+def test_changes_for_several_nodes(env, admin_remote,
                                    delete_micro_flavor, puppet_file_new_mod):
     """Test to check the noop run for several nodes at the same time
 
@@ -685,26 +679,23 @@ def test_changes_for_several_nodes(env, admin_remote, nova_conf_on_cmpt,
     4. Execute 'fuel deployment-tasks --tid <task_id> --include-summary'
     5. Check that result contains the expected data for all nodes
     """
-    node1, changes = nova_conf_on_cmpt
     node2 = env.primary_controller
     node3 = puppet_file_new_mod['node']
     task = noop_common.run_noop_nodes_deploy(admin_remote, env,
-                                             nodes=[node1, node2, node3])
-    msg1 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
-            "should be False (noop)").format(*changes[0])
+                                             nodes=[node2, node3])
     msg2 = ("/Exec[create-m1.micro-flavor]/returns', u'message': "
             "u'current_value notrun, should be 0 (noop)'")
     msg3 = ("u'message': u'current_value {0}, "
             "should be 0644 (noop)'".format(puppet_file_new_mod['new_mod']))
-    exp_messages = [(node1.id, msg1), (node2.id, msg2), (node3.id, msg3)]
+    exp_messages = [(node2.id, msg2), (node3.id, msg3)]
     assert noop_common.are_messages_in_summary_results(admin_remote, task.id,
                                                        exp_messages)
 
 
 @pytest.mark.undestructive
 @pytest.mark.testrail_id('1682405')
-def test_default_graph(env, admin_remote, glance_api_conf, nova_conf_on_cmpt,
-                       puppet_file_new_owner):
+def test_default_graph(env, admin_remote,
+                       glance_api_conf, puppet_file_new_owner):
     """Test to check the noop run feature for changes in whole env
 
     Steps to reproduce:
@@ -725,12 +716,6 @@ def test_default_graph(env, admin_remote, glance_api_conf, nova_conf_on_cmpt,
             "u'current_value {2}, should be False".format(*changes[0]))
     nodes.append(node1)
     expected_messages.append((node1.id, msg1))
-
-    node2, changes = nova_conf_on_cmpt
-    msg2 = ("Nova_config[{0}/{1}]/value', u'message': u'current_value {2}, "
-            "should be False (noop)").format(*changes[0])
-    nodes.append(node2)
-    expected_messages.append((node2.id, msg2))
 
     node3 = puppet_file_new_owner['node']
     msg4 = ("u'message': u'current_value {0}, should be root (noop)'".

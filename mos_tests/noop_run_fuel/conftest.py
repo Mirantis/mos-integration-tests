@@ -66,6 +66,7 @@ nova_conf_on_ctrl = change_config_factory(
     config=[('DEFAULT', 'debug', False)])
 
 nova_conf_on_cmpt = change_config_factory(
+    # Deprecated in newton
     config_path="/etc/nova/nova.conf",
     config=[('oslo_messaging_rabbit', 'amqp_durable_queues', '')],
     role='compute')
@@ -73,12 +74,13 @@ nova_conf_on_cmpt = change_config_factory(
 cinder_conf = change_config_factory(
     config_path="/etc/cinder/cinder.conf",
     config=[('DEFAULT', 'log_dir', '/'),
-            ('keystone_authtoken', 'admin_user', 'admin')])
+            ('keystone_authtoken', 'username', 'admin')])
 
 keystone_conf = change_config_factory(
     config_path="/etc/keystone/keystone.conf",
+    # Dunno what will hapeen, will check during CI runs
     config=[('DEFAULT', 'admin_token', ''),
-            ('oslo_messaging_rabbit', 'rabbit_userid', 'cinder')])
+            ('oslo_messaging_rabbit', 'transport_url', 'cinder')])
 
 heat_conf = change_config_factory(
     config_path="/etc/heat/heat.conf",
@@ -107,7 +109,8 @@ ceilometer_conf = change_config_factory(
 
 sahara_conf = change_config_factory(
     config_path="/etc/sahara/sahara.conf",
-    config=[('oslo_messaging_rabbit', 'rabbit_userid', 'rabbit')])
+    # Dunno what will hapeen, will check during CI runs
+    config=[('oslo_messaging_rabbit', 'transport_url', 'rabbit')])
 
 aodh_conf = change_config_factory(
     config_path="/etc/aodh/aodh.conf",
