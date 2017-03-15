@@ -65,7 +65,8 @@ class MessagingCheckTool(object):
                     params = URLParameters('rabbit://{}'.format(item))
                     rabbit_user = params.credentials.username
                     rabbit_password = params.credentials.password.split('@')[0]
-                    rabbit_hosts.append(params.host)
+                    host = '{0}:{1}'.format(params.host, params.port)
+                    rabbit_hosts.append(host)
                 self.config_vars['rabbit_userid'] = rabbit_user
                 self.config_vars['rabbit_password'] = rabbit_password
                 self.config_vars['rabbit_hosts'] = ', '.join(rabbit_hosts)
